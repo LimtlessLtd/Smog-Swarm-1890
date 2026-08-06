@@ -36,6 +36,14 @@ func setup(p_cell: HexCell) -> void:
 func set_fog_state(state: GameEnums.FogState) -> void:
 	modulate = FogVisuals.tint_color(state)
 
+## Re-draws against whatever `cell`'s fields currently hold — for a system
+## that mutates a live HexCell after it was first spawned (Phase 4.2's
+## ReclamationManager changing terrain_feature/biome_type/soil_fertility on
+## drain) rather than HexGridMap regenerating the map from scratch.
+func refresh() -> void:
+	if cell and is_inside_tree():
+		_redraw()
+
 func _redraw() -> void:
 	var points := HexCoord.corner_points(Vector2.ZERO)
 	_polygon.polygon = points

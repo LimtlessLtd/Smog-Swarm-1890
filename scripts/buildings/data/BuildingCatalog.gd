@@ -51,6 +51,7 @@ static func _build_definitions() -> Array[BuildingDefinition]:
 		_clay_brickworks(), _charcoal_kiln(), _coal_pithead(),
 		_cast_iron_foundry(), _saltpetre_powder_mill(), _forward_ammo_dump(),
 		_tenant_farm(), _grain_silo(), _cattle_yard(),
+		_searchlight_tower(), _ditch(), _oil_pit(),
 	]
 
 # --- Housing & Civil -------------------------------------------------------
@@ -220,4 +221,39 @@ static func _cattle_yard() -> BuildingDefinition:
 	d.allowed_biomes = [GameEnums.BiomeType.FARMLAND, GameEnums.BiomeType.MOORLAND]
 	d.allowed_soil_fertility = _POOR_SOIL_ONLY
 	d.soil_fertility_scales_output = true
+	return d
+
+# --- Defense Works (Phase 4.1) ----------------------------------------------
+
+static func _searchlight_tower() -> BuildingDefinition:
+	var d := BuildingDefinition.new(GameEnums.BuildingType.SEARCHLIGHT_TOWER, "Searchlight Tower")
+	d.category = GameEnums.BuildingCategory.DEFENSE_WORKS
+	d.construction_cost = {GameEnums.ResourceType.CAST_IRON: 35, GameEnums.ResourceType.BRICKS: 20}
+	d.daily_upkeep = {GameEnums.ResourceType.ENERGY: 3.0}
+	d.zoc_roles = [GameEnums.ZoneOfControlType.MILITARY]
+	d.vision_radius = 2  # Illuminates the perimeter beyond its own hex, same role as the Watchtower (Phase 2.6).
+	# "granting combat bonuses to garrisoned units" (design doc 4.1) needs
+	# Phase 5.4 (units) and Phase 5.6 (garrison orders) to exist before
+	# there's anything to grant a bonus TO — not implemented, deliberately.
+	# Same for the night-specific half of "illuminate perimeter walls during
+	# night defense", which needs Phase 5.1's Day/Night split to have a
+	# night to hold vision through in the first place (Phase 2.6.4's own
+	# still-unbuilt hook).
+	return d
+
+static func _ditch() -> BuildingDefinition:
+	var d := BuildingDefinition.new(GameEnums.BuildingType.DITCH, "Ditch")
+	d.category = GameEnums.BuildingCategory.DEFENSE_WORKS
+	d.construction_cost = {GameEnums.ResourceType.WOOD: 10}
+	# Placed via WallManager.add_defense_work(), not BuildingManager.place_building()
+	# — see WallManager's own class doc comment for why. This definition
+	# exists purely so its construction_cost is authored in the same place
+	# as every other building's, not because it occupies a hex position.
+	return d
+
+static func _oil_pit() -> BuildingDefinition:
+	var d := BuildingDefinition.new(GameEnums.BuildingType.OIL_PIT, "Oil Pit")
+	d.category = GameEnums.BuildingCategory.DEFENSE_WORKS
+	d.construction_cost = {GameEnums.ResourceType.WOOD: 15, GameEnums.ResourceType.ENERGY: 10}
+	# See _ditch() — same "cost data only, placed via WallManager" note.
 	return d

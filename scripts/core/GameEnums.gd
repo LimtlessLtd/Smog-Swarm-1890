@@ -57,6 +57,7 @@ enum BuildingCategory {
 	HOUSING_CIVIL,       ## Terraced Tenements, Workhouses, Watchtowers, etc.
 	INDUSTRY_EXTRACTION, ## Brickworks, kilns, pitheads, foundries, powder mills, ammo dumps.
 	AGRICULTURE,         ## Tenant Farms, Grain Silos, Cattle Yards.
+	DEFENSE_WORKS,       ## Phase 4.1: Searchlight Tower (a normal hex-placed building), plus Ditch/Oil Pit's cost data (placed via WallManager, not BuildingManager — see WallManager's own doc comment).
 }
 
 enum BuildingType {
@@ -80,6 +81,10 @@ enum BuildingType {
 	TENANT_FARM,
 	GRAIN_SILO,
 	CATTLE_YARD,
+	# --- Defense Works (Phase 4.1) ---
+	SEARCHLIGHT_TOWER,  ## Normal hex-placed building (BuildingManager), like Gas Streetlamp.
+	DITCH,              ## Cost data only — placed via WallManager.add_defense_work(), attached to a specific WallSegment.
+	OIL_PIT,            ## Cost data only — same as DITCH.
 }
 
 enum ZoneOfControlType {

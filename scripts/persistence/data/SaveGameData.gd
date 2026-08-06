@@ -56,3 +56,15 @@ extends Resource
 ## Zone of Control itself: it recomputes fresh from LogisticsNetwork on load.
 ## Also flagged as a future addition back when Phase 2.8 was written.
 @export var discontent_by_hex: Dictionary = {}  # Vector2i -> float
+
+## WallManager (Phase 4.1) — every placed WallSegment saves directly (see
+## its own class doc comment for why no separate save-entry wrapper is
+## needed, unlike BuildingSaveEntry).
+@export var wall_segments: Array[WallSegment] = []
+@export var next_wall_id: int = 1
+
+## ReclamationManager (Phase 4.2) — which hexes have been drained; see that
+## class's own doc comment for why this is the one piece of terrain state
+## that needs persisting despite Phase 2.8.1's "terrain regenerates
+## byte-identically from a fixed seed, no saving needed" baseline.
+@export var drained_hexes: Array[Vector2i] = []
