@@ -39,6 +39,47 @@ func _ready() -> void:
 	if resource_manager_path != NodePath():
 		_resource_manager = get_node(resource_manager_path)
 	TickManager.day_completed.connect(_on_day_completed)
+	seed_starting_buildings()
+
+## Seeds the colony with its first building on a truly fresh start. Without
+## this, Fog of War (Phase 2.6) leaves the ENTIRE map UNSEEN at boot — no
+## building placed anywhere means no vision source anywhere — so a new
+## player has literally nothing rendered to look at or click on. Placed for
+## free via _register_instance() directly (bypassing place_building()'s
+## cost/validation, same as load_save_entries() does) rather than costing
+## starting resources: this is the game's own opening move, not a player
+## purchase. A future proper "New Game" flow (Phase 7.6) should call this
+## explicitly instead of it running unconditionally here; until that exists,
+## "the game just booted with nothing placed yet" and "this is a new game"
+## are the same thing, so this is the right default. A load right after
+## boot (SaveLoadManager.load_save_entries()) already clears every existing
+## instance before restoring saved ones, so a seeded Town Hall never lingers
+## once a real save is loaded.
+## Manchester is the design doc's own canonical starting point (Phase 7.1
+## Act I: "Secure Manchester") — matched by name (set from
+## BritishGeographyData's GeographyFeature, see HexMapGenerator) rather than
+## a hardcoded coordinate here, so this doesn't need to know Manchester's
+## specific hex layout. Falls back to any qualifying settlement hex if a
+## future alternate map seed doesn't use that name.
+const _STARTING_REGION_NAME := "Manchester"
+
+func seed_starting_buildings() -> void:
+	if not _instances.is_empty() or not _hex_grid_map:
+		return
+	var target: HexCell = null
+	var fallback: HexCell = null
+	for cell in _hex_grid_map.get_all_cells():
+		if not (cell.is_settlement and cell.biome_type == GameEnums.BiomeType.URBAN):
+			continue
+		if cell.region_name == _STARTING_REGION_NAME:
+			target = cell
+			break
+		if not fallback:
+			fallback = cell
+	target = target if target else fallback
+	if target:
+		var definition := BuildingCatalog.get_definition(GameEnums.BuildingType.TOWN_HALL)
+		_register_instance(definition, target.coord, _next_id, Vector2.ZERO, true)
 
 func get_buildings_at(coord: Vector2i) -> Array[BuildingInstance]:
 	var result: Array[BuildingInstance] = []
@@ -47,6 +88,12 @@ func get_buildings_at(coord: Vector2i) -> Array[BuildingInstance]:
 
 func get_all_buildings() -> Array[BuildingInstance]:
 	return _instances.duplicate()
+
+## Exposed for SaveLoadManager (Phase 2.8) — the next id a freshly-placed
+## building would get, so a save can restore it exactly on load instead of
+## quietly renumbering everything placed afterward.
+func get_next_id() -> int:
+	return _next_id
 
 func get_buildings_with_zoc_role(role: GameEnums.ZoneOfControlType) -> Array[BuildingInstance]:
 	var result: Array[BuildingInstance] = []
@@ -98,8 +145,18 @@ func place_building(building_type: GameEnums.BuildingType, coord: Vector2i, loca
 		for resource_type in definition.storage_bonus:
 			_resource_manager.add_storage_cap(resource_type, float(definition.storage_bonus[resource_type]))
 
-	var instance := BuildingInstance.new(definition, coord, _next_id, local_position)
-	_next_id += 1
+	return _register_instance(definition, coord, _next_id, local_position, true)
+
+## Shared instance-bookkeeping between a fresh place_building() (which has
+## already validated placement and spent resources above) and
+## load_save_entries() (Phase 2.8, which restores a building that was
+## already paid for in a previous session and must not re-spend or
+## re-validate it). `advance_next_id` is false for the latter — restoration
+## sets `_next_id` once from the save's own record instead of per-instance.
+func _register_instance(definition: BuildingDefinition, coord: Vector2i, id: int, local_position: Vector2, advance_next_id: bool) -> BuildingInstance:
+	var instance := BuildingInstance.new(definition, coord, id, local_position)
+	if advance_next_id:
+		_next_id = id + 1
 	_instances.append(instance)
 	if not _instances_by_hex.has(coord):
 		_instances_by_hex[coord] = []
@@ -125,6 +182,31 @@ func remove_building(instance: BuildingInstance) -> void:
 	if _instances_by_hex.has(instance.hex_coord):
 		_instances_by_hex[instance.hex_coord].erase(instance)
 	building_removed.emit(instance)
+
+## Every placed instance reduced to its saveable footprint (Phase 2.8.1) —
+## see BuildingSaveEntry for why the full BuildingDefinition isn't included.
+func get_save_entries() -> Array[BuildingSaveEntry]:
+	var result: Array[BuildingSaveEntry] = []
+	for instance in _instances:
+		result.append(BuildingSaveEntry.new(instance.definition.building_type, instance.hex_coord, instance.id, instance.local_position))
+	return result
+
+## Restores placed instances from a save (Phase 2.8.2): clears whatever is
+## currently placed, then recreates each entry via _register_instance()
+## directly — bypassing place_building()'s cost/validation, since these
+## buildings already exist and were already paid for. `next_id` is applied
+## once at the end rather than derived per-instance, matching whatever
+## BuildingManager's own counter was at save time.
+func load_save_entries(entries: Array[BuildingSaveEntry], next_id: int) -> void:
+	for instance in _instances.duplicate():
+		remove_building(instance)
+	for entry in entries:
+		var definition := BuildingCatalog.get_definition(entry.building_type)
+		if not definition:
+			push_warning("BuildingManager: unknown building type %s in save data, skipping." % entry.building_type)
+			continue
+		_register_instance(definition, entry.hex_coord, entry.id, entry.local_position, false)
+	_next_id = next_id
 
 func _on_day_completed(_day_number: int) -> void:
 	if not _resource_manager:

@@ -1,4 +1,4 @@
-[gd_scene load_steps=9 format=3]
+[gd_scene load_steps=12 format=3]
 
 [ext_resource type="PackedScene" path="res://scenes/world/HexGridMap.tscn" id="1"]
 [ext_resource type="PackedScene" path="res://scenes/camera/CameraController.tscn" id="2"]
@@ -8,6 +8,9 @@
 [ext_resource type="PackedScene" path="res://scenes/world/LocalDetailManager.tscn" id="6"]
 [ext_resource type="PackedScene" path="res://scenes/world/StrategicOverlayManager.tscn" id="7"]
 [ext_resource type="PackedScene" path="res://scenes/world/FogOfWarManager.tscn" id="8"]
+[ext_resource type="PackedScene" path="res://scenes/persistence/SaveLoadManager.tscn" id="9"]
+[ext_resource type="PackedScene" path="res://scenes/world/BuildPlacementController.tscn" id="10"]
+[ext_resource type="PackedScene" path="res://scenes/ui/MainHUD.tscn" id="11"]
 
 [node name="Main" type="Node2D"]
 
@@ -16,7 +19,7 @@
 [node name="HexGridMap" parent="WorldRoot" instance=ExtResource("1")]
 
 [node name="CameraController" parent="." instance=ExtResource("2")]
-position = Vector2(2383, 1248)
+position = Vector2(1050, 600)
 zoom = Vector2(0.4, 0.4)
 world_root_path = NodePath("../WorldRoot")
 
@@ -35,6 +38,12 @@ hex_grid_map_path = NodePath("../WorldRoot/HexGridMap")
 building_manager_path = NodePath("../BuildingManager")
 logistics_network_path = NodePath("../LogisticsNetwork")
 
+[node name="SaveLoadManager" parent="." instance=ExtResource("9")]
+building_manager_path = NodePath("../BuildingManager")
+resource_manager_path = NodePath("../ResourceManager")
+logistics_network_path = NodePath("../LogisticsNetwork")
+fog_of_war_manager_path = NodePath("../FogOfWarManager")
+
 [node name="LocalDetailManager" parent="WorldRoot" instance=ExtResource("6")]
 hex_grid_map_path = NodePath("../HexGridMap")
 building_manager_path = NodePath("../../BuildingManager")
@@ -46,3 +55,13 @@ fog_of_war_path = NodePath("../../FogOfWarManager")
 hex_grid_map_path = NodePath("../HexGridMap")
 building_manager_path = NodePath("../../BuildingManager")
 camera_path = NodePath("../../CameraController")
+
+[node name="BuildPlacementController" parent="WorldRoot" instance=ExtResource("10")]
+hex_grid_map_path = NodePath("../HexGridMap")
+building_manager_path = NodePath("../../BuildingManager")
+
+[node name="MainHUD" parent="." instance=ExtResource("11")]
+resource_manager_path = NodePath("../ResourceManager")
+building_manager_path = NodePath("../BuildingManager")
+save_load_manager_path = NodePath("../SaveLoadManager")
+build_placement_controller_path = NodePath("../WorldRoot/BuildPlacementController")

@@ -39,9 +39,27 @@ func get_full_stockpile() -> Dictionary:
 func get_storage_cap(resource_type: GameEnums.ResourceType) -> float:
 	return _storage_caps.get(resource_type, INF)
 
+## Exposed for SaveLoadManager (Phase 2.8) alongside get_full_stockpile() —
+## caps drift from their STARTING_STOCKPILE default via add_storage_cap()
+## (e.g. a Grain Silo's storage_bonus), so they need saving just like the
+## stockpile itself.
+func get_full_storage_caps() -> Dictionary:
+	return _storage_caps.duplicate()
+
+## Restores stockpile + caps from a save (Phase 2.8.2), replacing whatever
+## _ready() seeded from STARTING_STOCKPILE.
+func load_state(stockpile: Dictionary, storage_caps: Dictionary) -> void:
+	_stockpile = stockpile.duplicate()
+	_storage_caps = storage_caps.duplicate()
+	resources_changed.emit(get_full_stockpile())
+
 func set_storage_cap(resource_type: GameEnums.ResourceType, cap: float) -> void:
 	_storage_caps[resource_type] = cap
 	_stockpile[resource_type] = minf(get_amount(resource_type), cap)
+	# A cap change is a meaningful change to anything watching resources_changed
+	# (e.g. Phase 6.1's resource bar shows "amount/cap") even when the
+	# stockpile amount itself doesn't move.
+	resources_changed.emit(get_full_stockpile())
 
 func add_storage_cap(resource_type: GameEnums.ResourceType, bonus: float) -> void:
 	set_storage_cap(resource_type, get_storage_cap(resource_type) + bonus)
