@@ -20,11 +20,13 @@ const DETAIL_RADIUS: int = 1  ## Hex disk radius hydrated around the camera; 1 =
 @export var building_manager_path: NodePath
 @export var logistics_network_path: NodePath
 @export var camera_path: NodePath
+@export var fog_of_war_path: NodePath
 
 var _hex_grid_map: HexGridMap
 var _building_manager: BuildingManager
 var _logistics_network: LogisticsNetwork
 var _camera: CameraController
+var _fog_of_war: FogOfWarManager
 
 var _is_tactical_mode: bool = false
 var _last_centered_coord: Vector2i = Vector2i.ZERO
@@ -43,6 +45,9 @@ func _ready() -> void:
 	if camera_path != NodePath():
 		_camera = get_node(camera_path)
 		_camera.tactical_mode_changed.connect(_on_tactical_mode_changed)
+	if fog_of_war_path != NodePath():
+		_fog_of_war = get_node(fog_of_war_path)
+		_fog_of_war.fog_state_changed.connect(_on_fog_state_changed)
 
 func _process(_delta: float) -> void:
 	if not _is_tactical_mode or not _hex_grid_map or not _camera:
@@ -64,6 +69,10 @@ func _on_tactical_mode_changed(is_tactical: bool) -> void:
 func _hex_qualifies_for_detail(coord: Vector2i) -> bool:
 	var cell := _hex_grid_map.get_cell(coord)
 	if not cell:
+		return false
+	# Fog of War (Phase 2.6): an UNSEEN hex has nothing known to draw, at any
+	# zoom — it must be at least EXPLORED before Tactical detail hydrates.
+	if _fog_of_war and not _fog_of_war.is_at_least_explored(coord):
 		return false
 	if cell.is_settlement:
 		return true
@@ -97,8 +106,11 @@ func _hydrate_hex(coord: Vector2i) -> void:
 	var buildings: Array[BuildingInstance] = []
 	if _building_manager:
 		buildings = _building_manager.get_buildings_at(coord)
+	var fog_state := GameEnums.FogState.VISIBLE
+	if _fog_of_war:
+		fog_state = _fog_of_war.get_fog_state(coord)
 	var view := TacticalHexView.new()
-	view.setup(cell, LocalDetailGenerator.generate(cell), buildings)
+	view.setup(cell, LocalDetailGenerator.generate(cell), buildings, fog_state)
 	add_child(view)
 	_tactical_views[coord] = view
 
@@ -125,5 +137,15 @@ func _on_buildings_changed(instance: BuildingInstance) -> void:
 	_refresh_hydrated_neighborhood(_last_centered_coord)
 
 func _on_network_recomputed() -> void:
+	if _is_tactical_mode:
+		_refresh_hydrated_neighborhood(_last_centered_coord)
+
+## Fog of War (Phase 2.6): an already-hydrated hex just needs its dimming
+## updated live (EXPLORED <-> VISIBLE); a newly-EXPLORED hex that wasn't
+## hydrated before (was UNSEEN, blocked by _hex_qualifies_for_detail) may
+## now qualify, so the neighborhood still needs a refresh either way.
+func _on_fog_state_changed(coord: Vector2i, state: GameEnums.FogState) -> void:
+	if _tactical_views.has(coord):
+		_tactical_views[coord].set_fog_state(state)
 	if _is_tactical_mode:
 		_refresh_hydrated_neighborhood(_last_centered_coord)

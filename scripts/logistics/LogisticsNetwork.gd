@@ -57,6 +57,14 @@ func restore_segment_between(hex_a: Vector2i, hex_b: Vector2i) -> void:
 func get_zoc_state(coord: Vector2i) -> ZoneOfControlState:
 	return _zoc_by_hex.get(coord, ZoneOfControlState.new(coord))
 
+## Every hex currently carrying any Zone of Control coverage (military or
+## civilian). Lets FogOfWarManager (Phase 2.6) treat ZoC coverage as a vision
+## source without reaching into this class's internals.
+func get_covered_hexes() -> Array[Vector2i]:
+	var result: Array[Vector2i] = []
+	result.assign(_zoc_by_hex.keys())
+	return result
+
 ## True if `to_coord` is reachable from `from_coord` over unsevered supply
 ## lines only. A general connectivity primitive for later phases (e.g.
 ## "is this hex linked all the way back to a population hub?"); today's

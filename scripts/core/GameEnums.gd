@@ -98,3 +98,9 @@ enum PropType {
 	ROCK,
 	REED,  ## Wetland/waterway fringe vegetation.
 }
+
+enum FogState {
+	UNSEEN,    ## Never scouted; rendered as blank darkness. One-way -> EXPLORED, never reverts.
+	EXPLORED,  ## Terrain/buildings remembered, no current intel on movement in this hex.
+	VISIBLE,   ## An active vision source covers this hex right now; full real-time information.
+}

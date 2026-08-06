@@ -30,6 +30,12 @@ func setup(p_cell: HexCell) -> void:
 	if is_inside_tree():
 		_redraw()
 
+## Fog of War (Phase 2.6): tints the whole tile rather than touching the
+## underlying biome/soil color, so FogOfWarManager can push updates here
+## without this view needing to know anything about fog logic.
+func set_fog_state(state: GameEnums.FogState) -> void:
+	modulate = FogVisuals.tint_color(state)
+
 func _redraw() -> void:
 	var points := HexCoord.corner_points(Vector2.ZERO)
 	_polygon.polygon = points

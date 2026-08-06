@@ -21,12 +21,22 @@ func _ready() -> void:
 
 ## Call before this node enters the tree; mirrors HexCellView.setup()'s
 ## defer-to-_ready() pattern since child nodes don't exist until _ready() runs.
-func setup(p_cell: HexCell, props: Array[PropInstance], buildings: Array[BuildingInstance]) -> void:
+## `fog_state` defaults to VISIBLE: LocalDetailManager only ever hydrates a
+## hex that's at least EXPLORED (Phase 2.6), so the only two values that
+## actually arrive here are EXPLORED (dimmed) and VISIBLE (full color).
+func setup(p_cell: HexCell, props: Array[PropInstance], buildings: Array[BuildingInstance], fog_state: GameEnums.FogState = GameEnums.FogState.VISIBLE) -> void:
 	cell = p_cell
 	_props = props
 	_buildings = buildings
+	set_fog_state(fog_state)
 	if is_inside_tree():
 		_redraw()
+
+## Fog of War (Phase 2.6): dims the whole hydrated hex (terrain, props and
+## buildings together) rather than the inner ground HexCellView alone, so a
+## remembered-but-not-currently-visible hex reads as one dimmed scene.
+func set_fog_state(state: GameEnums.FogState) -> void:
+	modulate = FogVisuals.tint_color(state)
 
 func _redraw() -> void:
 	for child in get_children():

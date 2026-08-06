@@ -81,6 +81,7 @@ static func _church_steeple_watchtower() -> BuildingDefinition:
 	d.requires_settlement = true
 	# Doubles as a lookout post (Military) and a parish church (Civilian) — see class doc.
 	d.zoc_roles = [GameEnums.ZoneOfControlType.MILITARY, GameEnums.ZoneOfControlType.CIVILIAN]
+	d.vision_radius = 2  # Tallest structure in town — a proper watchtower lookout (Phase 2.6).
 	return d
 
 static func _gas_streetlamp() -> BuildingDefinition:
@@ -90,6 +91,7 @@ static func _gas_streetlamp() -> BuildingDefinition:
 	d.daily_upkeep = {GameEnums.ResourceType.COAL: 1.0}
 	d.allowed_biomes = [GameEnums.BiomeType.URBAN]
 	d.requires_settlement = true
+	d.vision_radius = 1  # Lights the surrounding street, not just its own hex (Phase 2.6).
 	return d
 
 static func _telegraph_relay_office() -> BuildingDefinition:

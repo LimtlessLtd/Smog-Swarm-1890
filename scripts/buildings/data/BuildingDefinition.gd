@@ -32,6 +32,14 @@ extends Resource
 
 @export var zoc_roles: Array[GameEnums.ZoneOfControlType] = []  ## Which Zone(s) of Control (Phase 2.3) this building projects, if any.
 
+## Fog of War (Phase 2.6): hex-disk radius this building projects VISIBLE
+## coverage over, centered on its own hex — 0 (the default) still means "at
+## least its own hex is visible", not "no vision at all". Independent of
+## zoc_roles: Military/Civilian ZoC coverage is a separate vision source
+## (see FogOfWarManager), this is for buildings like Gas Streetlamps and the
+## Church Steeple Watchtower that light up an area beyond just themselves.
+@export var vision_radius: int = 0
+
 func _init(p_type: GameEnums.BuildingType = GameEnums.BuildingType.TERRACED_TENEMENT, p_display_name: String = "") -> void:
 	building_type = p_type
 	display_name = p_display_name

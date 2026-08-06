@@ -53,6 +53,12 @@ func get_all_cells() -> Array[HexCell]:
 	result.assign(_cells.values())
 	return result
 
+## The rendered HexCellView for `coord`, or null if nothing generated there.
+## Lets a sibling system (FogOfWarManager, Phase 2.6) push a per-hex visual
+## update directly rather than HexGridMap needing to know about fog itself.
+func get_view(coord: Vector2i) -> HexCellView:
+	return _views.get(coord)
+
 func _spawn_view(cell: HexCell) -> void:
 	var view := HexCellView.new()
 	view.setup(cell)
