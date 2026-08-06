@@ -109,6 +109,10 @@ fog_of_war_path = NodePath("../../FogOfWarManager")
 [node name="StrategicOverlayManager" parent="WorldRoot" instance=ExtResource("7")]
 hex_grid_map_path = NodePath("../HexGridMap")
 building_manager_path = NodePath("../../BuildingManager")
+unit_manager_path = NodePath("../../UnitManager")
+unit_order_controller_path = NodePath("../../UnitOrderController")
+horde_manager_path = NodePath("../../HordeManager")
+fog_of_war_manager_path = NodePath("../../FogOfWarManager")
 camera_path = NodePath("../../CameraController")
 
 [node name="BuildPlacementController" parent="WorldRoot" instance=ExtResource("10")]
