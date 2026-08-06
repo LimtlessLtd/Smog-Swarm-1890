@@ -56,6 +56,7 @@ extends Node
 signal horde_spawned(horde: Horde)
 signal horde_moved(horde: Horde, from_coord: Vector2i, to_coord: Vector2i)
 signal horde_size_changed(horde: Horde, delta: int)
+signal horde_removed(horde: Horde)
 
 @export var hex_grid_map_path: NodePath
 @export var logistics_network_path: NodePath  ## Optional — same road/rail/canal discount HexPathfinder gives any other route.
@@ -118,6 +119,14 @@ func _process(delta: float) -> void:
 
 func get_all_hordes() -> Array[Horde]:
 	return _hordes.duplicate()
+
+## Exposed for CombatCoordinator (Phase 5.4/5.9/5.10's live combat
+## trigger) — a horde reduced to 0 (Horde.apply_remaining_hp()) is that
+## caller's cue to remove it, mirroring UnitManager.remove_unit()/
+## BuildingManager.remove_building()'s own shape.
+func remove_horde(horde: Horde) -> void:
+	_hordes.erase(horde)
+	horde_removed.emit(horde)
 
 func get_hordes_at(coord: Vector2i) -> Array[Horde]:
 	var result: Array[Horde] = []

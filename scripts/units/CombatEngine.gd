@@ -10,27 +10,18 @@ extends RefCounted
 ## in by the caller, and the only side effect is mutating that same
 ## UnitInstance's current_hp (the "manager mutates a passed-in Resource
 ## directly" pattern WallManager.damage_segment() already uses on
-## WallSegment). This is what lets whichever system eventually triggers
-## combat — Phase 5.10's ATTACKING sieges, Phase 5.6's attack-move orders —
-## call straight into this without CombatEngine needing to know that caller
-## exists yet, the same relationship HexPathfinder has to HordeManager.
+## WallSegment). This is what let the new CombatCoordinator (Phase
+## 5.4/5.9/5.10's live combat trigger) call straight into this the moment
+## it existed, without CombatEngine ever needing to know that caller was
+## coming — the same relationship HexPathfinder had to HordeManager before
+## HordeManager arrived to use it, now realized a second time.
 ##
-## No live trigger calls this yet: Phase 5.10 only reaches WANDERING today
-## (see HordeManager), and Phase 5.6's orders don't exist. Built ahead of
-## both callers deliberately — same "foundation built ahead of its first
-## caller" position HexPathfinder was in before HordeManager arrived to use
-## it, and TickManager was in before TimeCycleManager.
-##
-## Deliberately does NOT model the opposing side as a typed Resource: no
-## "the other thing a unit can fight" data class exists anywhere in the
-## project yet — a Horde's `size` (Horde.gd) is a headcount, not a combat
-## stat, and the design doc itself hasn't decided zombie-side combat
-## numbers ("the special role's exact combat identity... is a
-## balancing/design pass", same spirit applied here). Inventing HP/damage
-## numbers for a zombie now would be unreviewed balancing dressed up as
-## architecture. `defender_hp`/`defender_damage` are plain floats instead —
-## whichever system eventually triggers combat supplies them from whatever
-## it actually represents, unit-vs-unit or unit-vs-horde alike.
+## Deliberately does NOT model the opposing side as a typed Resource:
+## `defender_hp`/`defender_damage` are plain floats, not a "the other thing
+## a unit can fight" data class — CombatCoordinator derives them from
+## Horde.get_combat_hp()/get_combat_damage() today, but any future
+## defender (a building's HP, Phase 5.12) can supply the same two numbers
+## without this signature changing.
 
 ## "0 ammo forces fragile, unarmored melee mode" (design doc, decided) is
 ## two separate multipliers: outgoing damage drops ("fragile" — a rifle
