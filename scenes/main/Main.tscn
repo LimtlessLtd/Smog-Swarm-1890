@@ -67,6 +67,7 @@ logistics_network_path = NodePath("../LogisticsNetwork")
 [node name="HordeManager" parent="." instance=ExtResource("16")]
 hex_grid_map_path = NodePath("../WorldRoot/HexGridMap")
 logistics_network_path = NodePath("../LogisticsNetwork")
+building_manager_path = NodePath("../BuildingManager")
 
 [node name="UnitManager" parent="." instance=ExtResource("17")]
 hex_grid_map_path = NodePath("../WorldRoot/HexGridMap")
