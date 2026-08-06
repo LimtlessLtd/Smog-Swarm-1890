@@ -41,3 +41,12 @@ extends Resource
 ## recomputed from buildings alone (recompute() only ever re-derives the
 ## currently-VISIBLE set, never which hexes are merely EXPLORED).
 @export var fog_state: Dictionary = {}  # Vector2i -> GameEnums.FogState
+
+## TechManager (Phase 2.9) — the researched set plus whichever node (if any)
+## is currently in progress and how many days it has left. Flagged as a
+## future addition back when Phase 2.8 was written, before Phase 2.9 existed
+## to have state to save; TechCatalog itself is static seed data and never
+## needs saving, same as BuildingCatalog.
+@export var researched_techs: Array[StringName] = []
+@export var active_tech_id: StringName = &""
+@export var tech_days_remaining: int = 0
