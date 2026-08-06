@@ -133,6 +133,23 @@
 
 ---
 
+## 🍞 Phase 2.10: Population Sustenance & Starvation
+> Plan only — not implemented yet. Extends already-built Phase 2.1/2.2: population currently exists only as `BuildingDefinition.population_provided`, a fixed number per building *type* — this phase makes it real, mutable, per-instance state that can actually be lost, which is also what Phase 5.9's casualty conversion needs to have anything civilian to convert in the first place.
+- [ ] **2.10.1 Population Becomes Mutable (`BuildingInstance.current_population`)**
+  - [ ] New per-instance field on `BuildingInstance`, seeded from `definition.population_provided` when a housing building is placed. Colony-wide population for upkeep purposes (`BuildingManager`'s existing daily tally) sums `current_population` across instances, not the static definition value.
+- [ ] **2.10.2 Food Satisfaction Ratio**
+  - [ ] Each day (`BuildingManager._on_day_completed`, already built): `ratio = available_food / food_demand`, where `food_demand` is the same population-based Food upkeep already computed today, and `available_food` is stockpile + that day's production.
+  - [ ] **Decided thresholds:** `ratio >= 1.0` — fully fed, no penalty (see 2.10.4 for surplus above this). `0.5 <= ratio < 1.0` — no deaths, but a production penalty on all buildings scaling with how far below 1.0 (e.g. ~75% fed is a moderate hit, ~55% fed is severe) — hungry, not dying. `ratio < 0.5` — civilians actually starve to death (2.10.3).
+- [ ] **2.10.3 Starvation Deaths**
+  - [ ] Below the 50% threshold, population is lost from housing buildings proportional to each instance's share of `current_population` — severity scales with how far below 50% the ratio is (barely under starves a few, near zero would be a catastrophe), not a flat rate the moment it triggers.
+  - [ ] **Decided: military units are explicitly exempt from starvation death** — rationing priority goes to the garrison, full stop. Losing your defenders to hunger on top of an active siege would just be miserable, not interesting. (Whether undersupplied units still take a lesser morale penalty instead is Phase 5.7's call, not this one.)
+  - [ ] Every starved civilian is a casualty for Phase 5.9's purposes — converts to a zombie at its own housing building's hex, same as a combat death. A famine inside your own walls can produce a horde without a single external zombie ever getting in.
+- [ ] **2.10.4 Food Surplus Bonus**
+  - [ ] **Decided:** a genuine surplus (comfortably above `ratio = 1.0`, not just barely meeting it) grants a modest, deliberately limited bonus — a small production boost and/or gradual `current_population` regrowth back toward `definition.population_provided` (recovery after a famine, or organic growth). Exact numbers are a balancing pass, not an architecture decision.
+- [ ] **Cross-references:** feeds Phase 3.4's Discontent as an additional driver (a hungry-but-not-starving population is unhappy about it, independent of the direct production penalty above) and Phase 5.9 (starvation deaths are casualties like any other).
+
+---
+
 ## 🏙️ Phase 3: Urban Underground & Sewer Outbreak Mechanics
 - [ ] **3.1 Subterranean Layer System (`SubterraneanMap.gd`)**
   - [ ] Urban hex underground toggle (Victorian Sewers, London Underground tunnels).
@@ -143,7 +160,7 @@
   - [ ] Influence actions: *Sanitation Act*, *Nerve-Gas Purge*, *Militia Sewer Sweep*.
 - [ ] **3.4 Population Discontent (`DiscontentManager.gd`)** — plan only; a *colony-wide population* mechanic, distinct from the *per-unit* Morale & Veterancy system documented under Phase 5.7 — don't conflate the two.
   - [ ] **Decided scope:** per contiguous Civilian Zone of Control region, not global and not per-hex. A "Civilian Region" is a maximal connected cluster of hexes currently carrying `has_civilian_coverage` (`LogisticsNetwork`, Phase 2.3) — hex-adjacency flood fill, recomputed whenever ZoC changes. Multi-hex settlements (Manchester's 4 hexes, London's 12) share one Discontent value as long as they stay contiguously covered; a region physically split by lost territory splits into two independently-tracked regions.
-  - [ ] Drivers: overcrowding (summed `population_provided` in the region against a capacity threshold) and casualties/incursions within the region's own hexes are region-local; Food/Coal/Gunpowder shortfalls (`ResourceManager.upkeep_shortfall`) affect every region equally, since the resource stockpile itself is deliberately one global pool (Phase 2.2), not split per region. Worth stating plainly: Discontent is region-scoped, the economy underneath it deliberately isn't.
+  - [ ] Drivers: overcrowding (summed `population_provided` in the region against a capacity threshold) and casualties/incursions within the region's own hexes are region-local; Food/Coal/Gunpowder shortfalls affect every region equally, since the resource stockpile itself is deliberately one global pool (Phase 2.2), not split per region. Worth stating plainly: Discontent is region-scoped, the economy underneath it deliberately isn't. Food specifically now has its own precise ratio/threshold system (Phase 2.10) rather than just the generic `ResourceManager.upkeep_shortfall` signal — a hungry-but-not-starving population (2.10.2's 50-99% band) is a Discontent driver here on top of 2.10's direct production penalty, not instead of it.
   - [ ] Consequences: production penalty on buildings within a high-Discontent region (queried by `BuildingManager` at its existing daily-tally step, Phase 2.1); unrest events are a later addition once there's an event system to hang them on.
   - [ ] Feeds Phase 3.3's decrees (a policy response to rising Discontent, not just sewers) and Phase 7's political mystery thread.
 
@@ -191,6 +208,7 @@
 - [ ] **5.7 Unit Morale & Veterancy (`UnitMorale.gd`)** — plan only; **decided:** distinct from Phase 3.4's population-wide Discontent — this is per-unit.
   - [ ] Morale derived from four inputs: current health (fraction of max HP), equipment (weapon tier 0-3 and whether it's actually supplied with Gunpowder right now, tying into 5.4's depletion penalty), rank/experience (a kill counter driving a Rookie -> Veteran -> Elite-style progression), and unit tier itself.
   - [ ] Low morale degrades combat effectiveness (accuracy/damage or a chance to rout); veterancy from kills grants small permanent combat bonuses — gives individual units a reason to matter and survive rather than being disposable ammo sponges.
+  - [ ] Units are exempt from Phase 2.10's starvation deaths by design, but a severe famine (`ratio < 0.5`) is a reasonable fifth input here — undersupplied-but-alive rather than dying keeps the "don't lose your garrison to hunger mid-siege" guarantee intact while still making a famine cost the military something.
 - [ ] **5.8 Territory Capture & Loss (`TerritoryController.gd`)** — plan only. The missing mechanism underneath both "losing a settlement" and "retaking it": nothing currently flips a `District`'s `is_contested` flag during play — Phase 1's `DistrictPartitioner` only sets the *initial* state once, at map generation.
   - [ ] **Loss:** a safe district (`is_contested = false`) flips to contested when a zombie assault overwhelms whatever's defending it (Phase 5.4 combat resolution) — losing whatever Civilian/Military ZoC coverage (Phase 2.3) it was projecting, and, per Phase 5.9, converting anyone stationed or housed there into zombies.
   - [ ] **Recapture:** a contested district flips back to safe once the player clears it of zombies (Phase 5.4 again) — the mechanism that lets a colony reduced to one settlement claw back everything it lost (see Phase 7.6).
