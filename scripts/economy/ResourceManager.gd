@@ -56,6 +56,10 @@ func load_state(stockpile: Dictionary, storage_caps: Dictionary) -> void:
 func set_storage_cap(resource_type: GameEnums.ResourceType, cap: float) -> void:
 	_storage_caps[resource_type] = cap
 	_stockpile[resource_type] = minf(get_amount(resource_type), cap)
+	# A cap change is a meaningful change to anything watching resources_changed
+	# (e.g. Phase 6.1's resource bar shows "amount/cap") even when the
+	# stockpile amount itself doesn't move.
+	resources_changed.emit(get_full_stockpile())
 
 func add_storage_cap(resource_type: GameEnums.ResourceType, bonus: float) -> void:
 	set_storage_cap(resource_type, get_storage_cap(resource_type) + bonus)

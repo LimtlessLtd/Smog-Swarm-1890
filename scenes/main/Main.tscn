@@ -1,4 +1,4 @@
-[gd_scene load_steps=10 format=3]
+[gd_scene load_steps=12 format=3]
 
 [ext_resource type="PackedScene" path="res://scenes/world/HexGridMap.tscn" id="1"]
 [ext_resource type="PackedScene" path="res://scenes/camera/CameraController.tscn" id="2"]
@@ -9,6 +9,8 @@
 [ext_resource type="PackedScene" path="res://scenes/world/StrategicOverlayManager.tscn" id="7"]
 [ext_resource type="PackedScene" path="res://scenes/world/FogOfWarManager.tscn" id="8"]
 [ext_resource type="PackedScene" path="res://scenes/persistence/SaveLoadManager.tscn" id="9"]
+[ext_resource type="PackedScene" path="res://scenes/world/BuildPlacementController.tscn" id="10"]
+[ext_resource type="PackedScene" path="res://scenes/ui/MainHUD.tscn" id="11"]
 
 [node name="Main" type="Node2D"]
 
@@ -53,3 +55,13 @@ fog_of_war_path = NodePath("../../FogOfWarManager")
 hex_grid_map_path = NodePath("../HexGridMap")
 building_manager_path = NodePath("../../BuildingManager")
 camera_path = NodePath("../../CameraController")
+
+[node name="BuildPlacementController" parent="WorldRoot" instance=ExtResource("10")]
+hex_grid_map_path = NodePath("../HexGridMap")
+building_manager_path = NodePath("../../BuildingManager")
+
+[node name="MainHUD" parent="." instance=ExtResource("11")]
+resource_manager_path = NodePath("../ResourceManager")
+building_manager_path = NodePath("../BuildingManager")
+save_load_manager_path = NodePath("../SaveLoadManager")
+build_placement_controller_path = NodePath("../WorldRoot/BuildPlacementController")
