@@ -31,13 +31,22 @@ extends Node
 ## BuildingManager.place_building()'s own "no construction time" precedent;
 ## a training duration is future balancing work, not an architecture gap.
 ##
+## Phase 5.6's Retrain order lives here too (a lifecycle operation — it
+## swaps `UnitInstance.definition` and rescales HP, the same kind of thing
+## train_unit()/remove_unit() already do) even though the rest of 5.6
+## (movement/patrol/garrison/rally-point automation) lives in the new
+## sibling UnitOrderController. Rally points themselves (also 5.6) are
+## tracked here rather than there: a rally point is per-TRAINING-BUILDING
+## configuration, set once and read every time train_unit() runs, which
+## fits this class's existing "who exists and how they came to" role better
+## than UnitOrderController's per-tick movement loop.
+##
 ## Deliberately NOT here yet, each blocked on a system that doesn't exist:
-##   - Movement/orders (Phase 5.5's tactical layer, Phase 5.6's
-##     UnitOrderController) — a trained unit sits at its training building's
-##     hex until those exist.
 ##   - Combat HP loss/death — CombatEngine has the math, but nothing calls
-##     it yet; no siege/attack-move trigger exists to produce a fight.
-##   - Morale/veterancy (Phase 5.7), Retrain orders (Phase 5.6).
+##     it yet; no siege/attack-move trigger exists to produce a fight (see
+##     UnitOrderController's own doc comment on why ATTACK_MOVE doesn't
+##     actually trigger one).
+##   - Morale/veterancy (Phase 5.7).
 ##   - Starvation exemption bookkeeping (design doc, decided: units are
 ##     exempt) — moot for now since nothing feeds them Food upkeep at all;
 ##     see UnitDefinition's own doc comment on why Food isn't modeled here.
@@ -45,11 +54,24 @@ extends Node
 signal unit_trained(instance: UnitInstance)
 signal unit_removed(instance: UnitInstance)
 signal training_rejected(unit_type: GameEnums.UnitType, coord: Vector2i, reason: String)
+signal unit_retrained(instance: UnitInstance)
+signal retrain_rejected(instance: UnitInstance, new_type: GameEnums.UnitType, reason: String)
+
+## Design doc: "50% of that unit's normal training cost (exact % subject to
+## balancing later)" — a placeholder number, not an architecture decision,
+## same framing as every other balancing constant in this project.
+const RETRAIN_COST_FRACTION: float = 0.5
 
 @export var hex_grid_map_path: NodePath
 @export var building_manager_path: NodePath
 @export var resource_manager_path: NodePath
 @export var tech_manager_path: NodePath  ## Optional — unset gracefully treats every tier as unlocked, same "optional manager reference" convention DiscontentManager/TechManager references use elsewhere.
+
+## Training-building hex -> rally point hex (design doc 5.6: "rally point
+## on newly-trained units"). Independent of which units currently exist —
+## read by train_unit() every time a fresh unit is registered, not tied to
+## any single unit's lifetime.
+var _rally_points: Dictionary = {}  # Vector2i -> Vector2i
 
 var _hex_grid_map: HexGridMap
 var _building_manager: BuildingManager
@@ -116,18 +138,98 @@ func train_unit(unit_type: GameEnums.UnitType, coord: Vector2i) -> UnitInstance:
 	if _resource_manager:
 		_resource_manager.spend(definition.training_cost)
 
-	return _register_instance(definition, coord, _next_id, true)
+	var instance := _register_instance(definition, coord, _next_id, true)
+	# Design doc 5.6: "rally point on newly-trained units" — a fresh unit
+	# with no rally point registered for its training building just stays
+	# put (order defaults to HOLD, see UnitInstance). UnitOrderController's
+	# own movement tick (not called from here — see this class's own doc
+	# comment on why) picks the MOVE order up the next time it runs.
+	if _rally_points.has(coord):
+		instance.order = GameEnums.UnitOrderType.MOVE
+		instance.move_target = _rally_points[coord]
+	return instance
 
 func remove_unit(instance: UnitInstance) -> void:
 	_instances.erase(instance)
 	unit_removed.emit(instance)
 
+func set_rally_point(building_coord: Vector2i, target: Vector2i) -> void:
+	_rally_points[building_coord] = target
+
+func clear_rally_point(building_coord: Vector2i) -> void:
+	_rally_points.erase(building_coord)
+
+func has_rally_point(building_coord: Vector2i) -> bool:
+	return _rally_points.has(building_coord)
+
+## Returns `building_coord` itself ("stay put") if no rally point is registered.
+func get_rally_point(building_coord: Vector2i) -> Vector2i:
+	return _rally_points.get(building_coord, building_coord)
+
+## Design doc Phase 5.4/5.6's Retrain order: converts `instance` in-place to
+## `new_type` — same role, a strictly higher tier, unlocked, for
+## RETRAIN_COST_FRACTION of `new_type`'s own training cost. Instant (no
+## duration), usable anywhere including mid-battle (design doc, decided) —
+## this just swaps `definition` and rescales `current_hp`, no cooldown or
+## queue of any kind.
+##
+## Returns "" if `instance` can legally retrain into `new_type` right now,
+## or a human-readable rejection reason otherwise — same
+## "queryable without side effects" pattern as get_training_error().
+func get_retrain_error(instance: UnitInstance, new_type: GameEnums.UnitType) -> String:
+	var new_definition := UnitCatalog.get_definition(new_type)
+	if not new_definition:
+		return "Unknown unit type."
+	if not instance.definition:
+		return "Unit has no definition to retrain from."
+	if new_definition.role != instance.definition.role:
+		return "%s can only retrain into another same-role unit." % instance.definition.display_name
+	if new_definition.tier <= instance.definition.tier:
+		return "Retraining must upgrade to a strictly higher tier."
+	if _tech_manager and not _tech_manager.is_unit_tier_unlocked(new_definition.tier):
+		return "%s's tier hasn't been researched yet." % new_definition.display_name
+	if _resource_manager and not _resource_manager.can_afford(_retrain_cost(new_definition)):
+		return "Not enough resources to retrain into %s." % new_definition.display_name
+	return ""
+
+func can_retrain_unit(instance: UnitInstance, new_type: GameEnums.UnitType) -> bool:
+	return get_retrain_error(instance, new_type).is_empty()
+
+func retrain_unit(instance: UnitInstance, new_type: GameEnums.UnitType) -> bool:
+	var error := get_retrain_error(instance, new_type)
+	if not error.is_empty():
+		retrain_rejected.emit(instance, new_type, error)
+		return false
+
+	var new_definition := UnitCatalog.get_definition(new_type)
+	if _resource_manager:
+		_resource_manager.spend(_retrain_cost(new_definition))
+
+	# Carries over relative damage state rather than a free full heal on
+	# retrain — a unit at half health before retraining is at half health
+	# (of its NEW, larger max_hp) after, not topped up for free.
+	var hp_fraction := instance.current_hp / instance.definition.max_hp if instance.definition.max_hp > 0.0 else 1.0
+	instance.definition = new_definition
+	instance.current_hp = new_definition.max_hp * hp_fraction
+
+	unit_retrained.emit(instance)
+	return true
+
+func _retrain_cost(new_definition: UnitDefinition) -> Dictionary:
+	var cost: Dictionary = {}
+	for resource_type in new_definition.training_cost:
+		cost[resource_type] = float(new_definition.training_cost[resource_type]) * RETRAIN_COST_FRACTION
+	return cost
+
 ## Shared instance-bookkeeping between a fresh train_unit() (already
 ## validated/paid above) and load_save_state() (restoring units already paid
 ## for in a previous session) — same split BuildingManager.place_building()/
 ## load_save_entries() use around _register_instance().
-func _register_instance(definition: UnitDefinition, coord: Vector2i, id: int, advance_next_id: bool, current_hp: float = -1.0) -> UnitInstance:
+func _register_instance(definition: UnitDefinition, coord: Vector2i, id: int, advance_next_id: bool, current_hp: float = -1.0, order: GameEnums.UnitOrderType = GameEnums.UnitOrderType.HOLD, move_target: Vector2i = Vector2i.ZERO, patrol_waypoints: Array[Vector2i] = []) -> UnitInstance:
 	var instance := UnitInstance.new(definition, coord, id, current_hp)
+	instance.order = order
+	instance.move_target = move_target
+	instance.patrol_waypoints = patrol_waypoints
 	if advance_next_id:
 		_next_id = id + 1
 	_instances.append(instance)
@@ -166,18 +268,29 @@ func _on_day_completed(_day_number: int) -> void:
 func get_save_entries() -> Array[UnitSaveEntry]:
 	var result: Array[UnitSaveEntry] = []
 	for instance in _instances:
-		result.append(UnitSaveEntry.new(instance.definition.unit_type, instance.hex_coord, instance.id, instance.current_hp))
+		result.append(UnitSaveEntry.new(instance.definition.unit_type, instance.hex_coord, instance.id, instance.current_hp, instance.order, instance.move_target, instance.patrol_waypoints))
 	return result
 
 ## Restores trained units from a save (Phase 2.8.2): clears whatever is
 ## currently tracked, then recreates each entry via _register_instance()
 ## directly — bypassing train_unit()'s cost/validation, since these units
 ## already exist and were already paid for. Mirrors
-## BuildingManager.load_save_entries() exactly.
+## BuildingManager.load_save_entries() exactly. In-flight movement paths
+## (UnitInstance.path) aren't restored — UnitOrderController replans from
+## scratch the first time it ticks a MOVE/ATTACK_MOVE/PATROL unit after load.
 func load_save_entries(entries: Array[UnitSaveEntry], next_id: int) -> void:
 	_instances.clear()
 	for entry in entries:
 		var definition := UnitCatalog.get_definition(entry.unit_type)
 		if definition:
-			_register_instance(definition, entry.hex_coord, entry.id, false, entry.current_hp)
+			_register_instance(definition, entry.hex_coord, entry.id, false, entry.current_hp, entry.order, entry.move_target, entry.patrol_waypoints)
 	_next_id = next_id
+
+## Exposed for SaveLoadManager (Phase 2.8) — rally-point configuration
+## (Phase 5.6), independent of unit instances themselves; see _rally_points'
+## own doc comment.
+func get_rally_points_save_state() -> Dictionary:
+	return _rally_points.duplicate()
+
+func load_rally_points_save_state(state: Dictionary) -> void:
+	_rally_points = state.duplicate()
