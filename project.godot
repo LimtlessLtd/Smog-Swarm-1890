@@ -18,6 +18,7 @@ config/features=PackedStringArray("4.3", "GL Compatibility")
 [autoload]
 
 BackgroundExecutionManager="*res://scripts/core/BackgroundExecutionManager.gd"
+TickManager="*res://scripts/core/TickManager.gd"
 
 [display]
 

@@ -1,7 +1,10 @@
-[gd_scene load_steps=3 format=3]
+[gd_scene load_steps=6 format=3]
 
 [ext_resource type="PackedScene" path="res://scenes/world/HexGridMap.tscn" id="1"]
 [ext_resource type="PackedScene" path="res://scenes/camera/CameraController.tscn" id="2"]
+[ext_resource type="PackedScene" path="res://scenes/economy/ResourceManager.tscn" id="3"]
+[ext_resource type="PackedScene" path="res://scenes/buildings/BuildingManager.tscn" id="4"]
+[ext_resource type="PackedScene" path="res://scenes/logistics/LogisticsNetwork.tscn" id="5"]
 
 [node name="Main" type="Node2D"]
 
@@ -13,3 +16,13 @@
 position = Vector2(2383, 1248)
 zoom = Vector2(0.4, 0.4)
 world_root_path = NodePath("../WorldRoot")
+
+[node name="ResourceManager" parent="." instance=ExtResource("3")]
+
+[node name="BuildingManager" parent="." instance=ExtResource("4")]
+hex_grid_map_path = NodePath("../WorldRoot/HexGridMap")
+resource_manager_path = NodePath("../ResourceManager")
+
+[node name="LogisticsNetwork" parent="." instance=ExtResource("5")]
+hex_grid_map_path = NodePath("../WorldRoot/HexGridMap")
+building_manager_path = NodePath("../BuildingManager")

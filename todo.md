@@ -37,19 +37,19 @@
 ---
 
 ## 🏭 Phase 2: Historical Building Tree, Economy & Logistics
-- [ ] **2.1 Authentic 19th-Century Building Tree (`BuildingManager.gd`)**
-  - [ ] **Housing & Civil:** Terraced Tenements, Workhouses, Church Steeple Watchtowers, Gas Streetlamps, Telegraph Relay Offices, Steam Printing Presses.
-  - [ ] **Industry & Extraction:** Clay Brickworks, Charcoal Kilns, Coal Pitheads, Cast Iron Foundries, Saltpetre/Powder Mills, Forward Ammo Dumps.
-  - [ ] **Agriculture:** Tenant Farms (requires `Lush`/`Poor` soil), Grain Silos, Cattle Yards.
-- [ ] **2.2 Resource Upkeep Engine (`ResourceManager.gd`)**
-  - [ ] Manage daily upkeep drains: **Food** (population drain), **Coal** (boiler/heating/streetlamp upkeep), and **Gunpowder** (ranged combat upkeep).
-  - [ ] Track construction materials: **Wood**, **Bricks**, **Cast Iron**, **Reinforced Concrete**.
-- [ ] **2.3 Supply Line Logistics & Two-Zone Control System (`LogisticsNetwork.gd`)**
-  - [ ] Build supply flow nodes connecting outer resource sectors to central population hubs via roads, railways, and canal lines.
-  - [ ] **Simplified Dual Zone of Control (ZoC):**
-    - [ ] **1. Military ZoC (Supply, Vision & Suppression):** Projected by Forward Ammo Dumps, Garrisons, Watch Towers, and Combat Units. Gives off a resupply aura covering 66% of a tile. Permits small-scale wooden barricades to keep zombies at bay and protect assets.
-    - [ ] **2. Civilian ZoC (Civil Infrastructure & Construction):** Projected by Town Halls, Churches, and Telegraph Relays. Can only be placed on secure hex tiles (no zombies) and covers the entire hex tile. Unlocks major wall fortifications and Barracks for unit recruitment.
-  - [ ] Implement supply line disruption logic: If zombies sever a road, rail, or canal segment connected to an Ammo Dump, its Military ZoC supply aura deactivates.
+- [x] **2.1 Authentic 19th-Century Building Tree (`BuildingManager.gd`)**
+  - [x] **Housing & Civil:** Terraced Tenements, Workhouses, Church Steeple Watchtowers, Gas Streetlamps, Telegraph Relay Offices, Steam Printing Presses. (Also added Town Hall & Garrison — not named in this checklist, but required as Civilian/Military ZoC sources by 2.3.)
+  - [x] **Industry & Extraction:** Clay Brickworks, Charcoal Kilns, Coal Pitheads, Cast Iron Foundries, Saltpetre/Powder Mills, Forward Ammo Dumps.
+  - [x] **Agriculture:** Tenant Farms (requires `Lush`/`Poor` soil), Grain Silos, Cattle Yards.
+- [x] **2.2 Resource Upkeep Engine (`ResourceManager.gd`)**
+  - [x] Manage daily upkeep drains: **Food** (population drain), **Coal** (boiler/heating/streetlamp upkeep), and **Gunpowder** (ranged combat upkeep).
+  - [x] Track construction materials: **Wood**, **Bricks**, **Cast Iron**, **Reinforced Concrete**.
+- [x] **2.3 Supply Line Logistics & Two-Zone Control System (`LogisticsNetwork.gd`)**
+  - [x] Build supply flow nodes connecting outer resource sectors to central population hubs via roads, railways, and canal lines.
+  - [x] **Simplified Dual Zone of Control (ZoC):**
+    - [x] **1. Military ZoC (Supply, Vision & Suppression):** Projected by Forward Ammo Dumps, Garrisons, Watch Towers, and Combat Units. Gives off a resupply aura covering 66% of a tile. Permits small-scale wooden barricades to keep zombies at bay and protect assets.
+    - [x] **2. Civilian ZoC (Civil Infrastructure & Construction):** Projected by Town Halls, Churches, and Telegraph Relays. Can only be placed on secure hex tiles (no zombies) and covers the entire hex tile. Unlocks major wall fortifications and Barracks for unit recruitment.
+  - [x] Implement supply line disruption logic: If zombies sever a road, rail, or canal segment connected to an Ammo Dump, its Military ZoC supply aura deactivates.
 
 ---
 

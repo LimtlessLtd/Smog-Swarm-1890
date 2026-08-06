@@ -1,0 +1,129 @@
+class_name LogisticsNetwork
+extends Node
+
+## Supply-line graph and Zone of Control tracker (design doc Phase 2.3).
+## Reads building placements from BuildingManager and secured/contested
+## district state from HexGridMap/HexCell; owns neither, only derives ZoC
+## coverage and supply connectivity from them.
+##
+## - Military ZoC: projected by Forward Ammo Dumps, Garrisons and Church
+##   Steeple Watchtowers (their MILITARY zoc_role). Covers
+##   MILITARY_AURA_COVERAGE (66%) of the projecting hex only. Deactivates if
+##   every supply line connected to the projecting hex is severed (design
+##   doc: "If zombies sever a road, rail, or canal segment connected to an
+##   Ammo Dump, its Military ZoC supply aura deactivates") — a projector with
+##   no supply lines at all is treated as self-sufficient, since disruption
+##   only makes sense once it has actually been wired into the network.
+## - Civilian ZoC: projected by Town Halls, Churches (the Watchtower's
+##   civilian half) and Telegraph Relay Offices (their CIVILIAN zoc_role).
+##   Covers the entire projecting hex, but only while that hex still has at
+##   least one secured (non-contested) district — design doc: "Can only be
+##   placed on secure hex tiles (no zombies)". Not supply-line sensitive;
+##   the design doc only calls out severance for Military ZoC.
+
+signal network_recomputed
+
+const MILITARY_AURA_COVERAGE: float = 0.66
+
+@export var hex_grid_map_path: NodePath
+@export var building_manager_path: NodePath
+
+var _hex_grid_map: HexGridMap
+var _building_manager: BuildingManager
+var _segments: Array[SupplyLineSegment] = []
+var _zoc_by_hex: Dictionary = {}  # Vector2i -> ZoneOfControlState
+
+func _ready() -> void:
+	if hex_grid_map_path != NodePath():
+		_hex_grid_map = get_node(hex_grid_map_path)
+	if building_manager_path != NodePath():
+		_building_manager = get_node(building_manager_path)
+		_building_manager.building_placed.connect(_on_buildings_changed)
+		_building_manager.building_removed.connect(_on_buildings_changed)
+	recompute()
+
+func add_supply_line(line_type: GameEnums.SupplyLineType, hex_a: Vector2i, hex_b: Vector2i) -> SupplyLineSegment:
+	var segment := SupplyLineSegment.new(line_type, hex_a, hex_b)
+	_segments.append(segment)
+	recompute()
+	return segment
+
+func sever_segment_between(hex_a: Vector2i, hex_b: Vector2i) -> void:
+	_set_severed_between(hex_a, hex_b, true)
+
+func restore_segment_between(hex_a: Vector2i, hex_b: Vector2i) -> void:
+	_set_severed_between(hex_a, hex_b, false)
+
+func get_zoc_state(coord: Vector2i) -> ZoneOfControlState:
+	return _zoc_by_hex.get(coord, ZoneOfControlState.new(coord))
+
+## True if `to_coord` is reachable from `from_coord` over unsevered supply
+## lines only. A general connectivity primitive for later phases (e.g.
+## "is this hex linked all the way back to a population hub?"); today's
+## severance rule only needs the narrower _is_supply_intact() below.
+func is_supply_connected(from_coord: Vector2i, to_coord: Vector2i) -> bool:
+	if from_coord == to_coord:
+		return true
+	var visited := {from_coord: true}
+	var frontier: Array[Vector2i] = [from_coord]
+	while not frontier.is_empty():
+		var current: Vector2i = frontier.pop_back()
+		for segment in _segments:
+			if segment.is_severed or not segment.connects(current):
+				continue
+			var next := segment.other_end(current)
+			if next == to_coord:
+				return true
+			if not visited.has(next):
+				visited[next] = true
+				frontier.append(next)
+	return false
+
+## Recomputes every hex's ZoC coverage from scratch. Cheap enough to call on
+## every building/supply-line change at this scale (dozens of buildings, not
+## thousands) — revisit with incremental updates if that stops being true.
+func recompute() -> void:
+	_zoc_by_hex.clear()
+	if _building_manager:
+		for instance in _building_manager.get_buildings_with_zoc_role(GameEnums.ZoneOfControlType.CIVILIAN):
+			if not _has_secured_ground(instance.hex_coord):
+				continue
+			_state_for(instance.hex_coord).has_civilian_coverage = true
+
+		for instance in _building_manager.get_buildings_with_zoc_role(GameEnums.ZoneOfControlType.MILITARY):
+			if not _is_supply_intact(instance.hex_coord):
+				continue
+			var state := _state_for(instance.hex_coord)
+			state.military_coverage = maxf(state.military_coverage, MILITARY_AURA_COVERAGE)
+	network_recomputed.emit()
+
+func _state_for(coord: Vector2i) -> ZoneOfControlState:
+	if not _zoc_by_hex.has(coord):
+		_zoc_by_hex[coord] = ZoneOfControlState.new(coord)
+	return _zoc_by_hex[coord]
+
+func _has_secured_ground(coord: Vector2i) -> bool:
+	if not _hex_grid_map:
+		return false
+	var cell := _hex_grid_map.get_cell(coord)
+	return cell != null and not cell.get_safe_districts().is_empty()
+
+func _is_supply_intact(coord: Vector2i) -> bool:
+	var connected_segments := _segments.filter(func(segment: SupplyLineSegment) -> bool:
+		return segment.connects(coord)
+	)
+	if connected_segments.is_empty():
+		return true
+	for segment in connected_segments:
+		if not segment.is_severed:
+			return true
+	return false
+
+func _set_severed_between(hex_a: Vector2i, hex_b: Vector2i, severed: bool) -> void:
+	for segment in _segments:
+		if (segment.hex_a == hex_a and segment.hex_b == hex_b) or (segment.hex_a == hex_b and segment.hex_b == hex_a):
+			segment.is_severed = severed
+	recompute()
+
+func _on_buildings_changed(_instance: BuildingInstance) -> void:
+	recompute()
