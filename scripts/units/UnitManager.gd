@@ -41,11 +41,13 @@ extends Node
 ## fits this class's existing "who exists and how they came to" role better
 ## than UnitOrderController's per-tick movement loop.
 ##
+## Combat HP loss/death is real now too (CombatCoordinator, Phase
+## 5.4/5.9/5.10's live combat trigger, calls CombatEngine and — on a unit
+## reaching 0 HP — remove_unit() below), but that whole path lives outside
+## this class: UnitManager itself still never references CombatEngine or
+## CombatCoordinator, same separation-of-concerns split described above.
+##
 ## Deliberately NOT here yet, each blocked on a system that doesn't exist:
-##   - Combat HP loss/death — CombatEngine has the math, but nothing calls
-##     it yet; no siege/attack-move trigger exists to produce a fight (see
-##     UnitOrderController's own doc comment on why ATTACK_MOVE doesn't
-##     actually trigger one).
 ##   - Morale/veterancy (Phase 5.7).
 ##   - Starvation exemption bookkeeping (design doc, decided: units are
 ##     exempt) — moot for now since nothing feeds them Food upkeep at all;

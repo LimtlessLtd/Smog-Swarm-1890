@@ -9,16 +9,20 @@ extends Node
 ## sibling relationship to HexPathfinder that class already has, just
 ## player-directed instead of autonomous drift.
 ##
-## Deliberately holds no reference to CombatEngine and never calls it: a
-## unit arriving on a horde's hex doesn't trigger a fight here. That's not
-## an oversight — no reviewed horde-combat-stat decision exists anywhere in
-## this project yet (Horde.size is a headcount, not HP/damage; see
-## CombatEngine's own doc comment on why it deliberately didn't invent
-## those numbers). ATTACK_MOVE is tracked as data-distinct from MOVE
-## specifically so a future combat trigger has something to key off without
-## a breaking rename, but until that trigger exists, both orders drive
-## identically. Garrison orders' "stationary defense bonus" is the same
-## story — nothing to grant a bonus to yet.
+## Deliberately holds no reference to CombatEngine, HordeManager, or
+## CombatCoordinator, and never calls any of them: a unit arriving on a
+## horde's hex doesn't trigger a fight HERE. That job belongs to the new
+## CombatCoordinator (Phase 5.4/5.9/5.10's live combat trigger), which
+## listens to this class's own `unit_moved` signal (fired every step, not
+## just final arrival) from the outside — same "owns neither" layering
+## FogOfWarManager already uses over BuildingManager. ATTACK_MOVE is still
+## tracked as data-distinct from MOVE, but turns out to need no distinct
+## behavior anywhere: CombatCoordinator engages on contact regardless of a
+## unit's current order (see its own doc comment, "contact matters however
+## it happens"), so an attack-moving unit and a merely-passing-through one
+## fight identically the moment either touches a horde's hex. Garrison
+## orders' "stationary defense bonus" is still unimplemented — nothing
+## computes a combat bonus of any kind yet.
 ##
 ## UnitManager and UnitOrderController never reference each other's
 ## methods, only the UnitInstance data both read/write (order/move_target/
@@ -27,6 +31,7 @@ extends Node
 
 signal unit_order_issued(instance: UnitInstance, order: GameEnums.UnitOrderType)
 signal unit_arrived(instance: UnitInstance, coord: Vector2i)
+signal unit_moved(instance: UnitInstance, from_coord: Vector2i, to_coord: Vector2i)
 
 @export var hex_grid_map_path: NodePath
 @export var unit_manager_path: NodePath
@@ -129,7 +134,9 @@ func _advance_toward(instance: UnitInstance, destination: Vector2i, revert_to_ho
 		return  ## No route found this cycle (e.g. destination currently unreachable) — try again next tick.
 
 	var next_coord: Vector2i = instance.path.pop_front()
+	var from_coord := instance.hex_coord
 	instance.hex_coord = next_coord
+	unit_moved.emit(instance, from_coord, next_coord)
 	if next_coord == destination:
 		unit_arrived.emit(instance, next_coord)
 		if revert_to_hold_on_arrival:

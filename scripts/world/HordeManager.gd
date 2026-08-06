@@ -24,6 +24,15 @@ extends Node
 ##     doc: the omnidirectional ring pick supplies "no beeline", and
 ##     restricting targets to frontier hexes supplies "biased toward open
 ##     territory" (steers away from player-secured ground).
+##   - Phase 5.9's starvation-casualty spawn source: add_casualty_zombies(),
+##     wired to BuildingManager.civilians_starved — "every starved civilian
+##     is a casualty for Phase 5.9's purposes ... same as a combat death"
+##     (that signal's own doc comment). Finds-or-creates a WANDERING horde
+##     at the hex a Tenement's population starved in and grows it by the
+##     death count, rather than the loss vanishing into a generic
+##     "contested" abstraction. The OTHER Phase 5.9 casualty source (a
+##     UnitInstance dying in combat) still isn't wired — see below, it needs
+##     a live combat trigger that doesn't exist.
 ##
 ## Deliberately NOT wired here yet — each blocked on a system that doesn't
 ## exist, same "not implemented, deliberately" convention as every other
@@ -31,9 +40,12 @@ extends Node
 ##   - ATTRACTED (industrial-noise/night-light attraction) — nothing tracks
 ##     a noise value per building/hex yet.
 ##   - ATTACKING (sieges, wall targeting, escalation on a won siege) — needs
-##     Phase 5.4's CombatEngine.
-##   - Casualty-conversion spawning (Phase 5.9) — needs Phase 5.4 combat to
-##     produce a casualty from in the first place.
+##     a live combat trigger, which doesn't exist anywhere in the project
+##     yet (Horde.size is a headcount, not a combat stat CombatEngine could
+##     resolve an engagement from — see CombatEngine's own doc comment).
+##   - Combat-casualty conversion (the other half of Phase 5.9) — same
+##     missing piece: needs a live combat trigger to produce a casualty
+##     from in the first place.
 ##   - Horde-size/spawn-frequency ramp-up over time (Phase 7.1's Act pacing
 ##     / Phase 7.6's difficulty presets) — neither campaign system exists yet;
 ##     STARTING_HORDE_COUNT/SIZE below are a flat one-time seed, not a curve.
@@ -43,12 +55,16 @@ extends Node
 
 signal horde_spawned(horde: Horde)
 signal horde_moved(horde: Horde, from_coord: Vector2i, to_coord: Vector2i)
+signal horde_size_changed(horde: Horde, delta: int)
+signal horde_removed(horde: Horde)
 
 @export var hex_grid_map_path: NodePath
 @export var logistics_network_path: NodePath  ## Optional — same road/rail/canal discount HexPathfinder gives any other route.
+@export var building_manager_path: NodePath   ## Optional — Phase 5.9's starvation-casualty spawn source; unset gracefully skips it, same "optional manager reference" convention every other optional dependency in this project follows.
 
 var _hex_grid_map: HexGridMap
 var _logistics_network: LogisticsNetwork
+var _building_manager: BuildingManager
 var _hordes: Array[Horde] = []
 var _next_id: int = 1
 var _rng := RandomNumberGenerator.new()
@@ -86,6 +102,9 @@ func _ready() -> void:
 		_hex_grid_map = get_node(hex_grid_map_path)
 	if logistics_network_path != NodePath():
 		_logistics_network = get_node(logistics_network_path)
+	if building_manager_path != NodePath():
+		_building_manager = get_node(building_manager_path)
+		_building_manager.civilians_starved.connect(_on_civilians_starved)
 	_rng.seed = HORDE_SEED
 	seed_starting_hordes()
 
@@ -100,6 +119,53 @@ func _process(delta: float) -> void:
 
 func get_all_hordes() -> Array[Horde]:
 	return _hordes.duplicate()
+
+## Exposed for CombatCoordinator (Phase 5.4/5.9/5.10's live combat
+## trigger) — a horde reduced to 0 (Horde.apply_remaining_hp()) is that
+## caller's cue to remove it, mirroring UnitManager.remove_unit()/
+## BuildingManager.remove_building()'s own shape.
+func remove_horde(horde: Horde) -> void:
+	_hordes.erase(horde)
+	horde_removed.emit(horde)
+
+func get_hordes_at(coord: Vector2i) -> Array[Horde]:
+	var result: Array[Horde] = []
+	for horde in _hordes:
+		if horde.hex_coord == coord:
+			result.append(horde)
+	return result
+
+## Design doc Phase 5.9: "every civilian and military unit lost becomes a
+## zombie at the location it died ... converted zombies accumulate into
+## that hex's own zombie population ... rather than vanishing into a
+## generic 'contested' abstraction." Finds the first existing horde already
+## sitting at `coord` and grows it by `count`, or spawns a fresh WANDERING
+## one there if none exists yet — either way the loss becomes a real,
+## trackable threat rather than a number disappearing. Public (not a signal
+## handler only) so a future combat-casualty trigger can call this exact
+## same accumulation logic once one exists, per this class's own doc
+## comment on what's still missing.
+func add_casualty_zombies(coord: Vector2i, count: int) -> void:
+	if count <= 0:
+		return
+	var horde := _find_horde_at(coord)
+	if horde:
+		horde.size += count
+		horde_size_changed.emit(horde, count)
+		return
+	horde = Horde.new(coord, count, _next_id)
+	_next_id += 1
+	_hordes.append(horde)
+	horde_spawned.emit(horde)
+
+func _find_horde_at(coord: Vector2i) -> Horde:
+	for horde in _hordes:
+		if horde.hex_coord == coord:
+			return horde
+	return null
+
+func _on_civilians_starved(hex_coord: Vector2i, count: int) -> void:
+	add_casualty_zombies(hex_coord, count)
 
 ## Seeds the handful of starting hordes on a truly fresh start — mirrors
 ## BuildingManager.seed_starting_buildings()'s own "only if nothing's placed
