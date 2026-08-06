@@ -75,3 +75,9 @@ extends Resource
 ## not saving itself.
 @export var hordes: Array[Horde] = []
 @export var next_horde_id: int = 1
+
+## UnitManager (Phase 5.4) — every trained unit's type/hex/HP, same
+## save-entry-not-full-instance convention BuildingSaveEntry uses (re-looks
+## up the live UnitDefinition from UnitCatalog by type on load).
+@export var units: Array[UnitSaveEntry] = []
+@export var next_unit_id: int = 1

@@ -16,6 +16,7 @@
 [ext_resource type="PackedScene" path="res://scenes/defense/WallManager.tscn" id="14"]
 [ext_resource type="PackedScene" path="res://scenes/world/ReclamationManager.tscn" id="15"]
 [ext_resource type="PackedScene" path="res://scenes/world/HordeManager.tscn" id="16"]
+[ext_resource type="PackedScene" path="res://scenes/units/UnitManager.tscn" id="17"]
 
 [node name="Main" type="Node2D"]
 
@@ -66,6 +67,12 @@ logistics_network_path = NodePath("../LogisticsNetwork")
 hex_grid_map_path = NodePath("../WorldRoot/HexGridMap")
 logistics_network_path = NodePath("../LogisticsNetwork")
 
+[node name="UnitManager" parent="." instance=ExtResource("17")]
+hex_grid_map_path = NodePath("../WorldRoot/HexGridMap")
+building_manager_path = NodePath("../BuildingManager")
+resource_manager_path = NodePath("../ResourceManager")
+tech_manager_path = NodePath("../TechManager")
+
 [node name="SaveLoadManager" parent="." instance=ExtResource("9")]
 building_manager_path = NodePath("../BuildingManager")
 resource_manager_path = NodePath("../ResourceManager")
@@ -76,6 +83,7 @@ discontent_manager_path = NodePath("../DiscontentManager")
 wall_manager_path = NodePath("../WallManager")
 reclamation_manager_path = NodePath("../ReclamationManager")
 horde_manager_path = NodePath("../HordeManager")
+unit_manager_path = NodePath("../UnitManager")
 
 [node name="LocalDetailManager" parent="WorldRoot" instance=ExtResource("6")]
 hex_grid_map_path = NodePath("../HexGridMap")

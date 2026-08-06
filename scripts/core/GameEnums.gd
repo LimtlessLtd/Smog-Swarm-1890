@@ -87,6 +87,47 @@ enum BuildingType {
 	OIL_PIT,            ## Cost data only — same as DITCH.
 }
 
+## Design doc Phase 5.4: 3 roles per unit tier. Melee/ranged are
+## self-explanatory; special's "exact combat identity per tier (area-effect,
+## heavy-breach, mobility/scouting, etc.) is a balancing/design pass per
+## unit, not fixed by this spec" (design doc, decided) — UnitCatalog gives
+## each special-role unit a plausible baseline, not a final tuned identity.
+enum UnitRole {
+	MELEE,
+	RANGED,
+	SPECIAL,
+}
+
+## Design doc Phase 5.4's decided roster — 6 tiers (0-5) x 3 roles = 18
+## units. Declared tier-by-tier, melee/ranged/special within each tier, same
+## grouped-comment convention BuildingType uses.
+enum UnitType {
+	# --- Tier 0 (the "Free Ammo" starting tier, no tech needed) ---
+	TRUNCHEONEER,           ## Melee.
+	TOXOPHILITE,            ## Ranged — bow; no Gunpowder upkeep, exempt from the depletion penalty by design.
+	OUTRIDER,               ## Special — scouting/mobility.
+	# --- Tier 1 (unit_tier_1) ---
+	NAVVY,                  ## Melee.
+	YEOMAN_MARKSMAN,        ## Ranged — the first firearm-era ranged unit; Gunpowder depletion penalty starts here.
+	GRENADIER,              ## Special.
+	# --- Tier 2 (unit_tier_2) ---
+	REDCOAT,                ## Melee.
+	RIFLEMAN,               ## Ranged.
+	CHASSEUR,               ## Special.
+	# --- Tier 3 (unit_tier_3) ---
+	HIGHLANDER,             ## Melee.
+	SHARPSHOOTER,           ## Ranged.
+	DRAGOON,                ## Special.
+	# --- Tier 4 (unit_tier_4) — grounded heavy engineering, not battle-mechs (design doc, decided). ---
+	STEAM_PRAM_RAMMER,      ## Melee.
+	ARMORED_LOCOMOTIVE_GUNNER,  ## Ranged.
+	STEAM_TRACTOR_LANDSHIP, ## Special.
+	# --- Tier 5 (unit_tier_5) — same "no retro-futuristic steampunk tropes" rule as Tier 4. ---
+	STEAM_MACHINE_LEG,      ## Melee.
+	RAILWAY_SIEGE_HOWITZER, ## Ranged.
+	WAR_MACHINE_ARMORED_CAR,  ## Special.
+}
+
 enum ZoneOfControlType {
 	MILITARY,   ## Forward Ammo Dumps, Garrisons, Watchtowers, Combat Units.
 	CIVILIAN,   ## Town Halls, Churches (the Watchtower's civilian half), Telegraph Relays.
