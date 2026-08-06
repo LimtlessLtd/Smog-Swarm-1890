@@ -1,0 +1,21 @@
+name: GDScript sanity checks
+
+# No Godot editor/CLI is used here on purpose — see tools/ci/check_gdscript.py's
+# own doc comment for why. This is a fast, dependency-free (stdlib-only Python)
+# safety net that catches the specific mistakes that otherwise only surface by
+# hand-reviewing a diff: unbalanced brackets, space/tab indentation drift,
+# duplicate class_name declarations, the StringName "%" formatting bug, and
+# scene files pointing at files that don't exist.
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run GDScript/scene sanity checks
+        run: python3 tools/ci/check_gdscript.py

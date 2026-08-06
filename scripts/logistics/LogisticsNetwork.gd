@@ -57,6 +57,17 @@ func restore_segment_between(hex_a: Vector2i, hex_b: Vector2i) -> void:
 func get_zoc_state(coord: Vector2i) -> ZoneOfControlState:
 	return _zoc_by_hex.get(coord, ZoneOfControlState.new(coord))
 
+## The supply line segment (of either endpoint order) connecting `hex_a` and
+## `hex_b`, or null if none exists. Exposed for Phase 4.2's
+## ReclamationManager to check severed state before offering a costed
+## repair — SupplyLineSegment.connects()/other_end() already give a segment
+## its own adjacency helpers, this is just the network-wide lookup by pair.
+func get_segment_between(hex_a: Vector2i, hex_b: Vector2i) -> SupplyLineSegment:
+	for segment in _segments:
+		if (segment.hex_a == hex_a and segment.hex_b == hex_b) or (segment.hex_a == hex_b and segment.hex_b == hex_a):
+			return segment
+	return null
+
 ## Exposed for SaveLoadManager (Phase 2.8) — segments + severed state only;
 ## ZoC coverage (_zoc_by_hex) is deliberately not part of this, it recomputes
 ## fresh from buildings + these segments every time (see recompute()).

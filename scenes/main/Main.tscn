@@ -1,4 +1,4 @@
-[gd_scene load_steps=14 format=3]
+[gd_scene load_steps=16 format=3]
 
 [ext_resource type="PackedScene" path="res://scenes/world/HexGridMap.tscn" id="1"]
 [ext_resource type="PackedScene" path="res://scenes/camera/CameraController.tscn" id="2"]
@@ -13,6 +13,8 @@
 [ext_resource type="PackedScene" path="res://scenes/ui/MainHUD.tscn" id="11"]
 [ext_resource type="PackedScene" path="res://scenes/tech/TechManager.tscn" id="12"]
 [ext_resource type="PackedScene" path="res://scenes/economy/DiscontentManager.tscn" id="13"]
+[ext_resource type="PackedScene" path="res://scenes/defense/WallManager.tscn" id="14"]
+[ext_resource type="PackedScene" path="res://scenes/world/ReclamationManager.tscn" id="15"]
 
 [node name="Main" type="Node2D"]
 
@@ -49,6 +51,16 @@ logistics_network_path = NodePath("../LogisticsNetwork")
 [node name="TechManager" parent="." instance=ExtResource("12")]
 resource_manager_path = NodePath("../ResourceManager")
 
+[node name="WallManager" parent="." instance=ExtResource("14")]
+hex_grid_map_path = NodePath("../WorldRoot/HexGridMap")
+resource_manager_path = NodePath("../ResourceManager")
+tech_manager_path = NodePath("../TechManager")
+
+[node name="ReclamationManager" parent="." instance=ExtResource("15")]
+hex_grid_map_path = NodePath("../WorldRoot/HexGridMap")
+resource_manager_path = NodePath("../ResourceManager")
+logistics_network_path = NodePath("../LogisticsNetwork")
+
 [node name="SaveLoadManager" parent="." instance=ExtResource("9")]
 building_manager_path = NodePath("../BuildingManager")
 resource_manager_path = NodePath("../ResourceManager")
@@ -56,6 +68,8 @@ logistics_network_path = NodePath("../LogisticsNetwork")
 fog_of_war_manager_path = NodePath("../FogOfWarManager")
 tech_manager_path = NodePath("../TechManager")
 discontent_manager_path = NodePath("../DiscontentManager")
+wall_manager_path = NodePath("../WallManager")
+reclamation_manager_path = NodePath("../ReclamationManager")
 
 [node name="LocalDetailManager" parent="WorldRoot" instance=ExtResource("6")]
 hex_grid_map_path = NodePath("../HexGridMap")
