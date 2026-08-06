@@ -77,6 +77,19 @@ func get_covered_hexes() -> Array[Vector2i]:
 	result.assign(_zoc_by_hex.keys())
 	return result
 
+## Every hex currently carrying Civilian ZoC coverage specifically — narrower
+## than get_covered_hexes() (which includes Military-only hexes too). Lets
+## DiscontentManager (Phase 2.11) flood-fill "Civilian Region" boundaries
+## without reaching into this class's internals; matches the design doc's
+## own definition of a Civilian Region as a maximal connected cluster of
+## has_civilian_coverage hexes.
+func get_civilian_covered_hexes() -> Array[Vector2i]:
+	var result: Array[Vector2i] = []
+	for coord in _zoc_by_hex:
+		if _zoc_by_hex[coord].has_civilian_coverage:
+			result.append(coord)
+	return result
+
 ## True if `to_coord` is reachable from `from_coord` over unsevered supply
 ## lines only. A general connectivity primitive for later phases (e.g.
 ## "is this hex linked all the way back to a population hub?"); today's

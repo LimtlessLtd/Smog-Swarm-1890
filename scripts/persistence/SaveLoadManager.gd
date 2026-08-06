@@ -2,11 +2,11 @@ class_name SaveLoadManager
 extends Node
 
 ## Aggregates state out of BuildingManager / ResourceManager /
-## LogisticsNetwork / FogOfWarManager / TickManager into a single
-## SaveGameData Resource and back again (design doc Phase 2.8.2). Wired as a
-## Main.tscn sibling via exported NodePaths, same pattern as
-## LogisticsNetwork/FogOfWarManager — it owns none of that state, only reads
-## and restores it.
+## LogisticsNetwork / FogOfWarManager / TechManager / DiscontentManager /
+## TickManager into a single SaveGameData Resource and back again (design
+## doc Phase 2.8.2). Wired as a Main.tscn sibling via exported NodePaths,
+## same pattern as LogisticsNetwork/FogOfWarManager — it owns none of that
+## state, only reads and restores it.
 ##
 ## **Decided (design doc 2.8.3):** saves are grouped by a player-named
 ## Campaign, with multiple manual save slots per campaign and multiple
@@ -39,11 +39,15 @@ const _UNSAFE_FILENAME_CHARS: Array[String] = [":", "/", "\\", "?", "*", "\"", "
 @export var resource_manager_path: NodePath
 @export var logistics_network_path: NodePath
 @export var fog_of_war_manager_path: NodePath
+@export var tech_manager_path: NodePath
+@export var discontent_manager_path: NodePath
 
 var _building_manager: BuildingManager
 var _resource_manager: ResourceManager
 var _logistics_network: LogisticsNetwork
 var _fog_of_war_manager: FogOfWarManager
+var _tech_manager: TechManager
+var _discontent_manager: DiscontentManager
 
 func _ready() -> void:
 	if building_manager_path != NodePath():
@@ -54,6 +58,10 @@ func _ready() -> void:
 		_logistics_network = get_node(logistics_network_path)
 	if fog_of_war_manager_path != NodePath():
 		_fog_of_war_manager = get_node(fog_of_war_manager_path)
+	if tech_manager_path != NodePath():
+		_tech_manager = get_node(tech_manager_path)
+	if discontent_manager_path != NodePath():
+		_discontent_manager = get_node(discontent_manager_path)
 
 ## Every campaign with at least one save slot on disk, alphabetical. Empty if
 ## nothing has ever been saved yet.
@@ -152,6 +160,13 @@ func _build_save_data(campaign_name: String, slot_name: String) -> SaveGameData:
 		data.supply_lines = _logistics_network.get_save_segments()
 	if _fog_of_war_manager:
 		data.fog_state = _fog_of_war_manager.get_save_state()
+	if _tech_manager:
+		var tech_state := _tech_manager.get_save_state()
+		data.researched_techs.assign(tech_state.researched)
+		data.active_tech_id = tech_state.active_tech_id
+		data.tech_days_remaining = tech_state.days_remaining
+	if _discontent_manager:
+		data.discontent_by_hex = _discontent_manager.get_save_state().discontent_by_hex
 
 	var tick_state := TickManager.get_save_state()
 	data.current_day = tick_state.current_day
@@ -163,10 +178,13 @@ func _build_save_data(campaign_name: String, slot_name: String) -> SaveGameData:
 ## individually idempotent: buildings first (LogisticsNetwork/FogOfWarManager
 ## both react to building_placed signals and recompute against whatever they
 ## currently know), then supply lines (so LogisticsNetwork's own recompute
-## sees the full restored building set), and FogOfWarManager LAST — its
-## saved fog_state is authoritative and deliberately overrides whatever
-## transient VISIBLE-only recomputes ran during the steps before it (see
-## FogOfWarManager.load_save_state()'s own doc comment).
+## sees the full restored building set), then DiscontentManager (its
+## region flood-fill, Phase 2.11, needs LogisticsNetwork's ZoC coverage
+## already recomputed against the restored buildings/supply lines above),
+## and FogOfWarManager LAST — its saved fog_state is authoritative and
+## deliberately overrides whatever transient VISIBLE-only recomputes ran
+## during the steps before it (see FogOfWarManager.load_save_state()'s own
+## doc comment).
 func _apply_save_data(data: SaveGameData) -> void:
 	if _resource_manager:
 		_resource_manager.load_state(data.resource_stockpile, data.resource_storage_caps)
@@ -174,8 +192,16 @@ func _apply_save_data(data: SaveGameData) -> void:
 		_building_manager.load_save_entries(data.buildings, data.next_building_id)
 	if _logistics_network:
 		_logistics_network.load_save_segments(data.supply_lines)
+	if _discontent_manager:
+		_discontent_manager.load_save_state({"discontent_by_hex": data.discontent_by_hex})
 	if _fog_of_war_manager:
 		_fog_of_war_manager.load_save_state(data.fog_state)
+	if _tech_manager:
+		_tech_manager.load_save_state({
+			"researched": data.researched_techs,
+			"active_tech_id": data.active_tech_id,
+			"days_remaining": data.tech_days_remaining,
+		})
 
 	TickManager.load_save_state({
 		"current_day": data.current_day,

@@ -14,6 +14,8 @@ static func display_name(resource_type: GameEnums.ResourceType) -> String:
 			return "Energy"
 		GameEnums.ResourceType.GUNPOWDER:
 			return "Gunpowder"
+		GameEnums.ResourceType.RESEARCH_POINTS:
+			return "Research"
 		GameEnums.ResourceType.WOOD:
 			return "Wood"
 		GameEnums.ResourceType.BRICKS:
@@ -26,13 +28,15 @@ static func display_name(resource_type: GameEnums.ResourceType) -> String:
 			return "Unknown"
 
 ## GameEnums.ResourceType's own declaration order (upkeep resources first,
-## then construction materials) — used anywhere resources are listed so
-## every UI element reads left-to-right the same way.
+## then the Phase 2.9 Tech Tree's progression currency, then construction
+## materials) — used anywhere resources are listed so every UI element reads
+## left-to-right the same way.
 static func display_order() -> Array[GameEnums.ResourceType]:
 	return [
 		GameEnums.ResourceType.FOOD,
 		GameEnums.ResourceType.ENERGY,
 		GameEnums.ResourceType.GUNPOWDER,
+		GameEnums.ResourceType.RESEARCH_POINTS,
 		GameEnums.ResourceType.WOOD,
 		GameEnums.ResourceType.BRICKS,
 		GameEnums.ResourceType.CAST_IRON,

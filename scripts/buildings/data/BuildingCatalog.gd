@@ -98,6 +98,9 @@ static func _telegraph_relay_office() -> BuildingDefinition:
 	var d := BuildingDefinition.new(GameEnums.BuildingType.TELEGRAPH_RELAY_OFFICE, "Telegraph Relay Office")
 	d.category = GameEnums.BuildingCategory.HOUSING_CIVIL
 	d.construction_cost = {GameEnums.ResourceType.WOOD: 20, GameEnums.ResourceType.CAST_IRON: 20}
+	# Knowledge/civic source for the Tech Tree (Phase 2.9.1) — telegraph traffic
+	# between settlements is the natural in-fiction source of Research Points.
+	d.daily_output = {GameEnums.ResourceType.RESEARCH_POINTS: 3.0}
 	d.allowed_biomes = [GameEnums.BiomeType.URBAN]
 	d.requires_settlement = true
 	d.zoc_roles = [GameEnums.ZoneOfControlType.CIVILIAN]
@@ -108,6 +111,9 @@ static func _steam_printing_press() -> BuildingDefinition:
 	d.category = GameEnums.BuildingCategory.HOUSING_CIVIL
 	d.construction_cost = {GameEnums.ResourceType.WOOD: 25, GameEnums.ResourceType.CAST_IRON: 30}
 	d.daily_upkeep = {GameEnums.ResourceType.ENERGY: 2.0}
+	# Knowledge/civic source for the Tech Tree (Phase 2.9.1) — a press turning
+	# out journals/pamphlets/technical bulletins is the other natural source.
+	d.daily_output = {GameEnums.ResourceType.RESEARCH_POINTS: 4.0}
 	d.allowed_biomes = [GameEnums.BiomeType.URBAN]
 	d.requires_settlement = true
 	return d

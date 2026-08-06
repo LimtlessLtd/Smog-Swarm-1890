@@ -13,11 +13,23 @@ extends Resource
 @export var local_position: Vector2 = Vector2.ZERO  ## Offset from hex_coord's center; see BuildingManager.place_building_at_world().
 @export var id: int = 0
 
-func _init(p_definition: BuildingDefinition = null, p_hex_coord: Vector2i = Vector2i.ZERO, p_id: int = 0, p_local_position: Vector2 = Vector2.ZERO) -> void:
+## Design doc Phase 2.10.1: population becomes real, mutable, per-instance
+## state instead of just reading definition.population_provided as a fixed
+## number — this is what can actually be lost to starvation (2.10.3) or
+## regrown after a surplus (2.10.4). Seeded from the definition on placement;
+## 0 for any non-housing building, same as population_provided itself.
+@export var current_population: int = 0
+
+func _init(p_definition: BuildingDefinition = null, p_hex_coord: Vector2i = Vector2i.ZERO, p_id: int = 0, p_local_position: Vector2 = Vector2.ZERO, p_current_population: int = -1) -> void:
 	definition = p_definition
 	hex_coord = p_hex_coord
 	id = p_id
 	local_position = p_local_position
+	# -1 is "not specified by the caller" (BuildingManager's normal placement
+	# path) — seed from the definition's baseline. A save-restore path passes
+	# the actual saved value explicitly instead, which may differ from the
+	# baseline after starvation deaths/regrowth (see BuildingManager.load_save_entries()).
+	current_population = p_current_population if p_current_population >= 0 else (p_definition.population_provided if p_definition else 0)
 
 ## `daily_output` scaled by the occupied hex's soil fertility when the
 ## definition opts in (see BuildingDefinition.soil_fertility_scales_output).
