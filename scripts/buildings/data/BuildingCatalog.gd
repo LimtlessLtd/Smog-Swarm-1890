@@ -128,6 +128,19 @@ static func _town_hall() -> BuildingDefinition:
 	d.allowed_biomes = [GameEnums.BiomeType.URBAN]
 	d.requires_settlement = true
 	d.zoc_roles = [GameEnums.ZoneOfControlType.CIVILIAN]
+	# Without this, a brand-new colony's ONLY vision source is whatever
+	# building it just placed, radius 0 = its own single hex — since Town
+	# Hall is also BuildingManager.seed_starting_buildings()'s free opening
+	# move (the very first thing on the map), that made turn one show
+	# literally one hex of a country-sized map and nothing else, everywhere
+	# else pitch-black UNSEEN (found by actually playing, not just the
+	# headless logic tests — same discovery process as the original Phase
+	# 6.1 HUD layout bug). A modest radius here — smaller than the dedicated
+	# Watchtower lookout's 2 — means a fresh capital can at least see its own
+	# immediate neighborhood at game start, while the wider "cities as
+	# beacons in a dead world" darkness the design doc is built around still
+	# holds everywhere the player hasn't built or explored.
+	d.vision_radius = 1
 	return d
 
 static func _garrison() -> BuildingDefinition:

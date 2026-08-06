@@ -79,12 +79,20 @@ func _build_resource_bar(resource_manager: ResourceManager) -> void:
 func _build_time_controls() -> void:
 	var time_controls := TimeControlsView.new()
 	add_child(time_controls)
-	_place_top_right(time_controls, TIME_CONTROLS_WIDTH, 0)
+	# Row 1, not 0: ResourceBarView (row 0) is a full-width top-wide strip
+	# whose resource chips can run most of the screen's width (8 resource
+	# types), and TimeControlsView (Phase 5.1) is wide enough now (date +
+	# phase countdown + speed buttons, TIME_CONTROLS_WIDTH) that sharing row
+	# 0 with it visibly overlapped the resource bar's own text — caught by
+	# actually playing, not just the headless logic tests, same as the
+	# original Phase 6.1 HUD layout bug. Row 1 (top-right) is clear of the
+	# full-width resource bar above it.
+	_place_top_right(time_controls, TIME_CONTROLS_WIDTH, 1)
 
 func _build_save_load_bar() -> void:
 	var bar := HBoxContainer.new()
 	add_child(bar)
-	_place_top_right(bar, SAVE_LOAD_WIDTH, 1)  # Row 1: stacks below TimeControlsView in the same corner.
+	_place_top_right(bar, SAVE_LOAD_WIDTH, 2)  # Row 2: stacks below TimeControlsView in the same corner.
 
 	var save_button := Button.new()
 	save_button.text = "Quick Save"
