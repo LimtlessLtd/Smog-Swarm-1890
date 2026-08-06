@@ -40,8 +40,13 @@ func get_neighbors(coord: Vector2i) -> Array[HexCell]:
 	return result
 
 func world_to_cell(world_pos: Vector2) -> HexCell:
-	var local_pos := to_local(world_pos)
-	return get_cell(HexCoord.world_to_axial(local_pos))
+	return get_cell(world_to_coord(world_pos))
+
+## Just the coordinate half of world_to_cell — useful to callers (LocalDetailManager,
+## future click-to-place UI) that need the hex under a world position whether or
+## not a HexCell has been generated there yet.
+func world_to_coord(world_pos: Vector2) -> Vector2i:
+	return HexCoord.world_to_axial(to_local(world_pos))
 
 func get_all_cells() -> Array[HexCell]:
 	var result: Array[HexCell] = []

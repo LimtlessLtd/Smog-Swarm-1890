@@ -83,7 +83,10 @@ func get_placement_error(building_type: GameEnums.BuildingType, coord: Vector2i)
 func can_place_building(building_type: GameEnums.BuildingType, coord: Vector2i) -> bool:
 	return get_placement_error(building_type, coord).is_empty()
 
-func place_building(building_type: GameEnums.BuildingType, coord: Vector2i) -> BuildingInstance:
+## `local_position` is an offset from the hex's own center (Phase 2.5 Tactical
+## view placement); leave it ZERO for hex-granularity placement (defaults to
+## hex center — fine until a caller cares about exact positioning).
+func place_building(building_type: GameEnums.BuildingType, coord: Vector2i, local_position: Vector2 = Vector2.ZERO) -> BuildingInstance:
 	var error := get_placement_error(building_type, coord)
 	if not error.is_empty():
 		placement_rejected.emit(building_type, coord, error)
@@ -95,7 +98,7 @@ func place_building(building_type: GameEnums.BuildingType, coord: Vector2i) -> B
 		for resource_type in definition.storage_bonus:
 			_resource_manager.add_storage_cap(resource_type, float(definition.storage_bonus[resource_type]))
 
-	var instance := BuildingInstance.new(definition, coord, _next_id)
+	var instance := BuildingInstance.new(definition, coord, _next_id, local_position)
 	_next_id += 1
 	_instances.append(instance)
 	if not _instances_by_hex.has(coord):
@@ -104,6 +107,18 @@ func place_building(building_type: GameEnums.BuildingType, coord: Vector2i) -> B
 
 	building_placed.emit(instance)
 	return instance
+
+## Resolves `world_pos` to a hex + local offset and places there — the entry
+## point a future click-to-place UI (or the Tactical view) calls instead of
+## working out hex coordinates itself. No UI calls this yet (Phase 6+); it
+## exists now so precise placement has a home as soon as one does.
+func place_building_at_world(building_type: GameEnums.BuildingType, world_pos: Vector2) -> BuildingInstance:
+	if not _hex_grid_map:
+		placement_rejected.emit(building_type, Vector2i.ZERO, "No hex grid map wired to BuildingManager.")
+		return null
+	var coord := _hex_grid_map.world_to_coord(world_pos)
+	var local_position := world_pos - HexCoord.axial_to_world(coord)
+	return place_building(building_type, coord, local_position)
 
 func remove_building(instance: BuildingInstance) -> void:
 	_instances.erase(instance)

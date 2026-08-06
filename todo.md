@@ -53,6 +53,20 @@
 
 ---
 
+## 🔎 Phase 2.5: Tactical Zoom & Local Detail Layer
+> Added mid-development (not in the original spec) to guarantee the intended *They Are Billions*-at-country-scale feel: seamlessly zoom from a large chunk of Great Britain down to individual trees and buildings. Built now, ahead of Phase 3, because Phase 4's freeform wall-snapping already needs precise coordinate placement rather than hex-granularity — this is the foundation that unlocks that, not a detour from it.
+- [x] **2.5.1 Two-Tier Map Rendering (`CameraController.gd`, `LocalDetailManager.gd`)**
+  - [x] Hard zoom-threshold switch between the abstract Strategic hex view (the "large chunk of the UK" view) and a continuous, coordinate-precise Tactical view of a single hex's ~5x5 mile footprint — a pure camera zoom crossing a line, no loading screen or separate map.
+  - [x] Tactical detail only generates for settled/frontier hexes (settlement, has a placed building, or covered by Military/Civilian Zone of Control) — distant unclaimed wilderness stays an abstract tile even at max zoom, keeping the persistent background simulation cheap at full-country scale.
+  - [x] A neighborhood of qualifying hexes around the camera hydrates/dehydrates as the player pans while zoomed in, so tactical detail follows a contiguous developed territory rather than a single fixed hex.
+- [x] **2.5.2 Procedural Local Detail (`LocalDetailGenerator.gd`)**
+  - [x] Deterministic, coordinate-seeded prop scatter (trees/bushes/rocks/reeds) varied by each hex's biome — regenerated on demand instead of authored/saved per hex.
+- [x] **2.5.3 Precise Building Placement**
+  - [x] BuildingInstance/BuildingManager extended with an exact position within a hex (`place_building_at_world()`), instead of only a hex-coordinate slot, so buildings render at real positions in the Tactical view.
+- [ ] **2.5.4 Individual Units** — deferred: no unit system exists until Phase 5.4. The Tactical view's local-position pattern (BuildingInstance.local_position, world-space placement) is designed to extend to units directly once that phase starts.
+
+---
+
 ## 🏙️ Phase 3: Urban Underground & Sewer Outbreak Mechanics
 - [ ] **3.1 Subterranean Layer System (`SubterraneanMap.gd`)**
   - [ ] Urban hex underground toggle (Victorian Sewers, London Underground tunnels).

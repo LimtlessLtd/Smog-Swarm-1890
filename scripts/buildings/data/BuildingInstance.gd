@@ -1,19 +1,23 @@
 class_name BuildingInstance
 extends Resource
 
-## A single placed building: a reference to its BuildingDefinition template
-## plus the hex it occupies and a unique id assigned by BuildingManager.
+## A single placed building: a reference to its BuildingDefinition template,
+## the hex it occupies, an exact position within that hex (Phase 2.5 — for
+## the Tactical view; ZERO/hex-center by default when placed through the
+## plain hex-coordinate API), and a unique id assigned by BuildingManager.
 ## Deliberately thin — construction-site placeholder rendering and combat
 ## HP/damage state are later-phase concerns, not Phase 2's.
 
 @export var definition: BuildingDefinition
 @export var hex_coord: Vector2i = Vector2i.ZERO
+@export var local_position: Vector2 = Vector2.ZERO  ## Offset from hex_coord's center; see BuildingManager.place_building_at_world().
 @export var id: int = 0
 
-func _init(p_definition: BuildingDefinition = null, p_hex_coord: Vector2i = Vector2i.ZERO, p_id: int = 0) -> void:
+func _init(p_definition: BuildingDefinition = null, p_hex_coord: Vector2i = Vector2i.ZERO, p_id: int = 0, p_local_position: Vector2 = Vector2.ZERO) -> void:
 	definition = p_definition
 	hex_coord = p_hex_coord
 	id = p_id
+	local_position = p_local_position
 
 ## `daily_output` scaled by the occupied hex's soil fertility when the
 ## definition opts in (see BuildingDefinition.soil_fertility_scales_output).

@@ -8,15 +8,24 @@ extends Camera2D
 ## squash Y) while the camera keeps panning/zooming normally on top of it.
 ## Swap this projection trick for true isometric art direction later without
 ## touching pan/zoom or any other system.
+##
+## Also owns the Strategic <-> Tactical zoom threshold (Phase 2.5): a hard
+## cut, Total-War-campaign-map-style, at `tactical_zoom_threshold` — no
+## separate "battle map" scene, just this camera's own zoom value crossing a
+## line. LocalDetailManager listens to `tactical_mode_changed` rather than
+## polling zoom every frame.
 
 @export var world_root_path: NodePath
 @export var pan_speed: float = 800.0
-@export var min_zoom: float = 0.25
+@export var min_zoom: float = 0.03  ## Low enough to fill the screen with roughly one hex's ~5x5 mile footprint — see tactical_zoom_threshold.
 @export var max_zoom: float = 2.5
 @export var zoom_step: float = 0.1
+@export var tactical_zoom_threshold: float = 0.12  ## zoom.x at/below this = Tactical view (Camera2D: smaller zoom = more zoomed in).
 @export var perspective_tween_duration: float = 0.6
 @export var isometric_y_scale: float = 0.577
 @export var isometric_rotation_degrees: float = 45.0
+
+signal tactical_mode_changed(is_tactical: bool)
 
 var perspective: GameEnums.CameraPerspective = GameEnums.CameraPerspective.TOP_DOWN
 
@@ -28,6 +37,10 @@ func _ready() -> void:
 	if world_root_path != NodePath():
 		_world_root = get_node(world_root_path)
 	make_current()
+	tactical_mode_changed.emit(is_tactical_zoom())  ## Sync any listener already wired up to our starting zoom.
+
+func is_tactical_zoom() -> bool:
+	return zoom.x <= tactical_zoom_threshold
 
 func _process(delta: float) -> void:
 	_handle_pan_input(delta)
@@ -85,5 +98,8 @@ func _handle_zoom_input(event: InputEventMouseButton) -> void:
 		_apply_zoom_delta(zoom_step)
 
 func _apply_zoom_delta(delta: float) -> void:
+	var was_tactical := is_tactical_zoom()
 	var new_zoom := clampf(zoom.x + delta, min_zoom, max_zoom)
 	zoom = Vector2(new_zoom, new_zoom)
+	if is_tactical_zoom() != was_tactical:
+		tactical_mode_changed.emit(is_tactical_zoom())

@@ -91,3 +91,10 @@ enum SupplyLineType {
 	RAILWAY,
 	CANAL,
 }
+
+enum PropType {
+	TREE,
+	BUSH,
+	ROCK,
+	REED,  ## Wetland/waterway fringe vegetation.
+}
