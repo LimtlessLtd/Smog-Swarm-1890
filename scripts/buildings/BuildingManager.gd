@@ -39,6 +39,47 @@ func _ready() -> void:
 	if resource_manager_path != NodePath():
 		_resource_manager = get_node(resource_manager_path)
 	TickManager.day_completed.connect(_on_day_completed)
+	seed_starting_buildings()
+
+## Seeds the colony with its first building on a truly fresh start. Without
+## this, Fog of War (Phase 2.6) leaves the ENTIRE map UNSEEN at boot — no
+## building placed anywhere means no vision source anywhere — so a new
+## player has literally nothing rendered to look at or click on. Placed for
+## free via _register_instance() directly (bypassing place_building()'s
+## cost/validation, same as load_save_entries() does) rather than costing
+## starting resources: this is the game's own opening move, not a player
+## purchase. A future proper "New Game" flow (Phase 7.6) should call this
+## explicitly instead of it running unconditionally here; until that exists,
+## "the game just booted with nothing placed yet" and "this is a new game"
+## are the same thing, so this is the right default. A load right after
+## boot (SaveLoadManager.load_save_entries()) already clears every existing
+## instance before restoring saved ones, so a seeded Town Hall never lingers
+## once a real save is loaded.
+## Manchester is the design doc's own canonical starting point (Phase 7.1
+## Act I: "Secure Manchester") — matched by name (set from
+## BritishGeographyData's GeographyFeature, see HexMapGenerator) rather than
+## a hardcoded coordinate here, so this doesn't need to know Manchester's
+## specific hex layout. Falls back to any qualifying settlement hex if a
+## future alternate map seed doesn't use that name.
+const _STARTING_REGION_NAME := "Manchester"
+
+func seed_starting_buildings() -> void:
+	if not _instances.is_empty() or not _hex_grid_map:
+		return
+	var target: HexCell = null
+	var fallback: HexCell = null
+	for cell in _hex_grid_map.get_all_cells():
+		if not (cell.is_settlement and cell.biome_type == GameEnums.BiomeType.URBAN):
+			continue
+		if cell.region_name == _STARTING_REGION_NAME:
+			target = cell
+			break
+		if not fallback:
+			fallback = cell
+	target = target if target else fallback
+	if target:
+		var definition := BuildingCatalog.get_definition(GameEnums.BuildingType.TOWN_HALL)
+		_register_instance(definition, target.coord, _next_id, Vector2.ZERO, true)
 
 func get_buildings_at(coord: Vector2i) -> Array[BuildingInstance]:
 	var result: Array[BuildingInstance] = []

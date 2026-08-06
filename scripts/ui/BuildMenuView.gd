@@ -19,7 +19,7 @@ const CATEGORY_ORDER: Array[GameEnums.BuildingCategory] = [
 ]
 
 func _ready() -> void:
-	custom_minimum_size = Vector2(240, 260)
+	custom_minimum_size = Vector2(260, 260)
 	var list := VBoxContainer.new()
 	list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	add_child(list)
@@ -32,7 +32,11 @@ func _populate(list: VBoxContainer) -> void:
 		list.add_child(header)
 		for definition in BuildingCatalog.get_definitions_in_category(category):
 			var button := Button.new()
-			button.text = "%s (%s)" % [definition.display_name, _format_cost(definition.construction_cost)]
+			button.text = definition.display_name
+			# Full cost as a hover tooltip rather than inline text — cost
+			# strings ("Church Steeple Watchtower: 100 Bricks, 10 Cast
+			# Iron") run too long to fit the panel alongside the name.
+			button.tooltip_text = _format_cost(definition.construction_cost)
 			button.pressed.connect(_on_building_button_pressed.bind(definition.building_type))
 			list.add_child(button)
 

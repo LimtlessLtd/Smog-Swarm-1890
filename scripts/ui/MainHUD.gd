@@ -31,6 +31,12 @@ const DEFAULT_CAMPAIGN := "Default"
 const DEFAULT_SLOT := "QuickSave"
 const TOAST_SECONDS := 3.0
 
+const MARGIN := 8.0
+const ROW_HEIGHT := 32.0
+const TIME_CONTROLS_WIDTH := 260.0
+const SAVE_LOAD_WIDTH := 220.0
+const BUILD_MENU_SIZE := Vector2(260.0, 260.0)
+
 var _building_manager: BuildingManager
 var _save_load_manager: SaveLoadManager
 var _build_placement_controller: BuildPlacementController
@@ -66,20 +72,19 @@ func _ready() -> void:
 func _build_resource_bar(resource_manager: ResourceManager) -> void:
 	var resource_bar := ResourceBarView.new()
 	add_child(resource_bar)
-	resource_bar.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE, Control.PRESET_MODE_MINSIZE, 8)
+	_place_top_wide(resource_bar, 0)
 	if resource_manager:
 		resource_bar.setup(resource_manager)
 
 func _build_time_controls() -> void:
 	var time_controls := TimeControlsView.new()
 	add_child(time_controls)
-	time_controls.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT, Control.PRESET_MODE_MINSIZE, 8)
+	_place_top_right(time_controls, TIME_CONTROLS_WIDTH, 0)
 
 func _build_save_load_bar() -> void:
 	var bar := HBoxContainer.new()
 	add_child(bar)
-	bar.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT, Control.PRESET_MODE_MINSIZE, 8)
-	bar.position.y += 40  # Stack below TimeControlsView in the same corner.
+	_place_top_right(bar, SAVE_LOAD_WIDTH, 1)  # Row 1: stacks below TimeControlsView in the same corner.
 
 	var save_button := Button.new()
 	save_button.text = "Quick Save"
@@ -94,20 +99,19 @@ func _build_save_load_bar() -> void:
 func _build_mode_label() -> void:
 	_mode_label = Label.new()
 	add_child(_mode_label)
-	_mode_label.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE, Control.PRESET_MODE_MINSIZE, 8)
-	_mode_label.position.y = 40  # Below the resource bar, same top-wide strip.
+	_place_top_wide(_mode_label, 1)  # Row 1: below the resource bar, same top-wide strip.
 	_mode_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 
 func _build_build_menu() -> void:
 	var build_menu := BuildMenuView.new()
 	add_child(build_menu)
-	build_menu.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT, Control.PRESET_MODE_MINSIZE, 8)
+	_place_bottom_left(build_menu, BUILD_MENU_SIZE)
 	build_menu.building_selected.connect(_on_building_selected)
 
 func _build_toast() -> void:
 	_toast_label = Label.new()
 	add_child(_toast_label)
-	_toast_label.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE, Control.PRESET_MODE_MINSIZE, 8)
+	_place_bottom_wide(_toast_label)
 	_toast_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 
 	_toast_timer = Timer.new()
@@ -115,6 +119,64 @@ func _build_toast() -> void:
 	_toast_timer.wait_time = TOAST_SECONDS
 	add_child(_toast_timer)
 	_toast_timer.timeout.connect(_on_toast_timeout)
+
+## --- Layout helpers ---------------------------------------------------
+##
+## Deliberately NOT using Control.set_anchors_and_offsets_preset(...,
+## PRESET_MODE_MINSIZE, ...): that mode sizes offsets off
+## get_combined_minimum_size() at the moment of the call, which for these
+## code-built Controls (an HBoxContainer/ScrollContainer whose children were
+## *just* added this same frame) can still read as the Control's initial
+## (0, 0) rect — every bottom/right-anchored element ended up positioned
+## just past the edge of the screen instead of inside it (caught by actually
+## running the game and looking at it, not just the headless logic tests —
+## see the Phase 6.1 commit). These compute every offset from an explicit
+## size instead, so they can't go stale.
+
+## Full-width strip pinned to the top, `row` rows down (0 = topmost) at a
+## fixed ROW_HEIGHT each.
+func _place_top_wide(control: Control, row: int) -> void:
+	control.anchor_left = 0.0
+	control.anchor_right = 1.0
+	control.anchor_top = 0.0
+	control.anchor_bottom = 0.0
+	control.offset_left = MARGIN
+	control.offset_right = -MARGIN
+	control.offset_top = MARGIN + row * (ROW_HEIGHT + MARGIN)
+	control.offset_bottom = control.offset_top + ROW_HEIGHT
+
+## Full-width strip pinned to the bottom edge.
+func _place_bottom_wide(control: Control) -> void:
+	control.anchor_left = 0.0
+	control.anchor_right = 1.0
+	control.anchor_top = 1.0
+	control.anchor_bottom = 1.0
+	control.offset_left = MARGIN
+	control.offset_right = -MARGIN
+	control.offset_bottom = -MARGIN
+	control.offset_top = -MARGIN - ROW_HEIGHT
+
+## Fixed-`width` strip pinned to the top-right corner, `row` rows down.
+func _place_top_right(control: Control, width: float, row: int) -> void:
+	control.anchor_left = 1.0
+	control.anchor_right = 1.0
+	control.anchor_top = 0.0
+	control.anchor_bottom = 0.0
+	control.offset_right = -MARGIN
+	control.offset_left = -MARGIN - width
+	control.offset_top = MARGIN + row * (ROW_HEIGHT + MARGIN)
+	control.offset_bottom = control.offset_top + ROW_HEIGHT
+
+## Fixed-`size` rect pinned to the bottom-left corner.
+func _place_bottom_left(control: Control, size: Vector2) -> void:
+	control.anchor_left = 0.0
+	control.anchor_right = 0.0
+	control.anchor_top = 1.0
+	control.anchor_bottom = 1.0
+	control.offset_left = MARGIN
+	control.offset_right = MARGIN + size.x
+	control.offset_bottom = -MARGIN
+	control.offset_top = -MARGIN - size.y
 
 func _on_building_selected(building_type: GameEnums.BuildingType) -> void:
 	if _build_placement_controller:

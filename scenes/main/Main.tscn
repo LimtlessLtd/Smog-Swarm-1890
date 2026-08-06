@@ -19,7 +19,7 @@
 [node name="HexGridMap" parent="WorldRoot" instance=ExtResource("1")]
 
 [node name="CameraController" parent="." instance=ExtResource("2")]
-position = Vector2(2383, 1248)
+position = Vector2(1050, 600)
 zoom = Vector2(0.4, 0.4)
 world_root_path = NodePath("../WorldRoot")
 
