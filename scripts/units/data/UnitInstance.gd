@@ -38,6 +38,13 @@ var patrol_target_index: int = 0                        ## Not @export — cheap
 ## for UnitOrderController to replan from scratch after a load.
 var path: Array[Vector2i] = []
 
+## Phase 5.7: incremented by CombatCoordinator each time this unit destroys
+## a Horde outright (see UnitMorale.get_rank()'s own doc comment for why
+## that's the decided definition of "a kill" against a population rather
+## than a discrete enemy). Genuinely mutable per-instance state — persisted,
+## same as current_hp.
+@export var kill_count: int = 0
+
 func _init(p_definition: UnitDefinition = null, p_hex_coord: Vector2i = Vector2i.ZERO, p_id: int = 0, p_current_hp: float = -1.0) -> void:
 	definition = p_definition
 	hex_coord = p_hex_coord
