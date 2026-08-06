@@ -111,6 +111,11 @@ enum FogState {
 	VISIBLE,   ## An active vision source covers this hex right now; full real-time information.
 }
 
+enum DayPhase {
+	DAY,    ## First half of TickManager's day cycle — baseline vision, no zombie/unit modifiers wired yet (Phase 5.2/5.4 don't exist).
+	NIGHT,  ## Second half — drives FogOfWarManager's vision contraction (Phase 2.6.4); zombie/unit modifiers deferred the same way.
+}
+
 enum TechUnlockType {
 	WALL_TIER,        ## Unlocks a Phase 4.1 wall tier (unlock_value: 1=Brick, 2=Concrete; tier 0/Wooden is baseline, no tech needed).
 	UNIT_TIER,        ## Unlocks a whole Phase 5.4 unit tier, all 3 roles at once (unlock_value: 1-5; tier 0 is baseline, no tech needed).

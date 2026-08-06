@@ -33,7 +33,7 @@ const TOAST_SECONDS := 3.0
 
 const MARGIN := 8.0
 const ROW_HEIGHT := 32.0
-const TIME_CONTROLS_WIDTH := 260.0
+const TIME_CONTROLS_WIDTH := 460.0  ## Widened for Phase 5.1's date + phase countdown text alongside the day counter/speed buttons.
 const SAVE_LOAD_WIDTH := 220.0
 const BUILD_MENU_SIZE := Vector2(260.0, 260.0)
 

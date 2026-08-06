@@ -83,6 +83,7 @@ static func _church_steeple_watchtower() -> BuildingDefinition:
 	# Doubles as a lookout post (Military) and a parish church (Civilian) — see class doc.
 	d.zoc_roles = [GameEnums.ZoneOfControlType.MILITARY, GameEnums.ZoneOfControlType.CIVILIAN]
 	d.vision_radius = 2  # Tallest structure in town — a proper watchtower lookout (Phase 2.6).
+	d.lit_at_night = true  # "Watchtower searchlights" (design doc 2.6.4) hold/extend vision after dark.
 	return d
 
 static func _gas_streetlamp() -> BuildingDefinition:
@@ -93,6 +94,7 @@ static func _gas_streetlamp() -> BuildingDefinition:
 	d.allowed_biomes = [GameEnums.BiomeType.URBAN]
 	d.requires_settlement = true
 	d.vision_radius = 1  # Lights the surrounding street, not just its own hex (Phase 2.6).
+	d.lit_at_night = true  # Literally the design doc 2.6.4 example of a lit source.
 	return d
 
 static func _telegraph_relay_office() -> BuildingDefinition:
@@ -232,13 +234,10 @@ static func _searchlight_tower() -> BuildingDefinition:
 	d.daily_upkeep = {GameEnums.ResourceType.ENERGY: 3.0}
 	d.zoc_roles = [GameEnums.ZoneOfControlType.MILITARY]
 	d.vision_radius = 2  # Illuminates the perimeter beyond its own hex, same role as the Watchtower (Phase 2.6).
-	# "granting combat bonuses to garrisoned units" (design doc 4.1) needs
-	# Phase 5.4 (units) and Phase 5.6 (garrison orders) to exist before
+	d.lit_at_night = true  # "Illuminate perimeter walls during night defense" (design doc 4.1) — holds/extends vision after dark (Phase 2.6.4).
+	# "granting combat bonuses to garrisoned units" (design doc 4.1) still
+	# needs Phase 5.4 (units) and Phase 5.6 (garrison orders) to exist before
 	# there's anything to grant a bonus TO — not implemented, deliberately.
-	# Same for the night-specific half of "illuminate perimeter walls during
-	# night defense", which needs Phase 5.1's Day/Night split to have a
-	# night to hold vision through in the first place (Phase 2.6.4's own
-	# still-unbuilt hook).
 	return d
 
 static func _ditch() -> BuildingDefinition:
