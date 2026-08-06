@@ -2,10 +2,11 @@ class_name MainHUD
 extends CanvasLayer
 
 ## Root HUD coordinator — the essential slice of design doc Phase 6.1:
-## resource display, the build/placement menu, and time controls. The
-## always-visible Strategic minimap and per-sector Threat Meter bullets stay
-## unbuilt (see todo.md — the minimap needs nothing new to gate on, the
-## Threat Meter needs Phase 5's horde system to have anything to show).
+## resource display, the build/placement menu, time controls, and the
+## Strategic-layer minimap (shown only during Tactical zoom — see
+## MinimapView's own doc comment for why). The per-sector Threat Meter
+## bullet stays unbuilt (see todo.md — it needs Phase 5's horde-attraction
+## system to have a level to show, which doesn't exist yet).
 ##
 ## Owns no game logic itself: only wires the dumb display components
 ## (ResourceBarView / TimeControlsView / BuildMenuView) to the systems they
@@ -26,6 +27,9 @@ extends CanvasLayer
 @export var building_manager_path: NodePath
 @export var save_load_manager_path: NodePath
 @export var build_placement_controller_path: NodePath
+@export var hex_grid_map_path: NodePath
+@export var fog_of_war_manager_path: NodePath
+@export var camera_path: NodePath
 
 const DEFAULT_CAMPAIGN := "Default"
 const DEFAULT_SLOT := "QuickSave"
@@ -36,6 +40,7 @@ const ROW_HEIGHT := 32.0
 const TIME_CONTROLS_WIDTH := 460.0  ## Widened for Phase 5.1's date + phase countdown text alongside the day counter/speed buttons.
 const SAVE_LOAD_WIDTH := 220.0
 const BUILD_MENU_SIZE := Vector2(260.0, 260.0)
+const MINIMAP_SIZE := Vector2(220.0, 160.0)
 
 var _building_manager: BuildingManager
 var _save_load_manager: SaveLoadManager
@@ -62,9 +67,20 @@ func _ready() -> void:
 		_build_placement_controller.placement_started.connect(_on_placement_started)
 		_build_placement_controller.placement_ended.connect(_on_placement_ended)
 
+	var hex_grid_map: HexGridMap = null
+	if hex_grid_map_path != NodePath():
+		hex_grid_map = get_node(hex_grid_map_path)
+	var fog_of_war_manager: FogOfWarManager = null
+	if fog_of_war_manager_path != NodePath():
+		fog_of_war_manager = get_node(fog_of_war_manager_path)
+	var camera: CameraController = null
+	if camera_path != NodePath():
+		camera = get_node(camera_path)
+
 	_build_resource_bar(resource_manager)
 	_build_time_controls()
 	_build_save_load_bar()
+	_build_minimap(hex_grid_map, fog_of_war_manager, camera)
 	_build_mode_label()
 	_build_build_menu()
 	_build_toast()
@@ -79,12 +95,20 @@ func _build_resource_bar(resource_manager: ResourceManager) -> void:
 func _build_time_controls() -> void:
 	var time_controls := TimeControlsView.new()
 	add_child(time_controls)
-	_place_top_right(time_controls, TIME_CONTROLS_WIDTH, 0)
+	# Row 1, not 0: ResourceBarView (row 0) is a full-width top-wide strip
+	# whose resource chips can run most of the screen's width (8 resource
+	# types), and TimeControlsView (Phase 5.1) is wide enough now (date +
+	# phase countdown + speed buttons, TIME_CONTROLS_WIDTH) that sharing row
+	# 0 with it visibly overlapped the resource bar's own text — caught by
+	# actually playing, not just the headless logic tests, same as the
+	# original Phase 6.1 HUD layout bug. Row 1 (top-right) is clear of the
+	# full-width resource bar above it.
+	_place_top_right(time_controls, TIME_CONTROLS_WIDTH, 1)
 
 func _build_save_load_bar() -> void:
 	var bar := HBoxContainer.new()
 	add_child(bar)
-	_place_top_right(bar, SAVE_LOAD_WIDTH, 1)  # Row 1: stacks below TimeControlsView in the same corner.
+	_place_top_right(bar, SAVE_LOAD_WIDTH, 2)  # Row 2: stacks below TimeControlsView in the same corner.
 
 	var save_button := Button.new()
 	save_button.text = "Quick Save"
@@ -95,6 +119,19 @@ func _build_save_load_bar() -> void:
 	load_button.text = "Quick Load"
 	load_button.pressed.connect(_on_quick_load_pressed)
 	bar.add_child(load_button)
+
+## Design doc Phase 6.1's minimap — bottom-right corner is the only one of
+## the four still unclaimed by another HUD element (top strip: resource
+## bar/mode label; top-right: time controls/save-load; bottom-left: build
+## menu; bottom strip: toast). Gracefully no-ops (an empty, permanently
+## hidden Control) if any of the three optional NodePaths weren't wired —
+## same "unset gracefully skips it" convention every other optional
+## MainHUD dependency already follows.
+func _build_minimap(hex_grid_map: HexGridMap, fog_of_war_manager: FogOfWarManager, camera: CameraController) -> void:
+	var minimap := MinimapView.new()
+	add_child(minimap)
+	_place_bottom_right(minimap, MINIMAP_SIZE)
+	minimap.setup(hex_grid_map, _building_manager, fog_of_war_manager, camera, MINIMAP_SIZE)
 
 func _build_mode_label() -> void:
 	_mode_label = Label.new()
@@ -175,6 +212,18 @@ func _place_bottom_left(control: Control, size: Vector2) -> void:
 	control.anchor_bottom = 1.0
 	control.offset_left = MARGIN
 	control.offset_right = MARGIN + size.x
+	control.offset_bottom = -MARGIN
+	control.offset_top = -MARGIN - size.y
+
+## Fixed-`size` rect pinned to the bottom-right corner — the minimap's own
+## spot, the one corner nothing else in this HUD claims.
+func _place_bottom_right(control: Control, size: Vector2) -> void:
+	control.anchor_left = 1.0
+	control.anchor_right = 1.0
+	control.anchor_top = 1.0
+	control.anchor_bottom = 1.0
+	control.offset_right = -MARGIN
+	control.offset_left = -MARGIN - size.x
 	control.offset_bottom = -MARGIN
 	control.offset_top = -MARGIN - size.y
 
