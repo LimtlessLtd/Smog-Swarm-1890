@@ -44,7 +44,7 @@ enum CameraPerspective {
 
 enum ResourceType {
 	FOOD,                   ## Population upkeep drain.
-	COAL,                   ## Boiler/heating/streetlamp upkeep.
+	ENERGY,                 ## Coal, Gas, Oil used for Boiler/heating/streetlamp upkeep.
 	GUNPOWDER,              ## Ranged combat & garrison upkeep.
 	WOOD,                   ## Construction material.
 	BRICKS,                 ## Construction material.
@@ -53,7 +53,7 @@ enum ResourceType {
 }
 
 enum BuildingCategory {
-	HOUSING_CIVIL,       ## Terraced Tenements, Workhouses, Church Steeple Watchtowers, etc.
+	HOUSING_CIVIL,       ## Terraced Tenements, Workhouses, Watchtowers, etc.
 	INDUSTRY_EXTRACTION, ## Brickworks, kilns, pitheads, foundries, powder mills, ammo dumps.
 	AGRICULTURE,         ## Tenant Farms, Grain Silos, Cattle Yards.
 }
@@ -82,7 +82,7 @@ enum BuildingType {
 }
 
 enum ZoneOfControlType {
-	MILITARY,   ## Forward Ammo Dumps, Garrisons, Church Steeple Watchtowers, Combat Units.
+	MILITARY,   ## Forward Ammo Dumps, Garrisons, Watchtowers, Combat Units.
 	CIVILIAN,   ## Town Halls, Churches (the Watchtower's civilian half), Telegraph Relays.
 }
 

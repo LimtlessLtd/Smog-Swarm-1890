@@ -14,7 +14,7 @@ signal upkeep_shortfall(resource_type: GameEnums.ResourceType, shortfall: float)
 
 const STARTING_STOCKPILE: Dictionary = {
 	GameEnums.ResourceType.FOOD: 100.0,
-	GameEnums.ResourceType.COAL: 50.0,
+	GameEnums.ResourceType.ENERGY: 50.0,
 	GameEnums.ResourceType.GUNPOWDER: 20.0,
 	GameEnums.ResourceType.WOOD: 150.0,
 	GameEnums.ResourceType.BRICKS: 100.0,

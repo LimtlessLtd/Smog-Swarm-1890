@@ -11,7 +11,7 @@
 
 ## 🏛️ Project Architecture & Design Overview
 
-- **Core Loop:** Continuous persistent expansion across Victorian Britain hex sectors. Build defenses, automate patrols, manage daily resource upkeeps (Food/Coal/Gunpowder), and protect supply lines while working in the background.
+- **Core Loop:** Continuous persistent expansion across Victorian Britain hex sectors. Build defenses, automate patrols, manage daily resource upkeeps (Food/Energy/Gunpowder), and protect supply lines while working in the background.
 - **Aesthetic Direction:** Grounded late-18th/19th-century Industrial Revolution (brick, cast iron, coal smoke, authentic Victorian architecture)—explicitly **no** retro-futuristic steampunk tropes.
 - **Dual Perspective Engine:** Dynamic camera toggle between **Top-Down Orthographic** (tactical layout) and **2.5D Isometric** (cinematic viewing).
 - **Multi-Layer Macro-Hex System:** Continuous tilemap hiding an underlying axial hex grid `(q, r)`. Each hex represents a 5x5 mile macro-region (~25 sq miles). Cities scale dynamically across multiple macro-tiles—Manchester spans 4 hexes (~100 sq miles), while Greater London spans 12 hexes (~300 sq miles). Features internal district partitioning and subterranean layers (Sewers/London Underground).
@@ -49,11 +49,11 @@
 
 ## 🏭 Phase 2: Historical Building Tree, Economy & Logistics
 - [x] **2.1 Authentic 19th-Century Building Tree (`BuildingManager.gd`)**
-  - [x] **Housing & Civil:** Terraced Tenements, Workhouses, Church Steeple Watchtowers, Gas Streetlamps, Telegraph Relay Offices, Steam Printing Presses. (Also added Town Hall & Garrison — not named in this checklist, but required as Civilian/Military ZoC sources by 2.3.)
-  - [x] **Industry & Extraction:** Clay Brickworks, Charcoal Kilns, Coal Pitheads, Cast Iron Foundries, Saltpetre/Powder Mills, Forward Ammo Dumps.
+  - [x] **Housing & Civil:** Terraced Tenements, Workhouses, Watchtowers, Gas Streetlamps, Telegraph Relay Offices, Steam Printing Presses. (Also added Town Hall & Garrison — not named in this checklist, but required as Civilian/Military ZoC sources by 2.3.)
+  - [x] **Industry & Extraction:** Clay Brickworks, Charcoal Kilns, Coal Pitheads, Cast Iron Foundries, Saltpetre/Powder Mills, Forward Ammo Dumps. These should feed into the already defined resources where appropriate.
   - [x] **Agriculture:** Tenant Farms (requires `Lush`/`Poor` soil), Grain Silos, Cattle Yards.
 - [x] **2.2 Resource Upkeep Engine (`ResourceManager.gd`)**
-  - [x] Manage daily upkeep drains: **Food** (population drain), **Coal** (boiler/heating/streetlamp upkeep), and **Gunpowder** (ranged combat upkeep).
+  - [x] Manage daily upkeep drains: **Food** (population drain), **Energy** this includes coal, oil and gas (boiler/heating/streetlamp upkeep), and **Gunpowder** (ranged combat upkeep).
   - [x] Track construction materials: **Wood**, **Bricks**, **Cast Iron**, **Reinforced Concrete**.
 - [x] **2.3 Supply Line Logistics & Two-Zone Control System (`LogisticsNetwork.gd`)**
   - [x] Build supply flow nodes connecting outer resource sectors to central population hubs via roads, railways, and canal lines.
@@ -107,7 +107,7 @@
 - [ ] **2.7.3 Wall Markers** — blocked on Phase 4.1. Wall segments register their position/state with `StrategicOverlayManager` once the freeform wall system exists.
 - [ ] **2.7.4 Unit Markers** — blocked on Phase 5.4. Units register/unregister the same way buildings do.
 - [ ] **2.7.5 Under-Attack Alerts** — blocked on Phase 4.1/4.2 (wall breach) and Phase 5.4 (`CombatEngine` engagement events). Raises a pulsing alert at the specific wall segment or hex under attack (Phase 4.1's per-segment HP makes this precise rather than just "the district" generically), cleared once the threat resolves.
-- [ ] **2.7.6 Spotted Horde Markers** — blocked on Phase 5.2 (`HordeManager`) and 5.3 (reconnaissance). Interacts with Fog of War (Phase 2.6): while a horde's hex stays `VISIBLE` the marker tracks it live; once vision is lost, **decided:** the marker freezes as a dimmed "last known position" ghost rather than vanishing — you remember roughly where it was, not where it's gone.
+- [ ] **2.7.6 Spotted Horde Markers** — blocked on Phase 5.2 (`HordeManager`) and 5.3 (reconnaissance). Interacts with Fog of War (Phase 2.6): while a horde's hex stays `VISIBLE` the marker tracks it live; once vision is lost, **decided:** the marker freezes as a dimmed "last known position" ghost rather than vanishing but shows the direction of travel — you remember roughly where it was and the direction of travel, not where it's gone.
 
 ---
 
@@ -154,7 +154,7 @@
 > Plan only — not implemented yet. Moved here from an earlier draft that filed it under Phase 3 for thematic proximity to "Political Interventions" — but it's a colony-economy mechanic other systems (2.10, 5.9, 7's political thread) depend on, not a sewer mechanic, so it shouldn't ride along with Phase 3's sewer content being deferred (see that phase's header).
 - [ ] **2.11.1 Population Discontent (`DiscontentManager.gd`)** — a *colony-wide population* mechanic, distinct from the *per-unit* Morale & Veterancy system documented under Phase 5.7 — don't conflate the two.
   - [ ] **Decided scope:** per contiguous Civilian Zone of Control region, not global and not per-hex. A "Civilian Region" is a maximal connected cluster of hexes currently carrying `has_civilian_coverage` (`LogisticsNetwork`, Phase 2.3) — hex-adjacency flood fill, recomputed whenever ZoC changes. Multi-hex settlements (Manchester's 4 hexes, London's 12) share one Discontent value as long as they stay contiguously covered; a region physically split by lost territory splits into two independently-tracked regions.
-  - [ ] Drivers: overcrowding (summed `population_provided` in the region against a capacity threshold) and casualties/incursions within the region's own hexes are region-local; Food/Coal/Gunpowder shortfalls affect every region equally, since the resource stockpile itself is deliberately one global pool (Phase 2.2), not split per region. Worth stating plainly: Discontent is region-scoped, the economy underneath it deliberately isn't. Food specifically now has its own precise ratio/threshold system (Phase 2.10) rather than just the generic `ResourceManager.upkeep_shortfall` signal — a hungry-but-not-starving population (2.10.2's 50-99% band) is a Discontent driver here on top of 2.10's direct production penalty, not instead of it.
+  - [ ] Drivers: overcrowding (summed `population_provided` in the region against a capacity threshold) and casualties/incursions within the region's own hexes are region-local; Food/Energy/Gunpowder shortfalls affect every region equally, since the resource stockpile itself is deliberately one global pool (Phase 2.2), not split per region. Worth stating plainly: Discontent is region-scoped, the economy underneath it deliberately isn't. Food specifically now has its own precise ratio/threshold system (Phase 2.10) rather than just the generic `ResourceManager.upkeep_shortfall` signal — a hungry-but-not-starving population (2.10.2's 50-99% band) is a Discontent driver here on top of 2.10's direct production penalty, not instead of it.
   - [ ] Consequences: production penalty on buildings within a high-Discontent region (queried by `BuildingManager` at its existing daily-tally step, Phase 2.1); unrest events are a later addition once there's an event system to hang them on.
   - [ ] Feeds Phase 3.3's decrees once that phase is picked back up (a policy response to rising Discontent, not just sewers) and Phase 7's political mystery thread.
 
@@ -177,12 +177,12 @@
 ## 🧱 Phase 4: Defensive Construction, Infrastructure & Chokepoints
 - [ ] **4.1 Chokepoint Defensive Building (`BuildingSystem.gd`)**
   - [ ] Freeform wall construction snapping across geographic bottlenecks (riverbanks, cliff passes), built as a chain of individual segments (They Are Billions convention) rather than one continuous abstraction.
-  - [ ] Wall progression: Wooden Walls -> Brick Walls -> Concrete Walls (tier unlocked via Phase 2.9's Tech Tree).
+  - [ ] Wall progression: Wooden Walls -> Brick Walls -> Concrete Walls (tier unlocked via Phase 2.9's Tech Tree) but each wall segment must be upgraded individually and costs resources to upgrade, but 50% less than building the wall from scratch.
   - [ ] **Decided: each wall segment is its own instance with its own health pool**, scaling with tier — this settles the earlier open implementation question (`WallSegment` vs. reusing `BuildingInstance` with two positions) at least on one point: whichever data class it ends up being, one instance per placed segment with independently-tracked HP is now a hard requirement, not a monolithic per-wall or per-district abstraction.
   - [ ] **Decided: a horde attacks whichever specific segment it physically reaches** (Phase 5.10's pathfinding/AI picks the target — not the player, not a random global choice). A breach is localized to that one segment's position, not the whole wall or district at once — several hordes approaching from different directions can have multiple segments under attack simultaneously, each needing its own response, exactly like They Are Billions' minimap covered in separate red alert points.
   - [ ] **Decided: hordes get an explicit siege bonus against walls** (representing sheer numbers/attrition wearing down a static structure) — walls are never literally unbreachable, but a well-invested segment (tier + defense works below + a garrisoned/lit bonus from Streetlamps/Searchlight Towers) should comfortably outlast anything but a genuinely large horde. The point is walls stay a good investment, not a false sense of security.
   - [ ] **New defense works, stacking with a wall segment rather than replacing it:** Ditches and Oil Pits (new building types in the existing `BuildingCatalog`, Phase 2.1) — each adds toughness/breach-difficulty or inflicts damage on a besieging horde before/during a breach attempt, per segment. This is the "the more you invest, the harder it is to break in" lever, separate from the tier ladder above.
-  - [ ] Retain legacy inner walls as fallback bulkheads during breach events — a breached outer segment doesn't expose the district directly, it exposes it through that specific gap to whatever's immediately behind it (see 4.2's expanded siege-cascade note).
+  - [ ] Retain legacy inner walls as fallback bulkheads during breach events — a breached outer segment doesn't expose the district directly depending on how the player has built their settlements/cities, it exposes it through that specific gap to whatever's immediately behind it (see 4.2's expanded siege-cascade note).
   - [ ] Build Gas Streetlamps and Searchlight Towers to illuminate perimeter walls during night defense, granting combat bonuses to garrisoned units.
 - [ ] **4.2 Victorian Infrastructure Reclamation**
   - [ ] Rebuild destroyed stone bridges, steam railways, and canal locks to restore interrupted supply routes.
@@ -197,10 +197,12 @@
     - [ ] +20% Construction and resource gather speed.
     - [ ] Zombies are slow/sluggish; minimal aggressive horde movement.
     - [ ] Full baseline visual range across unlocked hexes.
+    - [ ] Military units get increased movement speed and damage.
   - [ ] **Night Phase (20 Minutes):**
     - [ ] Zombie move speed +50%, aggression +100%, and double noise-attraction multiplier.
     - [ ] Fog of war contracts outside of Gas Streetlamps and Watchtower searchlights.
     - [ ] Sewer infestation eruption rate increases by 2x.
+  - [ ] Date counter, showing how long has elapsed since emerging from Manchesters self imposed quarantine to save itself from The Swarm (January 1st 1890).
 - [ ] **5.2 Horde Spawn & Industrial Attraction System (`HordeManager.gd`)**
   - [ ] Industrial noise fills Threat Meters, triggering night raids from uncleared wilderness.
   - [ ] Second spawn source, see Phase 5.9: casualty conversion turning the player's own losses into zombies, accumulating into hordes at the site of defeat.
@@ -233,30 +235,30 @@
   - [ ] **Horde state machine:** `WANDERING` (default — drifts across passable uncleared wilderness using Phase 5.5's pathfinder, biased toward open territory rather than a deliberate beeline anywhere) → `ATTRACTED` (a horde within range of a noise or light source above threshold — Phase 5.2's industrial noise, and Phase 2.6's lit vision sources at night — paths deliberately toward it) → `ATTACKING` (horde reaches the source's hex and a siege begins, handed off to Phase 5.4 combat) → back to `WANDERING` (repelled, reduced but not destroyed), or absorbed into the settlement's fallen population if the siege succeeds (Phase 5.9), or destroyed outright.
   - [ ] **Contact matters however it happens:** a horde doesn't need to be actively attracted to trigger a siege — pure chance wandering into a player-held or Military-ZoC-covered hex triggers the same `ATTACKING` transition. Attraction just makes contact far more likely/deliberate; it isn't the only path to it.
   - [ ] **Wall targeting:** once `ATTACKING` a walled hex, a horde's target is a specific wall segment (Phase 4.1) — whichever one sits along its arrival path — not the district in the abstract. This is also how multiple simultaneously-`ATTACKING` hordes end up pressuring different segments of the same perimeter at once.
-  - [ ] **Attraction is local, not global:** noise/light project a limited radius (an aura, same shape as ZoC/vision), not colony-wide awareness — a horde on the far side of the map has no way to know a distant city is loud. Keeps a country-sized map from turning every horde into a beeline toward whichever settlement is currently noisiest.
+  - [ ] **Attraction is local, not global:** gunfire/noise/light project a limited radius (an aura, same shape as ZoC/vision), not colony-wide awareness — a horde on the far side of the map has no way to know a distant city is loud. Keeps a country-sized map from turning every horde into a beeline toward whichever settlement is currently noisiest.
   - [ ] **Escalation:** a horde that wins a siege absorbs that hex's casualty conversion (Phase 5.9) and grows — the longer a horde goes unchallenged and the more it succeeds, the bigger and more dangerous it gets. A horde that loses is reduced, not automatically wiped, and reverts to `WANDERING` to menace somewhere else.
   - [ ] **Performance:** same LOD principle as Phase 2.5 — hordes far from any player-relevant hex (no Tactical detail hydrated nearby, out of vision range) run a cheap abstracted simulation (position + drift only), and only upgrade to full pathfinding/AI once within range of player territory or vision. A country-sized map cannot afford full per-frame AI for every roaming horde everywhere at once.
-- [ ] **5.11 Countryside Reclamation (Late-Game Offense)** — plan only. The intended arc: early-to-mid game is purely defensive ("hold the light" against whatever roams in from the dark, per Phase 5.10) — late game is when the player has enough spare military capacity (units not needed for home defense/patrol, Phase 5.6) to go looking for hordes instead of waiting for them, thinning out ambient wilderness zombie density through direct attrition rather than only reacting to sieges.
+- [ ] **5.11 Countryside Reclamation (Late-Game Offense)** — plan only. The intended arc: early game is purely defensive and resource building ("hold the light" against whatever roams in from the dark, per Phase 5.10) — mid game is when the player has enough spare military capacity (units not needed for home defense/patrol, Phase 5.6) to start expanding and clearing out space for new settlements and resources. Late game is when a player will start to go looking for hordes instead of waiting for them, thinning out ambient wilderness zombie density through direct attrition rather than only reacting to sieges.
   - [ ] This is the actual mechanic underneath Phase 7's campaign requiring a "continuous defended logistics link" (7.2) and Post-Campaign UK Liberation (7.4) — clearing a corridor or a whole region isn't a one-off scripted event, it's this same roaming-horde population being hunted down hex by hex.
   - [ ] A cleared hex doesn't flip to "permanently safe forever" — ambient wilderness can still reseed a wandering horde later (Phase 5.2's spawn system doesn't stop just because the player went on offense once); reclamation is upkeep, not a one-time switch, matching the "persistent background" pillar of the whole game.
 - [ ] **5.12 Building Destruction & Ruins (extends `BuildingInstance`/`BuildingManager`, Phase 2.1)** — plan only. **Decided (They Are Billions convention):** a destroyed building doesn't disappear — it becomes a Ruins state that stays on the map, a visible scar rather than empty ground.
   - [ ] New `BuildingInstance` health pool (same spirit as walls' own toughness in Phase 4.1, scaling with construction tier/cost) — reduced by an active siege only once the layers in front of it have actually failed (Phase 4.2's cascade: wall -> legacy wall -> garrison -> buildings), not the instant a horde shows up anywhere nearby.
-  - [ ] At zero health, the building flips to `is_ruined = true`: stops producing/consuming anything and stops housing population, and renders as a distinct rubble state (code-drawn placeholder, same convention as everything else) instead of being removed from `BuildingManager`'s records.
-  - [ ] Whatever `current_population` (Phase 2.10) the building held at the moment of destruction converts to zombies right there — a Phase 5.9 casualty event, same as a starvation death, just triggered by direct assault instead of hunger.
-  - [ ] Ruins are inert until the district is recaptured (Phase 5.8), at which point the player can clear a ruin (cheap, fast, empties the plot) or rebuild on the same footprint. Whether a rebuild is discounted vs. fresh construction is a balancing call, not an architecture one.
+  - [ ] At zero health, buildings (not walls, just buildings) flip to `is_ruined = true`: stops producing/consuming anything and stops housing population, and renders as a distinct rubble state (code-drawn placeholder, same convention as everything else) instead of being removed from `BuildingManager`'s records.
+  - [ ] Whatever `current_population` (Phase 2.10) the building held at the moment of destruction converts to zombies right there who pour out from the building that was just changed to Ruins — a Phase 5.9 casualty event, same as a starvation death, just triggered by direct assault instead of hunger.
+  - [ ] Ruins are inert until the district is recaptured (Phase 5.8), at which point the player can repair a ruin (rebuilds the original building) or destroy the ruin.  Repairing a ruin should be cheaper than building it from scratch, but by how much is a balancing call not an architectural one.
 
 ---
 
 ## 🖥️ Phase 6: Background HUD, Alerts & Audio Signals
 - [ ] **6.1 Background Play UI & HUD Design (`MainHUD.tscn`)**
   - [ ] Day/Night Phase Clock indicator with countdown timer (e.g., "Nightfall in 04:15").
-  - [ ] Threat Meter indicator per sector showing horde attraction levels.
+  - [ ] Threat Meter indicator per sector showing horde attraction levels, visible on hex overview map.
   - [ ] Build/placement menu — the actual UI for `BuildingManager.place_building_at_world()` (built in Phase 2.5, never called by anything since). Without this the game has no way for a human to place a building at all.
   - [ ] Always-visible minimap of the Strategic layer (including Phase 2.7's markers/alerts) while zoomed into Tactical view — the hard-cut zoom (Phase 2.5) otherwise leaves the player with zero awareness of anything happening elsewhere on the map while zoomed into one hex cluster.
 - [ ] **6.2 Audio & Desktop Notification Alert System (`AlertManager.gd`)**
   - [ ] Sunset warning chime (e.g., Church bell toll at 2-minute nightfall mark).
   - [ ] Sunrise warning cockrel (e.g., rooster call at 2-minute dayfall mark).
-  - [ ] Auto-pause during a wall breach and any other major event.
+  - [ ] Auto-pause during a wall breach or if a unit is under attack or if a horde is spotted and any other major event (e.g. if food production falls below 100%, 75% or hits 50% or energy or gunpowder reach problematic levels too) .
 
 ---
 
@@ -268,8 +270,8 @@
   - [ ] Horde size/frequency (Phase 5.2's starting-small, ramping-up curve) should escalate roughly Act to Act — Manchester's small starting hordes are the tutorial-difficulty end of the same curve, not a separate easy-mode carve-out.
 - [ ] **7.2 Major Milestone Objectives System (`CampaignManager.gd`)**
   - [ ] **Primary Objective:** Establish a continuous, defended rail/road logistics link from Manchester to London.
-  - [ ] **Secondary Objective:** Investigate regional relic sites (wrecked observatories, strange craters) revealing alien spore origins.
-  - [ ] **Final Mystery:** Uncover the fate of Queen Victoria and the Imperial Cabinet inside the sealed Tower of London bunker.
+  - [ ] **Secondary Objective:** Investigate regional relic sites (wrecked observatories, strange craters, underground testing facilities, captured UFO's etc.) revealing alien spore origins.
+  - [ ] **Final Mystery:** Uncover the fate of Queen Victoria and the Imperial Cabinet inside the sealed Tower of London bunker. Did they know the alien invasion was coming this whole time? Leave it open ended for an expansion.
 - [ ] **7.3 Playtesting & Steam Integration**
   - [ ] Balance multi-week campaign progression from Manchester down to London.
   - [ ] Implement Steam Cloud Saves, Achievements, and Steam Deck controller layout support.
@@ -278,7 +280,7 @@
   - [ ] Reuses every system built through Phase 6 as-is — hex map, buildings, economy, ZoC, Discontent regions, tech tree — none of it is campaign-specific, which is what makes this cheap to add on top rather than a second game.
 - [ ] **7.5 Naval Logistics & Seafaring (Ireland Unlock)** — plan only, and the biggest net-new system in this list. Ireland was part of the UK in 1890 and is only reachable by sea, so reclaiming it needs a genuinely new transport layer: ports (a new building), ships (a new unit-like entity with its own pathfinding over open-water hexes rather than land — see 5.5), and sea supply lines as a `LogisticsNetwork` segment type alongside road/rail/canal. Scope this properly as its own phase when it's actually picked up rather than bolting it onto 7.4 — recorded here so the Ireland objective doesn't quietly assume it away.
 - [ ] **7.6 Difficulty, Win/Loss & New Game Setup** — plan only.
-  - [ ] **Decided: defeat is an economic/capability elimination check, not a territorial one.** The game only ends when the player simultaneously has (a) zero stockpiled resources across every `ResourceManager` type, (b) zero total daily production from anything still standing, and (c) no remaining building capable of recruiting a unit or expanding onto a new hex. Holding even a single settlement with any one of those intact means the game continues — losing every territory but one is a crisis, not a loss condition. (Check (c) depends on Phase 5.4's recruitment mechanic existing to evaluate against.)
+  - [ ] **Decided: defeat is an economic/capability elimination check, not a territorial one.** The game only ends when the player has (a) not enough stockpiled resources across every `ResourceManager` type to create new units and retake lost land and (b) no total daily production from anything still standing, and or (c) no remaining building capable of recruiting a unit or expanding onto a new hex. Holding even a single settlement with the ability to recruit new units to expand means they still have a chance of winning.
   - [ ] Recovering from near-total loss is meant to be *possible in principle but hard in practice*: Phase 5.8 (Territory Capture & Loss) is what lets a lost district be recaptured at all, and Phase 5.9 (Casualty Conversion) is what makes recapturing it genuinely difficult — a densely populated settlement that falls converts its own people into the zombies now defending it, so the hardest place to retake is exactly the one most worth retaking.
   - [ ] Difficulty presets (horde aggression/frequency, upkeep drain rates) and starting-map/seed choice at New Game — this is the tuning knob on top of Phase 5.2's baseline starting-small/ramping-up curve, not a separate system.
 - [ ] **7.7 Future Expansion Hook (Continental Europe)** — plan only, no build work now. Confirms the architecture already supports this without rework: axial hex coordinates (`HexCoord`) are unbounded, `BritishGeographyData.MAP_BOUNDS` is a single adjustable constant rather than anything hard-coded deeper into the generator, and named geography is entirely data (`GeographyFeature` seed lists) — a future Europe expansion is "author a new seed data file and raise the bounds," not a rewrite. Naval logistics (7.5) is the actual prerequisite, since Europe is inherently sea-separated from Great Britain.

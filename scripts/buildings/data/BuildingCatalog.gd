@@ -88,7 +88,7 @@ static func _gas_streetlamp() -> BuildingDefinition:
 	var d := BuildingDefinition.new(GameEnums.BuildingType.GAS_STREETLAMP, "Gas Streetlamp")
 	d.category = GameEnums.BuildingCategory.HOUSING_CIVIL
 	d.construction_cost = {GameEnums.ResourceType.CAST_IRON: 15}
-	d.daily_upkeep = {GameEnums.ResourceType.COAL: 1.0}
+	d.daily_upkeep = {GameEnums.ResourceType.ENERGY: 1.0}
 	d.allowed_biomes = [GameEnums.BiomeType.URBAN]
 	d.requires_settlement = true
 	d.vision_radius = 1  # Lights the surrounding street, not just its own hex (Phase 2.6).
@@ -107,7 +107,7 @@ static func _steam_printing_press() -> BuildingDefinition:
 	var d := BuildingDefinition.new(GameEnums.BuildingType.STEAM_PRINTING_PRESS, "Steam Printing Press")
 	d.category = GameEnums.BuildingCategory.HOUSING_CIVIL
 	d.construction_cost = {GameEnums.ResourceType.WOOD: 25, GameEnums.ResourceType.CAST_IRON: 30}
-	d.daily_upkeep = {GameEnums.ResourceType.COAL: 2.0}
+	d.daily_upkeep = {GameEnums.ResourceType.ENERGY: 2.0}
 	d.allowed_biomes = [GameEnums.BiomeType.URBAN]
 	d.requires_settlement = true
 	return d
@@ -146,7 +146,7 @@ static func _charcoal_kiln() -> BuildingDefinition:
 	d.category = GameEnums.BuildingCategory.INDUSTRY_EXTRACTION
 	d.construction_cost = {GameEnums.ResourceType.WOOD: 35}
 	d.daily_upkeep = {GameEnums.ResourceType.WOOD: 10.0}
-	d.daily_output = {GameEnums.ResourceType.COAL: 6.0}
+	d.daily_output = {GameEnums.ResourceType.ENERGY: 6.0}
 	d.allowed_biomes = [GameEnums.BiomeType.INDUSTRIAL, GameEnums.BiomeType.MOORLAND, GameEnums.BiomeType.FARMLAND]
 	return d
 
@@ -154,7 +154,7 @@ static func _coal_pithead() -> BuildingDefinition:
 	var d := BuildingDefinition.new(GameEnums.BuildingType.COAL_PITHEAD, "Coal Pithead")
 	d.category = GameEnums.BuildingCategory.INDUSTRY_EXTRACTION
 	d.construction_cost = {GameEnums.ResourceType.WOOD: 60, GameEnums.ResourceType.CAST_IRON: 20}
-	d.daily_output = {GameEnums.ResourceType.COAL: 10.0}
+	d.daily_output = {GameEnums.ResourceType.ENERGY: 10.0}
 	d.allowed_biomes = [GameEnums.BiomeType.INDUSTRIAL, GameEnums.BiomeType.MOORLAND, GameEnums.BiomeType.HIGHLAND]
 	return d
 
@@ -162,7 +162,7 @@ static func _cast_iron_foundry() -> BuildingDefinition:
 	var d := BuildingDefinition.new(GameEnums.BuildingType.CAST_IRON_FOUNDRY, "Cast Iron Foundry")
 	d.category = GameEnums.BuildingCategory.INDUSTRY_EXTRACTION
 	d.construction_cost = {GameEnums.ResourceType.BRICKS: 70, GameEnums.ResourceType.CAST_IRON: 30}
-	d.daily_upkeep = {GameEnums.ResourceType.COAL: 8.0}
+	d.daily_upkeep = {GameEnums.ResourceType.ENERGY: 8.0}
 	d.daily_output = {GameEnums.ResourceType.CAST_IRON: 5.0}
 	d.allowed_biomes = [GameEnums.BiomeType.INDUSTRIAL, GameEnums.BiomeType.URBAN]
 	return d
@@ -171,7 +171,7 @@ static func _saltpetre_powder_mill() -> BuildingDefinition:
 	var d := BuildingDefinition.new(GameEnums.BuildingType.SALTPETRE_POWDER_MILL, "Saltpetre & Powder Mill")
 	d.category = GameEnums.BuildingCategory.INDUSTRY_EXTRACTION
 	d.construction_cost = {GameEnums.ResourceType.BRICKS: 60, GameEnums.ResourceType.WOOD: 20}
-	d.daily_upkeep = {GameEnums.ResourceType.COAL: 4.0}
+	d.daily_upkeep = {GameEnums.ResourceType.ENERGY: 4.0}
 	d.daily_output = {GameEnums.ResourceType.GUNPOWDER: 6.0}
 	d.allowed_biomes = [GameEnums.BiomeType.INDUSTRIAL]
 	return d
