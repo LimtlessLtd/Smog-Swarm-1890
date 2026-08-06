@@ -68,3 +68,16 @@ extends Resource
 ## that needs persisting despite Phase 2.8.1's "terrain regenerates
 ## byte-identically from a fixed seed, no saving needed" baseline.
 @export var drained_hexes: Array[Vector2i] = []
+
+## HordeManager (Phase 5.2/5.10) — every roaming horde's position/size/state.
+## In-flight drift paths are NOT saved (see Horde.path's own doc comment);
+## HordeManager replans fresh after a load, same as Zone of Control coverage
+## not saving itself.
+@export var hordes: Array[Horde] = []
+@export var next_horde_id: int = 1
+
+## UnitManager (Phase 5.4) — every trained unit's type/hex/HP, same
+## save-entry-not-full-instance convention BuildingSaveEntry uses (re-looks
+## up the live UnitDefinition from UnitCatalog by type on load).
+@export var units: Array[UnitSaveEntry] = []
+@export var next_unit_id: int = 1

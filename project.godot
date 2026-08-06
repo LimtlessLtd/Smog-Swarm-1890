@@ -23,6 +23,7 @@ config/features=PackedStringArray("4.7", "GL Compatibility")
 
 BackgroundExecutionManager="*res://scripts/core/BackgroundExecutionManager.gd"
 TickManager="*res://scripts/core/TickManager.gd"
+TimeCycleManager="*res://scripts/core/TimeCycleManager.gd"
 
 [display]
 

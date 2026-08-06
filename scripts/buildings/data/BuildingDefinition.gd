@@ -40,6 +40,15 @@ extends Resource
 ## Church Steeple Watchtower that light up an area beyond just themselves.
 @export var vision_radius: int = 0
 
+## Design doc 2.6.4/Phase 5.1: true for buildings that actively cast light
+## (Gas Streetlamp, Church Steeple Watchtower, Searchlight Tower) rather than
+## just being tall/staffed. At night, FogOfWarManager shrinks vision_radius
+## for every OTHER building but holds/extends it for these — "cities as
+## beacons in a dead world" needs their light to matter more after dark, not
+## less. False (the default) for everything else, including buildings whose
+## vision_radius is already >0 for a non-light reason.
+@export var lit_at_night: bool = false
+
 func _init(p_type: GameEnums.BuildingType = GameEnums.BuildingType.TERRACED_TENEMENT, p_display_name: String = "") -> void:
 	building_type = p_type
 	display_name = p_display_name

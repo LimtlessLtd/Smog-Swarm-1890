@@ -18,17 +18,26 @@ extends Node
 ## instantly — it lingers VISIBLE for LOST_VISION_GRACE_SECONDS first
 ## (design doc, decided), so losing sight of a threat isn't instant/twitchy.
 ##
-## Phase 5.1 (Day/Night) is expected to shrink vision_radius at night except
-## for lit sources (Gas Streetlamp, Watchtower searchlight) — not
-## implemented here since TimeCycleManager doesn't exist yet (design doc
-## 2.6.4); recompute()/_compute_visible_set() is where that hook belongs
-## once it does.
+## Phase 5.1/2.6.4 night vision contraction: shrinks vision_radius at night
+## for every building EXCEPT lit sources (BuildingDefinition.lit_at_night —
+## Gas Streetlamp, Church Steeple Watchtower, Searchlight Tower), which hold
+## or extend theirs instead (design doc, decided: extend). Recomputed
+## whenever TimeCycleManager's phase flips, same trigger as a building being
+## placed/removed. Deliberately scoped to building vision_radius only, not
+## LogisticsNetwork's Zone-of-Control-derived coverage: ZoC vision represents
+## patrol/logistics awareness over a hex, not light cast into the dark, so it
+## isn't a "lit source" this contraction has any hook to apply to.
 
 signal fog_state_changed(coord: Vector2i, state: GameEnums.FogState)
 
 ## "A few seconds" per the design doc's own decided grace period — a
 ## balancing number, not an architecture one.
 const LOST_VISION_GRACE_SECONDS: float = 3.0
+
+## Night vision contraction (design doc 2.6.4) — balancing numbers, not
+## architecture ones, same as LOST_VISION_GRACE_SECONDS above.
+const NIGHT_VISION_PENALTY: int = 1  ## Unlit sources lose this many hex-rings of vision_radius at night (floored at 0).
+const NIGHT_LIT_BONUS: int = 1       ## Lit sources (BuildingDefinition.lit_at_night) gain this many instead — "hold or extend theirs".
 
 @export var hex_grid_map_path: NodePath
 @export var building_manager_path: NodePath
@@ -51,6 +60,7 @@ func _ready() -> void:
 	if logistics_network_path != NodePath():
 		_logistics_network = get_node(logistics_network_path)
 		_logistics_network.network_recomputed.connect(_on_network_recomputed)
+	TimeCycleManager.phase_changed.connect(_on_phase_changed)
 
 	# Every generated hex starts UNSEEN and needs its view pushed to match —
 	# HexCellView's own default modulate is full color, not blank darkness,
@@ -117,8 +127,15 @@ func recompute() -> void:
 func _compute_visible_set() -> Dictionary:
 	var result: Dictionary = {}  # Vector2i -> true
 	if _building_manager:
+		var is_night := TimeCycleManager.is_night()
 		for instance in _building_manager.get_all_buildings():
-			for coord in HexCoord.hex_disk(instance.hex_coord, instance.definition.vision_radius):
+			var radius := instance.definition.vision_radius
+			if is_night:
+				if instance.definition.lit_at_night:
+					radius += NIGHT_LIT_BONUS
+				else:
+					radius = maxi(0, radius - NIGHT_VISION_PENALTY)
+			for coord in HexCoord.hex_disk(instance.hex_coord, radius):
 				if not _hex_grid_map or _hex_grid_map.has_cell(coord):
 					result[coord] = true
 	if _logistics_network:
@@ -144,4 +161,7 @@ func _on_buildings_changed(_instance: BuildingInstance) -> void:
 	recompute()
 
 func _on_network_recomputed() -> void:
+	recompute()
+
+func _on_phase_changed(_phase: GameEnums.DayPhase) -> void:
 	recompute()
