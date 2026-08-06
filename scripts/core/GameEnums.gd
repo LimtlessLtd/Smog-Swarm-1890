@@ -128,6 +128,22 @@ enum UnitType {
 	WAR_MACHINE_ARMORED_CAR,  ## Special.
 }
 
+## Design doc Phase 5.6's "standard RTS order set" — what a UnitInstance is
+## currently doing, driven by UnitOrderController. HOLD is the default (a
+## freshly-trained unit with no rally point set just sits at its training
+## building). ATTACK_MOVE is data-distinct from MOVE (a future engage-on-
+## contact behavior can tell them apart) but currently drives identically —
+## UnitOrderController doesn't yet trigger combat on contact with a horde;
+## see that class's own doc comment for why (no reviewed horde-combat-stat
+## decision exists yet, Horde.size is a headcount, not a combat stat).
+enum UnitOrderType {
+	HOLD,         ## Stand fast at the current hex — the default.
+	MOVE,         ## Path to move_target, one hex per movement tick, then reverts to HOLD on arrival.
+	ATTACK_MOVE,  ## Same movement as MOVE; the "attack" half (engage anything encountered en route) isn't wired yet.
+	PATROL,       ## Loop through patrol_waypoints indefinitely, one leg at a time.
+	GARRISON,     ## Stand fast at the current hex, same as HOLD — the "stationary defense bonus" (design doc) isn't wired yet, needs Phase 5.4's combat stats to bonus something that doesn't exist yet either.
+}
+
 enum ZoneOfControlType {
 	MILITARY,   ## Forward Ammo Dumps, Garrisons, Watchtowers, Combat Units.
 	CIVILIAN,   ## Town Halls, Churches (the Watchtower's civilian half), Telegraph Relays.

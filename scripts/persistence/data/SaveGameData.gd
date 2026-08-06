@@ -76,8 +76,12 @@ extends Resource
 @export var hordes: Array[Horde] = []
 @export var next_horde_id: int = 1
 
-## UnitManager (Phase 5.4) — every trained unit's type/hex/HP, same
+## UnitManager (Phase 5.4) — every trained unit's type/hex/HP/order, same
 ## save-entry-not-full-instance convention BuildingSaveEntry uses (re-looks
 ## up the live UnitDefinition from UnitCatalog by type on load).
 @export var units: Array[UnitSaveEntry] = []
 @export var next_unit_id: int = 1
+
+## UnitManager (Phase 5.6) — rally-point configuration per training
+## building, independent of which units currently exist.
+@export var unit_rally_points: Dictionary = {}  # Vector2i -> Vector2i

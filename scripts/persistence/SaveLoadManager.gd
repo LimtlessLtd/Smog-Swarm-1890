@@ -198,6 +198,7 @@ func _build_save_data(campaign_name: String, slot_name: String) -> SaveGameData:
 	if _unit_manager:
 		data.units = _unit_manager.get_save_entries()
 		data.next_unit_id = _unit_manager.get_next_id()
+		data.unit_rally_points = _unit_manager.get_rally_points_save_state()
 
 	var tick_state := TickManager.get_save_state()
 	data.current_day = tick_state.current_day
@@ -246,6 +247,7 @@ func _apply_save_data(data: SaveGameData) -> void:
 		_horde_manager.load_save_state(data.hordes, data.next_horde_id)
 	if _unit_manager:
 		_unit_manager.load_save_entries(data.units, data.next_unit_id)
+		_unit_manager.load_rally_points_save_state(data.unit_rally_points)
 
 	TickManager.load_save_state({
 		"current_day": data.current_day,
