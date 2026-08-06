@@ -1,4 +1,4 @@
-[gd_scene load_steps=7 format=3]
+[gd_scene load_steps=8 format=3]
 
 [ext_resource type="PackedScene" path="res://scenes/world/HexGridMap.tscn" id="1"]
 [ext_resource type="PackedScene" path="res://scenes/camera/CameraController.tscn" id="2"]
@@ -6,6 +6,7 @@
 [ext_resource type="PackedScene" path="res://scenes/buildings/BuildingManager.tscn" id="4"]
 [ext_resource type="PackedScene" path="res://scenes/logistics/LogisticsNetwork.tscn" id="5"]
 [ext_resource type="PackedScene" path="res://scenes/world/LocalDetailManager.tscn" id="6"]
+[ext_resource type="PackedScene" path="res://scenes/world/StrategicOverlayManager.tscn" id="7"]
 
 [node name="Main" type="Node2D"]
 
@@ -32,4 +33,9 @@ building_manager_path = NodePath("../BuildingManager")
 hex_grid_map_path = NodePath("../HexGridMap")
 building_manager_path = NodePath("../../BuildingManager")
 logistics_network_path = NodePath("../../LogisticsNetwork")
+camera_path = NodePath("../../CameraController")
+
+[node name="StrategicOverlayManager" parent="WorldRoot" instance=ExtResource("7")]
+hex_grid_map_path = NodePath("../HexGridMap")
+building_manager_path = NodePath("../../BuildingManager")
 camera_path = NodePath("../../CameraController")

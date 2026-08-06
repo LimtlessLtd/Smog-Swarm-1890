@@ -67,6 +67,39 @@
 
 ---
 
+## 🌫️ Phase 2.6: Fog of War
+> Plan only — not implemented yet. Documented now because it's a prerequisite for Phase 5.1's "Fog of war contracts outside of Gas Streetlamps and Watchtower searchlights" (that line needs a fog system to contract in the first place), and because Phase 2.5's Tactical view needs a fog gate too — an unexplored hex has nothing known to render, at any zoom.
+- [ ] **2.6.1 Three-State Visibility Model (`GameEnums.FogState`, `FogOfWarManager.gd`)**
+  - [ ] `UNSEEN` (never scouted, rendered as blank darkness) → `EXPLORED` (terrain/buildings remembered, no current intel on movement) → `VISIBLE` (full real-time information). `UNSEEN → EXPLORED` is one-way per hex forever; `EXPLORED ↔ VISIBLE` toggles freely as vision sources come and go.
+  - [ ] `FogOfWarManager` (new system, wired as a HexGridMap-sibling like LogisticsNetwork/BuildingManager) owns fog state per hex and recomputes `VISIBLE` coverage whenever a vision source changes: building placed/removed (`BuildingManager`), Zone of Control recomputed (`LogisticsNetwork`), and later unit movement (Phase 5.4).
+  - [ ] **Decided:** losing a hex's last vision source doesn't drop it to `EXPLORED` instantly — it lingers `VISIBLE` for a short grace period first (a few seconds), so losing sight of a threat isn't instant/twitchy. Needs a per-hex timer, not just a recompute-on-change flag.
+- [ ] **2.6.2 Vision Sources**
+  - [ ] `BuildingDefinition.vision_radius` (new field) — buildings like Gas Streetlamps and the Church Steeple Watchtower project vision over their own hex plus a small radius, independent of whether they also project a Zone of Control.
+  - [ ] Military and Civilian ZoC coverage (`LogisticsNetwork`) double as vision sources — this was already the original Phase 2.3 spec's intent ("Military ZoC: Supply, **Vision** & Suppression"), just not wired to anything until this phase exists.
+  - [ ] Units (Phase 5.4) feed the same system once they exist — `FogOfWarManager`'s vision-source contract should be generic enough that a unit is just another source, not a special case.
+- [ ] **2.6.3 Rendering Hooks**
+  - [ ] Strategic view (`HexCellView`): tint the whole tile via `Node2D.modulate` — black (hides biome color entirely) for `UNSEEN`, dimmed grey for `EXPLORED`, full color for `VISIBLE`. No new nodes needed.
+  - [ ] Tactical view (`TacticalHexView` / `LocalDetailManager`, Phase 2.5): a hex must be at least `EXPLORED` to hydrate a Tactical view at all — an `UNSEEN` hex zoomed into is still just blank/dark, there's nothing known to draw. Terrain/props/buildings stay visible (dimmed) at `EXPLORED`; the future mobile-entity layer (zombies, units — Phase 5) must check `VISIBLE` before drawing anything there, so an `EXPLORED`-but-not-`VISIBLE` hex shows remembered terrain with no zombies/units on it — exactly "see the terrain, not what's moving through it."
+- [ ] **2.6.4 Night Integration (feeds Phase 5.1)**
+  - [ ] Vision radius shrinks at night except for lit sources (Gas Streetlamps, Watchtower searchlights), which hold or extend theirs. This is what Phase 5.1's fog contraction actually runs on under the hood — recorded here so that phase doesn't have to invent the fog system itself when it arrives.
+
+---
+
+## 🚩 Phase 2.7: Strategic Map Markers & Threat Indicators
+> Building icons and the frontier indicator are implemented now (see commit); wall markers, unit markers, under-attack alerts and spotted-horde markers are documented here as hooks for Phase 4/5.2-5.4 to register with when those systems exist, rather than left to be retrofitted later.
+- [x] **2.7.1 Generic Marker Layer (`StrategicOverlayManager.gd`)**
+  - [x] A single overlay system (WorldRoot sibling of HexGridMap, Strategic-zoom only — hides itself on `CameraController.tactical_mode_changed`) that other systems register markers with instead of each drawing its own icons.
+  - [x] Code-drawn placeholder glyphs per marker type (same convention as every other visual so far), swappable for real icon art later without touching whatever triggers a marker.
+- [x] **2.7.2 Building & Frontier Markers**
+  - [x] A small icon per placed building, colored by `BuildingCategory` (shared `BuildingVisuals.category_color()` lookup, also used by `TacticalHexView` so the two views agree), driven off `BuildingManager.building_placed`/`building_removed`, positioned at the building's own precise `local_position` from Phase 2.5.
+  - [x] A frontier indicator on hexes that mix secured and contested ground (`HexCell.is_frontier()` AND `get_safe_districts()` non-empty — a fully wild hex is just unclaimed territory, not a line worth marking; a fully secured hex has nothing contesting it). Matches "settlement hexes" under today's Phase 1 baseline district data, and will naturally spread to other hexes once Phase 3+ adds real territory capture/clearing.
+- [ ] **2.7.3 Wall Markers** — blocked on Phase 4.1. Wall segments register their position/state with `StrategicOverlayManager` once the freeform wall system exists.
+- [ ] **2.7.4 Unit Markers** — blocked on Phase 5.4. Units register/unregister the same way buildings do.
+- [ ] **2.7.5 Under-Attack Alerts** — blocked on Phase 4.2 (wall breach) and Phase 5.4 (`CombatEngine` engagement events). Either raises a pulsing alert marker at the hex under attack, cleared once the threat resolves.
+- [ ] **2.7.6 Spotted Horde Markers** — blocked on Phase 5.2 (`HordeManager`) and 5.3 (reconnaissance). Interacts with Fog of War (Phase 2.6): while a horde's hex stays `VISIBLE` the marker tracks it live; once vision is lost, **decided:** the marker freezes as a dimmed "last known position" ghost rather than vanishing — you remember roughly where it was, not where it's gone.
+
+---
+
 ## 🏙️ Phase 3: Urban Underground & Sewer Outbreak Mechanics
 - [ ] **3.1 Subterranean Layer System (`SubterraneanMap.gd`)**
   - [ ] Urban hex underground toggle (Victorian Sewers, London Underground tunnels).

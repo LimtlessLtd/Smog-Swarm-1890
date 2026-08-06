@@ -77,7 +77,7 @@ func _prop_color(prop_type: GameEnums.PropType) -> Color:
 
 func _build_building_node(building: BuildingInstance, index: int) -> Node2D:
 	var box := Polygon2D.new()
-	box.color = _building_color(building.definition.category)
+	box.color = BuildingVisuals.category_color(building.definition.category)
 	var half := 10.0
 	box.polygon = PackedVector2Array([Vector2(-half, -half), Vector2(half, -half), Vector2(half, half), Vector2(-half, half)])
 	box.position = _resolved_building_position(building, index)
@@ -95,14 +95,3 @@ func _resolved_building_position(building: BuildingInstance, index: int) -> Vect
 	var ring_radius := 22.0
 	var angle := TAU * float(index) / float(_buildings.size())
 	return Vector2(cos(angle), sin(angle)) * ring_radius
-
-func _building_color(category: GameEnums.BuildingCategory) -> Color:
-	match category:
-		GameEnums.BuildingCategory.HOUSING_CIVIL:
-			return Color(0.55, 0.42, 0.30)
-		GameEnums.BuildingCategory.INDUSTRY_EXTRACTION:
-			return Color(0.35, 0.32, 0.34)
-		GameEnums.BuildingCategory.AGRICULTURE:
-			return Color(0.62, 0.55, 0.25)
-		_:
-			return Color(0.5, 0.5, 0.5)
