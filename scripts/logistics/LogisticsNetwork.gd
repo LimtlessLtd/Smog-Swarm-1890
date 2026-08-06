@@ -57,6 +57,18 @@ func restore_segment_between(hex_a: Vector2i, hex_b: Vector2i) -> void:
 func get_zoc_state(coord: Vector2i) -> ZoneOfControlState:
 	return _zoc_by_hex.get(coord, ZoneOfControlState.new(coord))
 
+## Exposed for SaveLoadManager (Phase 2.8) — segments + severed state only;
+## ZoC coverage (_zoc_by_hex) is deliberately not part of this, it recomputes
+## fresh from buildings + these segments every time (see recompute()).
+func get_save_segments() -> Array[SupplyLineSegment]:
+	return _segments.duplicate()
+
+## Restores supply line segments from a save (Phase 2.8.2) and recomputes
+## ZoC/vision coverage against them.
+func load_save_segments(segments: Array[SupplyLineSegment]) -> void:
+	_segments = segments.duplicate()
+	recompute()
+
 ## Every hex currently carrying any Zone of Control coverage (military or
 ## civilian). Lets FogOfWarManager (Phase 2.6) treat ZoC coverage as a vision
 ## source without reaching into this class's internals.

@@ -1,4 +1,4 @@
-[gd_scene load_steps=9 format=3]
+[gd_scene load_steps=10 format=3]
 
 [ext_resource type="PackedScene" path="res://scenes/world/HexGridMap.tscn" id="1"]
 [ext_resource type="PackedScene" path="res://scenes/camera/CameraController.tscn" id="2"]
@@ -8,6 +8,7 @@
 [ext_resource type="PackedScene" path="res://scenes/world/LocalDetailManager.tscn" id="6"]
 [ext_resource type="PackedScene" path="res://scenes/world/StrategicOverlayManager.tscn" id="7"]
 [ext_resource type="PackedScene" path="res://scenes/world/FogOfWarManager.tscn" id="8"]
+[ext_resource type="PackedScene" path="res://scenes/persistence/SaveLoadManager.tscn" id="9"]
 
 [node name="Main" type="Node2D"]
 
@@ -34,6 +35,12 @@ building_manager_path = NodePath("../BuildingManager")
 hex_grid_map_path = NodePath("../WorldRoot/HexGridMap")
 building_manager_path = NodePath("../BuildingManager")
 logistics_network_path = NodePath("../LogisticsNetwork")
+
+[node name="SaveLoadManager" parent="." instance=ExtResource("9")]
+building_manager_path = NodePath("../BuildingManager")
+resource_manager_path = NodePath("../ResourceManager")
+logistics_network_path = NodePath("../LogisticsNetwork")
+fog_of_war_manager_path = NodePath("../FogOfWarManager")
 
 [node name="LocalDetailManager" parent="WorldRoot" instance=ExtResource("6")]
 hex_grid_map_path = NodePath("../HexGridMap")

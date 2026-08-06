@@ -48,6 +48,12 @@ func get_buildings_at(coord: Vector2i) -> Array[BuildingInstance]:
 func get_all_buildings() -> Array[BuildingInstance]:
 	return _instances.duplicate()
 
+## Exposed for SaveLoadManager (Phase 2.8) — the next id a freshly-placed
+## building would get, so a save can restore it exactly on load instead of
+## quietly renumbering everything placed afterward.
+func get_next_id() -> int:
+	return _next_id
+
 func get_buildings_with_zoc_role(role: GameEnums.ZoneOfControlType) -> Array[BuildingInstance]:
 	var result: Array[BuildingInstance] = []
 	for instance in _instances:
@@ -98,8 +104,18 @@ func place_building(building_type: GameEnums.BuildingType, coord: Vector2i, loca
 		for resource_type in definition.storage_bonus:
 			_resource_manager.add_storage_cap(resource_type, float(definition.storage_bonus[resource_type]))
 
-	var instance := BuildingInstance.new(definition, coord, _next_id, local_position)
-	_next_id += 1
+	return _register_instance(definition, coord, _next_id, local_position, true)
+
+## Shared instance-bookkeeping between a fresh place_building() (which has
+## already validated placement and spent resources above) and
+## load_save_entries() (Phase 2.8, which restores a building that was
+## already paid for in a previous session and must not re-spend or
+## re-validate it). `advance_next_id` is false for the latter — restoration
+## sets `_next_id` once from the save's own record instead of per-instance.
+func _register_instance(definition: BuildingDefinition, coord: Vector2i, id: int, local_position: Vector2, advance_next_id: bool) -> BuildingInstance:
+	var instance := BuildingInstance.new(definition, coord, id, local_position)
+	if advance_next_id:
+		_next_id = id + 1
 	_instances.append(instance)
 	if not _instances_by_hex.has(coord):
 		_instances_by_hex[coord] = []
@@ -125,6 +141,31 @@ func remove_building(instance: BuildingInstance) -> void:
 	if _instances_by_hex.has(instance.hex_coord):
 		_instances_by_hex[instance.hex_coord].erase(instance)
 	building_removed.emit(instance)
+
+## Every placed instance reduced to its saveable footprint (Phase 2.8.1) —
+## see BuildingSaveEntry for why the full BuildingDefinition isn't included.
+func get_save_entries() -> Array[BuildingSaveEntry]:
+	var result: Array[BuildingSaveEntry] = []
+	for instance in _instances:
+		result.append(BuildingSaveEntry.new(instance.definition.building_type, instance.hex_coord, instance.id, instance.local_position))
+	return result
+
+## Restores placed instances from a save (Phase 2.8.2): clears whatever is
+## currently placed, then recreates each entry via _register_instance()
+## directly — bypassing place_building()'s cost/validation, since these
+## buildings already exist and were already paid for. `next_id` is applied
+## once at the end rather than derived per-instance, matching whatever
+## BuildingManager's own counter was at save time.
+func load_save_entries(entries: Array[BuildingSaveEntry], next_id: int) -> void:
+	for instance in _instances.duplicate():
+		remove_building(instance)
+	for entry in entries:
+		var definition := BuildingCatalog.get_definition(entry.building_type)
+		if not definition:
+			push_warning("BuildingManager: unknown building type %s in save data, skipping." % entry.building_type)
+			continue
+		_register_instance(definition, entry.hex_coord, entry.id, entry.local_position, false)
+	_next_id = next_id
 
 func _on_day_completed(_day_number: int) -> void:
 	if not _resource_manager:

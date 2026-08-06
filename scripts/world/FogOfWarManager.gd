@@ -79,6 +79,27 @@ func is_at_least_explored(coord: Vector2i) -> bool:
 func is_visible(coord: Vector2i) -> bool:
 	return get_fog_state(coord) == GameEnums.FogState.VISIBLE
 
+## Exposed for SaveLoadManager (Phase 2.8) — explored/visible memory is
+## genuinely earned by play and can't be re-derived like ZoC can (recompute()
+## only ever re-derives the currently-VISIBLE set, never EXPLORED), so unlike
+## most of this game's state, this one really does need saving as-is.
+func get_save_state() -> Dictionary:
+	return _fog_state.duplicate()
+
+## Restores fog state from a save (Phase 2.8.2). Deliberately does NOT call
+## recompute() afterward: the saved dictionary is authoritative for the exact
+## moment it was saved (including EXPLORED hexes recompute() alone could
+## never reproduce), and ongoing gameplay will recompute VISIBLE coverage
+## naturally as buildings/ZoC signals fire from here on. Call this AFTER
+## restoring buildings/supply lines, not before — otherwise their restoration
+## signals would trigger transient recompute()s this then correctly overrides
+## anyway, but there's no reason to race it.
+func load_save_state(state: Dictionary) -> void:
+	_grace_remaining.clear()
+	for coord in state:
+		_fog_state[coord] = state[coord]
+		_push_view_state(coord, state[coord])
+
 ## Recomputes the current vision-source set from scratch and reconciles fog
 ## state against it. Cheap enough to call on every building/ZoC change at
 ## this scale (dozens of buildings, not thousands) — same reasoning as
