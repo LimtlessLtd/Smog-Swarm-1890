@@ -116,6 +116,12 @@ enum DayPhase {
 	NIGHT,  ## Second half — drives FogOfWarManager's vision contraction (Phase 2.6.4); zombie/unit modifiers deferred the same way.
 }
 
+enum HordeState {
+	WANDERING,  ## Default (design doc Phase 5.10) — drifts across passable uncleared wilderness, no deliberate target. The only state HordeManager actually produces right now.
+	ATTRACTED,  ## Pathing deliberately toward a noise/light source above threshold. Not yet produced — needs Phase 5.2's industrial-noise tracking, which doesn't exist yet.
+	ATTACKING,  ## Besieging a specific wall segment/hex, handed off to combat. Not yet produced — needs Phase 5.4's CombatEngine, which doesn't exist yet.
+}
+
 enum TechUnlockType {
 	WALL_TIER,        ## Unlocks a Phase 4.1 wall tier (unlock_value: 1=Brick, 2=Concrete; tier 0/Wooden is baseline, no tech needed).
 	UNIT_TIER,        ## Unlocks a whole Phase 5.4 unit tier, all 3 roles at once (unlock_value: 1-5; tier 0 is baseline, no tech needed).

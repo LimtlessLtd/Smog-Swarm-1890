@@ -3,10 +3,11 @@ extends Node
 
 ## Aggregates state out of BuildingManager / ResourceManager /
 ## LogisticsNetwork / FogOfWarManager / TechManager / DiscontentManager /
-## WallManager / ReclamationManager / TickManager into a single SaveGameData
-## Resource and back again (design doc Phase 2.8.2). Wired as a Main.tscn
-## sibling via exported NodePaths, same pattern as LogisticsNetwork/
-## FogOfWarManager — it owns none of that state, only reads and restores it.
+## WallManager / ReclamationManager / HordeManager / TickManager into a
+## single SaveGameData Resource and back again (design doc Phase 2.8.2).
+## Wired as a Main.tscn sibling via exported NodePaths, same pattern as
+## LogisticsNetwork/FogOfWarManager — it owns none of that state, only
+## reads and restores it.
 ##
 ## **Decided (design doc 2.8.3):** saves are grouped by a player-named
 ## Campaign, with multiple manual save slots per campaign and multiple
@@ -43,6 +44,7 @@ const _UNSAFE_FILENAME_CHARS: Array[String] = [":", "/", "\\", "?", "*", "\"", "
 @export var discontent_manager_path: NodePath
 @export var wall_manager_path: NodePath
 @export var reclamation_manager_path: NodePath
+@export var horde_manager_path: NodePath
 
 var _building_manager: BuildingManager
 var _resource_manager: ResourceManager
@@ -52,6 +54,7 @@ var _tech_manager: TechManager
 var _discontent_manager: DiscontentManager
 var _wall_manager: WallManager
 var _reclamation_manager: ReclamationManager
+var _horde_manager: HordeManager
 
 func _ready() -> void:
 	if building_manager_path != NodePath():
@@ -70,6 +73,8 @@ func _ready() -> void:
 		_wall_manager = get_node(wall_manager_path)
 	if reclamation_manager_path != NodePath():
 		_reclamation_manager = get_node(reclamation_manager_path)
+	if horde_manager_path != NodePath():
+		_horde_manager = get_node(horde_manager_path)
 
 ## Every campaign with at least one save slot on disk, alphabetical. Empty if
 ## nothing has ever been saved yet.
@@ -181,6 +186,10 @@ func _build_save_data(campaign_name: String, slot_name: String) -> SaveGameData:
 		data.next_wall_id = wall_state.next_id
 	if _reclamation_manager:
 		data.drained_hexes.assign(_reclamation_manager.get_save_state().drained_hexes)
+	if _horde_manager:
+		var horde_state := _horde_manager.get_save_state()
+		data.hordes.assign(horde_state.hordes)
+		data.next_horde_id = horde_state.next_id
 
 	var tick_state := TickManager.get_save_state()
 	data.current_day = tick_state.current_day
@@ -225,6 +234,8 @@ func _apply_save_data(data: SaveGameData) -> void:
 			"active_tech_id": data.active_tech_id,
 			"days_remaining": data.tech_days_remaining,
 		})
+	if _horde_manager:
+		_horde_manager.load_save_state(data.hordes, data.next_horde_id)
 
 	TickManager.load_save_state({
 		"current_day": data.current_day,
