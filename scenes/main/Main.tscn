@@ -1,4 +1,4 @@
-[gd_scene load_steps=13 format=3]
+[gd_scene load_steps=14 format=3]
 
 [ext_resource type="PackedScene" path="res://scenes/world/HexGridMap.tscn" id="1"]
 [ext_resource type="PackedScene" path="res://scenes/camera/CameraController.tscn" id="2"]
@@ -12,6 +12,7 @@
 [ext_resource type="PackedScene" path="res://scenes/world/BuildPlacementController.tscn" id="10"]
 [ext_resource type="PackedScene" path="res://scenes/ui/MainHUD.tscn" id="11"]
 [ext_resource type="PackedScene" path="res://scenes/tech/TechManager.tscn" id="12"]
+[ext_resource type="PackedScene" path="res://scenes/economy/DiscontentManager.tscn" id="13"]
 
 [node name="Main" type="Node2D"]
 
@@ -29,10 +30,16 @@ world_root_path = NodePath("../WorldRoot")
 [node name="BuildingManager" parent="." instance=ExtResource("4")]
 hex_grid_map_path = NodePath("../WorldRoot/HexGridMap")
 resource_manager_path = NodePath("../ResourceManager")
+discontent_manager_path = NodePath("../DiscontentManager")
 
 [node name="LogisticsNetwork" parent="." instance=ExtResource("5")]
 hex_grid_map_path = NodePath("../WorldRoot/HexGridMap")
 building_manager_path = NodePath("../BuildingManager")
+
+[node name="DiscontentManager" parent="." instance=ExtResource("13")]
+logistics_network_path = NodePath("../LogisticsNetwork")
+building_manager_path = NodePath("../BuildingManager")
+resource_manager_path = NodePath("../ResourceManager")
 
 [node name="FogOfWarManager" parent="." instance=ExtResource("8")]
 hex_grid_map_path = NodePath("../WorldRoot/HexGridMap")
@@ -48,6 +55,7 @@ resource_manager_path = NodePath("../ResourceManager")
 logistics_network_path = NodePath("../LogisticsNetwork")
 fog_of_war_manager_path = NodePath("../FogOfWarManager")
 tech_manager_path = NodePath("../TechManager")
+discontent_manager_path = NodePath("../DiscontentManager")
 
 [node name="LocalDetailManager" parent="WorldRoot" instance=ExtResource("6")]
 hex_grid_map_path = NodePath("../HexGridMap")

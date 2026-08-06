@@ -50,3 +50,9 @@ extends Resource
 @export var researched_techs: Array[StringName] = []
 @export var active_tech_id: StringName = &""
 @export var tech_days_remaining: int = 0
+
+## DiscontentManager (Phase 2.11) — per-hex Discontent values only; which
+## hexes group into which Civilian Region is NOT saved, same reasoning as
+## Zone of Control itself: it recomputes fresh from LogisticsNetwork on load.
+## Also flagged as a future addition back when Phase 2.8 was written.
+@export var discontent_by_hex: Dictionary = {}  # Vector2i -> float

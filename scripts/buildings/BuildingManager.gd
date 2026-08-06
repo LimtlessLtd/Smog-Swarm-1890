@@ -21,7 +21,11 @@ extends Node
 ## (BuildingManager._on_day_completed, already built)") — population is real
 ## per-instance state now (BuildingInstance.current_population), not just a
 ## fixed definition value, and can be lost to starvation or regrown from a
-## surplus depending on how well-fed the colony was that day.
+## surplus depending on how well-fed the colony was that day. Phase 2.11's
+## Discontent (a separate manager, DiscontentManager, since it's a
+## region-scoped concept BuildingManager itself has no reason to compute)
+## is consulted here too — its per-hex production penalty is applied to
+## each instance's own output as part of the same daily loop.
 
 signal building_placed(instance: BuildingInstance)
 signal building_removed(instance: BuildingInstance)
@@ -59,9 +63,14 @@ const POPULATION_REGROWTH_PER_DAY: int = 1        ## Flat per-instance regrowth 
 
 @export var hex_grid_map_path: NodePath
 @export var resource_manager_path: NodePath
+## Optional — Phase 2.11's DiscontentManager. Unset gracefully skips the
+## per-hex production penalty (get_production_multiplier() query) entirely,
+## same as every other optional manager reference in this class.
+@export var discontent_manager_path: NodePath
 
 var _hex_grid_map: HexGridMap
 var _resource_manager: ResourceManager
+var _discontent_manager: DiscontentManager
 var _instances: Array[BuildingInstance] = []
 var _instances_by_hex: Dictionary = {}  # Vector2i -> Array[BuildingInstance]
 var _next_id: int = 1
@@ -71,6 +80,8 @@ func _ready() -> void:
 		_hex_grid_map = get_node(hex_grid_map_path)
 	if resource_manager_path != NodePath():
 		_resource_manager = get_node(resource_manager_path)
+	if discontent_manager_path != NodePath():
+		_discontent_manager = get_node(discontent_manager_path)
 	TickManager.day_completed.connect(_on_day_completed)
 	seed_starting_buildings()
 
@@ -265,6 +276,20 @@ func _on_day_completed(_day_number: int) -> void:
 		if _hex_grid_map:
 			cell = _hex_grid_map.get_cell(instance.hex_coord)
 		var output := instance.get_effective_output(cell)
+
+		# Design doc 2.11.1 Consequences: a high-Discontent region's own
+		# buildings take a production penalty — applied per-instance, here,
+		# BEFORE this building's output is folded into the colony-wide
+		# `produced` total, since Discontent (unlike 2.10's food ratio) is
+		# region-local rather than a single colony-wide multiplier. Reads
+		# YESTERDAY's Discontent value — see DiscontentManager's own class
+		# doc comment for why that's the correct causal ordering.
+		if _discontent_manager:
+			var discontent_multiplier := _discontent_manager.get_production_multiplier(instance.hex_coord)
+			if discontent_multiplier != 1.0:
+				for resource_type in output:
+					output[resource_type] = float(output[resource_type]) * discontent_multiplier
+
 		for resource_type in output:
 			produced[resource_type] = produced.get(resource_type, 0.0) + float(output[resource_type])
 
