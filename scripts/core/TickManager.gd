@@ -50,3 +50,13 @@ func set_speed_index(index: int) -> void:
 
 func get_speed_multiplier() -> float:
 	return SPEED_MULTIPLIERS[speed_index]
+
+## Exposed for SaveLoadManager (Phase 2.8) — day/elapsed-time/speed are the
+## only state this autoload owns.
+func get_save_state() -> Dictionary:
+	return {"current_day": current_day, "elapsed_in_day": elapsed_in_day, "speed_index": speed_index}
+
+func load_save_state(state: Dictionary) -> void:
+	current_day = state.get("current_day", 1)
+	elapsed_in_day = state.get("elapsed_in_day", 0.0)
+	set_speed_index(state.get("speed_index", speed_index))
