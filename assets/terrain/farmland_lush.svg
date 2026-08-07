@@ -1,0 +1,190 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <g transform="translate(0,0)"><rect width="256" height="256" fill="#4f6b34" />
+
+      
+      <path d="M0,14 Q64,4 128,14 T256,14" stroke="#3f5827" stroke-width="6" fill="none" opacity="0.5" />
+      <path d="M0,40 Q64,52 128,40 T256,40" stroke="#3f5827" stroke-width="5" fill="none" opacity="0.55" />
+      <path d="M0,70 Q64,62 128,70 T256,70" stroke="#3f5827" stroke-width="6" fill="none" opacity="0.5" />
+      <path d="M0,96 Q64,110 128,96 T256,96" stroke="#3f5827" stroke-width="4" fill="none" opacity="0.5" />
+      <path d="M0,130 Q64,118 128,130 T256,130" stroke="#3f5827" stroke-width="6" fill="none" opacity="0.55" />
+      <path d="M0,158 Q64,172 128,158 T256,158" stroke="#3f5827" stroke-width="5" fill="none" opacity="0.5" />
+      <path d="M0,192 Q64,182 128,192 T256,192" stroke="#3f5827" stroke-width="6" fill="none" opacity="0.55" />
+      <path d="M0,224 Q64,236 128,224 T256,224" stroke="#3f5827" stroke-width="4" fill="none" opacity="0.5" />
+
+      <path d="M0,20 Q64,10 128,20 T256,20" stroke="#6a8a48" stroke-width="2.5" fill="none" opacity="0.45" />
+      <path d="M0,76 Q64,68 128,76 T256,76" stroke="#6a8a48" stroke-width="2.5" fill="none" opacity="0.45" />
+      <path d="M0,136 Q64,124 128,136 T256,136" stroke="#6a8a48" stroke-width="2.5" fill="none" opacity="0.45" />
+      <path d="M0,198 Q64,188 128,198 T256,198" stroke="#6a8a48" stroke-width="2.5" fill="none" opacity="0.45" />
+
+      
+      <ellipse cx="190" cy="60" rx="46" ry="30" fill="#5c7038" opacity="0.55" />
+      <ellipse cx="200" cy="55" rx="30" ry="18" fill="#4a5c2e" opacity="0.4" />
+
+      
+      <g transform="translate(48,190)">
+        <ellipse cx="0" cy="0" rx="16" ry="10" fill="#33471f" />
+        <ellipse cx="14" cy="3" rx="12" ry="8" fill="#3c5225" />
+        <ellipse cx="-12" cy="4" rx="11" ry="7" fill="#3c5225" />
+      </g>
+      <g transform="translate(210,150)">
+        <ellipse cx="0" cy="0" rx="12" ry="8" fill="#33471f" />
+        <ellipse cx="10" cy="2" rx="9" ry="6" fill="#3c5225" />
+      </g>
+
+      
+      <circle cx="20" cy="30" r="2.5" fill="#8faa5a" opacity="0.8" />
+      <circle cx="46" cy="34" r="2" fill="#8faa5a" opacity="0.7" />
+      <circle cx="100" cy="26" r="2.8" fill="#8faa5a" opacity="0.8" />
+      <circle cx="150" cy="32" r="2" fill="#96b364" opacity="0.7" />
+      <circle cx="14" cy="86" r="2.5" fill="#8faa5a" opacity="0.8" />
+      <circle cx="70" cy="90" r="2" fill="#8faa5a" opacity="0.7" />
+      <circle cx="126" cy="82" r="2.6" fill="#96b364" opacity="0.75" />
+      <circle cx="26" cy="144" r="2.5" fill="#8faa5a" opacity="0.8" />
+      <circle cx="100" cy="148" r="2" fill="#8faa5a" opacity="0.7" />
+      <circle cx="170" cy="140" r="2.6" fill="#96b364" opacity="0.75" />
+      <circle cx="40" cy="206" r="2.4" fill="#8faa5a" opacity="0.75" />
+      <circle cx="120" cy="212" r="2" fill="#8faa5a" opacity="0.7" />
+      <circle cx="176" cy="230" r="2.6" fill="#96b364" opacity="0.75" />
+      <circle cx="230" cy="200" r="2.2" fill="#8faa5a" opacity="0.7" />
+    </g><g transform="translate(256,0)"><rect width="256" height="256" fill="#4f6b34" />
+
+      
+      <path d="M0,14 Q64,4 128,14 T256,14" stroke="#3f5827" stroke-width="6" fill="none" opacity="0.5" />
+      <path d="M0,40 Q64,52 128,40 T256,40" stroke="#3f5827" stroke-width="5" fill="none" opacity="0.55" />
+      <path d="M0,70 Q64,62 128,70 T256,70" stroke="#3f5827" stroke-width="6" fill="none" opacity="0.5" />
+      <path d="M0,96 Q64,110 128,96 T256,96" stroke="#3f5827" stroke-width="4" fill="none" opacity="0.5" />
+      <path d="M0,130 Q64,118 128,130 T256,130" stroke="#3f5827" stroke-width="6" fill="none" opacity="0.55" />
+      <path d="M0,158 Q64,172 128,158 T256,158" stroke="#3f5827" stroke-width="5" fill="none" opacity="0.5" />
+      <path d="M0,192 Q64,182 128,192 T256,192" stroke="#3f5827" stroke-width="6" fill="none" opacity="0.55" />
+      <path d="M0,224 Q64,236 128,224 T256,224" stroke="#3f5827" stroke-width="4" fill="none" opacity="0.5" />
+
+      <path d="M0,20 Q64,10 128,20 T256,20" stroke="#6a8a48" stroke-width="2.5" fill="none" opacity="0.45" />
+      <path d="M0,76 Q64,68 128,76 T256,76" stroke="#6a8a48" stroke-width="2.5" fill="none" opacity="0.45" />
+      <path d="M0,136 Q64,124 128,136 T256,136" stroke="#6a8a48" stroke-width="2.5" fill="none" opacity="0.45" />
+      <path d="M0,198 Q64,188 128,198 T256,198" stroke="#6a8a48" stroke-width="2.5" fill="none" opacity="0.45" />
+
+      
+      <ellipse cx="190" cy="60" rx="46" ry="30" fill="#5c7038" opacity="0.55" />
+      <ellipse cx="200" cy="55" rx="30" ry="18" fill="#4a5c2e" opacity="0.4" />
+
+      
+      <g transform="translate(48,190)">
+        <ellipse cx="0" cy="0" rx="16" ry="10" fill="#33471f" />
+        <ellipse cx="14" cy="3" rx="12" ry="8" fill="#3c5225" />
+        <ellipse cx="-12" cy="4" rx="11" ry="7" fill="#3c5225" />
+      </g>
+      <g transform="translate(210,150)">
+        <ellipse cx="0" cy="0" rx="12" ry="8" fill="#33471f" />
+        <ellipse cx="10" cy="2" rx="9" ry="6" fill="#3c5225" />
+      </g>
+
+      
+      <circle cx="20" cy="30" r="2.5" fill="#8faa5a" opacity="0.8" />
+      <circle cx="46" cy="34" r="2" fill="#8faa5a" opacity="0.7" />
+      <circle cx="100" cy="26" r="2.8" fill="#8faa5a" opacity="0.8" />
+      <circle cx="150" cy="32" r="2" fill="#96b364" opacity="0.7" />
+      <circle cx="14" cy="86" r="2.5" fill="#8faa5a" opacity="0.8" />
+      <circle cx="70" cy="90" r="2" fill="#8faa5a" opacity="0.7" />
+      <circle cx="126" cy="82" r="2.6" fill="#96b364" opacity="0.75" />
+      <circle cx="26" cy="144" r="2.5" fill="#8faa5a" opacity="0.8" />
+      <circle cx="100" cy="148" r="2" fill="#8faa5a" opacity="0.7" />
+      <circle cx="170" cy="140" r="2.6" fill="#96b364" opacity="0.75" />
+      <circle cx="40" cy="206" r="2.4" fill="#8faa5a" opacity="0.75" />
+      <circle cx="120" cy="212" r="2" fill="#8faa5a" opacity="0.7" />
+      <circle cx="176" cy="230" r="2.6" fill="#96b364" opacity="0.75" />
+      <circle cx="230" cy="200" r="2.2" fill="#8faa5a" opacity="0.7" />
+    </g><g transform="translate(0,256)"><rect width="256" height="256" fill="#4f6b34" />
+
+      
+      <path d="M0,14 Q64,4 128,14 T256,14" stroke="#3f5827" stroke-width="6" fill="none" opacity="0.5" />
+      <path d="M0,40 Q64,52 128,40 T256,40" stroke="#3f5827" stroke-width="5" fill="none" opacity="0.55" />
+      <path d="M0,70 Q64,62 128,70 T256,70" stroke="#3f5827" stroke-width="6" fill="none" opacity="0.5" />
+      <path d="M0,96 Q64,110 128,96 T256,96" stroke="#3f5827" stroke-width="4" fill="none" opacity="0.5" />
+      <path d="M0,130 Q64,118 128,130 T256,130" stroke="#3f5827" stroke-width="6" fill="none" opacity="0.55" />
+      <path d="M0,158 Q64,172 128,158 T256,158" stroke="#3f5827" stroke-width="5" fill="none" opacity="0.5" />
+      <path d="M0,192 Q64,182 128,192 T256,192" stroke="#3f5827" stroke-width="6" fill="none" opacity="0.55" />
+      <path d="M0,224 Q64,236 128,224 T256,224" stroke="#3f5827" stroke-width="4" fill="none" opacity="0.5" />
+
+      <path d="M0,20 Q64,10 128,20 T256,20" stroke="#6a8a48" stroke-width="2.5" fill="none" opacity="0.45" />
+      <path d="M0,76 Q64,68 128,76 T256,76" stroke="#6a8a48" stroke-width="2.5" fill="none" opacity="0.45" />
+      <path d="M0,136 Q64,124 128,136 T256,136" stroke="#6a8a48" stroke-width="2.5" fill="none" opacity="0.45" />
+      <path d="M0,198 Q64,188 128,198 T256,198" stroke="#6a8a48" stroke-width="2.5" fill="none" opacity="0.45" />
+
+      
+      <ellipse cx="190" cy="60" rx="46" ry="30" fill="#5c7038" opacity="0.55" />
+      <ellipse cx="200" cy="55" rx="30" ry="18" fill="#4a5c2e" opacity="0.4" />
+
+      
+      <g transform="translate(48,190)">
+        <ellipse cx="0" cy="0" rx="16" ry="10" fill="#33471f" />
+        <ellipse cx="14" cy="3" rx="12" ry="8" fill="#3c5225" />
+        <ellipse cx="-12" cy="4" rx="11" ry="7" fill="#3c5225" />
+      </g>
+      <g transform="translate(210,150)">
+        <ellipse cx="0" cy="0" rx="12" ry="8" fill="#33471f" />
+        <ellipse cx="10" cy="2" rx="9" ry="6" fill="#3c5225" />
+      </g>
+
+      
+      <circle cx="20" cy="30" r="2.5" fill="#8faa5a" opacity="0.8" />
+      <circle cx="46" cy="34" r="2" fill="#8faa5a" opacity="0.7" />
+      <circle cx="100" cy="26" r="2.8" fill="#8faa5a" opacity="0.8" />
+      <circle cx="150" cy="32" r="2" fill="#96b364" opacity="0.7" />
+      <circle cx="14" cy="86" r="2.5" fill="#8faa5a" opacity="0.8" />
+      <circle cx="70" cy="90" r="2" fill="#8faa5a" opacity="0.7" />
+      <circle cx="126" cy="82" r="2.6" fill="#96b364" opacity="0.75" />
+      <circle cx="26" cy="144" r="2.5" fill="#8faa5a" opacity="0.8" />
+      <circle cx="100" cy="148" r="2" fill="#8faa5a" opacity="0.7" />
+      <circle cx="170" cy="140" r="2.6" fill="#96b364" opacity="0.75" />
+      <circle cx="40" cy="206" r="2.4" fill="#8faa5a" opacity="0.75" />
+      <circle cx="120" cy="212" r="2" fill="#8faa5a" opacity="0.7" />
+      <circle cx="176" cy="230" r="2.6" fill="#96b364" opacity="0.75" />
+      <circle cx="230" cy="200" r="2.2" fill="#8faa5a" opacity="0.7" />
+    </g><g transform="translate(256,256)"><rect width="256" height="256" fill="#4f6b34" />
+
+      
+      <path d="M0,14 Q64,4 128,14 T256,14" stroke="#3f5827" stroke-width="6" fill="none" opacity="0.5" />
+      <path d="M0,40 Q64,52 128,40 T256,40" stroke="#3f5827" stroke-width="5" fill="none" opacity="0.55" />
+      <path d="M0,70 Q64,62 128,70 T256,70" stroke="#3f5827" stroke-width="6" fill="none" opacity="0.5" />
+      <path d="M0,96 Q64,110 128,96 T256,96" stroke="#3f5827" stroke-width="4" fill="none" opacity="0.5" />
+      <path d="M0,130 Q64,118 128,130 T256,130" stroke="#3f5827" stroke-width="6" fill="none" opacity="0.55" />
+      <path d="M0,158 Q64,172 128,158 T256,158" stroke="#3f5827" stroke-width="5" fill="none" opacity="0.5" />
+      <path d="M0,192 Q64,182 128,192 T256,192" stroke="#3f5827" stroke-width="6" fill="none" opacity="0.55" />
+      <path d="M0,224 Q64,236 128,224 T256,224" stroke="#3f5827" stroke-width="4" fill="none" opacity="0.5" />
+
+      <path d="M0,20 Q64,10 128,20 T256,20" stroke="#6a8a48" stroke-width="2.5" fill="none" opacity="0.45" />
+      <path d="M0,76 Q64,68 128,76 T256,76" stroke="#6a8a48" stroke-width="2.5" fill="none" opacity="0.45" />
+      <path d="M0,136 Q64,124 128,136 T256,136" stroke="#6a8a48" stroke-width="2.5" fill="none" opacity="0.45" />
+      <path d="M0,198 Q64,188 128,198 T256,198" stroke="#6a8a48" stroke-width="2.5" fill="none" opacity="0.45" />
+
+      
+      <ellipse cx="190" cy="60" rx="46" ry="30" fill="#5c7038" opacity="0.55" />
+      <ellipse cx="200" cy="55" rx="30" ry="18" fill="#4a5c2e" opacity="0.4" />
+
+      
+      <g transform="translate(48,190)">
+        <ellipse cx="0" cy="0" rx="16" ry="10" fill="#33471f" />
+        <ellipse cx="14" cy="3" rx="12" ry="8" fill="#3c5225" />
+        <ellipse cx="-12" cy="4" rx="11" ry="7" fill="#3c5225" />
+      </g>
+      <g transform="translate(210,150)">
+        <ellipse cx="0" cy="0" rx="12" ry="8" fill="#33471f" />
+        <ellipse cx="10" cy="2" rx="9" ry="6" fill="#3c5225" />
+      </g>
+
+      
+      <circle cx="20" cy="30" r="2.5" fill="#8faa5a" opacity="0.8" />
+      <circle cx="46" cy="34" r="2" fill="#8faa5a" opacity="0.7" />
+      <circle cx="100" cy="26" r="2.8" fill="#8faa5a" opacity="0.8" />
+      <circle cx="150" cy="32" r="2" fill="#96b364" opacity="0.7" />
+      <circle cx="14" cy="86" r="2.5" fill="#8faa5a" opacity="0.8" />
+      <circle cx="70" cy="90" r="2" fill="#8faa5a" opacity="0.7" />
+      <circle cx="126" cy="82" r="2.6" fill="#96b364" opacity="0.75" />
+      <circle cx="26" cy="144" r="2.5" fill="#8faa5a" opacity="0.8" />
+      <circle cx="100" cy="148" r="2" fill="#8faa5a" opacity="0.7" />
+      <circle cx="170" cy="140" r="2.6" fill="#96b364" opacity="0.75" />
+      <circle cx="40" cy="206" r="2.4" fill="#8faa5a" opacity="0.75" />
+      <circle cx="120" cy="212" r="2" fill="#8faa5a" opacity="0.7" />
+      <circle cx="176" cy="230" r="2.6" fill="#96b364" opacity="0.75" />
+      <circle cx="230" cy="200" r="2.2" fill="#8faa5a" opacity="0.7" />
+    </g></svg>

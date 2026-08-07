@@ -1,0 +1,118 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <g transform="translate(0,0)"><rect width="256" height="256" fill="#7a7561" />
+
+      
+      <path d="M0,60 Q80,40 160,55 T256,50" stroke="#6c6754" stroke-width="10" fill="none" opacity="0.3" />
+      <path d="M0,140 Q90,120 170,138 T256,130" stroke="#6c6754" stroke-width="10" fill="none" opacity="0.3" />
+      <path d="M0,210 Q80,196 160,210 T256,204" stroke="#6c6754" stroke-width="10" fill="none" opacity="0.25" />
+
+      
+      <path d="M40,90 l14,-8 l16,4 l4,16 l-12,14 l-18,-2 l-8,-14 z" fill="#66614f" opacity="0.85" />
+      <path d="M42,92 l12,-6 l13,3" fill="none" stroke="#8a8470" stroke-width="1.5" opacity="0.5" />
+      <path d="M170,50 l10,-6 l12,3 l3,12 l-9,10 l-13,-1 l-6,-10 z" fill="#5c584a" opacity="0.85" />
+      <path d="M200,160 l16,-9 l18,5 l4,18 l-14,15 l-20,-2 l-9,-16 z" fill="#66614f" opacity="0.85" />
+      <path d="M203,162 l13,-7 l15,4" fill="none" stroke="#8a8470" stroke-width="1.5" opacity="0.5" />
+      <path d="M70,200 l9,-5 l10,3 l2,10 l-8,9 l-11,-1 l-5,-9 z" fill="#5c584a" opacity="0.8" />
+
+      
+      <circle cx="100" cy="120" r="3" fill="#57533f" opacity="0.6" />
+      <circle cx="110" cy="128" r="2" fill="#57533f" opacity="0.5" />
+      <circle cx="230" cy="90" r="2.5" fill="#57533f" opacity="0.55" />
+      <circle cx="30" cy="180" r="2.5" fill="#57533f" opacity="0.55" />
+      <circle cx="150" cy="220" r="2" fill="#57533f" opacity="0.5" />
+
+      
+      <g transform="translate(120,60)">
+        <ellipse cx="0" cy="0" rx="9" ry="6" fill="#7c6480" opacity="0.55" />
+      </g>
+      <g transform="translate(50,150)">
+        <ellipse cx="0" cy="0" rx="8" ry="5" fill="#7c6480" opacity="0.5" />
+      </g>
+    </g><g transform="translate(256,0)"><rect width="256" height="256" fill="#7a7561" />
+
+      
+      <path d="M0,60 Q80,40 160,55 T256,50" stroke="#6c6754" stroke-width="10" fill="none" opacity="0.3" />
+      <path d="M0,140 Q90,120 170,138 T256,130" stroke="#6c6754" stroke-width="10" fill="none" opacity="0.3" />
+      <path d="M0,210 Q80,196 160,210 T256,204" stroke="#6c6754" stroke-width="10" fill="none" opacity="0.25" />
+
+      
+      <path d="M40,90 l14,-8 l16,4 l4,16 l-12,14 l-18,-2 l-8,-14 z" fill="#66614f" opacity="0.85" />
+      <path d="M42,92 l12,-6 l13,3" fill="none" stroke="#8a8470" stroke-width="1.5" opacity="0.5" />
+      <path d="M170,50 l10,-6 l12,3 l3,12 l-9,10 l-13,-1 l-6,-10 z" fill="#5c584a" opacity="0.85" />
+      <path d="M200,160 l16,-9 l18,5 l4,18 l-14,15 l-20,-2 l-9,-16 z" fill="#66614f" opacity="0.85" />
+      <path d="M203,162 l13,-7 l15,4" fill="none" stroke="#8a8470" stroke-width="1.5" opacity="0.5" />
+      <path d="M70,200 l9,-5 l10,3 l2,10 l-8,9 l-11,-1 l-5,-9 z" fill="#5c584a" opacity="0.8" />
+
+      
+      <circle cx="100" cy="120" r="3" fill="#57533f" opacity="0.6" />
+      <circle cx="110" cy="128" r="2" fill="#57533f" opacity="0.5" />
+      <circle cx="230" cy="90" r="2.5" fill="#57533f" opacity="0.55" />
+      <circle cx="30" cy="180" r="2.5" fill="#57533f" opacity="0.55" />
+      <circle cx="150" cy="220" r="2" fill="#57533f" opacity="0.5" />
+
+      
+      <g transform="translate(120,60)">
+        <ellipse cx="0" cy="0" rx="9" ry="6" fill="#7c6480" opacity="0.55" />
+      </g>
+      <g transform="translate(50,150)">
+        <ellipse cx="0" cy="0" rx="8" ry="5" fill="#7c6480" opacity="0.5" />
+      </g>
+    </g><g transform="translate(0,256)"><rect width="256" height="256" fill="#7a7561" />
+
+      
+      <path d="M0,60 Q80,40 160,55 T256,50" stroke="#6c6754" stroke-width="10" fill="none" opacity="0.3" />
+      <path d="M0,140 Q90,120 170,138 T256,130" stroke="#6c6754" stroke-width="10" fill="none" opacity="0.3" />
+      <path d="M0,210 Q80,196 160,210 T256,204" stroke="#6c6754" stroke-width="10" fill="none" opacity="0.25" />
+
+      
+      <path d="M40,90 l14,-8 l16,4 l4,16 l-12,14 l-18,-2 l-8,-14 z" fill="#66614f" opacity="0.85" />
+      <path d="M42,92 l12,-6 l13,3" fill="none" stroke="#8a8470" stroke-width="1.5" opacity="0.5" />
+      <path d="M170,50 l10,-6 l12,3 l3,12 l-9,10 l-13,-1 l-6,-10 z" fill="#5c584a" opacity="0.85" />
+      <path d="M200,160 l16,-9 l18,5 l4,18 l-14,15 l-20,-2 l-9,-16 z" fill="#66614f" opacity="0.85" />
+      <path d="M203,162 l13,-7 l15,4" fill="none" stroke="#8a8470" stroke-width="1.5" opacity="0.5" />
+      <path d="M70,200 l9,-5 l10,3 l2,10 l-8,9 l-11,-1 l-5,-9 z" fill="#5c584a" opacity="0.8" />
+
+      
+      <circle cx="100" cy="120" r="3" fill="#57533f" opacity="0.6" />
+      <circle cx="110" cy="128" r="2" fill="#57533f" opacity="0.5" />
+      <circle cx="230" cy="90" r="2.5" fill="#57533f" opacity="0.55" />
+      <circle cx="30" cy="180" r="2.5" fill="#57533f" opacity="0.55" />
+      <circle cx="150" cy="220" r="2" fill="#57533f" opacity="0.5" />
+
+      
+      <g transform="translate(120,60)">
+        <ellipse cx="0" cy="0" rx="9" ry="6" fill="#7c6480" opacity="0.55" />
+      </g>
+      <g transform="translate(50,150)">
+        <ellipse cx="0" cy="0" rx="8" ry="5" fill="#7c6480" opacity="0.5" />
+      </g>
+    </g><g transform="translate(256,256)"><rect width="256" height="256" fill="#7a7561" />
+
+      
+      <path d="M0,60 Q80,40 160,55 T256,50" stroke="#6c6754" stroke-width="10" fill="none" opacity="0.3" />
+      <path d="M0,140 Q90,120 170,138 T256,130" stroke="#6c6754" stroke-width="10" fill="none" opacity="0.3" />
+      <path d="M0,210 Q80,196 160,210 T256,204" stroke="#6c6754" stroke-width="10" fill="none" opacity="0.25" />
+
+      
+      <path d="M40,90 l14,-8 l16,4 l4,16 l-12,14 l-18,-2 l-8,-14 z" fill="#66614f" opacity="0.85" />
+      <path d="M42,92 l12,-6 l13,3" fill="none" stroke="#8a8470" stroke-width="1.5" opacity="0.5" />
+      <path d="M170,50 l10,-6 l12,3 l3,12 l-9,10 l-13,-1 l-6,-10 z" fill="#5c584a" opacity="0.85" />
+      <path d="M200,160 l16,-9 l18,5 l4,18 l-14,15 l-20,-2 l-9,-16 z" fill="#66614f" opacity="0.85" />
+      <path d="M203,162 l13,-7 l15,4" fill="none" stroke="#8a8470" stroke-width="1.5" opacity="0.5" />
+      <path d="M70,200 l9,-5 l10,3 l2,10 l-8,9 l-11,-1 l-5,-9 z" fill="#5c584a" opacity="0.8" />
+
+      
+      <circle cx="100" cy="120" r="3" fill="#57533f" opacity="0.6" />
+      <circle cx="110" cy="128" r="2" fill="#57533f" opacity="0.5" />
+      <circle cx="230" cy="90" r="2.5" fill="#57533f" opacity="0.55" />
+      <circle cx="30" cy="180" r="2.5" fill="#57533f" opacity="0.55" />
+      <circle cx="150" cy="220" r="2" fill="#57533f" opacity="0.5" />
+
+      
+      <g transform="translate(120,60)">
+        <ellipse cx="0" cy="0" rx="9" ry="6" fill="#7c6480" opacity="0.55" />
+      </g>
+      <g transform="translate(50,150)">
+        <ellipse cx="0" cy="0" rx="8" ry="5" fill="#7c6480" opacity="0.5" />
+      </g>
+    </g></svg>
