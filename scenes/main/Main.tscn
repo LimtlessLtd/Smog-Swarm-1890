@@ -19,6 +19,7 @@
 [ext_resource type="PackedScene" path="res://scenes/units/UnitManager.tscn" id="17"]
 [ext_resource type="PackedScene" path="res://scenes/units/UnitOrderController.tscn" id="18"]
 [ext_resource type="PackedScene" path="res://scenes/units/CombatCoordinator.tscn" id="19"]
+[ext_resource type="PackedScene" path="res://scenes/world/UnitCommandController.tscn" id="20"]
 
 [node name="Main" type="Node2D"]
 
@@ -119,11 +120,20 @@ camera_path = NodePath("../../CameraController")
 hex_grid_map_path = NodePath("../HexGridMap")
 building_manager_path = NodePath("../../BuildingManager")
 
+[node name="UnitCommandController" parent="WorldRoot" instance=ExtResource("20")]
+hex_grid_map_path = NodePath("../HexGridMap")
+unit_manager_path = NodePath("../../UnitManager")
+unit_order_controller_path = NodePath("../../UnitOrderController")
+building_manager_path = NodePath("../../BuildingManager")
+build_placement_controller_path = NodePath("../BuildPlacementController")
+
 [node name="MainHUD" parent="." instance=ExtResource("11")]
 resource_manager_path = NodePath("../ResourceManager")
 building_manager_path = NodePath("../BuildingManager")
 save_load_manager_path = NodePath("../SaveLoadManager")
 build_placement_controller_path = NodePath("../WorldRoot/BuildPlacementController")
+unit_command_controller_path = NodePath("../WorldRoot/UnitCommandController")
+unit_manager_path = NodePath("../UnitManager")
 hex_grid_map_path = NodePath("../WorldRoot/HexGridMap")
 fog_of_war_manager_path = NodePath("../FogOfWarManager")
 camera_path = NodePath("../CameraController")
