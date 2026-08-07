@@ -215,6 +215,7 @@ func _advance_horde(horde: Horde) -> void:
 	var next_coord: Vector2i = horde.path.pop_front()
 	var from_coord := horde.hex_coord
 	horde.hex_coord = next_coord
+	horde.local_position = HexCoord.entry_local_position(from_coord, next_coord)  ## Phase 2.5.4.
 	horde_moved.emit(horde, from_coord, next_coord)
 
 func _replan(horde: Horde) -> void:

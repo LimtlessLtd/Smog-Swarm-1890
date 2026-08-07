@@ -28,6 +28,15 @@ extends Resource
 @export var state: GameEnums.HordeState = GameEnums.HordeState.WANDERING
 @export var id: int = 0
 
+## Phase 2.5.4: offset from hex_coord's center, same contract as
+## BuildingInstance.local_position/UnitInstance.local_position — written by
+## HordeManager's drift tick via HexCoord.entry_local_position() every time
+## hex_coord changes, instead of the hex-center jump a horde used to do on
+## every step. ZERO for a freshly-spawned horde (starting seed or a fresh
+## casualty pool) — saved directly along with the rest of this Resource,
+## same as every other field here.
+@export var local_position: Vector2 = Vector2.ZERO
+
 ## Current drift path (Phase 5.5's HexPathfinder) — `hex_coord` itself is
 ## excluded, so the next hex to step into is `path[0]`. Deliberately NOT
 ## @export: it's cheap for HordeManager to replan from scratch after a load
