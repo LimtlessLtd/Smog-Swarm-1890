@@ -30,23 +30,61 @@ extends Camera2D
 ## zoomed-out bound; 2.5 genuinely is the closest, most zoomed-in bound) —
 ## only the wheel-direction mapping and tactical_zoom_threshold's comparison
 ## + value needed to move to the other side of the default zoom.
+##
+## **max_zoom raised 19.2x (0.3125 -> 6.0), found while playing: the whole
+## point of Phase 2.5.4's individual-figure rendering and Phase 2.5.6's
+## true-scale in-hex space was to zoom in on a real 5x5-mile hex and see
+## individual soldiers/zombies — but the camera's own max_zoom never
+## actually got pushed far enough to make that possible. A UnitInstance
+## figure (TacticalEntityLayer.FIGURE_RADIUS = 6.0 world units) at the OLD
+## max_zoom (0.3125) rendered at a 1.875px screen radius — a sub-pixel
+## smear, not a soldier. At the new max_zoom, the same figure renders at a
+## 36px screen radius (72px across) — genuinely legible. Chosen by working
+## backward from "a 6-unit figure should read as a clear ~70px circle at
+## closest zoom", not by proportionally scaling the old value — this is a
+## real usability floor, not an aesthetic preference.
+##
+## **zoom_step replaced by zoom_factor_per_step (additive -> multiplicative)**:
+## the old flat +/-0.0125 per scroll click would need ~465 clicks to cross
+## just the (old) Tactical range, and with max_zoom now 19x further out,
+## a flat step is hopeless — either far too slow near the top of the range
+## or far too coarse near the bottom. A percentage-per-click step (12%)
+## handles a huge dynamic range gracefully (this is why Google Maps/most
+## strategy games zoom multiplicatively, not additively) — the full
+## min_zoom..max_zoom span takes ~65 clicks, tactical_zoom_threshold..
+## max_zoom takes ~31, both reasonable scroll counts regardless of how
+## wide the underlying range is.
 
 @export var world_root_path: NodePath
-@export var pan_speed: float = 51200.0  ## Phase 2.5.6: scaled by 8x^2 = 64x alongside HexCoord.HEX_SIZE's 8x increase (800 -> 51,200). Effective world-space pan speed is pan_speed*zoom.x, and since visible width is viewport/zoom.x, the zoom bounds below had to shrink by the same 8x factor HEX_SIZE grew by, which on its own would have made panning feel 8x SLOWER relative to hex size; squaring the correction here (8x for the bigger world, another 8x to cancel the shrunk zoom.x) keeps "seconds to cross one hex while panning" exactly unchanged.
+## Phase 2.5.6: scaled by 8x^2 = 64x alongside HexCoord.HEX_SIZE's 8x
+## increase (800 -> 51,200 at the time). **Recalibrated again (51,200 ->
+## 128) alongside the pan-speed FORMULA change below** (multiply-by-zoom.x
+## -> divide-by-zoom.x) — this is now the world-units/sec pan rate AT
+## zoom.x == 1.0, not a raw multiplier; picked so panning at the default
+## starting Strategic zoom (Main.tscn's zoom = 0.05) feels identical to
+## before this change (both formulas agree at that one zoom level by
+## construction), while every OTHER zoom level now pans at a genuinely
+## constant on-screen (not world-space) rate — see _handle_pan_input()'s
+## own comment for why the old formula would have made panning catastrophically
+## twitchy at the new, much deeper max_zoom.
+@export var pan_speed: float = 128.0
 @export var min_zoom: float = 0.00375  ## The most zoomed-OUT allowed value. Phase 2.5.6: scaled by 1/8 alongside HexCoord.HEX_SIZE's 8x increase (0.03 -> 0.00375) — visible world width is viewport/zoom.x, so a bigger world needs a SMALLER zoom value to keep framing the same fraction of it — see tactical_zoom_threshold.
-@export var max_zoom: float = 0.3125  ## The most zoomed-IN allowed value. Phase 2.5.6: scaled by 1/8 alongside HexCoord.HEX_SIZE's 8x increase (2.5 -> 0.3125) — same viewport/zoom.x reasoning as min_zoom, so full zoom-in still frames the same fraction of a hex as before the world-space scale-up.
-@export var zoom_step: float = 0.0125  ## Phase 2.5.6: scaled by 1/8 alongside HexCoord.HEX_SIZE's 8x increase (0.1 -> 0.0125) so one scroll click still feels like the same proportional zoom change.
-@export var tactical_zoom_threshold: float = 0.1875  ## zoom.x at/above this = Tactical view (Camera2D: LARGER zoom = more zoomed in — see the class doc comment). Phase 2.5.6: scaled by 1/8 alongside HexCoord.HEX_SIZE's 8x increase (1.5 -> 0.1875) — the Strategic/Tactical cut still happens at the same relative zoom level.
+@export var max_zoom: float = 6.0  ## The most zoomed-IN allowed value — see this class's own doc comment for why this was raised 19.2x from the Phase 2.5.6 value (0.3125): individual unit/zombie figures need to actually be visible, not sub-pixel, at the closest zoom.
+@export var zoom_factor_per_step: float = 1.12  ## Multiplicative zoom per scroll click (12%) — see this class's own doc comment for why this replaced a flat additive zoom_step.
+@export var tactical_zoom_threshold: float = 0.1875  ## zoom.x at/above this = Tactical view (Camera2D: LARGER zoom = more zoomed in — see the class doc comment). Phase 2.5.6: scaled by 1/8 alongside HexCoord.HEX_SIZE's 8x increase (1.5 -> 0.1875) — the Strategic/Tactical cut still happens at the same relative zoom level. Unchanged by the max_zoom increase — this still marks "left the abstract Strategic map", independent of how much further Tactical itself now goes.
 
 ## Phase 2.5.5: subdivides [tactical_zoom_threshold, max_zoom] into three
 ## LOW/MEDIUM/HIGH fidelity bands (GameEnums.TacticalFidelity) as the camera
 ## keeps zooming in past the Strategic/Tactical cut — see get_tactical_fidelity().
-## Evenly divides the range into thirds; exact values are a balancing/feel
-## pass once this is actually running in-engine, per the design doc, not an
-## architecture decision — same framing as tactical_zoom_threshold's own
-## position was before 2.5.6 fixed its direction.
-@export var medium_fidelity_threshold: float = 0.2292
-@export var high_fidelity_threshold: float = 0.2708
+## **Re-tuned alongside the max_zoom increase above** (were 0.2292/0.2708,
+## an even three-way split of the OLD, much narrower Tactical range) —
+## HIGH specifically now starts where individual figures are already a
+## legible ~18px screen radius (FIGURE_RADIUS 6.0 * 2.0) and only gets
+## clearer approaching max_zoom, rather than starting the instant Tactical
+## mode itself does. Still a balancing/feel pass, not an architecture
+## decision, same framing as before.
+@export var medium_fidelity_threshold: float = 0.5
+@export var high_fidelity_threshold: float = 2.0
 
 @export var perspective_tween_duration: float = 0.6
 @export var isometric_y_scale: float = 0.577
@@ -126,28 +164,35 @@ func _handle_pan_input(delta: float) -> void:
 	if Input.is_action_pressed(InputBindings.PAN_DOWN):
 		direction.y += 1.0
 	if direction != Vector2.ZERO:
-		# NOTE: this makes world-space pan speed scale UP with zoom.x, i.e.
-		# panning covers MORE world-units/sec the more zoomed in you are —
-		# not perfectly zoom-independent screen-space pan speed (that would
-		# need pan_speed/zoom.x instead, given visible width is viewport/
-		# zoom.x — see the class doc comment on the zoom-direction fix).
-		# Left as-is: a feel/balancing nuance, not a broken-direction bug
-		# like the two above were; revisit if panning feels off once zoomed
-		# in deep during actual playtesting.
-		position += direction.normalized() * pan_speed * zoom.x * delta
+		# Constant SCREEN-space pan speed, independent of zoom level: visible
+		# world width is viewport/zoom.x (see the class doc comment on the
+		# zoom-direction fix), so dividing by zoom.x here means the fraction
+		# of the visible view crossed per second stays the same at any zoom.
+		# The OLD formula (pan_speed*zoom.x) made world-space speed scale UP
+		# with zoom — harmless at the old, narrow max_zoom, but with
+		# max_zoom now 19x further in (see this class's own doc comment),
+		# that formula would have made panning ~369x more twitchy at max
+		# zoom than at the default view — exactly the fine control close-up
+		# unit inspection needs. pan_speed itself was recalibrated (see its
+		# own doc comment) so this reads identically to the old formula at
+		# the default starting Strategic zoom.
+		position += direction.normalized() * (pan_speed / zoom.x) * delta
 
 func _handle_zoom_input(event: InputEventMouseButton) -> void:
 	if not event.pressed:
 		return
 	if event.button_index == MOUSE_BUTTON_WHEEL_UP:
-		_apply_zoom_delta(zoom_step)  ## Scroll up = zoom in = larger zoom.x (see class doc comment).
+		_apply_zoom_factor(zoom_factor_per_step)  ## Scroll up = zoom in = larger zoom.x (see class doc comment).
 	elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
-		_apply_zoom_delta(-zoom_step)
+		_apply_zoom_factor(1.0 / zoom_factor_per_step)
 
-func _apply_zoom_delta(delta: float) -> void:
+## Multiplicative, not additive — see this class's own doc comment on
+## zoom_factor_per_step for why a flat step doesn't work across a range
+## this wide.
+func _apply_zoom_factor(factor: float) -> void:
 	var was_tactical := is_tactical_zoom()
 	var was_fidelity := get_tactical_fidelity()
-	var new_zoom := clampf(zoom.x + delta, min_zoom, max_zoom)
+	var new_zoom := clampf(zoom.x * factor, min_zoom, max_zoom)
 	zoom = Vector2(new_zoom, new_zoom)
 	if is_tactical_zoom() != was_tactical:
 		tactical_mode_changed.emit(is_tactical_zoom())
