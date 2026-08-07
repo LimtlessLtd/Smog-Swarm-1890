@@ -1,4 +1,4 @@
-[gd_scene load_steps=16 format=3]
+[gd_scene load_steps=18 format=3]
 
 [ext_resource type="PackedScene" path="res://scenes/world/HexGridMap.tscn" id="1"]
 [ext_resource type="PackedScene" path="res://scenes/camera/CameraController.tscn" id="2"]
@@ -22,6 +22,8 @@
 [ext_resource type="PackedScene" path="res://scenes/world/UnitCommandController.tscn" id="20"]
 [ext_resource type="PackedScene" path="res://scenes/world/TacticalEntityLayer.tscn" id="21"]
 [ext_resource type="PackedScene" path="res://scenes/world/TerritoryController.tscn" id="22"]
+[ext_resource type="PackedScene" path="res://scenes/events/EventManager.tscn" id="23"]
+[ext_resource type="PackedScene" path="res://scenes/audio/AlertManager.tscn" id="24"]
 
 [node name="Main" type="Node2D"]
 
@@ -99,6 +101,17 @@ unit_order_controller_path = NodePath("../UnitOrderController")
 resource_manager_path = NodePath("../ResourceManager")
 building_manager_path = NodePath("../BuildingManager")
 
+[node name="EventManager" parent="." instance=ExtResource("23")]
+building_manager_path = NodePath("../BuildingManager")
+wall_manager_path = NodePath("../WallManager")
+combat_coordinator_path = NodePath("../CombatCoordinator")
+territory_controller_path = NodePath("../TerritoryController")
+resource_manager_path = NodePath("../ResourceManager")
+strategic_overlay_manager_path = NodePath("../WorldRoot/StrategicOverlayManager")
+
+[node name="AlertManager" parent="." instance=ExtResource("24")]
+event_manager_path = NodePath("../EventManager")
+
 [node name="SaveLoadManager" parent="." instance=ExtResource("9")]
 building_manager_path = NodePath("../BuildingManager")
 resource_manager_path = NodePath("../ResourceManager")
@@ -127,6 +140,7 @@ unit_order_controller_path = NodePath("../../UnitOrderController")
 horde_manager_path = NodePath("../../HordeManager")
 fog_of_war_manager_path = NodePath("../../FogOfWarManager")
 camera_path = NodePath("../../CameraController")
+event_manager_path = NodePath("../../EventManager")
 
 [node name="BuildPlacementController" parent="WorldRoot" instance=ExtResource("10")]
 hex_grid_map_path = NodePath("../HexGridMap")
@@ -156,3 +170,4 @@ unit_manager_path = NodePath("../UnitManager")
 hex_grid_map_path = NodePath("../WorldRoot/HexGridMap")
 fog_of_war_manager_path = NodePath("../FogOfWarManager")
 camera_path = NodePath("../CameraController")
+event_manager_path = NodePath("../EventManager")

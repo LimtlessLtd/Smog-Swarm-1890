@@ -35,6 +35,7 @@ extends CanvasLayer
 @export var hex_grid_map_path: NodePath
 @export var fog_of_war_manager_path: NodePath
 @export var camera_path: NodePath
+@export var event_manager_path: NodePath  ## Optional — Phase 6.2's EventManager; without it, world events simply show no toast (AlertManager's own audio/auto-pause is unaffected either way).
 
 const DEFAULT_CAMPAIGN := "Default"
 const DEFAULT_SLOT := "QuickSave"
@@ -73,6 +74,9 @@ func _ready() -> void:
 		_build_placement_controller = get_node(build_placement_controller_path)
 		_build_placement_controller.placement_started.connect(_on_placement_started)
 		_build_placement_controller.placement_ended.connect(_on_placement_ended)
+	if event_manager_path != NodePath():
+		var event_manager: EventManager = get_node(event_manager_path)
+		event_manager.event_raised.connect(_on_event_raised)
 	if unit_command_controller_path != NodePath():
 		_unit_command_controller = get_node(unit_command_controller_path)
 	var unit_manager: UnitManager = null
@@ -311,6 +315,16 @@ func _on_game_loaded(_campaign_name: String, _slot_name: String) -> void:
 
 func _on_load_failed(_campaign_name: String, _slot_name: String, reason: String) -> void:
 	_show_toast("Load failed: %s" % reason)
+
+## Design doc Phase 6.2 — an independent second listener on EventManager.
+## event_raised alongside AlertManager's own audio/auto-pause; see
+## AlertManager's own doc comment for why that's not a coincidence. A
+## CRITICAL/WARNING event pauses the game via AlertManager in the same
+## frame, and _toast_timer's own countdown is Engine.time_scale-scaled like
+## everything else here, so the toast naturally stays up for as long as the
+## game stays paused rather than ticking away unread.
+func _on_event_raised(event: GameEvent) -> void:
+	_show_toast(event.message)
 
 func _show_toast(text: String) -> void:
 	_toast_label.text = text

@@ -199,3 +199,27 @@ enum TechUnlockType {
 	BUILDING_VARIANT, ## Unlocks an advanced building variant — documented hook, unused until a variant building actually exists.
 	SEAFARING,        ## The one node gated on campaign state as well as prerequisites — see TechDefinition.requires_wales_and_scotland_retaken.
 }
+
+## Design doc Phase 6.2: EventManager's "typed event records" — what kind of
+## thing happened. COMBAT/TERRITORY/ECONOMY are raised today (see
+## EventManager's own doc comment for every wired source); UNREST/NARRATIVE
+## are documented, unused hooks for Phase 2.11's Discontent and Phase 7.2's
+## still-nonexistent CampaignManager — same "real gate, nothing calls it
+## yet" convention as TechUnlockType.BUILDING_VARIANT above.
+enum EventCategory {
+	COMBAT,     ## A unit engaged, a building was ruined, or a wall segment breached (Phase 2.7.5's "under-attack" alerts).
+	TERRITORY,  ## A district was lost to or recaptured from the horde (Phase 5.8).
+	ECONOMY,    ## A resource stockpile ran dry, or food satisfaction dropped a band (Phase 2.2/2.10).
+	UNREST,     ## Not yet raised — Phase 2.11's DiscontentManager has no "unrest event" concept of its own yet, only its existing production-penalty math.
+	NARRATIVE,  ## Not yet raised — Phase 7.2's relic-site/Final Mystery beats; no CampaignManager exists yet to raise one.
+}
+
+## How urgently EventManager.raise_event() wants the player's attention.
+## AlertManager (Phase 6.2) auto-pauses on anything above INFO — see its own
+## doc comment for why that's not as spammy as "pause on every WARNING"
+## sounds.
+enum EventSeverity {
+	INFO,      ## Worth a toast, not worth stopping the clock — today's only source is a recaptured district.
+	WARNING,   ## Notable: a unit took a hit and survived, food dipped under 100%, a resource stockpile hit zero.
+	CRITICAL,  ## Severe: a unit/building destroyed, a wall breached, territory lost, a large horde spotted, the colony starving.
+}
