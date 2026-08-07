@@ -113,32 +113,22 @@ static func corner_points(center: Vector2) -> PackedVector2Array:
 		points.append(center + Vector2(HEX_SIZE * cos(angle_rad), HEX_SIZE * sin(angle_rad)))
 	return points
 
-## Phase "terrain art": the same 6 corners corner_points(ZERO) produces,
-## normalized into [0,1]x[0,1] — for Polygon2D's explicit `uv` array when a
-## texture should paint once across the whole hex (HexCellView.GroundMode.ICON,
-## the Strategic-zoom "map symbol" look). Deterministic and parameter-free;
-## not cached — 6 points is cheap enough that adding cache state here would
-## violate this class's own "pure static utility, no state" doc comment for
-## no real gain. Introduces a mild (~13%) anisotropic stretch mapping the
-## square SVG canvas into the hex's own non-square bounding box (pointy-top,
-## sqrt(3):2 aspect) — imperceptible at Strategic zoom, and irrelevant to
-## HexCellView.GroundMode.TILED (that mode uses uniform world-unit scaling
-## on both axes instead, zero distortion).
-static func corner_uvs() -> PackedVector2Array:
-	var points := corner_points(Vector2.ZERO)
-	var min_x := points[0].x
-	var min_y := points[0].y
-	var max_x := points[0].x
-	var max_y := points[0].y
-	for p in points:
-		min_x = minf(min_x, p.x)
-		min_y = minf(min_y, p.y)
-		max_x = maxf(max_x, p.x)
-		max_y = maxf(max_y, p.y)
-	var uvs := PackedVector2Array()
-	for p in points:
-		uvs.append(Vector2((p.x - min_x) / (max_x - min_x), (p.y - min_y) / (max_y - min_y)))
-	return uvs
+## **Removed (real bug found — see HexCellView.gd's own doc comment):**
+## `corner_uvs()` used to map a hex's 6 corners onto a texture's 4 corners
+## for Polygon2D's explicit `uv` array (the Strategic "paint the whole
+## texture once as a map icon" look). Confirmed, not just suspected — a
+## Polygon2D only samples a texture AT each vertex's own UV coordinate and
+## linearly interpolates those samples across its (fan-triangulated)
+## interior; it does not warp/rasterize the source image into the polygon's
+## screen shape the way a masked sprite would. With only 6 sample points
+## confined to a texture's edges, most hand-drawn detail (concentrated away
+## from the edges, by construction, in every one of this project's own
+## seamlessly-tiling SVGs) never gets sampled at all — verified by sampling
+## every one of `urban.svg`'s 6 corner-UV texels directly and finding 4 of
+## the 6 landed on nearly-identical tones, which is exactly why Strategic
+## hexes were rendering as a near-flat blob instead of visible art. Fixed by
+## rendering Strategic ground the same tiled way Tactical already correctly
+## does — see `HexCellView._redraw()`.
 
 ## Phase 2.5.4: a deterministic in-hex offset for an entity (UnitInstance/
 ## Horde) arriving at `to_coord` FROM `from_coord` — positions it toward the

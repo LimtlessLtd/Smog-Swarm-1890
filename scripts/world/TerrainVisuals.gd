@@ -16,7 +16,7 @@ extends RefCounted
 ## biome_color()/soil_color() are untouched and MinimapView keeps calling
 ## them directly, unchanged: its dots are 2-3 minimap-pixels, far too small
 ## for texture detail to read at all. terrain_texture() is the new seam
-## HexCellView (Strategic + Tactical, via GroundMode) reads instead.
+## HexCellView (Strategic + Tactical alike, same tiled draw path) reads instead.
 
 static func biome_color(biome: GameEnums.BiomeType, soil: GameEnums.SoilFertility) -> Color:
 	match biome:

@@ -6,10 +6,9 @@ extends Node2D
 ## source of visual truth — with a scatter of placeholder props and every
 ## BuildingInstance in this hex rendered at its own precise position,
 ## instead of one flat tile standing in for the whole ~5x5 mile area.
-## Passes GroundMode.TILED so real terrain art (TerrainVisuals.terrain_texture())
-## repeats as a true-scale ground material here rather than the single
-## whole-hex "icon" paint Strategic's own HexCellView instances use — see
-## that class's own doc comment for the UV/repeat mechanism.
+## Ground here is the same tiled-texture HexCellView Strategic's own
+## instances use too now (see that class's own doc comment for the real
+## rendering bug this used to differ over, and why it doesn't anymore).
 ## Spawned/freed by LocalDetailManager as the camera crosses the tactical
 ## zoom threshold and pans between hexes; only ever exists for a hex that
 ## has qualified as settled/frontier (see LocalDetailManager).
@@ -76,7 +75,7 @@ func _redraw() -> void:
 		child.queue_free()
 
 	var ground := HexCellView.new()
-	ground.setup(cell, HexCellView.GroundMode.TILED)
+	ground.setup(cell)
 	add_child(ground)
 
 	for prop in _props:
