@@ -31,7 +31,8 @@ extends Node2D
 ## every frame while visible and diffs against what it drew last time,
 ## same "cheap self-healing full recompute" shape LocalDetailManager already
 ## uses for its own camera-driven neighborhood refresh — only redrawing a
-## group's figures when its headcount actually changed, not every frame.
+## group's figures when its (headcount, fidelity) pair actually changed,
+## not every frame.
 ##
 ## Parented as a WorldRoot sibling, same reasoning as every other Tactical-
 ## adjacent overlay (LocalDetailManager, StrategicOverlayManager,
@@ -42,9 +43,19 @@ extends Node2D
 ## MultiMeshInstance2D note under Phase 5.10) is deliberately NOT built here
 ## — MAX_RENDERED_ZOMBIES below is a much smaller placeholder cap for this
 ## naive one-Polygon2D-per-figure approach, not that future system.
+##
+## **Phase 2.5.5 (Multi-Tier Visual Fidelity/LOD):** this class owns all
+## three of Tactical zoom's internal fidelity bands (GameEnums.
+## TacticalFidelity), driven by CameraController.tactical_fidelity_changed —
+## HIGH is exactly the per-figure rendering this class already did before
+## 2.5.5; LOW/MEDIUM are new, coarser bands as the camera sits closer to
+## tactical_zoom_threshold. A fidelity change clears both headcount caches
+## outright (their cached value now encodes fidelity too, via a Vector2i
+## key) so every currently-tracked group redraws under the new band on the
+## very next _process() poll — no per-group bookkeeping needed beyond that.
 
-const FIGURE_COLOR := Color(0.85, 0.8, 0.7)    ## Player-unit squad figures — pale "uniform" tone, distinct from terrain/prop/building colors.
-const VEHICLE_COLOR := Color(0.5, 0.46, 0.32)  ## Tier 4-5 single-model units — a heavier, darker tone than a squad figure.
+const FIGURE_COLOR := Color(0.85, 0.8, 0.7)    ## Player-unit squad figures (HIGH) — pale "uniform" tone, distinct from terrain/prop/building colors.
+const VEHICLE_COLOR := Color(0.5, 0.46, 0.32)  ## Tier 4-5 single-model units (HIGH) — a heavier, darker tone than a squad figure.
 const ZOMBIE_COLOR := Color(0.33, 0.4, 0.27)   ## Sickly green-grey, distinct from both.
 
 const FIGURE_RADIUS := 6.0
@@ -57,6 +68,32 @@ const FIGURE_SPREAD := 20.0  ## How far individual squad/zombie figures scatter 
 ## doesn't apply here.
 const MAX_RENDERED_ZOMBIES := 30
 
+## LOW fidelity (design doc: "simple silhouettes/blobs ... shape-and-color
+## differentiated enough to tell unit from building from zombie") — one
+## uniform blob per unit regardless of role/tier, one per horde regardless
+## of size. Unit blob stays a circle (matches HIGH's own figure shape);
+## the horde blob is deliberately a DIAMOND instead — the same shape
+## StrategicOverlayManager's own horde marker already uses at Strategic
+## zoom (2.7.6), so "unit vs zombie" reads by shape, not color alone, at
+## the lowest Tactical fidelity too.
+const LOW_UNIT_RADIUS := 10.0
+const LOW_ZOMBIE_RADIUS := 10.0
+
+## MEDIUM fidelity (design doc: "some discernible detail — enough to tell a
+## unit's role or tier apart, not yet individual-figure detail") — one
+## marker per unit, shaped by role (circle/triangle/diamond, the same
+## "shape distinguishes, not just color" accessibility principle every
+## other marker in this project already follows) and sized by tier. Hordes
+## get a small FIXED-size cluster, deliberately not the true headcount —
+## more detail than LOW's single blob, deliberately less than HIGH's full
+## (capped) count.
+const MEDIUM_UNIT_BASE_RADIUS := 7.0
+const MEDIUM_UNIT_TIER_STEP := 1.5  ## Added per definition.tier, so a Tier 5 marker reads visibly larger than a Tier 0 one.
+const MEDIUM_MELEE_COLOR := Color(0.72, 0.32, 0.28)   ## Rust red.
+const MEDIUM_RANGED_COLOR := Color(0.35, 0.55, 0.78)  ## Blue.
+const MEDIUM_SPECIAL_COLOR := Color(0.62, 0.5, 0.78)  ## Violet.
+const MEDIUM_ZOMBIE_CLUSTER_SIZE := 5
+
 @export var unit_manager_path: NodePath
 @export var horde_manager_path: NodePath
 @export var fog_of_war_manager_path: NodePath  ## Optional — unset renders every horde regardless of vision, same "gracefully skip it" convention as every other optional dependency in this project.
@@ -67,10 +104,12 @@ var _horde_manager: HordeManager
 var _fog_of_war_manager: FogOfWarManager
 var _camera: CameraController
 
+var _fidelity: GameEnums.TacticalFidelity = GameEnums.TacticalFidelity.HIGH
+
 var _unit_groups: Dictionary = {}      # int (UnitInstance.id) -> Node2D
-var _unit_headcounts: Dictionary = {}  # int (UnitInstance.id) -> int, last-drawn figure count
+var _unit_draw_keys: Dictionary = {}   # int (UnitInstance.id) -> Vector2i(headcount, fidelity), last-drawn
 var _horde_groups: Dictionary = {}     # int (Horde.id) -> Node2D
-var _horde_headcounts: Dictionary = {} # int (Horde.id) -> int, last-drawn (capped) figure count
+var _horde_draw_keys: Dictionary = {}  # int (Horde.id) -> Vector2i(display_count, fidelity), last-drawn
 
 func _ready() -> void:
 	if unit_manager_path != NodePath():
@@ -82,7 +121,9 @@ func _ready() -> void:
 	if camera_path != NodePath():
 		_camera = get_node(camera_path)
 		_camera.tactical_mode_changed.connect(_on_tactical_mode_changed)
+		_camera.tactical_fidelity_changed.connect(_on_fidelity_changed)
 		visible = _camera.is_tactical_zoom()
+		_fidelity = _camera.get_tactical_fidelity()
 
 func _process(_delta: float) -> void:
 	if not visible:
@@ -93,7 +134,16 @@ func _process(_delta: float) -> void:
 func _on_tactical_mode_changed(is_tactical: bool) -> void:
 	visible = is_tactical
 
-## --- Units (squads / single vehicle models) --------------------------------
+## Phase 2.5.5: a band change alone doesn't change the map's true headcount/
+## size numbers, so the plain per-entity redraw-skip check below would never
+## notice — clearing both caches forces every currently-tracked group to
+## redraw under the new band next poll (see this class's own doc comment).
+func _on_fidelity_changed(fidelity: GameEnums.TacticalFidelity) -> void:
+	_fidelity = fidelity
+	_unit_draw_keys.clear()
+	_horde_draw_keys.clear()
+
+## --- Units (squads / single vehicle models / role markers / blobs) --------
 
 func _refresh_units() -> void:
 	if not _unit_manager:
@@ -110,28 +160,54 @@ func _refresh_units() -> void:
 		if not seen.has(id):
 			_unit_groups[id].queue_free()
 			_unit_groups.erase(id)
-			_unit_headcounts.erase(id)
+			_unit_draw_keys.erase(id)
 
 func _update_unit_group(instance: UnitInstance) -> void:
 	var group: Node2D = _unit_groups[instance.id]
 	group.position = HexCoord.axial_to_world(instance.hex_coord) + instance.local_position
 
 	var headcount := instance.get_squad_headcount()
-	if _unit_headcounts.get(instance.id, -1) == headcount:
+	var draw_key := Vector2i(headcount, _fidelity)
+	if _unit_draw_keys.get(instance.id, Vector2i(-1, -1)) == draw_key:
 		return
-	_unit_headcounts[instance.id] = headcount
+	_unit_draw_keys[instance.id] = draw_key
 
 	for child in group.get_children():
 		child.queue_free()
 	if headcount <= 0:
 		return  # Destroyed this frame, about to be removed via unit_removed — draw nothing rather than a stale figure.
-	if instance.is_squad_rendered():
-		for i in range(headcount):
-			group.add_child(_build_figure(FIGURE_COLOR, FIGURE_RADIUS, _scatter_offset(i, headcount)))
-	else:
-		group.add_child(_build_figure(VEHICLE_COLOR, VEHICLE_RADIUS, Vector2.ZERO))
 
-## --- Hordes (zombie clusters) -----------------------------------------------
+	match _fidelity:
+		GameEnums.TacticalFidelity.LOW:
+			group.add_child(_build_figure(FIGURE_COLOR, LOW_UNIT_RADIUS, Vector2.ZERO))
+		GameEnums.TacticalFidelity.MEDIUM:
+			group.add_child(_build_role_marker(instance))
+		_:  # HIGH — unchanged from before 2.5.5.
+			if instance.is_squad_rendered():
+				for i in range(headcount):
+					group.add_child(_build_figure(FIGURE_COLOR, FIGURE_RADIUS, _scatter_offset(i, headcount)))
+			else:
+				group.add_child(_build_figure(VEHICLE_COLOR, VEHICLE_RADIUS, Vector2.ZERO))
+
+## MEDIUM fidelity's "tell a unit's role or tier apart" marker — shape by
+## role (never color alone, same accessibility principle every other marker
+## in this project follows), radius by tier.
+func _build_role_marker(instance: UnitInstance) -> Node2D:
+	var radius := MEDIUM_UNIT_BASE_RADIUS + float(instance.definition.tier) * MEDIUM_UNIT_TIER_STEP
+	var shape := Polygon2D.new()
+	match instance.definition.role:
+		GameEnums.UnitRole.MELEE:
+			shape.color = MEDIUM_MELEE_COLOR
+			shape.polygon = _circle_points(radius)
+		GameEnums.UnitRole.RANGED:
+			shape.color = MEDIUM_RANGED_COLOR
+			shape.polygon = PackedVector2Array([Vector2(0, -radius), Vector2(radius * 0.87, radius * 0.5), Vector2(-radius * 0.87, radius * 0.5)])  # Triangle.
+		_:  # SPECIAL
+			shape.color = MEDIUM_SPECIAL_COLOR
+			shape.polygon = PackedVector2Array([Vector2(0, -radius), Vector2(radius, 0), Vector2(0, radius), Vector2(-radius, 0)])  # Diamond.
+	return shape
+
+## --- Hordes (zombie blobs / clusters) --------------------------------------
 
 func _refresh_hordes() -> void:
 	if not _horde_manager:
@@ -148,7 +224,7 @@ func _refresh_hordes() -> void:
 		if not seen.has(id):
 			_horde_groups[id].queue_free()
 			_horde_groups.erase(id)
-			_horde_headcounts.erase(id)
+			_horde_draw_keys.erase(id)
 
 ## Individual zombie figures are live-vision intel, not remembered-terrain
 ## intel — gated on VISIBLE (Fog of War, Phase 2.6), a strictly stricter bar
@@ -161,15 +237,39 @@ func _update_horde_group(horde: Horde) -> void:
 	group.position = HexCoord.axial_to_world(horde.hex_coord) + horde.local_position
 	group.visible = _fog_of_war_manager == null or _fog_of_war_manager.is_visible(horde.hex_coord)
 
-	var headcount := mini(horde.size, MAX_RENDERED_ZOMBIES)
-	if _horde_headcounts.get(horde.id, -1) == headcount:
+	var display_count := _horde_display_count(horde.size)
+	var draw_key := Vector2i(display_count, _fidelity)
+	if _horde_draw_keys.get(horde.id, Vector2i(-1, -1)) == draw_key:
 		return
-	_horde_headcounts[horde.id] = headcount
+	_horde_draw_keys[horde.id] = draw_key
 
 	for child in group.get_children():
 		child.queue_free()
-	for i in range(headcount):
-		group.add_child(_build_figure(ZOMBIE_COLOR, ZOMBIE_RADIUS, _scatter_offset(i, headcount)))
+	if display_count <= 0:
+		return
+
+	if _fidelity == GameEnums.TacticalFidelity.LOW:
+		group.add_child(_build_diamond(ZOMBIE_COLOR, LOW_ZOMBIE_RADIUS))
+	else:
+		for i in range(display_count):
+			group.add_child(_build_figure(ZOMBIE_COLOR, ZOMBIE_RADIUS, _scatter_offset(i, display_count)))
+
+## How many individual zombie figures to actually draw for a horde of
+## `size` — LOW collapses to a single blob (display_count itself doesn't
+## matter beyond ">0", the LOW branch above always draws exactly one
+## diamond), MEDIUM shows a small fixed cluster regardless of true size
+## (more detail than LOW, deliberately less than the real count), HIGH
+## shows the real (capped) count, unchanged from before 2.5.5.
+func _horde_display_count(size: int) -> int:
+	if size <= 0:
+		return 0
+	match _fidelity:
+		GameEnums.TacticalFidelity.LOW:
+			return 1
+		GameEnums.TacticalFidelity.MEDIUM:
+			return mini(size, MEDIUM_ZOMBIE_CLUSTER_SIZE)
+		_:  # HIGH
+			return mini(size, MAX_RENDERED_ZOMBIES)
 
 ## --- Shared figure drawing --------------------------------------------------
 
@@ -189,6 +289,12 @@ func _build_figure(color: Color, radius: float, offset: Vector2) -> Node2D:
 	shape.color = color
 	shape.polygon = _circle_points(radius)
 	shape.position = offset
+	return shape
+
+func _build_diamond(color: Color, radius: float) -> Node2D:
+	var shape := Polygon2D.new()
+	shape.color = color
+	shape.polygon = PackedVector2Array([Vector2(0, -radius), Vector2(radius, 0), Vector2(0, radius), Vector2(-radius, 0)])
 	return shape
 
 func _circle_points(radius: float, segments: int = 8) -> PackedVector2Array:

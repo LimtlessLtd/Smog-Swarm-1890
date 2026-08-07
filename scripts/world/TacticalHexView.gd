@@ -9,10 +9,28 @@ extends Node2D
 ## Spawned/freed by LocalDetailManager as the camera crosses the tactical
 ## zoom threshold and pans between hexes; only ever exists for a hex that
 ## has qualified as settled/frontier (see LocalDetailManager).
+##
+## Phase 2.5.5 (LOD): `fidelity` only affects PROPS — at LOW it collapses
+## every per-species polygon (tree/bush/rock/reed) down to one uniform
+## blob shape, still colored by prop type, matching the design doc's own
+## "simple silhouettes/blobs" language for the lowest Tactical band.
+## MEDIUM and HIGH both draw today's real per-type polygons unchanged —
+## the design doc's own tier descriptions only call out a MEDIUM-vs-HIGH
+## distinction for UNITS ("tell a unit's role/tier apart" vs "individual-
+## figure detail", see TacticalEntityLayer), not for props/buildings, so
+## there's no fabricated difference to invent here without real art
+## (Phase 6.3) to actually make HIGH "more elaborate" than MEDIUM.
+## **Decided: buildings are NOT simplified at any fidelity** — their
+## BuildingVisuals.category_color() box is already the single simplest
+## shape that still carries the "which building category is this"
+## signal LOW fidelity's own "tell unit from building from zombie apart"
+## bar depends on; simplifying it further would remove exactly the cue
+## that bar needs, not reduce needless detail.
 
 var cell: HexCell
 var _props: Array[PropInstance] = []
 var _buildings: Array[BuildingInstance] = []
+var _fidelity: GameEnums.TacticalFidelity = GameEnums.TacticalFidelity.HIGH
 
 func _ready() -> void:
 	position = HexCoord.axial_to_world(cell.coord)
@@ -24,10 +42,11 @@ func _ready() -> void:
 ## `fog_state` defaults to VISIBLE: LocalDetailManager only ever hydrates a
 ## hex that's at least EXPLORED (Phase 2.6), so the only two values that
 ## actually arrive here are EXPLORED (dimmed) and VISIBLE (full color).
-func setup(p_cell: HexCell, props: Array[PropInstance], buildings: Array[BuildingInstance], fog_state: GameEnums.FogState = GameEnums.FogState.VISIBLE) -> void:
+func setup(p_cell: HexCell, props: Array[PropInstance], buildings: Array[BuildingInstance], fog_state: GameEnums.FogState = GameEnums.FogState.VISIBLE, fidelity: GameEnums.TacticalFidelity = GameEnums.TacticalFidelity.HIGH) -> void:
 	cell = p_cell
 	_props = props
 	_buildings = buildings
+	_fidelity = fidelity
 	set_fog_state(fog_state)
 	if is_inside_tree():
 		_redraw()
@@ -37,6 +56,16 @@ func setup(p_cell: HexCell, props: Array[PropInstance], buildings: Array[Buildin
 ## remembered-but-not-currently-visible hex reads as one dimmed scene.
 func set_fog_state(state: GameEnums.FogState) -> void:
 	modulate = FogVisuals.tint_color(state)
+
+## Phase 2.5.5: pushed live by LocalDetailManager on every LOW<->MEDIUM<->HIGH
+## band crossing — mirrors set_fog_state()'s "update in place, only redraw if
+## it actually changed" shape rather than a full dehydrate/rehydrate.
+func set_fidelity(fidelity: GameEnums.TacticalFidelity) -> void:
+	if fidelity == _fidelity:
+		return
+	_fidelity = fidelity
+	if is_inside_tree():
+		_redraw()
 
 func _redraw() -> void:
 	for child in get_children():
@@ -54,12 +83,22 @@ func _redraw() -> void:
 
 func _build_prop_node(prop: PropInstance) -> Node2D:
 	var shape := Polygon2D.new()
-	shape.polygon = _prop_polygon(prop.prop_type)
+	shape.polygon = _low_fidelity_blob() if _fidelity == GameEnums.TacticalFidelity.LOW else _prop_polygon(prop.prop_type)
 	shape.color = _prop_color(prop.prop_type)
 	shape.position = prop.local_position
 	shape.rotation = prop.rotation
 	shape.scale = Vector2.ONE * prop.scale
 	return shape
+
+## LOW fidelity (Phase 2.5.5): one uniform blob shape for every prop
+## species — still colored by prop type (_prop_color() below, untouched),
+## just without the per-species silhouette MEDIUM/HIGH draw.
+func _low_fidelity_blob() -> PackedVector2Array:
+	var points := PackedVector2Array()
+	for i in range(6):
+		var angle := TAU * i / 6.0
+		points.append(Vector2(cos(angle), sin(angle)) * 5.0)
+	return points
 
 func _prop_polygon(prop_type: GameEnums.PropType) -> PackedVector2Array:
 	match prop_type:
