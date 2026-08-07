@@ -29,8 +29,6 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
-STRING_RE = re.compile(r'"(?:[^"\\]|\\.)*"|\'(?:[^\'\\]|\\.)*\'')
-COMMENT_RE = re.compile(r'#.*$')
 CLASS_NAME_RE = re.compile(r'^class_name\s+(\w+)', re.MULTILINE)
 STRINGNAME_FORMAT_BUG_RE = re.compile(r'&"[^"]*"\s*%')
 RES_PATH_RE = re.compile(r'path="(res://[^"]+)"')
@@ -42,18 +40,52 @@ CLOSERS = {v: k for k, v in BRACKET_PAIRS.items()}
 def strip_noise(source: str) -> str:
     """Removes comments and string-literal contents so bracket-counting
     and other structural checks don't get confused by a `(` inside a
-    string or a comment. Comments are stripped line-by-line FIRST and
-    string literals SECOND — doing it the other way round lets a quote
-    character inside one comment (e.g. `## "Church Steeple Watchtower"`)
-    pair up with an unrelated quote character in a totally different
-    comment or string later in the file, silently eating everything
-    (braces included) in between. Deliberately crude (doesn't handle
-    GDScript's triple-quoted strings specially, and assumes '#' never
-    appears inside an actual string literal in this codebase) — good
-    enough for a sanity check, not a real parser."""
-    lines = source.split('\n')
-    no_comments = '\n'.join(COMMENT_RE.sub('', line) for line in lines)
-    return STRING_RE.sub('""', no_comments)
+    string or a comment. A single quote-aware left-to-right pass (NOT two
+    independent regex substitutions) — a previous two-pass version
+    stripped comments first via a naive `#.*$` regex, which broke on a
+    `#` inside a string literal (e.g. `Color("#1f150f")`, once real code
+    started using hex-string colors): it truncated the line right after
+    the opening quote, losing the closing `")` and producing a false
+    "unbalanced '(' (never closed)". Scanning char-by-char and tracking
+    "currently inside a string" state fixes that (a `#` only starts a
+    comment when not inside a string) while still avoiding the OTHER
+    failure mode two-pass stripping was originally guarding against (a
+    stray quote inside a comment, e.g. `## "Church Steeple Watchtower"`,
+    pairing up with an unrelated quote later in the file) — comments are
+    still recognized and skipped before any quote character inside them
+    gets a chance to open a string, since scanning is left-to-right and
+    the `#` is hit first. Every newline is preserved exactly (even while
+    "inside" a string or a stripped comment) so downstream line numbers
+    stay accurate. Deliberately crude (doesn't special-case GDScript's
+    triple-quoted strings) — good enough for a sanity check, not a real
+    parser."""
+    result: list[str] = []
+    i = 0
+    n = len(source)
+    quote: str | None = None  # the quote character currently open, or None
+    while i < n:
+        ch = source[i]
+        if quote:
+            if ch == '\\' and i + 1 < n and source[i + 1] != '\n':
+                i += 2  # skip an escaped char (e.g. \") so it can't end the string early
+                continue
+            if ch == quote:
+                quote = None
+            elif ch == '\n':
+                result.append('\n')  # unterminated string spanning a line break: don't eat the newline
+            i += 1
+            continue
+        if ch == '"' or ch == "'":
+            quote = ch
+            i += 1
+            continue
+        if ch == '#':
+            while i < n and source[i] != '\n':
+                i += 1
+            continue
+        result.append(ch)
+        i += 1
+    return ''.join(result)
 
 
 def check_brackets(path: Path, cleaned: str) -> list[str]:
