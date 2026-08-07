@@ -153,11 +153,17 @@ func _draw() -> void:
 ## minimap — this is the whole point of showing a minimap specifically
 ## during Tactical zoom: it's the only time the player can't already see
 ## most of the map directly.
+##
+## Bug fix (found alongside CameraController's own zoom-direction fix,
+## Phase 2.5.6): Camera2D's visible world width is screen_size / zoom.x, not
+## screen_size * zoom.x (verified empirically — see CameraController's class
+## doc comment) — the old multiply drew a viewport frame that shrank while
+## actually zooming IN, the opposite of what it should do.
 func _draw_viewport_frame() -> void:
 	if not _camera or not _camera.is_inside_tree():
 		return
 	var screen_size := _camera.get_viewport().get_visible_rect().size
-	var half_world_extent := screen_size * _camera.zoom / 2.0
+	var half_world_extent := screen_size / _camera.zoom / 2.0
 	var world_center := _camera.get_screen_center_position()
 	var top_left := _world_to_minimap(world_center - half_world_extent)
 	var bottom_right := _world_to_minimap(world_center + half_world_extent)

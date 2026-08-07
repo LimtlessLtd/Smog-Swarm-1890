@@ -11,18 +11,28 @@ extends RefCounted
 ## sampling a shared noise field would be.
 
 ## Props per hex by biome; 0 means that biome gets no scatter at all (open
-## water, city streets, industrial ground).
+## water, city streets, industrial ground). Bumped ~5x (Phase 2.5.6) from
+## the original 14/6/8/10 alongside HexCoord.HEX_SIZE's 8x increase — a flat
+## per-hex count spread over the new, much larger _SCATTER_RADIUS would
+## otherwise look emptied-out (area grows with radius squared, so an
+## unchanged count would sit at ~1/64th its old density). Not a full
+## area-matched rescale (that would mean several hundred props per hex) —
+## this is still a placeholder abstraction, not a literal tree census, and
+## a smaller bump keeps the per-hex Polygon2D node count reasonable across
+## the up-to-7 hexes LocalDetailManager can hydrate at once. Exact numbers
+## are a balancing pass like every other constant here, not an architecture
+## decision.
 const _PROP_COUNT_BY_BIOME: Dictionary = {
-	GameEnums.BiomeType.MOORLAND: 14,
-	GameEnums.BiomeType.FARMLAND: 6,   ## Farmland is tilled — sparser than open moor.
-	GameEnums.BiomeType.HIGHLAND: 8,
-	GameEnums.BiomeType.WETLAND: 10,
+	GameEnums.BiomeType.MOORLAND: 70,
+	GameEnums.BiomeType.FARMLAND: 30,   ## Farmland is tilled — sparser than open moor.
+	GameEnums.BiomeType.HIGHLAND: 40,
+	GameEnums.BiomeType.WETLAND: 50,
 	GameEnums.BiomeType.URBAN: 0,
 	GameEnums.BiomeType.INDUSTRIAL: 0,
 	GameEnums.BiomeType.WATERWAY: 0,
 }
 
-const _SCATTER_RADIUS: float = HexCoord.HEX_SIZE * 0.85  ## Stay inside the hex's own outline.
+const _SCATTER_RADIUS: float = HexCoord.HEX_SIZE * 0.85  ## Stay inside the hex's own outline. Scales automatically with Phase 2.5.6's HEX_SIZE increase.
 
 static func generate(cell: HexCell) -> Array[PropInstance]:
 	var props: Array[PropInstance] = []
