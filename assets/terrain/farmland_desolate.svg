@@ -1,0 +1,29 @@
+<svg viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <pattern id="furrow-desolate" width="256" height="256" patternUnits="userSpaceOnUse">
+      <rect width="256" height="256" fill="#5a5248"/>
+
+      <!-- barely-legible ghost furrows, abandoned and eroded -->
+      <path d="M0,50 Q64,42 128,50 T256,50" stroke="#4a433a" stroke-width="3" fill="none" opacity="0.35"/>
+      <path d="M0,130 Q64,138 128,130 T256,130" stroke="#4a433a" stroke-width="3" fill="none" opacity="0.3"/>
+      <path d="M0,200 Q64,192 128,200 T256,200" stroke="#4a433a" stroke-width="3" fill="none" opacity="0.35"/>
+
+      <!-- dry cracked earth -->
+      <path d="M40,20 L48,42 L38,60 L52,80" stroke="#403a32" stroke-width="1.5" fill="none" opacity="0.6"/>
+      <path d="M160,60 L168,80 L156,100" stroke="#403a32" stroke-width="1.5" fill="none" opacity="0.55"/>
+      <path d="M90,150 L100,168 L88,188 L98,210" stroke="#403a32" stroke-width="1.5" fill="none" opacity="0.6"/>
+      <path d="M210,140 L218,162 L206,180" stroke="#403a32" stroke-width="1.5" fill="none" opacity="0.55"/>
+      <path d="M30,190 L40,208 L28,230" stroke="#403a32" stroke-width="1.5" fill="none" opacity="0.5"/>
+
+      <!-- a patch of exposed bare rock/clay -->
+      <ellipse cx="190" cy="200" rx="42" ry="26" fill="#4f483e" opacity="0.5"/>
+
+      <!-- dead stubble, sparse and sickly -->
+      <circle cx="60" cy="90" r="1.6" fill="#6b6153" opacity="0.5"/>
+      <circle cx="140" cy="110" r="1.5" fill="#6b6153" opacity="0.45"/>
+      <circle cx="220" cy="70" r="1.6" fill="#6b6153" opacity="0.5"/>
+      <circle cx="30" cy="150" r="1.5" fill="#6b6153" opacity="0.45"/>
+    </pattern>
+  </defs>
+  <rect width="512" height="512" fill="url(#furrow-desolate)"/>
+</svg>

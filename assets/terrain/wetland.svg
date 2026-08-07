@@ -1,0 +1,41 @@
+<svg viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <pattern id="wetland" width="256" height="256" patternUnits="userSpaceOnUse">
+      <rect width="256" height="256" fill="#546649"/>
+
+      <!-- standing water pools -->
+      <ellipse cx="70" cy="70" rx="34" ry="20" fill="#3d5952" opacity="0.75"/>
+      <ellipse cx="66" cy="66" rx="20" ry="11" fill="#476a62" opacity="0.5"/>
+      <ellipse cx="200" cy="160" rx="30" ry="18" fill="#3d5952" opacity="0.7"/>
+      <ellipse cx="196" cy="156" rx="17" ry="9" fill="#476a62" opacity="0.5"/>
+
+      <!-- muddy dark patches -->
+      <ellipse cx="150" cy="60" rx="40" ry="24" fill="#465239" opacity="0.5"/>
+      <ellipse cx="40" cy="190" rx="44" ry="26" fill="#465239" opacity="0.5"/>
+
+      <!-- reed clusters, tall and irregular -->
+      <g transform="translate(120,120)">
+        <path d="M0,20 Q-2,-6 1,-24" stroke="#4c6a3f" stroke-width="2.2" fill="none" opacity="0.8"/>
+        <path d="M5,20 Q6,-8 9,-27" stroke="#5c7d4c" stroke-width="2.2" fill="none" opacity="0.8"/>
+        <path d="M10,20 Q13,-4 15,-20" stroke="#4c6a3f" stroke-width="2" fill="none" opacity="0.75"/>
+      </g>
+      <g transform="translate(30,130)">
+        <path d="M0,16 Q-2,-4 1,-19" stroke="#4c6a3f" stroke-width="2" fill="none" opacity="0.75"/>
+        <path d="M4,16 Q5,-5 7,-21" stroke="#5c7d4c" stroke-width="2" fill="none" opacity="0.75"/>
+      </g>
+      <g transform="translate(220,60)">
+        <path d="M0,14 Q-2,-4 1,-17" stroke="#4c6a3f" stroke-width="1.8" fill="none" opacity="0.7"/>
+        <path d="M4,14 Q5,-4 6,-18" stroke="#5c7d4c" stroke-width="1.8" fill="none" opacity="0.7"/>
+      </g>
+      <g transform="translate(90,220)">
+        <path d="M0,12 Q-2,-3 1,-15" stroke="#4c6a3f" stroke-width="1.8" fill="none" opacity="0.7"/>
+        <path d="M4,12 Q5,-3 6,-16" stroke="#5c7d4c" stroke-width="1.8" fill="none" opacity="0.7"/>
+      </g>
+
+      <!-- boggy tussocks -->
+      <ellipse cx="180" cy="220" rx="12" ry="7" fill="#5f7550" opacity="0.7"/>
+      <ellipse cx="230" cy="210" rx="9" ry="6" fill="#5f7550" opacity="0.6"/>
+    </pattern>
+  </defs>
+  <rect width="512" height="512" fill="url(#wetland)"/>
+</svg>

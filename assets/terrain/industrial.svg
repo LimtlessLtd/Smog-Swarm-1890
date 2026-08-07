@@ -1,0 +1,37 @@
+<svg viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <pattern id="industrial" width="256" height="256" patternUnits="userSpaceOnUse">
+      <rect width="256" height="256" fill="#403838"/>
+
+      <!-- slag heaps / spoil mounds, irregular -->
+      <path d="M20,120 Q40,80 70,90 Q95,98 90,130 Q60,148 20,140 Z" fill="#4c4340" opacity="0.85"/>
+      <path d="M18,120 Q38,88 64,96 Q84,102 80,124" fill="none" stroke="#5a504c" stroke-width="2" opacity="0.5"/>
+      <path d="M150,180 Q175,145 205,158 Q225,168 216,196 Q185,212 150,204 Z" fill="#463d3a" opacity="0.85"/>
+      <path d="M148,180 Q172,150 198,162" fill="none" stroke="#544a46" stroke-width="2" opacity="0.5"/>
+      <path d="M170,30 Q188,10 210,20 Q222,28 214,44 Q194,52 170,44 Z" fill="#4a413e" opacity="0.8"/>
+
+      <!-- narrow tramway/siding rails, straight and utilitarian -->
+      <line x1="0" y1="210" x2="256" y2="210" stroke="#2e2926" stroke-width="2.5" opacity="0.7"/>
+      <line x1="0" y1="216" x2="256" y2="216" stroke="#2e2926" stroke-width="2.5" opacity="0.7"/>
+      <line x1="12" y1="206" x2="12" y2="220" stroke="#241f1d" stroke-width="2" opacity="0.6"/>
+      <line x1="44" y1="206" x2="44" y2="220" stroke="#241f1d" stroke-width="2" opacity="0.6"/>
+      <line x1="76" y1="206" x2="76" y2="220" stroke="#241f1d" stroke-width="2" opacity="0.6"/>
+      <line x1="108" y1="206" x2="108" y2="220" stroke="#241f1d" stroke-width="2" opacity="0.6"/>
+      <line x1="140" y1="206" x2="140" y2="220" stroke="#241f1d" stroke-width="2" opacity="0.6"/>
+      <line x1="172" y1="206" x2="172" y2="220" stroke="#241f1d" stroke-width="2" opacity="0.6"/>
+      <line x1="204" y1="206" x2="204" y2="220" stroke="#241f1d" stroke-width="2" opacity="0.6"/>
+      <line x1="236" y1="206" x2="236" y2="220" stroke="#241f1d" stroke-width="2" opacity="0.6"/>
+
+      <!-- ash/cinder speckle -->
+      <circle cx="30" cy="60" r="2" fill="#312b28" opacity="0.7"/>
+      <circle cx="90" cy="40" r="1.6" fill="#312b28" opacity="0.6"/>
+      <circle cx="130" cy="90" r="2" fill="#312b28" opacity="0.65"/>
+      <circle cx="230" cy="100" r="1.8" fill="#312b28" opacity="0.6"/>
+      <circle cx="60" cy="180" r="1.8" fill="#312b28" opacity="0.6"/>
+      <circle cx="240" cy="60" r="1.6" fill="#312b28" opacity="0.55"/>
+      <circle cx="110" cy="150" r="2" fill="#312b28" opacity="0.6"/>
+      <circle cx="10" cy="180" r="1.6" fill="#312b28" opacity="0.55"/>
+    </pattern>
+  </defs>
+  <rect width="512" height="512" fill="url(#industrial)"/>
+</svg>

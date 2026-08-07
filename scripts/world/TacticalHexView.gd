@@ -2,10 +2,14 @@ class_name TacticalHexView
 extends Node2D
 
 ## Close-zoom detail for one hex (Phase 2.5 "Tactical view"). Composes the
-## same flat-color ground HexCellView already draws — biome/soil stays a
-## single source of visual truth — with a scatter of placeholder props and
-## every BuildingInstance in this hex rendered at its own precise position,
+## same HexCellView already draws for Strategic — biome/soil stays a single
+## source of visual truth — with a scatter of placeholder props and every
+## BuildingInstance in this hex rendered at its own precise position,
 ## instead of one flat tile standing in for the whole ~5x5 mile area.
+## Passes GroundMode.TILED so real terrain art (TerrainVisuals.terrain_texture())
+## repeats as a true-scale ground material here rather than the single
+## whole-hex "icon" paint Strategic's own HexCellView instances use — see
+## that class's own doc comment for the UV/repeat mechanism.
 ## Spawned/freed by LocalDetailManager as the camera crosses the tactical
 ## zoom threshold and pans between hexes; only ever exists for a hex that
 ## has qualified as settled/frontier (see LocalDetailManager).
@@ -72,7 +76,7 @@ func _redraw() -> void:
 		child.queue_free()
 
 	var ground := HexCellView.new()
-	ground.setup(cell)
+	ground.setup(cell, HexCellView.GroundMode.TILED)
 	add_child(ground)
 
 	for prop in _props:

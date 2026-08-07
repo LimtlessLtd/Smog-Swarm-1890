@@ -1,0 +1,39 @@
+<svg viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <pattern id="ripple" width="256" height="128" patternUnits="userSpaceOnUse">
+      <rect width="256" height="128" fill="#2b4f66"/>
+
+      <!-- a slightly darker/lighter depth patch so the water isn't perfectly flat -->
+      <ellipse cx="70" cy="70" rx="60" ry="34" fill="#254559" opacity="0.6"/>
+      <ellipse cx="200" cy="30" rx="50" ry="26" fill="#356a80" opacity="0.35"/>
+
+      <!-- ripple rows, each a distinct amplitude/phase -->
+      <path d="M0,10 Q64,2 128,10 T256,10" stroke="#4d7f96" stroke-width="4" fill="none" opacity="0.6"/>
+      <path d="M0,26 Q64,34 128,26 T256,26" stroke="#3a6a80" stroke-width="4" fill="none" opacity="0.5"/>
+      <path d="M0,46 Q64,38 128,46 T256,46" stroke="#5b93a8" stroke-width="3" fill="none" opacity="0.5"/>
+      <path d="M0,64 Q64,72 128,64 T256,64" stroke="#4d7f96" stroke-width="4" fill="none" opacity="0.55"/>
+      <path d="M0,84 Q64,76 128,84 T256,84" stroke="#3a6a80" stroke-width="3.5" fill="none" opacity="0.5"/>
+      <path d="M0,104 Q64,112 128,104 T256,104" stroke="#5b93a8" stroke-width="3" fill="none" opacity="0.45"/>
+      <path d="M0,120 Q64,114 128,120 T256,120" stroke="#4d7f96" stroke-width="3" fill="none" opacity="0.5"/>
+
+      <!-- a couple of reed clumps along one side, clear of the tile edges -->
+      <g transform="translate(30,20)">
+        <path d="M0,14 Q-2,-4 1,-16" stroke="#4c6a3f" stroke-width="2" fill="none" opacity="0.8"/>
+        <path d="M4,14 Q5,-6 8,-18" stroke="#5c7d4c" stroke-width="2" fill="none" opacity="0.8"/>
+        <path d="M8,14 Q11,-2 13,-13" stroke="#4c6a3f" stroke-width="2" fill="none" opacity="0.75"/>
+      </g>
+      <g transform="translate(150,100)">
+        <path d="M0,10 Q-2,-3 1,-13" stroke="#4c6a3f" stroke-width="1.8" fill="none" opacity="0.75"/>
+        <path d="M4,10 Q5,-4 7,-15" stroke="#5c7d4c" stroke-width="1.8" fill="none" opacity="0.75"/>
+      </g>
+
+      <!-- glints -->
+      <circle cx="20" cy="8" r="1.5" fill="#a9d3e0" opacity="0.5"/>
+      <circle cx="176" cy="24" r="1.5" fill="#a9d3e0" opacity="0.45"/>
+      <circle cx="104" cy="58" r="1.5" fill="#a9d3e0" opacity="0.45"/>
+      <circle cx="224" cy="70" r="1.3" fill="#a9d3e0" opacity="0.4"/>
+      <circle cx="60" cy="100" r="1.4" fill="#a9d3e0" opacity="0.4"/>
+    </pattern>
+  </defs>
+  <rect width="512" height="512" fill="url(#ripple)"/>
+</svg>

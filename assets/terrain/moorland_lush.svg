@@ -1,0 +1,43 @@
+<svg viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <pattern id="moor-lush" width="256" height="256" patternUnits="userSpaceOnUse">
+      <rect width="256" height="256" fill="#5c7a3a"/>
+
+      <!-- soft mottling, no ploughed rows - this is open, untilled country -->
+      <ellipse cx="70" cy="60" rx="56" ry="36" fill="#688a42" opacity="0.5"/>
+      <ellipse cx="190" cy="150" rx="60" ry="38" fill="#527035" opacity="0.4"/>
+      <ellipse cx="40" cy="190" rx="44" ry="28" fill="#688a42" opacity="0.45"/>
+
+      <!-- heather/gorse clumps, irregular -->
+      <g transform="translate(100,40)">
+        <ellipse cx="0" cy="0" rx="14" ry="9" fill="#6b8a4a"/>
+        <ellipse cx="12" cy="2" rx="10" ry="7" fill="#7a9c58"/>
+        <ellipse cx="-10" cy="3" rx="9" ry="6" fill="#5f7c40"/>
+      </g>
+      <g transform="translate(210,50)">
+        <ellipse cx="0" cy="0" rx="12" ry="8" fill="#8a6a8f" opacity="0.7"/>
+        <ellipse cx="9" cy="2" rx="8" ry="6" fill="#9c7ca0" opacity="0.6"/>
+      </g>
+      <g transform="translate(150,190)">
+        <ellipse cx="0" cy="0" rx="16" ry="10" fill="#6b8a4a"/>
+        <ellipse cx="13" cy="3" rx="10" ry="7" fill="#7a9c58"/>
+      </g>
+      <g transform="translate(30,120)">
+        <ellipse cx="0" cy="0" rx="10" ry="7" fill="#94749a" opacity="0.65"/>
+      </g>
+
+      <!-- long grass tufts, dense and varied -->
+      <path d="M40,150 q-2,-14 2,-24" stroke="#4a6430" stroke-width="2" fill="none" opacity="0.7"/>
+      <path d="M46,150 q1,-16 5,-26" stroke="#5c7a3e" stroke-width="2" fill="none" opacity="0.7"/>
+      <path d="M180,80 q-2,-12 1,-20" stroke="#4a6430" stroke-width="2" fill="none" opacity="0.65"/>
+      <path d="M186,80 q2,-14 5,-22" stroke="#5c7a3e" stroke-width="2" fill="none" opacity="0.65"/>
+      <path d="M230,190 q-2,-12 1,-20" stroke="#4a6430" stroke-width="1.8" fill="none" opacity="0.6"/>
+      <path d="M90,220 q-2,-10 1,-18" stroke="#4a6430" stroke-width="1.8" fill="none" opacity="0.6"/>
+
+      <circle cx="130" cy="110" r="2.2" fill="#8faa5a" opacity="0.6"/>
+      <circle cx="200" cy="220" r="2" fill="#8faa5a" opacity="0.55"/>
+      <circle cx="60" cy="30" r="2" fill="#8faa5a" opacity="0.55"/>
+    </pattern>
+  </defs>
+  <rect width="512" height="512" fill="url(#moor-lush)"/>
+</svg>
