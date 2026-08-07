@@ -21,7 +21,10 @@ extends Node2D
 ## camera zoom mode gates this layer; entities render at the same
 ## HexCoord.axial_to_world(hex_coord) + local_position world point props/
 ## buildings already use (Phase 2.5.3's local_position pattern, extended to
-## UnitInstance/Horde by this phase — see HexCoord.entry_local_position()).
+## UnitInstance/Horde by this phase). Read fresh every frame regardless of
+## how that value is currently being written — continuous, real-time
+## motion (MovementStepper, a later pass, user request) needed zero changes
+## here as a result; this class was already "continuous-movement-ready".
 ##
 ## Squad headcount (UnitInstance.get_squad_headcount()) and zombie figure
 ## count are DERIVED, not separately tracked (design doc, decided) — no

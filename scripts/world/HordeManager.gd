@@ -15,15 +15,16 @@ extends Node
 ##     HexMapGenerator's terrain/soil noise is (1890/1891) — this is that
 ##     same fixed-seed family's third member, kept deterministic for the
 ##     same reproducibility reason.
-##   - WANDERING drift: each horde periodically (MOVE_INTERVAL_SECONDS,
-##     speed-scaled like everything else driven by Engine.time_scale) picks
-##     a random frontier hex within DRIFT_TARGET_RADIUS of itself and routes
-##     to it via Phase 5.5's HexPathfinder, advancing one hex per interval —
-##     "drifts across passable uncleared wilderness ... biased toward open
-##     territory rather than a deliberate beeline anywhere" per the design
-##     doc: the omnidirectional ring pick supplies "no beeline", and
-##     restricting targets to frontier hexes supplies "biased toward open
-##     territory" (steers away from player-secured ground).
+##   - WANDERING drift: each horde picks a random frontier hex within
+##     DRIFT_TARGET_RADIUS of itself, routes to it via Phase 5.5's
+##     HexPathfinder, then walks there continuously (real-time, world-space
+##     — see this class's own doc comment further down on the continuous-
+##     movement rewrite) rather than snapping hex to hex — "drifts across
+##     passable uncleared wilderness ... biased toward open territory
+##     rather than a deliberate beeline anywhere" per the design doc: the
+##     omnidirectional ring pick supplies "no beeline", and restricting
+##     targets to frontier hexes supplies "biased toward open territory"
+##     (steers away from player-secured ground).
 ##   - Phase 5.9's starvation-casualty spawn source: add_casualty_zombies(),
 ##     wired to BuildingManager.civilians_starved — "every starved civilian
 ##     is a casualty for Phase 5.9's purposes ... same as a combat death"
@@ -56,6 +57,30 @@ extends Node
 ##     it happens" (5.10's own already-decided framing for unit combat,
 ##     applied here to walls).
 ##
+## **Real-time continuous movement (user request, this pass) replaces the
+## old hex-stepping model** — a horde used to snap instantly from one hex
+## to the next once every `MOVE_INTERVAL_SECONDS`; it now walks smoothly
+## (`MovementStepper.advance_toward_hex()`, world-units/second, terrain-
+## and logistics-scaled) toward the next hex's center every `_process()`
+## frame, steering around static obstacles (props/buildings) the same way
+## `UnitOrderController` does — see that class's own doc comment for the
+## shared design, and `MovementStepper.gd` for the actual stepping/steering
+## math. The wall-blocking peek above still happens per hex-crossing (not
+## just once per old tick) — a multi-hex catch-up burst at very high
+## `TickManager` speed must not glide through an un-breached wall on an
+## intermediate hex. Siege damage against a blocked wall is now applied
+## CONTINUOUSLY (scaled by however much of a frame's `delta` the horde
+## spent blocked, converted against the same old per-`LOGIC_TICK_SECONDS`
+## rate) rather than in one lump per periodic tick — same total
+## damage-per-real-second as before, just smoother, and it no longer needs
+## its own separate tick-driven special case now that `_advance_horde()`
+## already runs every frame anyway.
+##
+## `LOGIC_TICK_SECONDS` (renamed from the old `MOVE_INTERVAL_SECONDS` — it
+## no longer gates movement OR siege damage, only the two side-effects
+## below) still drives `_check_merges()`/`_check_splits()` at the same
+## real-world rate as before.
+##
 ## Deliberately NOT wired here yet — each blocked on a system that doesn't
 ## exist, same "not implemented, deliberately" convention as every other
 ## forward-reference already in todo.md:
@@ -80,18 +105,20 @@ signal horde_size_changed(horde: Horde, delta: int)
 signal horde_removed(horde: Horde)
 
 @export var hex_grid_map_path: NodePath
-@export var logistics_network_path: NodePath  ## Optional — same road/rail/canal discount HexPathfinder gives any other route.
-@export var building_manager_path: NodePath   ## Optional — Phase 5.9's starvation-casualty spawn source; unset gracefully skips it, same "optional manager reference" convention every other optional dependency in this project follows.
+@export var logistics_network_path: NodePath  ## Optional — same road/rail/canal discount HexPathfinder gives any other route (now a continuous SPEED bonus too, not just a path-preference one — see MovementStepper).
+@export var building_manager_path: NodePath   ## Optional — Phase 5.9's starvation-casualty spawn source, AND (user request) local obstacle avoidance: buildings steer continuous movement around them regardless of Tactical hydration. Unset gracefully skips both.
 @export var wall_manager_path: NodePath       ## Optional — Phase 4.1/5.10's horde-vs-wall siege; unset means walls simply never block a horde's drift (same "gracefully skip it" convention).
+@export var local_detail_manager_path: NodePath  ## Optional — local obstacle avoidance: props (trees/rocks/etc.) only exist as live data while their hex is Tactical-hydrated (LocalDetailManager.get_props_at()) — unset (or a currently-dehydrated hex) just means no prop avoidance there.
 
 var _hex_grid_map: HexGridMap
 var _logistics_network: LogisticsNetwork
 var _building_manager: BuildingManager
 var _wall_manager: WallManager
+var _local_detail_manager: LocalDetailManager
 var _hordes: Array[Horde] = []
 var _next_id: int = 1
 var _rng := RandomNumberGenerator.new()
-var _move_timer: float = 0.0
+var _logic_tick_timer: float = 0.0
 
 ## Same seed-numbering convention as HexMapGenerator's terrain/soil noise
 ## (1890/1891 — see that class's _init()) — deterministic starting
@@ -109,12 +136,23 @@ const STARTING_HORDE_SIZE_MAX: int = 25
 const MIN_SPAWN_DISTANCE_FROM_SETTLEMENT: int = 4
 
 ## Real-time seconds (scaled by Engine.time_scale, same as everything else
-## driven off TickManager/TimeCycleManager) between a WANDERING horde
-## advancing one hex step along its drift path.
-const MOVE_INTERVAL_SECONDS: float = 20.0
+## driven off TickManager/TimeCycleManager) between the two remaining
+## periodic side-effects below (_check_merges()/_check_splits()) — no
+## longer gates movement itself (continuous now, every frame — see this
+## class's own doc comment) or siege damage (also continuous now, scaled
+## against this same rate rather than applied once per tick). Renamed from
+## the old MOVE_INTERVAL_SECONDS now that it means something narrower;
+## deliberately still matches UnitOrderController.LOGIC_TICK_SECONDS.
+const LOGIC_TICK_SECONDS: float = 20.0
 ## How far (in hexes) a fresh drift target is picked from a horde's current
 ## position when it needs to replan.
 const DRIFT_TARGET_RADIUS: int = 5
+
+## Rough clearance radius a horde presents to
+## MovementStepper.steer_around_obstacles() — same placeholder value as
+## UnitOrderController.ENTITY_RADIUS (a horde's own rendered figure cluster
+## spreads across a similar radius, TacticalEntityLayer.FIGURE_SPREAD).
+const ENTITY_RADIUS: float = 20.0
 
 ## Design doc Phase 5.2, decided (grilling session): "a 'lone zombie' isn't
 ## a new entity type, it's just a Horde at small size ... ambient wilderness
@@ -166,6 +204,8 @@ func _ready() -> void:
 		_building_manager.building_ruined.connect(_on_building_ruined)
 	if wall_manager_path != NodePath():
 		_wall_manager = get_node(wall_manager_path)
+	if local_detail_manager_path != NodePath():
+		_local_detail_manager = get_node(local_detail_manager_path)
 	TickManager.day_completed.connect(_on_ambient_spawn_day)
 	_rng.seed = HORDE_SEED
 	seed_starting_hordes()
@@ -173,15 +213,19 @@ func _ready() -> void:
 func _process(delta: float) -> void:
 	if _hordes.is_empty():
 		return
-	_move_timer += delta
-	while _move_timer >= MOVE_INTERVAL_SECONDS:
-		_move_timer -= MOVE_INTERVAL_SECONDS
-		# duplicate(): _advance_horde() can now remove_horde() mid-loop (a
-		# horde ground down to 0 by Ditch/Oil Pit counter-damage while
-		# sieging a wall) — iterating the live array while erasing from it
-		# would skip entries.
-		for horde: Horde in _hordes.duplicate():
-			_advance_horde(horde)
+
+	# Continuous movement — every frame, every horde. duplicate(): a horde
+	# can be removed mid-loop (ground down to 0 by Ditch/Oil Pit
+	# counter-damage while sieging a wall) — iterating the live array while
+	# erasing from it would skip entries.
+	for horde: Horde in _hordes.duplicate():
+		_advance_horde(horde, delta)
+
+	# The two remaining periodic side-effects — unchanged real-world cadence
+	# from the old movement-tick rate.
+	_logic_tick_timer += delta
+	while _logic_tick_timer >= LOGIC_TICK_SECONDS:
+		_logic_tick_timer -= LOGIC_TICK_SECONDS
 		_check_merges()
 		_check_splits()
 
@@ -343,30 +387,50 @@ func _spawnable_coords() -> Array[Vector2i]:
 			result.append(cell.coord)
 	return result
 
-func _advance_horde(horde: Horde) -> void:
+## Walks `horde` continuously toward whatever's next on its drift path,
+## consuming up to `delta` seconds of travel this call —
+## MovementStepper.advance_toward_hex() handles one hex-segment at a time;
+## this loop threads through however many hex boundaries `delta` covers
+## (more than one is possible at very high TickManager speeds), emitting
+## horde_moved once per boundary actually crossed, in order — see this
+## class's own doc comment on why that per-crossing signal contract matters
+## to CombatCoordinator/StrategicOverlayManager/TerritoryController.
+##
+## Design doc Phase 4.1/5.10: "a horde attacks whichever specific segment it
+## physically reaches" — the wall peek happens EVERY hex-crossing attempt
+## within this loop (not just once per old tick), so a multi-hex catch-up
+## burst can't glide through an un-breached wall on an intermediate hex
+## just because the loop's first iteration found the immediate edge clear.
+func _advance_horde(horde: Horde, delta: float) -> void:
 	if horde.path.is_empty():
 		_replan(horde)
 	if horde.path.is_empty():
-		return  # No valid drift target found this cycle (e.g. boxed in) — try again next tick.
+		return  # No valid drift target found this cycle (e.g. boxed in) — try again next frame.
 
-	# Design doc Phase 4.1/5.10: "a horde attacks whichever specific segment
-	# it physically reaches" — peek (not pop) the next step; an unbreached
-	# wall segment on that edge blocks the step entirely this tick, sieging
-	# it instead of walking through it.
-	var next_coord: Vector2i = horde.path[0]
-	if _wall_manager:
-		var segment := _wall_manager.get_segment_between(horde.hex_coord, next_coord)
+	var remaining := delta
+	while remaining > 0.0 and not horde.path.is_empty():
+		var next_coord: Vector2i = horde.path[0]
+		var segment: WallSegment = null
+		if _wall_manager:
+			segment = _wall_manager.get_segment_between(horde.hex_coord, next_coord)
 		if segment and not segment.is_breached():
-			_siege_wall(horde, segment)
-			return
+			_siege_wall(horde, segment, remaining)
+			return  # Blocked for the rest of this frame — no movement past this edge.
 
-	horde.path.pop_front()
-	var from_coord := horde.hex_coord
-	horde.hex_coord = next_coord
-	horde.local_position = HexCoord.entry_local_position(from_coord, next_coord)  ## Phase 2.5.4.
-	if horde.state == GameEnums.HordeState.ATTACKING:
-		horde.state = GameEnums.HordeState.WANDERING  # Through the breach — back to roaming.
-	horde_moved.emit(horde, from_coord, next_coord)
+		var from_coord := horde.hex_coord  ## Captured BEFORE the call below overwrites it.
+		var speed := _movement_speed(from_coord, next_coord)
+		var obstacles := _gather_obstacles(from_coord, next_coord)
+		var result := MovementStepper.advance_toward_hex(from_coord, horde.local_position, next_coord, remaining, speed, obstacles, ENTITY_RADIUS)
+		horde.hex_coord = result["hex_coord"]
+		horde.local_position = result["local_position"]
+		remaining -= float(result["seconds_used"])
+		if not result["arrived"]:
+			break  ## Used this frame's whole remaining budget without finishing the crossing.
+
+		horde.path.pop_front()
+		if horde.state == GameEnums.HordeState.ATTACKING:
+			horde.state = GameEnums.HordeState.WANDERING  # Through the breach — back to roaming.
+		horde_moved.emit(horde, from_coord, horde.hex_coord)
 
 ## Design doc Phase 4.1/5.10: damages `segment` with the decided siege bonus
 ## (WALL_SIEGE_DAMAGE_MULTIPLIER), and — Phase 4.1's other still-unbuilt
@@ -374,15 +438,23 @@ func _advance_horde(horde: Horde) -> void:
 ## besieging horde, converted through the same Horde.apply_remaining_hp()
 ## every other combat-damage source already uses; a sufficiently defended
 ## segment can grind a small horde down to nothing before it ever breaches.
-func _siege_wall(horde: Horde, segment: WallSegment) -> void:
+##
+## Continuous now (user request's own knock-on effect): `seconds` is
+## whatever fraction of this frame the horde spent blocked, scaled against
+## LOGIC_TICK_SECONDS so the total damage-per-real-second matches the old
+## once-per-tick lump exactly — smoother, and no separate tick-driven
+## special case needed now that _advance_horde() already runs every frame.
+func _siege_wall(horde: Horde, segment: WallSegment, seconds: float) -> void:
 	horde.state = GameEnums.HordeState.ATTACKING
-	_wall_manager.damage_segment(segment, horde.get_combat_damage() * WALL_SIEGE_DAMAGE_MULTIPLIER)
+	var tick_fraction := seconds / LOGIC_TICK_SECONDS
+	_wall_manager.damage_segment(segment, horde.get_combat_damage() * WALL_SIEGE_DAMAGE_MULTIPLIER * tick_fraction)
 
 	var counter_damage := 0.0
 	if segment.has_ditch:
 		counter_damage += DITCH_COUNTER_DAMAGE
 	if segment.has_oil_pit:
 		counter_damage += OIL_PIT_COUNTER_DAMAGE
+	counter_damage *= tick_fraction
 	if counter_damage <= 0.0:
 		return
 	horde.apply_remaining_hp(horde.get_combat_hp() - counter_damage)
@@ -428,4 +500,35 @@ func load_save_state(hordes: Array[Horde], next_id: int) -> void:
 	for horde in _hordes:
 		horde.path.clear()
 	_next_id = next_id
-	_move_timer = 0.0
+	_logic_tick_timer = 0.0
+
+## Terrain (current hex) and logistics (this specific edge) speed
+## multipliers stacked onto MovementStepper.BASE_MOVE_SPEED — same
+## HexPathfinder table the drift route itself was chosen against, now also
+## shaping how fast continuous movement crosses it (Phase 2.12.1).
+func _movement_speed(from_coord: Vector2i, to_coord: Vector2i) -> float:
+	var speed := MovementStepper.BASE_MOVE_SPEED
+	if _hex_grid_map:
+		speed *= HexPathfinder.get_terrain_speed_multiplier(_hex_grid_map.get_cell(from_coord))
+	speed *= HexPathfinder.get_logistics_speed_multiplier(_logistics_network, from_coord, to_coord)
+	return speed
+
+## Buildings (always queryable) + props (only where Tactical-hydrated) near
+## both the hex a horde currently occupies and the one it's drifting
+## toward — see this class's own doc comment and ObstacleRadii for why
+## these two sources are treated differently.
+func _gather_obstacles(coord: Vector2i, next_coord: Vector2i) -> Array[Dictionary]:
+	var obstacles: Array[Dictionary] = []
+	_add_hex_obstacles(coord, obstacles)
+	if next_coord != coord:
+		_add_hex_obstacles(next_coord, obstacles)
+	return obstacles
+
+func _add_hex_obstacles(coord: Vector2i, obstacles: Array[Dictionary]) -> void:
+	var hex_center := HexCoord.axial_to_world(coord)
+	if _building_manager:
+		for building in _building_manager.get_buildings_at(coord):
+			obstacles.append({"position": hex_center + building.local_position, "radius": ObstacleRadii.BUILDING_RADIUS})
+	if _local_detail_manager:
+		for prop in _local_detail_manager.get_props_at(coord):
+			obstacles.append({"position": hex_center + prop.local_position, "radius": ObstacleRadii.for_prop(prop.prop_type)})

@@ -60,6 +60,15 @@ func setup(p_cell: HexCell, props: Array[PropInstance], buildings: Array[Buildin
 func set_fog_state(state: GameEnums.FogState) -> void:
 	modulate = FogVisuals.tint_color(state)
 
+## Design doc, user request (local obstacle avoidance): `_props` was
+## previously read only by this class's own `_redraw()` — exposed now so
+## `LocalDetailManager.get_props_at()` can hand a hex's live prop scatter to
+## `MovementStepper`'s callers as steering obstacles. Returns a defensive
+## copy, same "caller reads, doesn't own" convention as
+## `BuildingManager.get_buildings_at()`.
+func get_props() -> Array[PropInstance]:
+	return _props.duplicate()
+
 ## Phase 2.5.5: pushed live by LocalDetailManager on every LOW<->MEDIUM<->HIGH
 ## band crossing — mirrors set_fog_state()'s "update in place, only redraw if
 ## it actually changed" shape rather than a full dehydrate/rehydrate.
