@@ -1,25 +1,74 @@
-<svg viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
-  <defs>
-    <pattern id="moor-desolate" width="256" height="256" patternUnits="userSpaceOnUse">
-      <rect width="256" height="256" fill="#59524d"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <g transform="translate(0,0)"><rect width="256" height="256" fill="#59524d" />
 
-      <ellipse cx="90" cy="90" rx="46" ry="30" fill="#4f4944" opacity="0.5"/>
-      <ellipse cx="190" cy="170" rx="40" ry="26" fill="#4f4944" opacity="0.45"/>
+      <ellipse cx="90" cy="90" rx="46" ry="30" fill="#4f4944" opacity="0.5" />
+      <ellipse cx="190" cy="170" rx="40" ry="26" fill="#4f4944" opacity="0.45" />
 
-      <!-- scattered small rocks/stones -->
-      <path d="M40,150 l8,-4 l7,5 l-3,9 l-9,2 z" fill="#43403c" opacity="0.7"/>
-      <path d="M180,60 l7,-3 l6,4 l-2,8 l-8,2 z" fill="#43403c" opacity="0.65"/>
-      <path d="M220,190 l6,-3 l5,4 l-2,7 l-7,1 z" fill="#3c3934" opacity="0.6"/>
-      <path d="M60,210 l7,-3 l6,4 l-2,8 l-8,1 z" fill="#43403c" opacity="0.65"/>
+      
+      <path d="M40,150 l8,-4 l7,5 l-3,9 l-9,2 z" fill="#43403c" opacity="0.7" />
+      <path d="M180,60 l7,-3 l6,4 l-2,8 l-8,2 z" fill="#43403c" opacity="0.65" />
+      <path d="M220,190 l6,-3 l5,4 l-2,7 l-7,1 z" fill="#3c3934" opacity="0.6" />
+      <path d="M60,210 l7,-3 l6,4 l-2,8 l-8,1 z" fill="#43403c" opacity="0.65" />
 
-      <!-- dead, sparse tufts -->
-      <path d="M120,40 q-1,-8 1,-13" stroke="#4a463f" stroke-width="1.5" fill="none" opacity="0.5"/>
-      <path d="M30,90 q-1,-7 1,-12" stroke="#4a463f" stroke-width="1.4" fill="none" opacity="0.45"/>
-      <path d="M150,200 q-1,-7 1,-12" stroke="#4a463f" stroke-width="1.4" fill="none" opacity="0.45"/>
+      
+      <path d="M120,40 q-1,-8 1,-13" stroke="#4a463f" stroke-width="1.5" fill="none" opacity="0.5" />
+      <path d="M30,90 q-1,-7 1,-12" stroke="#4a463f" stroke-width="1.4" fill="none" opacity="0.45" />
+      <path d="M150,200 q-1,-7 1,-12" stroke="#4a463f" stroke-width="1.4" fill="none" opacity="0.45" />
 
-      <circle cx="200" cy="30" r="1.5" fill="#6e675e" opacity="0.4"/>
-      <circle cx="70" cy="180" r="1.5" fill="#6e675e" opacity="0.4"/>
-    </pattern>
-  </defs>
-  <rect width="512" height="512" fill="url(#moor-desolate)"/>
-</svg>
+      <circle cx="200" cy="30" r="1.5" fill="#6e675e" opacity="0.4" />
+      <circle cx="70" cy="180" r="1.5" fill="#6e675e" opacity="0.4" />
+    </g><g transform="translate(256,0)"><rect width="256" height="256" fill="#59524d" />
+
+      <ellipse cx="90" cy="90" rx="46" ry="30" fill="#4f4944" opacity="0.5" />
+      <ellipse cx="190" cy="170" rx="40" ry="26" fill="#4f4944" opacity="0.45" />
+
+      
+      <path d="M40,150 l8,-4 l7,5 l-3,9 l-9,2 z" fill="#43403c" opacity="0.7" />
+      <path d="M180,60 l7,-3 l6,4 l-2,8 l-8,2 z" fill="#43403c" opacity="0.65" />
+      <path d="M220,190 l6,-3 l5,4 l-2,7 l-7,1 z" fill="#3c3934" opacity="0.6" />
+      <path d="M60,210 l7,-3 l6,4 l-2,8 l-8,1 z" fill="#43403c" opacity="0.65" />
+
+      
+      <path d="M120,40 q-1,-8 1,-13" stroke="#4a463f" stroke-width="1.5" fill="none" opacity="0.5" />
+      <path d="M30,90 q-1,-7 1,-12" stroke="#4a463f" stroke-width="1.4" fill="none" opacity="0.45" />
+      <path d="M150,200 q-1,-7 1,-12" stroke="#4a463f" stroke-width="1.4" fill="none" opacity="0.45" />
+
+      <circle cx="200" cy="30" r="1.5" fill="#6e675e" opacity="0.4" />
+      <circle cx="70" cy="180" r="1.5" fill="#6e675e" opacity="0.4" />
+    </g><g transform="translate(0,256)"><rect width="256" height="256" fill="#59524d" />
+
+      <ellipse cx="90" cy="90" rx="46" ry="30" fill="#4f4944" opacity="0.5" />
+      <ellipse cx="190" cy="170" rx="40" ry="26" fill="#4f4944" opacity="0.45" />
+
+      
+      <path d="M40,150 l8,-4 l7,5 l-3,9 l-9,2 z" fill="#43403c" opacity="0.7" />
+      <path d="M180,60 l7,-3 l6,4 l-2,8 l-8,2 z" fill="#43403c" opacity="0.65" />
+      <path d="M220,190 l6,-3 l5,4 l-2,7 l-7,1 z" fill="#3c3934" opacity="0.6" />
+      <path d="M60,210 l7,-3 l6,4 l-2,8 l-8,1 z" fill="#43403c" opacity="0.65" />
+
+      
+      <path d="M120,40 q-1,-8 1,-13" stroke="#4a463f" stroke-width="1.5" fill="none" opacity="0.5" />
+      <path d="M30,90 q-1,-7 1,-12" stroke="#4a463f" stroke-width="1.4" fill="none" opacity="0.45" />
+      <path d="M150,200 q-1,-7 1,-12" stroke="#4a463f" stroke-width="1.4" fill="none" opacity="0.45" />
+
+      <circle cx="200" cy="30" r="1.5" fill="#6e675e" opacity="0.4" />
+      <circle cx="70" cy="180" r="1.5" fill="#6e675e" opacity="0.4" />
+    </g><g transform="translate(256,256)"><rect width="256" height="256" fill="#59524d" />
+
+      <ellipse cx="90" cy="90" rx="46" ry="30" fill="#4f4944" opacity="0.5" />
+      <ellipse cx="190" cy="170" rx="40" ry="26" fill="#4f4944" opacity="0.45" />
+
+      
+      <path d="M40,150 l8,-4 l7,5 l-3,9 l-9,2 z" fill="#43403c" opacity="0.7" />
+      <path d="M180,60 l7,-3 l6,4 l-2,8 l-8,2 z" fill="#43403c" opacity="0.65" />
+      <path d="M220,190 l6,-3 l5,4 l-2,7 l-7,1 z" fill="#3c3934" opacity="0.6" />
+      <path d="M60,210 l7,-3 l6,4 l-2,8 l-8,1 z" fill="#43403c" opacity="0.65" />
+
+      
+      <path d="M120,40 q-1,-8 1,-13" stroke="#4a463f" stroke-width="1.5" fill="none" opacity="0.5" />
+      <path d="M30,90 q-1,-7 1,-12" stroke="#4a463f" stroke-width="1.4" fill="none" opacity="0.45" />
+      <path d="M150,200 q-1,-7 1,-12" stroke="#4a463f" stroke-width="1.4" fill="none" opacity="0.45" />
+
+      <circle cx="200" cy="30" r="1.5" fill="#6e675e" opacity="0.4" />
+      <circle cx="70" cy="180" r="1.5" fill="#6e675e" opacity="0.4" />
+    </g></svg>
