@@ -28,6 +28,18 @@ extends Node
 ## methods, only the UnitInstance data both read/write (order/move_target/
 ## patrol_waypoints/path) — same "owns neither, only computes from what's
 ## passed in" split CombatEngine/UnitManager already keep from each other.
+##
+## Phase 2.5.4, decided: "healing/replenishment is Garrison-gated" — the
+## project's first regen mechanic of any kind, finally giving
+## issue_garrison_order() an actual payoff over plain HOLD-with-no-benefit.
+## A damaged unit under HOLD or GARRISON heals a fraction of its max_hp back
+## each movement tick, but ONLY while standing on a hex carrying Military or
+## Civilian Zone of Control coverage (`_is_friendly_hex()`, reusing the
+## already-optional `logistics_network_path` this class was wired with for
+## HexPathfinder's road/rail/canal discount, Phase 5.5 — no new export
+## needed). Regrowing a squad's own derived headcount (Phase 2.5.4's
+## UnitInstance.get_squad_headcount()) needs no extra code here: it's
+## already computed live from current_hp everywhere it's read.
 
 signal unit_order_issued(instance: UnitInstance, order: GameEnums.UnitOrderType)
 signal unit_arrived(instance: UnitInstance, coord: Vector2i)
@@ -35,7 +47,7 @@ signal unit_moved(instance: UnitInstance, from_coord: Vector2i, to_coord: Vector
 
 @export var hex_grid_map_path: NodePath
 @export var unit_manager_path: NodePath
-@export var logistics_network_path: NodePath  ## Optional — same road/rail/canal discount HexPathfinder gives any other route.
+@export var logistics_network_path: NodePath  ## Optional — HexPathfinder's road/rail/canal discount, AND (Phase 2.5.4) the Zone of Control read _is_friendly_hex() gates Garrison/Hold healing on. Unset skips both gracefully.
 
 var _hex_grid_map: HexGridMap
 var _unit_manager: UnitManager
@@ -46,6 +58,15 @@ var _move_timer: float = 0.0
 ## HordeManager.MOVE_INTERVAL_SECONDS, which this deliberately matches so a
 ## unit and a horde cross open ground at the same rate.
 const MOVE_INTERVAL_SECONDS: float = 20.0
+
+## Phase 2.5.4's first-ever regen mechanic — a fraction of max_hp (not a
+## flat number) so a Tier 5 unit's much larger HP pool doesn't heal
+## proportionally slower than a Tier 0 unit's. Placeholder balancing
+## number, not an architecture decision, same framing as every other
+## constant table in this project; ticks on the same MOVE_INTERVAL_SECONDS
+## cadence as movement, applied only to HOLD/GARRISON units (see
+## _advance_unit()) since a moving/patrolling unit never reaches this branch.
+const GARRISON_REGEN_FRACTION_PER_TICK: float = 0.05
 
 func _ready() -> void:
 	# Same reasoning as every other tick-driven manager (TickManager,
@@ -116,7 +137,9 @@ func _advance_unit(instance: UnitInstance) -> void:
 			_advance_toward(instance, instance.move_target, true)
 		GameEnums.UnitOrderType.PATROL:
 			_advance_patrol(instance)
-		_:  # HOLD, GARRISON — stand fast.
+		GameEnums.UnitOrderType.HOLD, GameEnums.UnitOrderType.GARRISON:
+			_regen_if_friendly(instance)
+		_:
 			pass
 
 ## `revert_to_hold_on_arrival`: true for MOVE/ATTACK_MOVE (a one-shot order
@@ -136,6 +159,7 @@ func _advance_toward(instance: UnitInstance, destination: Vector2i, revert_to_ho
 	var next_coord: Vector2i = instance.path.pop_front()
 	var from_coord := instance.hex_coord
 	instance.hex_coord = next_coord
+	instance.local_position = HexCoord.entry_local_position(from_coord, next_coord)  ## Phase 2.5.4.
 	unit_moved.emit(instance, from_coord, next_coord)
 	if next_coord == destination:
 		unit_arrived.emit(instance, next_coord)
@@ -159,3 +183,24 @@ func _replan(instance: UnitInstance, destination: Vector2i) -> void:
 	if path.size() > 1:
 		path.remove_at(0)  # path[0] is the unit's own current hex.
 		instance.path = path
+
+## --- Healing (Phase 2.5.4) -------------------------------------------------
+
+func _regen_if_friendly(instance: UnitInstance) -> void:
+	if not instance.definition or instance.current_hp >= instance.definition.max_hp:
+		return
+	if not _is_friendly_hex(instance.hex_coord):
+		return
+	instance.current_hp = minf(instance.current_hp + instance.definition.max_hp * GARRISON_REGEN_FRACTION_PER_TICK, instance.definition.max_hp)
+
+## "Friendly-controlled hex" — decided: carrying Military OR Civilian Zone
+## of Control coverage (LogisticsNetwork, Phase 2.3), the same "secured
+## ground" signal every other friendly-territory check in this project
+## already reads. No live logistics_network_path reference means no way to
+## confirm friendly ground, so this conservatively withholds healing rather
+## than assuming every hex is safe.
+func _is_friendly_hex(coord: Vector2i) -> bool:
+	if not _logistics_network:
+		return false
+	var zoc := _logistics_network.get_zoc_state(coord)
+	return zoc.has_military_coverage() or zoc.has_civilian_coverage

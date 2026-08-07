@@ -68,6 +68,16 @@ extends Node
 ## `CombatCoordinator` is the only thing that references both `CombatEngine`
 ## and `UnitMorale` — neither references the other or this class back.
 ##
+## **Phase 2.5.4 (Individual Units & Squads):** `UnitInstance.get_squad_headcount()`
+## derives a Tier 0-3 unit's visible figure count from `current_hp` alone —
+## nothing new stored. `_engage()` snapshots that headcount before and after
+## `CombatEngine.resolve_engagement()` and spawns one casualty zombie
+## (`HordeManager.add_casualty_zombies()`) per figure the engagement cost,
+## generalizing the old "only on total unit loss" trigger to "every fallen
+## squad member, mid-fight" — a Tier 4-5 unit (headcount always 1 while
+## alive) still only ever fires this once, on its own death, so this is a
+## strict generalization, not a behavior change for those.
+##
 ## **Still NOT implemented:**
 ##   - Phase 5.10's ATTACKING state, wall-segment targeting, and Phase
 ##     5.8's territory capture — this resolves an engagement wherever units
@@ -91,6 +101,13 @@ signal engagement_resolved(instance: UnitInstance, horde: Horde, result: Diction
 ## single unit rather than a whole building's housed population (which
 ## civilians_starved/a future building-ruins event already handle at their
 ## own scale). A placeholder balancing number, not an architecture decision.
+##
+## Phase 2.5.4 generalizes "1 lost unit" to "1 lost derived squad figure" —
+## see _engage()'s figures_lost computation below. A Tier 4-5 (single-model,
+## not squad-rendered) unit's headcount is always 1 while alive, so for
+## those this constant still fires exactly once, on the unit's own death —
+## same effective behavior as before this phase, just derived generically
+## instead of special-cased on is_destroyed().
 const CASUALTY_ZOMBIES_PER_UNIT: int = 1
 
 @export var unit_manager_path: NodePath
@@ -135,6 +152,7 @@ func _engage(instance: UnitInstance, horde: Horde) -> void:
 		gunpowder_available = _resource_manager.get_amount(GameEnums.ResourceType.GUNPOWDER) > 0.0
 
 	var damage_multiplier := UnitMorale.get_damage_multiplier(instance, gunpowder_available)
+	var headcount_before := instance.get_squad_headcount()
 	var result := CombatEngine.resolve_engagement(instance, gunpowder_available, horde.get_combat_hp(), horde.get_combat_damage(), damage_multiplier)
 	horde.apply_remaining_hp(result.defender_hp_remaining)
 	engagement_resolved.emit(instance, horde, result)
@@ -144,8 +162,15 @@ func _engage(instance: UnitInstance, horde: Horde) -> void:
 		if _horde_manager:
 			_horde_manager.remove_horde(horde)
 
-	if instance.is_destroyed():
-		if _horde_manager:
-			_horde_manager.add_casualty_zombies(instance.hex_coord, CASUALTY_ZOMBIES_PER_UNIT)
-		if _unit_manager:
-			_unit_manager.remove_unit(instance)
+	# Phase 2.5.4, decided: "a fallen squad member becomes a real, fightable
+	# threat" — every derived headcount point this engagement cost `instance`
+	# (an HP threshold crossed, including the unit's own final death, which
+	# is just its headcount's last point) spawns that many casualty zombies
+	# right here, mid-fight, not only once the whole unit is wiped out.
+	var headcount_after := instance.get_squad_headcount()
+	var figures_lost := headcount_before - headcount_after
+	if figures_lost > 0 and _horde_manager:
+		_horde_manager.add_casualty_zombies(instance.hex_coord, figures_lost * CASUALTY_ZOMBIES_PER_UNIT)
+
+	if instance.is_destroyed() and _unit_manager:
+		_unit_manager.remove_unit(instance)

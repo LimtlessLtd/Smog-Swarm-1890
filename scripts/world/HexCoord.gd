@@ -113,6 +113,22 @@ static func corner_points(center: Vector2) -> PackedVector2Array:
 		points.append(center + Vector2(HEX_SIZE * cos(angle_rad), HEX_SIZE * sin(angle_rad)))
 	return points
 
+## Phase 2.5.4: a deterministic in-hex offset for an entity (UnitInstance/
+## Horde) arriving at `to_coord` FROM `from_coord` — positions it toward the
+## edge it walked in from rather than always snapping to dead-center on
+## every hex step, without needing a full continuous-movement/interpolation
+## system (MOVE_INTERVAL_SECONDS-paced hex-stepping, same as before). Same
+## "local_position is an offset from hex center" contract
+## BuildingInstance.local_position (Phase 2.5.3) already established,
+## applied to a moving entity instead of a placed one. Returns ZERO
+## (hex-center) for a stationary entity (from_coord == to_coord) — the same
+## default a freshly-trained unit or freshly-spawned horde starts at.
+static func entry_local_position(from_coord: Vector2i, to_coord: Vector2i) -> Vector2:
+	if from_coord == to_coord:
+		return Vector2.ZERO
+	var direction := (axial_to_world(from_coord) - axial_to_world(to_coord)).normalized()
+	return direction * (HEX_SIZE * 0.35)  # Inside the hex, biased toward the entry edge — not so far out it reads as standing on the boundary.
+
 static func _axial_to_cube(coord: Vector2i) -> Vector3:
 	var x := float(coord.x)
 	var z := float(coord.y)

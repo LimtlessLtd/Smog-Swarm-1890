@@ -227,12 +227,13 @@ func _retrain_cost(new_definition: UnitDefinition) -> Dictionary:
 ## validated/paid above) and load_save_state() (restoring units already paid
 ## for in a previous session) — same split BuildingManager.place_building()/
 ## load_save_entries() use around _register_instance().
-func _register_instance(definition: UnitDefinition, coord: Vector2i, id: int, advance_next_id: bool, current_hp: float = -1.0, order: GameEnums.UnitOrderType = GameEnums.UnitOrderType.HOLD, move_target: Vector2i = Vector2i.ZERO, patrol_waypoints: Array[Vector2i] = [], kill_count: int = 0) -> UnitInstance:
+func _register_instance(definition: UnitDefinition, coord: Vector2i, id: int, advance_next_id: bool, current_hp: float = -1.0, order: GameEnums.UnitOrderType = GameEnums.UnitOrderType.HOLD, move_target: Vector2i = Vector2i.ZERO, patrol_waypoints: Array[Vector2i] = [], kill_count: int = 0, local_position: Vector2 = Vector2.ZERO) -> UnitInstance:
 	var instance := UnitInstance.new(definition, coord, id, current_hp)
 	instance.order = order
 	instance.move_target = move_target
 	instance.patrol_waypoints = patrol_waypoints
 	instance.kill_count = kill_count
+	instance.local_position = local_position
 	if advance_next_id:
 		_next_id = id + 1
 	_instances.append(instance)
@@ -271,7 +272,7 @@ func _on_day_completed(_day_number: int) -> void:
 func get_save_entries() -> Array[UnitSaveEntry]:
 	var result: Array[UnitSaveEntry] = []
 	for instance in _instances:
-		result.append(UnitSaveEntry.new(instance.definition.unit_type, instance.hex_coord, instance.id, instance.current_hp, instance.order, instance.move_target, instance.patrol_waypoints, instance.kill_count))
+		result.append(UnitSaveEntry.new(instance.definition.unit_type, instance.hex_coord, instance.id, instance.current_hp, instance.order, instance.move_target, instance.patrol_waypoints, instance.kill_count, instance.local_position))
 	return result
 
 ## Restores trained units from a save (Phase 2.8.2): clears whatever is
@@ -286,7 +287,7 @@ func load_save_entries(entries: Array[UnitSaveEntry], next_id: int) -> void:
 	for entry in entries:
 		var definition := UnitCatalog.get_definition(entry.unit_type)
 		if definition:
-			_register_instance(definition, entry.hex_coord, entry.id, false, entry.current_hp, entry.order, entry.move_target, entry.patrol_waypoints, entry.kill_count)
+			_register_instance(definition, entry.hex_coord, entry.id, false, entry.current_hp, entry.order, entry.move_target, entry.patrol_waypoints, entry.kill_count, entry.local_position)
 	_next_id = next_id
 
 ## Exposed for SaveLoadManager (Phase 2.8) — rally-point configuration

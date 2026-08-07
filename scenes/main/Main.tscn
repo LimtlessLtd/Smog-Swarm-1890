@@ -20,6 +20,7 @@
 [ext_resource type="PackedScene" path="res://scenes/units/UnitOrderController.tscn" id="18"]
 [ext_resource type="PackedScene" path="res://scenes/units/CombatCoordinator.tscn" id="19"]
 [ext_resource type="PackedScene" path="res://scenes/world/UnitCommandController.tscn" id="20"]
+[ext_resource type="PackedScene" path="res://scenes/world/TacticalEntityLayer.tscn" id="21"]
 
 [node name="Main" type="Node2D"]
 
@@ -127,6 +128,12 @@ unit_manager_path = NodePath("../../UnitManager")
 unit_order_controller_path = NodePath("../../UnitOrderController")
 building_manager_path = NodePath("../../BuildingManager")
 build_placement_controller_path = NodePath("../BuildPlacementController")
+
+[node name="TacticalEntityLayer" parent="WorldRoot" instance=ExtResource("21")]
+unit_manager_path = NodePath("../../UnitManager")
+horde_manager_path = NodePath("../../HordeManager")
+fog_of_war_manager_path = NodePath("../../FogOfWarManager")
+camera_path = NodePath("../../CameraController")
 
 [node name="MainHUD" parent="." instance=ExtResource("11")]
 resource_manager_path = NodePath("../ResourceManager")

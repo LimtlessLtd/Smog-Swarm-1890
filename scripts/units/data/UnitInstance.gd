@@ -9,10 +9,12 @@ extends Resource
 ## phase) is specifically the one introducing combat math (CombatEngine),
 ## so a unit needs somewhere to record damage from turn one.
 ##
-## No local_position (Phase 2.5's Tactical-view exact-placement field on
-## BuildingInstance) yet — a trained unit sits at hex granularity until
-## Phase 5.5's tactical-scale movement gives it a reason to occupy a
-## precise point within a hex.
+## Phase 2.5.4: local_position (an offset from hex_coord's center, same
+## contract as BuildingInstance.local_position) extends that Phase 2.5.3
+## pattern to a moving entity — written by UnitOrderController's movement
+## tick via HexCoord.entry_local_position() every time hex_coord changes,
+## instead of the hex-center jump a unit used to do on every step. ZERO
+## (hex center) for a freshly-trained unit that hasn't moved yet.
 ##
 ## Phase 5.6 order state (order/move_target/patrol_waypoints): written by
 ## UnitManager (a fresh unit seeded from a rally point) and
@@ -24,6 +26,7 @@ extends Resource
 
 @export var definition: UnitDefinition
 @export var hex_coord: Vector2i = Vector2i.ZERO
+@export var local_position: Vector2 = Vector2.ZERO  ## Offset from hex_coord's center; see HexCoord.entry_local_position().
 @export var id: int = 0
 @export var current_hp: float = 0.0
 
@@ -59,3 +62,28 @@ func is_destroyed() -> bool:
 
 func has_patrol_waypoints() -> bool:
 	return not patrol_waypoints.is_empty()
+
+## Design doc Phase 2.5.4, decided: "rendering splits by tier, not role" —
+## Tier 0-3 (every role) render as a squad of individual figures; Tier 4-5
+## (every role — the roster's named vehicles) render as one detailed model
+## instead, since "a squad of siege howitzers doesn't make sense the way a
+## squad of Redcoats does."
+const SQUAD_SIZE: int = 5
+
+func is_squad_rendered() -> bool:
+	return definition != null and definition.tier <= 3
+
+## Design doc Phase 2.5.4, decided: "squad headcount is derived, not new
+## stored state" — ceil(current_hp / (max_hp / SQUAD_SIZE)), clamped to at
+## least 1 while the unit is alive (a squad never visually reads as fully
+## empty before it's actually destroyed) and at most SQUAD_SIZE. Tier 4-5
+## (single-model, not squad-rendered — see is_squad_rendered()) always
+## reports 1 while alive: the same "headcount ticks down by one" casualty
+## hook CombatCoordinator uses for squads applies here too, it just only
+## ever has one figure to lose, on the unit's own death.
+func get_squad_headcount() -> int:
+	if is_destroyed():
+		return 0
+	if not is_squad_rendered() or not definition or definition.max_hp <= 0.0:
+		return 1
+	return clampi(ceili(current_hp / (definition.max_hp / float(SQUAD_SIZE))), 1, SQUAD_SIZE)
