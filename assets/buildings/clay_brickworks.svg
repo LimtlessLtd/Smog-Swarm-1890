@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <ellipse cx="128" cy="222" rx="102" ry="14" fill="#000000" opacity="0.3" />
+
+  <!-- Beehive brick kiln -->
+  <path d="M60,210 L60,150 Q60,104 108,100 Q156,104 156,150 L156,210 Z" fill="#6e4a34" />
+  <path d="M60,150 Q60,104 108,100 Q156,104 156,150" fill="none" stroke="#4a3020" stroke-width="2" opacity="0.6" />
+  <rect x="94" y="70" width="16" height="34" fill="#3a2a20" />
+  <ellipse cx="102" cy="64" rx="10" ry="7" fill="#8a8a8a" opacity="0.4" />
+  <ellipse cx="112" cy="50" rx="14" ry="9" fill="#9a9a9a" opacity="0.25" />
+  <rect x="96" y="180" width="24" height="30" fill="#241811" />
+
+  <!-- Brick courses on the kiln -->
+  <line x1="60" y1="170" x2="156" y2="170" stroke="#4a3020" stroke-width="1.5" opacity="0.4" />
+  <line x1="60" y1="190" x2="156" y2="190" stroke="#4a3020" stroke-width="1.5" opacity="0.4" />
+
+  <!-- Stacked drying bricks -->
+  <g transform="translate(172,178)">
+    <rect x="0" y="0" width="16" height="8" fill="#8a5a3c" />
+    <rect x="0" y="9" width="16" height="8" fill="#7c4f34" />
+    <rect x="0" y="18" width="16" height="8" fill="#8a5a3c" />
+    <rect x="18" y="4" width="16" height="8" fill="#7c4f34" />
+    <rect x="18" y="13" width="16" height="8" fill="#8a5a3c" />
+    <rect x="18" y="22" width="16" height="8" fill="#7c4f34" />
+  </g>
+</svg>

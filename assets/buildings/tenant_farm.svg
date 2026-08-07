@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <ellipse cx="128" cy="222" rx="104" ry="14" fill="#000000" opacity="0.26" />
+
+  <!-- Farmhouse -->
+  <rect x="34" y="140" width="80" height="70" fill="#8a6a3e" />
+  <polygon points="28,140 74,108 120,140" fill="#5c4228" />
+  <polygon points="28,140 74,108 74,120 40,140" fill="#6e5230" />
+  <rect x="42" y="108" width="9" height="26" fill="#3a2c1c" />
+  <rect x="56" y="168" width="16" height="42" fill="#241811" />
+  <rect x="86" y="156" width="16" height="18" fill="#3a4a54" />
+  <rect x="86" y="156" width="16" height="18" fill="none" stroke="#1c2126" stroke-width="1.3" />
+
+  <!-- Barn -->
+  <rect x="140" y="150" width="76" height="60" fill="#8a3a2e" />
+  <polygon points="134,150 178,120 222,150" fill="#4a4642" />
+  <polygon points="168,166 190,166 190,210 168,210" fill="#3a2418" />
+  <line x1="179" y1="166" x2="179" y2="210" stroke="#241811" stroke-width="2" />
+
+  <!-- Hay bales -->
+  <circle cx="222" cy="200" r="12" fill="#c9a955" />
+  <circle cx="238" cy="204" r="10" fill="#b08f3f" />
+
+  <!-- Fenced field patch -->
+  <line x1="10" y1="214" x2="52" y2="200" stroke="#5c4228" stroke-width="3" />
+  <line x1="10" y1="220" x2="52" y2="206" stroke="#5c4228" stroke-width="3" />
+  <rect x="8" y="196" width="3" height="26" fill="#3a2c1c" />
+  <rect x="50" y="182" width="3" height="26" fill="#3a2c1c" />
+</svg>
