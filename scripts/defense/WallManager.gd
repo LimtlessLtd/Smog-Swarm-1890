@@ -18,18 +18,23 @@ extends Node
 ## bool flag on WallSegment, rather than inventing a second building-tree
 ## system or awkwardly bolting them onto BuildingManager's placement flow.
 ##
-## Combat — a horde damaging a segment, a siege bonus, Ditches/Oil Pits
-## actually inflicting counter-damage — is entirely Phase 5's job
-## (CombatEngine 5.4, horde AI 5.10). damage_segment() below is the real,
-## callable hook that phase will use; nothing calls it yet.
+## Combat is real now: `HordeManager._siege_wall()` (Phase 4.1/5.10) calls
+## `damage_segment()` below directly whenever a horde's own drift path
+## crosses an unbreached segment, with a siege-damage bonus and Ditch/Oil
+## Pit counter-damage folded in on that caller's side — this class itself
+## stays combat-ignorant, same "manager mutates a passed-in Resource"
+## split every other combat-adjacent class here keeps. `repair_segment()`
+## is the recovery action a real breach now needs.
 
 signal wall_segment_placed(segment: WallSegment)
 signal wall_segment_upgraded(segment: WallSegment)
 signal wall_segment_damaged(segment: WallSegment, amount: float)
 signal wall_segment_breached(segment: WallSegment)
+signal wall_segment_repaired(segment: WallSegment)
 signal defense_work_added(segment: WallSegment, work_type: GameEnums.BuildingType)
 signal placement_rejected(hex_a: Vector2i, hex_b: Vector2i, reason: String)
 signal upgrade_rejected(segment: WallSegment, reason: String)
+signal repair_rejected(segment: WallSegment, reason: String)
 
 @export var hex_grid_map_path: NodePath
 @export var resource_manager_path: NodePath
@@ -198,6 +203,38 @@ func damage_segment(segment: WallSegment, amount: float) -> void:
 	wall_segment_damaged.emit(segment, amount)
 	if segment.is_breached():
 		wall_segment_breached.emit(segment)
+
+## Design doc Phase 4.1/4.2: the recovery action a breach genuinely needs
+## now that Phase 5.10's `HordeManager` can actually inflict one
+## (`_siege_wall()`) — `upgrade_segment()`'s own `get_upgrade_error()`
+## already anticipated this ("a breached wall segment must be repaired
+## before it can be upgraded"), but nothing implemented repair itself until
+## now. Restores to the segment's OWN current tier's full health (not an
+## upgrade — same tier, just fixed), for `WallCatalog.get_repair_cost()`
+## (50% of building that tier from scratch, same fraction
+## `upgrade_segment()` already uses).
+func get_repair_error(segment: WallSegment) -> String:
+	if not segment:
+		return "No such wall segment."
+	if not segment.is_breached():
+		return "This wall segment isn't breached."
+	if _resource_manager and not _resource_manager.can_afford(WallCatalog.get_repair_cost(segment.tier)):
+		return "Not enough resources to repair this wall segment."
+	return ""
+
+func can_repair_segment(segment: WallSegment) -> bool:
+	return get_repair_error(segment).is_empty()
+
+func repair_segment(segment: WallSegment) -> bool:
+	var error := get_repair_error(segment)
+	if not error.is_empty():
+		repair_rejected.emit(segment, error)
+		return false
+	if _resource_manager:
+		_resource_manager.spend(WallCatalog.get_repair_cost(segment.tier))
+	segment.current_hp = segment.get_max_hp()
+	wall_segment_repaired.emit(segment)
+	return true
 
 ## Exposed for SaveLoadManager (Phase 2.8) — WallSegment saves directly
 ## (see its own class doc comment for why it needs no separate save-entry

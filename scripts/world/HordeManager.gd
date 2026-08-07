@@ -30,22 +30,43 @@ extends Node
 ##     (that signal's own doc comment). Finds-or-creates a WANDERING horde
 ##     at the hex a Tenement's population starved in and grows it by the
 ##     death count, rather than the loss vanishing into a generic
-##     "contested" abstraction. The OTHER Phase 5.9 casualty source (a
-##     UnitInstance dying in combat) still isn't wired — see below, it needs
-##     a live combat trigger that doesn't exist.
+##     "contested" abstraction. The other two Phase 5.9 casualty sources —
+##     a UnitInstance dying in combat, and now a BuildingInstance being
+##     ruined (Phase 5.12) — both go through CombatCoordinator/
+##     BuildingManager.building_ruined the same way, see those classes'
+##     own doc comments.
+##   - Phase 5.2's "lone zombie" decision: _on_ambient_spawn_day() rolls a
+##     flat daily chance to seed one genuinely tiny (1-3) horde on ambient
+##     wilderness, independent of the starting seed and casualty conversion
+##     — no dedicated noise/attraction system exists to trigger this off
+##     yet, so a flat chance is the real spawn-side path per that decision.
+##   - Phase 5.10's merge/split: _check_merges()/_check_splits(), rolled
+##     once per movement tick alongside the existing drift — co-located
+##     hordes can combine, a large enough horde can fragment in two.
+##   - Phase 4.1/5.10's ATTACKING state, now real: _advance_horde() checks
+##     whether the next step in a horde's drift path crosses an unbreached
+##     WallSegment (optional wall_manager_path) — if so, the horde doesn't
+##     move, it sieges that segment instead (_siege_wall(), with the
+##     decided siege-damage bonus and Ditch/Oil Pit counter-damage), only
+##     reverting to WANDERING once the segment actually breaches and it
+##     steps through. This is deliberately the SIMPLEST version of "wall
+##     targeting" — whichever segment a horde's own drift happens to walk
+##     into, not a deliberate seek-out-the-nearest-wall behavior (still no
+##     ATTRACTED state to drive that) — matching "contact matters however
+##     it happens" (5.10's own already-decided framing for unit combat,
+##     applied here to walls).
 ##
 ## Deliberately NOT wired here yet — each blocked on a system that doesn't
 ## exist, same "not implemented, deliberately" convention as every other
 ## forward-reference already in todo.md:
 ##   - ATTRACTED (industrial-noise/night-light attraction) — nothing tracks
-##     a noise value per building/hex yet.
-##   - ATTACKING (sieges, wall targeting, escalation on a won siege) — needs
-##     a live combat trigger, which doesn't exist anywhere in the project
-##     yet (Horde.size is a headcount, not a combat stat CombatEngine could
-##     resolve an engagement from — see CombatEngine's own doc comment).
-##   - Combat-casualty conversion (the other half of Phase 5.9) — same
-##     missing piece: needs a live combat trigger to produce a casualty
-##     from in the first place.
+##     a noise value per building/hex yet, so a horde has no way to
+##     deliberately seek out a target; ATTACKING (below) only ever happens
+##     as a byproduct of WANDERING drift stumbling into a wall.
+##   - ATTACKING's "deliberately besieging a hex it sought out" half — the
+##     wall-siege slice (a horde attacking whichever segment its own drift
+##     happens to reach) is real now, see this class's own doc comment
+##     above; a horde choosing a target on purpose still needs ATTRACTED.
 ##   - Horde-size/spawn-frequency ramp-up over time (Phase 7.1's Act pacing
 ##     / Phase 7.6's difficulty presets) — neither campaign system exists yet;
 ##     STARTING_HORDE_COUNT/SIZE below are a flat one-time seed, not a curve.
@@ -61,10 +82,12 @@ signal horde_removed(horde: Horde)
 @export var hex_grid_map_path: NodePath
 @export var logistics_network_path: NodePath  ## Optional — same road/rail/canal discount HexPathfinder gives any other route.
 @export var building_manager_path: NodePath   ## Optional — Phase 5.9's starvation-casualty spawn source; unset gracefully skips it, same "optional manager reference" convention every other optional dependency in this project follows.
+@export var wall_manager_path: NodePath       ## Optional — Phase 4.1/5.10's horde-vs-wall siege; unset means walls simply never block a horde's drift (same "gracefully skip it" convention).
 
 var _hex_grid_map: HexGridMap
 var _logistics_network: LogisticsNetwork
 var _building_manager: BuildingManager
+var _wall_manager: WallManager
 var _hordes: Array[Horde] = []
 var _next_id: int = 1
 var _rng := RandomNumberGenerator.new()
@@ -93,6 +116,41 @@ const MOVE_INTERVAL_SECONDS: float = 20.0
 ## position when it needs to replan.
 const DRIFT_TARGET_RADIUS: int = 5
 
+## Design doc Phase 5.2, decided (grilling session): "a 'lone zombie' isn't
+## a new entity type, it's just a Horde at small size ... ambient wilderness
+## spawning needs a path to occasionally seed a genuinely tiny (1-3) horde,
+## not just today's STARTING_HORDE_SIZE_MIN-MAX (10-25) range." No dedicated
+## noise/attraction system exists to trigger this off yet (see this class's
+## own "Deliberately NOT wired" list above) — a flat daily chance is the
+## simplest real spawn-side path, reusing seed_starting_hordes()'s own
+## _spawnable_coords()/Horde.new() machinery. Balancing numbers, not
+## architecture, same framing as every other constant table here.
+const AMBIENT_SPAWN_CHANCE_PER_DAY: float = 0.35
+const AMBIENT_HORDE_SIZE_MIN: int = 1
+const AMBIENT_HORDE_SIZE_MAX: int = 3
+
+## Design doc Phase 5.10, decided (grilling session): "hordes get a small
+## periodic chance to merge or split." Checked once per movement tick
+## alongside the existing drift, not a separate timer. Balancing numbers,
+## not architecture, same framing as every other constant table here.
+const MERGE_CHANCE_PER_TICK: float = 0.1   ## Rolled once per co-located pair, per tick.
+const SPLIT_CHANCE_PER_TICK: float = 0.05  ## Rolled once per eligible horde, per tick.
+const SPLIT_MIN_SIZE: int = 20             ## A horde must be at least this big to be eligible to fragment.
+
+## Design doc Phase 4.1/5.10, decided: "a horde attacks whichever specific
+## segment it physically reaches" + "hordes get an explicit siege bonus
+## against walls." Balancing numbers, not architecture, same framing as
+## every other constant table here.
+const WALL_SIEGE_DAMAGE_MULTIPLIER: float = 2.0  ## A horde hits a wall harder than it'd hit a unit — the "siege bonus".
+
+## Design doc Phase 4.1: "Ditches and Oil Pits ... inflict damage on a
+## besieging horde before/during a breach attempt" — flat headcount-worth
+## chip damage per siege tick, converted through Horde.HP_PER_ZOMBIE the
+## same way any other combat damage is. A sufficiently ditched-and-pitted
+## wall can grind a small horde down to nothing before it ever breaches.
+const DITCH_COUNTER_DAMAGE: float = 3.0
+const OIL_PIT_COUNTER_DAMAGE: float = 5.0
+
 func _ready() -> void:
 	# Same reasoning as TickManager/TimeCycleManager: background-simulation
 	# infrastructure that shouldn't freeze if a future system ever pauses
@@ -105,6 +163,10 @@ func _ready() -> void:
 	if building_manager_path != NodePath():
 		_building_manager = get_node(building_manager_path)
 		_building_manager.civilians_starved.connect(_on_civilians_starved)
+		_building_manager.building_ruined.connect(_on_building_ruined)
+	if wall_manager_path != NodePath():
+		_wall_manager = get_node(wall_manager_path)
+	TickManager.day_completed.connect(_on_ambient_spawn_day)
 	_rng.seed = HORDE_SEED
 	seed_starting_hordes()
 
@@ -114,8 +176,14 @@ func _process(delta: float) -> void:
 	_move_timer += delta
 	while _move_timer >= MOVE_INTERVAL_SECONDS:
 		_move_timer -= MOVE_INTERVAL_SECONDS
-		for horde in _hordes:
+		# duplicate(): _advance_horde() can now remove_horde() mid-loop (a
+		# horde ground down to 0 by Ditch/Oil Pit counter-damage while
+		# sieging a wall) — iterating the live array while erasing from it
+		# would skip entries.
+		for horde: Horde in _hordes.duplicate():
 			_advance_horde(horde)
+		_check_merges()
+		_check_splits()
 
 func get_all_hordes() -> Array[Horde]:
 	return _hordes.duplicate()
@@ -167,6 +235,74 @@ func _find_horde_at(coord: Vector2i) -> Horde:
 func _on_civilians_starved(hex_coord: Vector2i, count: int) -> void:
 	add_casualty_zombies(hex_coord, count)
 
+## Design doc Phase 5.12/5.9: a ruined building's population "converts to
+## zombies right there ... same as a starvation death, just triggered by
+## direct assault instead of hunger." `count` may legitimately be 0 (an
+## industrial/agricultural building with no housed population) —
+## add_casualty_zombies() already no-ops on count <= 0, so no extra guard
+## is needed here.
+func _on_building_ruined(instance: BuildingInstance, lost_population: int) -> void:
+	add_casualty_zombies(instance.hex_coord, lost_population)
+
+## Design doc Phase 5.2's "lone zombie" decision: a flat daily chance to seed
+## one genuinely tiny (1-3) horde on ambient wilderness, independent of the
+## one-time starting seed and the casualty-conversion spawn source — reuses
+## _spawnable_coords() exactly as seed_starting_hordes() does, so the same
+## "far enough from a settlement" rule applies.
+func _on_ambient_spawn_day(_day_number: int) -> void:
+	if not _hex_grid_map or _rng.randf() >= AMBIENT_SPAWN_CHANCE_PER_DAY:
+		return
+	var candidates := _spawnable_coords()
+	if candidates.is_empty():
+		return
+	var coord: Vector2i = candidates[_rng.randi_range(0, candidates.size() - 1)]
+	var size := _rng.randi_range(AMBIENT_HORDE_SIZE_MIN, AMBIENT_HORDE_SIZE_MAX)
+	var horde := Horde.new(coord, size, _next_id)
+	_next_id += 1
+	_hordes.append(horde)
+	horde_spawned.emit(horde)
+
+## Design doc Phase 5.10: "two hordes that end up on/near the same hex can
+## combine into one." Scoped to hordes sharing the EXACT same hex_coord —
+## the same "same hex" granularity add_casualty_zombies() already merges
+## casualties into — checked once per movement tick, one merge roll per
+## co-located pair per tick rather than a guaranteed instant cascade on a
+## crowded hex.
+func _check_merges() -> void:
+	var by_hex: Dictionary = {}  # Vector2i -> Array[Horde]
+	for horde in _hordes:
+		if not by_hex.has(horde.hex_coord):
+			by_hex[horde.hex_coord] = []
+		by_hex[horde.hex_coord].append(horde)
+	for coord in by_hex:
+		var group: Array = by_hex[coord]
+		if group.size() < 2 or _rng.randf() >= MERGE_CHANCE_PER_TICK:
+			continue
+		var survivor: Horde = group[0]
+		var absorbed: Horde = group[1]
+		survivor.size += absorbed.size
+		horde_size_changed.emit(survivor, absorbed.size)
+		remove_horde(absorbed)
+
+## Design doc Phase 5.10: "a large horde can fragment into two smaller
+## ones." Splits roughly in half; the new fragment starts WANDERING from the
+## same hex (no reason to displace it elsewhere) and gets its own fresh
+## drift replan next tick, same as any other horde. Iterates a duplicate()
+## snapshot since this appends fresh hordes to _hordes mid-loop.
+func _check_splits() -> void:
+	for horde: Horde in _hordes.duplicate():
+		if horde.size < SPLIT_MIN_SIZE or _rng.randf() >= SPLIT_CHANCE_PER_TICK:
+			continue
+		var fragment_size := horde.size / 2
+		if fragment_size <= 0:
+			continue
+		horde.size -= fragment_size
+		horde_size_changed.emit(horde, -fragment_size)
+		var fragment := Horde.new(horde.hex_coord, fragment_size, _next_id)
+		_next_id += 1
+		_hordes.append(fragment)
+		horde_spawned.emit(fragment)
+
 ## Seeds the handful of starting hordes on a truly fresh start — mirrors
 ## BuildingManager.seed_starting_buildings()'s own "only if nothing's placed
 ## yet" guard. A load right after boot (SaveLoadManager.load_save_hordes())
@@ -212,11 +348,46 @@ func _advance_horde(horde: Horde) -> void:
 		_replan(horde)
 	if horde.path.is_empty():
 		return  # No valid drift target found this cycle (e.g. boxed in) — try again next tick.
-	var next_coord: Vector2i = horde.path.pop_front()
+
+	# Design doc Phase 4.1/5.10: "a horde attacks whichever specific segment
+	# it physically reaches" — peek (not pop) the next step; an unbreached
+	# wall segment on that edge blocks the step entirely this tick, sieging
+	# it instead of walking through it.
+	var next_coord: Vector2i = horde.path[0]
+	if _wall_manager:
+		var segment := _wall_manager.get_segment_between(horde.hex_coord, next_coord)
+		if segment and not segment.is_breached():
+			_siege_wall(horde, segment)
+			return
+
+	horde.path.pop_front()
 	var from_coord := horde.hex_coord
 	horde.hex_coord = next_coord
 	horde.local_position = HexCoord.entry_local_position(from_coord, next_coord)  ## Phase 2.5.4.
+	if horde.state == GameEnums.HordeState.ATTACKING:
+		horde.state = GameEnums.HordeState.WANDERING  # Through the breach — back to roaming.
 	horde_moved.emit(horde, from_coord, next_coord)
+
+## Design doc Phase 4.1/5.10: damages `segment` with the decided siege bonus
+## (WALL_SIEGE_DAMAGE_MULTIPLIER), and — Phase 4.1's other still-unbuilt
+## bullet, now real — Ditches/Oil Pits inflict counter-damage back on the
+## besieging horde, converted through the same Horde.apply_remaining_hp()
+## every other combat-damage source already uses; a sufficiently defended
+## segment can grind a small horde down to nothing before it ever breaches.
+func _siege_wall(horde: Horde, segment: WallSegment) -> void:
+	horde.state = GameEnums.HordeState.ATTACKING
+	_wall_manager.damage_segment(segment, horde.get_combat_damage() * WALL_SIEGE_DAMAGE_MULTIPLIER)
+
+	var counter_damage := 0.0
+	if segment.has_ditch:
+		counter_damage += DITCH_COUNTER_DAMAGE
+	if segment.has_oil_pit:
+		counter_damage += OIL_PIT_COUNTER_DAMAGE
+	if counter_damage <= 0.0:
+		return
+	horde.apply_remaining_hp(horde.get_combat_hp() - counter_damage)
+	if horde.size <= 0:
+		remove_horde(horde)
 
 func _replan(horde: Horde) -> void:
 	var target := _pick_drift_target(horde.hex_coord)

@@ -46,6 +46,7 @@ func _ready() -> void:
 		_building_manager = get_node(building_manager_path)
 		_building_manager.building_placed.connect(_on_buildings_changed)
 		_building_manager.building_removed.connect(_on_buildings_changed)
+		_building_manager.building_ruined.connect(_on_building_ruined)
 	if logistics_network_path != NodePath():
 		_logistics_network = get_node(logistics_network_path)
 		_logistics_network.network_recomputed.connect(_on_network_recomputed)
@@ -144,6 +145,13 @@ func _on_buildings_changed(instance: BuildingInstance) -> void:
 	if _tactical_views.has(instance.hex_coord):
 		_dehydrate_hex(instance.hex_coord)
 	_refresh_hydrated_neighborhood(_last_centered_coord)
+
+## Phase 5.12: a ruin doesn't change WHICH buildings exist at a hex, only
+## how one of them looks — the same dehydrate/rehydrate _on_buildings_changed()
+## already does is a valid (if slightly heavier-handed) way to pick that up,
+## reusing that exact method rather than duplicating its body.
+func _on_building_ruined(instance: BuildingInstance, _lost_population: int) -> void:
+	_on_buildings_changed(instance)
 
 func _on_network_recomputed() -> void:
 	if _is_tactical_mode:

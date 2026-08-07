@@ -35,3 +35,18 @@ func get_safe_districts() -> Array[District]:
 		if not district.is_contested:
 			result.append(district)
 	return result
+
+## Design doc Phase 2.12.2, decided: "reduces, does not block" — dense local
+## vegetation shrinks how far a vision source SITTING on this hex can see,
+## explicitly no hard occlusion/stealth. Scoped to the biomes that actually
+## carry dense tree/bush/reed cover in LocalDetailGenerator's own per-biome
+## prop table (Phase 2.5.2) — Moorland's tree/bush mix and Wetland's reed
+## beds, not Highland (its props are rocks, not vegetation) or the sparser,
+## tilled Farmland. Returns hex-rings to subtract from a vision_radius, not
+## a hard cap — see FogOfWarManager._compute_visible_set()'s own caller.
+func get_vision_penalty() -> int:
+	match biome_type:
+		GameEnums.BiomeType.MOORLAND, GameEnums.BiomeType.WETLAND:
+			return 1
+		_:
+			return 0

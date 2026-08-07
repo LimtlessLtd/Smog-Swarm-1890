@@ -17,3 +17,12 @@ static func category_color(category: GameEnums.BuildingCategory) -> Color:
 			return Color(0.62, 0.55, 0.25)
 		_:
 			return Color(0.5, 0.5, 0.5)
+
+## Design doc Phase 5.12: a ruined building's color — deliberately the SAME
+## drab grey-brown regardless of what category it used to be (rubble
+## doesn't read as "industrial" or "civic" anymore), shared between
+## TacticalHexView's close-up rubble shape and StrategicOverlayManager's
+## icon so a ruin reads the same way in both views, same reasoning
+## category_color() itself already gives for intact buildings.
+static func ruin_color() -> Color:
+	return Color(0.4, 0.37, 0.34)

@@ -27,6 +27,13 @@ extends Node
 ## LogisticsNetwork's Zone-of-Control-derived coverage: ZoC vision represents
 ## patrol/logistics awareness over a hex, not light cast into the dark, so it
 ## isn't a "lit source" this contraction has any hook to apply to.
+##
+## Phase 2.12.2: HexCell.get_vision_penalty() shrinks a building's effective
+## vision_radius further still, when that building itself sits on dense
+## local vegetation (Moorland/Wetland) — "reduces, does not block", stacks
+## with (applied after) the night-vision math above. The three-state
+## UNSEEN/EXPLORED/VISIBLE machine this class owns is itself untouched by
+## this — only the radius fed into it shrinks.
 
 signal fog_state_changed(coord: Vector2i, state: GameEnums.FogState)
 
@@ -135,6 +142,17 @@ func _compute_visible_set() -> Dictionary:
 					radius += NIGHT_LIT_BONUS
 				else:
 					radius = maxi(0, radius - NIGHT_VISION_PENALTY)
+			# Phase 2.12.2: dense local terrain right around the vision source
+			# itself shrinks its effective radius — reduces, never blocks
+			# (design doc, decided; no stealth mechanic). Scoped to building
+			# vision sources since that's the only vision_radius concept that
+			# exists today — a UnitInstance-based version stays blocked on
+			# Phase 2.6.2's own already-flagged gap ("Units still don't feed
+			# this — UnitInstance has no vision_radius field").
+			if _hex_grid_map:
+				var source_cell := _hex_grid_map.get_cell(instance.hex_coord)
+				if source_cell:
+					radius = maxi(0, radius - source_cell.get_vision_penalty())
 			for coord in HexCoord.hex_disk(instance.hex_coord, radius):
 				if not _hex_grid_map or _hex_grid_map.has_cell(coord):
 					result[coord] = true

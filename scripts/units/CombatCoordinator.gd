@@ -78,18 +78,36 @@ extends Node
 ## alive) still only ever fires this once, on its own death, so this is a
 ## strict generalization, not a behavior change for those.
 ##
+## **Garrison/Searchlight defense bonus, now real:** `_garrison_incoming_multiplier()`
+## folds into `CombatEngine.resolve_engagement()`'s new `incoming_damage_multiplier`
+## parameter — a flat `GARRISON_INCOMING_DAMAGE_MULTIPLIER` reduction whenever
+## the defending `UnitInstance.order` is `GARRISON`, stacking with a further
+## `SEARCHLIGHT_NIGHT_INCOMING_DAMAGE_MULTIPLIER` reduction at night if a
+## non-ruined Searchlight Tower's own `vision_radius` reaches the unit's
+## hex — "during night defense, granting combat bonuses to garrisoned
+## units" (design doc Phase 4.1), previously blocked purely on
+## `CombatEngine` having no input for it at all. `TimeCycleManager.is_night()`
+## (autoload) and the already-optional `building_manager_path` (wired in
+## Phase 5.12 for `_siege_buildings()`) supply everything this needs — no
+## new export.
+##
 ## **Still NOT implemented:**
-##   - Phase 5.10's ATTACKING state, wall-segment targeting, and Phase
-##     5.8's territory capture — this resolves an engagement wherever units
-##     and a horde meet, it doesn't make a horde seek one out, target a
-##     wall segment, or flip district control on a win/loss.
-##   - Combat bonuses beyond morale/veterancy (Searchlight Tower night
-##     defense, Garrison orders' "stationary defense bonus") — CombatEngine
-##     has no inputs for either yet, so neither applies here either.
-##   - Building-vs-horde combat (a horde besieging an undefended settlement
-##     directly) — this only resolves engagements against a UnitInstance;
-##     Phase 5.12's building HP/ruins state doesn't exist yet to be a
-##     defender_hp source of its own.
+##   - Phase 5.10's ATTACKING state as a deliberate seek-out-a-target
+##     behavior (the wall-siege slice — a horde attacking whichever segment
+##     its own WANDERING drift happens to reach — is real now, see
+##     `HordeManager._siege_wall()`; a horde CHOOSING a target on purpose
+##     still needs the still-nonexistent ATTRACTED/noise system), and Phase
+##     5.8's territory capture is a separate class (`TerritoryController`)
+##     entirely, reacting to `BuildingManager.building_ruined` rather than
+##     anything here.
+##   - The full defense-in-depth cascade (outer wall -> legacy wall ->
+##     garrison -> buildings, Phase 4.2) — `_siege_buildings()` (Phase
+##     5.10/5.12) covers the simplest case (no wall, no garrison, nothing
+##     between a horde and an undefended building) and `HordeManager`'s own
+##     wall siege covers "a wall blocks a horde's step, full stop" — but
+##     there's still no distinct "outer" vs "legacy inner" wall tier, so a
+##     horde that breaches one segment just walks into the hex behind it,
+##     it doesn't hit a second layer.
 ##   - Phase 5.7's own "reasonable fifth" morale input (a severe famine
 ##     ratio) — see UnitMorale's own doc comment for why it's not wired.
 
@@ -110,14 +128,24 @@ signal engagement_resolved(instance: UnitInstance, horde: Horde, result: Diction
 ## instead of special-cased on is_destroyed().
 const CASUALTY_ZOMBIES_PER_UNIT: int = 1
 
+## Design doc Phase 4.1/5.6: "granting combat bonuses to garrisoned units" /
+## "a stationary defense bonus instead of patrolling" — placeholder
+## balancing numbers, not an architecture decision, same framing as every
+## other constant table in this project. The Searchlight bonus stacks
+## (multiplies) with the flat Garrison one, not replaces it.
+const GARRISON_INCOMING_DAMAGE_MULTIPLIER: float = 0.75          ## 25% less incoming damage while GARRISON, any time of day.
+const SEARCHLIGHT_NIGHT_INCOMING_DAMAGE_MULTIPLIER: float = 0.6  ## A further 40% off at night, specifically near a lit Searchlight Tower.
+
 @export var unit_manager_path: NodePath
 @export var horde_manager_path: NodePath
 @export var unit_order_controller_path: NodePath
 @export var resource_manager_path: NodePath  ## Optional — unset always resolves as "Gunpowder available", same "gracefully skip it" convention as every other optional dependency.
+@export var building_manager_path: NodePath  ## Optional — Phase 5.12's undefended-building siege trigger; unset gracefully skips it, same convention as every other optional dependency here.
 
 var _unit_manager: UnitManager
 var _horde_manager: HordeManager
 var _resource_manager: ResourceManager
+var _building_manager: BuildingManager
 
 func _ready() -> void:
 	if unit_manager_path != NodePath():
@@ -130,12 +158,17 @@ func _ready() -> void:
 		unit_order_controller.unit_moved.connect(_on_unit_moved)
 	if resource_manager_path != NodePath():
 		_resource_manager = get_node(resource_manager_path)
+	if building_manager_path != NodePath():
+		_building_manager = get_node(building_manager_path)
 
 func _on_horde_moved(horde: Horde, _from_coord: Vector2i, to_coord: Vector2i) -> void:
-	if not _unit_manager:
-		return
-	for instance in _unit_manager.get_units_at(to_coord):
+	var defenders: Array[UnitInstance] = []
+	if _unit_manager:
+		defenders = _unit_manager.get_units_at(to_coord)
+	for instance in defenders:
 		_engage(instance, horde)
+	if defenders.is_empty():
+		_siege_buildings(horde, to_coord)
 
 func _on_unit_moved(instance: UnitInstance, _from_coord: Vector2i, to_coord: Vector2i) -> void:
 	if not _horde_manager:
@@ -152,8 +185,9 @@ func _engage(instance: UnitInstance, horde: Horde) -> void:
 		gunpowder_available = _resource_manager.get_amount(GameEnums.ResourceType.GUNPOWDER) > 0.0
 
 	var damage_multiplier := UnitMorale.get_damage_multiplier(instance, gunpowder_available)
+	var incoming_damage_multiplier := _garrison_incoming_multiplier(instance)
 	var headcount_before := instance.get_squad_headcount()
-	var result := CombatEngine.resolve_engagement(instance, gunpowder_available, horde.get_combat_hp(), horde.get_combat_damage(), damage_multiplier)
+	var result := CombatEngine.resolve_engagement(instance, gunpowder_available, horde.get_combat_hp(), horde.get_combat_damage(), damage_multiplier, incoming_damage_multiplier)
 	horde.apply_remaining_hp(result.defender_hp_remaining)
 	engagement_resolved.emit(instance, horde, result)
 
@@ -174,3 +208,53 @@ func _engage(instance: UnitInstance, horde: Horde) -> void:
 
 	if instance.is_destroyed() and _unit_manager:
 		_unit_manager.remove_unit(instance)
+
+## Design doc Phase 5.6/4.1: a `GARRISON`-ordered unit takes less incoming
+## damage, stacking further at night if a non-ruined Searchlight Tower's own
+## `vision_radius` reaches this hex — "illuminate perimeter walls ...
+## granting combat bonuses to garrisoned units". `HOLD` deliberately does
+## NOT qualify — the design doc frames this as Garrison's own payoff over
+## plain Hold (see `UnitOrderController`'s own doc comment on Phase 2.5.4's
+## healing mechanic making the same Garrison-vs-Hold distinction).
+func _garrison_incoming_multiplier(instance: UnitInstance) -> float:
+	if instance.order != GameEnums.UnitOrderType.GARRISON:
+		return 1.0
+	var multiplier := GARRISON_INCOMING_DAMAGE_MULTIPLIER
+	if _building_manager and TimeCycleManager.is_night() and _is_near_searchlight_tower(instance.hex_coord):
+		multiplier *= SEARCHLIGHT_NIGHT_INCOMING_DAMAGE_MULTIPLIER
+	return multiplier
+
+func _is_near_searchlight_tower(coord: Vector2i) -> bool:
+	for instance in _building_manager.get_all_buildings():
+		if instance.is_ruined or instance.definition.building_type != GameEnums.BuildingType.SEARCHLIGHT_TOWER:
+			continue
+		if HexCoord.distance(instance.hex_coord, coord) <= instance.definition.vision_radius:
+			return true
+	return false
+
+## Design doc Phase 5.10/5.12: closes the exact gap this class's own doc
+## comment used to flag ("an undefended-but-covered hex currently has
+## nothing to fight back with, since Phase 5.12's building combat doesn't
+## exist") — a horde reaching a hex with NO defending UnitInstance now
+## sieges whatever non-ruined building stands there instead of the contact
+## being a no-op. One building damaged per contact event (same "one
+## attacking side, one engagement" granularity _engage() already uses for
+## units) — the first non-ruined instance found, not every building on the
+## hex at once; a hex with several buildings falls one at a time across
+## repeated contacts, not in a single visit.
+##
+## Deliberately does NOT check Zone of Control coverage or wall segments —
+## this is the SIMPLEST possible "the layer in front has failed" case
+## (there is no wall, no garrison here, nothing between the horde and the
+## building but the building itself), not the full defense-in-depth cascade
+## (outer wall -> legacy wall -> garrison -> buildings) Phase 4.1/4.2's own
+## still-missing outer/inner-wall distinction and horde-vs-wall targeting
+## describe. Extends naturally once those exist; doesn't block on them.
+func _siege_buildings(horde: Horde, coord: Vector2i) -> void:
+	if not _building_manager or horde.size <= 0:
+		return
+	for instance in _building_manager.get_buildings_at(coord):
+		if instance.is_ruined:
+			continue
+		_building_manager.damage_building(instance, horde.get_combat_damage())
+		return  # One building per contact event — see this method's own doc comment.

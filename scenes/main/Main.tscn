@@ -21,6 +21,7 @@
 [ext_resource type="PackedScene" path="res://scenes/units/CombatCoordinator.tscn" id="19"]
 [ext_resource type="PackedScene" path="res://scenes/world/UnitCommandController.tscn" id="20"]
 [ext_resource type="PackedScene" path="res://scenes/world/TacticalEntityLayer.tscn" id="21"]
+[ext_resource type="PackedScene" path="res://scenes/world/TerritoryController.tscn" id="22"]
 
 [node name="Main" type="Node2D"]
 
@@ -39,10 +40,12 @@ world_root_path = NodePath("../WorldRoot")
 hex_grid_map_path = NodePath("../WorldRoot/HexGridMap")
 resource_manager_path = NodePath("../ResourceManager")
 discontent_manager_path = NodePath("../DiscontentManager")
+territory_controller_path = NodePath("../TerritoryController")
 
 [node name="LogisticsNetwork" parent="." instance=ExtResource("5")]
 hex_grid_map_path = NodePath("../WorldRoot/HexGridMap")
 building_manager_path = NodePath("../BuildingManager")
+territory_controller_path = NodePath("../TerritoryController")
 
 [node name="DiscontentManager" parent="." instance=ExtResource("13")]
 logistics_network_path = NodePath("../LogisticsNetwork")
@@ -71,6 +74,12 @@ logistics_network_path = NodePath("../LogisticsNetwork")
 hex_grid_map_path = NodePath("../WorldRoot/HexGridMap")
 logistics_network_path = NodePath("../LogisticsNetwork")
 building_manager_path = NodePath("../BuildingManager")
+wall_manager_path = NodePath("../WallManager")
+
+[node name="TerritoryController" parent="." instance=ExtResource("22")]
+hex_grid_map_path = NodePath("../WorldRoot/HexGridMap")
+horde_manager_path = NodePath("../HordeManager")
+building_manager_path = NodePath("../BuildingManager")
 
 [node name="UnitManager" parent="." instance=ExtResource("17")]
 hex_grid_map_path = NodePath("../WorldRoot/HexGridMap")
@@ -88,6 +97,7 @@ unit_manager_path = NodePath("../UnitManager")
 horde_manager_path = NodePath("../HordeManager")
 unit_order_controller_path = NodePath("../UnitOrderController")
 resource_manager_path = NodePath("../ResourceManager")
+building_manager_path = NodePath("../BuildingManager")
 
 [node name="SaveLoadManager" parent="." instance=ExtResource("9")]
 building_manager_path = NodePath("../BuildingManager")
@@ -100,6 +110,7 @@ wall_manager_path = NodePath("../WallManager")
 reclamation_manager_path = NodePath("../ReclamationManager")
 horde_manager_path = NodePath("../HordeManager")
 unit_manager_path = NodePath("../UnitManager")
+territory_controller_path = NodePath("../TerritoryController")
 
 [node name="LocalDetailManager" parent="WorldRoot" instance=ExtResource("6")]
 hex_grid_map_path = NodePath("../HexGridMap")

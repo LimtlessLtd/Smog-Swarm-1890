@@ -51,6 +51,14 @@ const HORDE_DIRECTION_COLOR := Color(0.95, 0.85, 0.3, 0.9)
 const HORDE_MARKER_RADIUS := 12.0
 const HORDE_DIRECTION_LENGTH := 20.0
 
+## Design doc Phase 2.7.6/5.10, decided (grilling session): only hordes at or
+## above this size get a Strategic-map marker at all — small hordes and lone
+## zombies (Phase 5.2) are meant to only be visible up close at Tactical
+## zoom (Phase 2.5.4's TacticalEntityLayer), not as an overworld icon.
+## Doesn't touch the spotting/ghost-tracking state machine below, only
+## which hordes qualify for a marker in the first place.
+const HORDE_MARKER_MIN_SIZE: int = 100
+
 @export var hex_grid_map_path: NodePath
 @export var building_manager_path: NodePath
 @export var unit_manager_path: NodePath
@@ -81,6 +89,7 @@ func _ready() -> void:
 		_building_manager = get_node(building_manager_path)
 		_building_manager.building_placed.connect(_on_building_placed)
 		_building_manager.building_removed.connect(_on_building_removed)
+		_building_manager.building_ruined.connect(_on_building_ruined)
 		for instance in _building_manager.get_all_buildings():
 			_on_building_placed(instance)
 	if unit_manager_path != NodePath():
@@ -97,6 +106,7 @@ func _ready() -> void:
 		_horde_manager.horde_spawned.connect(_on_horde_spawned)
 		_horde_manager.horde_moved.connect(_on_horde_moved)
 		_horde_manager.horde_removed.connect(_on_horde_removed)
+		_horde_manager.horde_size_changed.connect(_on_horde_size_changed)
 	if fog_of_war_manager_path != NodePath():
 		_fog_of_war_manager = get_node(fog_of_war_manager_path)
 		_fog_of_war_manager.fog_state_changed.connect(_on_fog_state_changed)
@@ -127,9 +137,19 @@ func _on_building_removed(instance: BuildingInstance) -> void:
 	_building_icons.erase(instance.id)
 	_refresh_frontier_markers()
 
+## Design doc Phase 5.12: recolors the existing icon in place (same "update
+## live, don't tear down and rebuild" shape TacticalHexView.set_fidelity()/
+## set_fog_state() already use) — the building stays on the map as a ruin,
+## it doesn't vanish, so building_removed's queue_free()/erase() path isn't
+## the right one here.
+func _on_building_ruined(instance: BuildingInstance, _lost_population: int) -> void:
+	var icon: Polygon2D = _building_icons.get(instance.id)
+	if icon:
+		icon.color = BuildingVisuals.ruin_color()
+
 func _build_building_icon(instance: BuildingInstance) -> Node2D:
 	var icon := Polygon2D.new()
-	icon.color = BuildingVisuals.category_color(instance.definition.category)
+	icon.color = BuildingVisuals.ruin_color() if instance.is_ruined else BuildingVisuals.category_color(instance.definition.category)
 	var r := 16.0  # Bigger than TacticalHexView's building boxes — needs to read at zoomed-out scale.
 	icon.polygon = PackedVector2Array([Vector2(0, -r), Vector2(r, r * 0.6), Vector2(-r, r * 0.6)])
 	icon.position = HexCoord.axial_to_world(instance.hex_coord) + instance.local_position
@@ -176,20 +196,19 @@ func _circle_points(radius: float, segments: int = 10) -> PackedVector2Array:
 ## at all yet has simply never been spotted.
 
 func _on_horde_spawned(horde: Horde) -> void:
-	if _is_visible(horde.hex_coord):
+	if _qualifies_for_marker(horde) and _is_visible(horde.hex_coord):
 		_reveal_live_marker(horde, horde.hex_coord)
-	# else: not yet spotted — no marker until a later _on_fog_state_changed()
-	# or _on_horde_moved() call reveals one.
+	# else: not yet spotted (or too small to mark at all) — no marker until a
+	# later _on_fog_state_changed()/_on_horde_moved()/_on_horde_size_changed()
+	# call reveals one.
 
 func _on_horde_removed(horde: Horde) -> void:
-	var marker: Node2D = _horde_markers.get(horde.id)
-	if marker:
-		marker.queue_free()
-	_horde_markers.erase(horde.id)
-	_horde_live.erase(horde.id)
-	_horde_last_known_coord.erase(horde.id)
+	_remove_marker_if_any(horde)
 
 func _on_horde_moved(horde: Horde, from_coord: Vector2i, to_coord: Vector2i) -> void:
+	if not _qualifies_for_marker(horde):
+		_remove_marker_if_any(horde)  # A no-op if it never had one — e.g. was always below threshold.
+		return
 	if _horde_live.get(horde.id, false):
 		if _is_visible(to_coord):
 			_update_live_marker_position(horde, to_coord)
@@ -210,11 +229,41 @@ func _on_fog_state_changed(coord: Vector2i, state: GameEnums.FogState) -> void:
 	if not _horde_manager:
 		return
 	for horde in _horde_manager.get_hordes_at(coord):
+		if not _qualifies_for_marker(horde):
+			continue
 		if state == GameEnums.FogState.VISIBLE:
 			if not _horde_live.get(horde.id, false):
 				_reveal_live_marker(horde, coord)
 		elif _horde_live.get(horde.id, false):
 			_freeze_horde_marker(horde, coord, coord)  # Stationary loss of vision — no known heading, so no direction line.
+
+## Phase 5.10's merge/split (HordeManager) — and any other source of
+## Horde.size changing outside of a move, e.g. Phase 5.9's casualty
+## accumulation via add_casualty_zombies() — can cross HORDE_MARKER_MIN_SIZE
+## in either direction without the horde itself moving or fog changing.
+## Re-evaluate marker existence here rather than waiting for an unrelated
+## trigger to catch up eventually. Note: CombatCoordinator shrinks a horde's
+## size directly via Horde.apply_remaining_hp() without emitting this signal
+## — a horde losing a fight specifically catches up to the threshold change
+## on its next horde_moved instead, same as every other combat-driven state
+## this class doesn't get a dedicated signal for.
+func _on_horde_size_changed(horde: Horde, _delta: int) -> void:
+	if not _qualifies_for_marker(horde):
+		_remove_marker_if_any(horde)
+		return
+	if not _horde_markers.has(horde.id) and _is_visible(horde.hex_coord):
+		_reveal_live_marker(horde, horde.hex_coord)
+
+func _qualifies_for_marker(horde: Horde) -> bool:
+	return horde.size >= HORDE_MARKER_MIN_SIZE
+
+func _remove_marker_if_any(horde: Horde) -> void:
+	var marker: Node2D = _horde_markers.get(horde.id)
+	if marker:
+		marker.queue_free()
+	_horde_markers.erase(horde.id)
+	_horde_live.erase(horde.id)
+	_horde_last_known_coord.erase(horde.id)
 
 func _is_visible(coord: Vector2i) -> bool:
 	return _fog_of_war_manager != null and _fog_of_war_manager.is_visible(coord)

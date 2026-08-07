@@ -141,7 +141,7 @@ enum UnitOrderType {
 	MOVE,         ## Path to move_target, one hex per movement tick, then reverts to HOLD on arrival.
 	ATTACK_MOVE,  ## Same movement AND same on-contact engagement as MOVE — see this enum's own doc comment.
 	PATROL,       ## Loop through patrol_waypoints indefinitely, one leg at a time.
-	GARRISON,     ## Stand fast at the current hex, same as HOLD — the "stationary defense bonus" (design doc) isn't wired yet, needs Phase 5.4's combat stats to bonus something that doesn't exist yet either.
+	GARRISON,     ## Stand fast at the current hex, same as HOLD, but with two real payoffs HOLD doesn't get: Phase 2.5.4's healing (UnitOrderController._regen_if_friendly()) and Phase 4.1/5.6's incoming-damage reduction (CombatCoordinator._garrison_incoming_multiplier()), stacking further at night near a Searchlight Tower.
 }
 
 enum ZoneOfControlType {

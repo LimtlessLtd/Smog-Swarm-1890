@@ -4,8 +4,8 @@ extends Node
 ## Aggregates state out of BuildingManager / ResourceManager /
 ## LogisticsNetwork / FogOfWarManager / TechManager / DiscontentManager /
 ## WallManager / ReclamationManager / HordeManager / UnitManager /
-## TickManager into a single SaveGameData Resource and back again (design
-## doc Phase 2.8.2).
+## TerritoryController / TickManager into a single SaveGameData Resource and
+## back again (design doc Phase 2.8.2).
 ## Wired as a Main.tscn sibling via exported NodePaths, same pattern as
 ## LogisticsNetwork/FogOfWarManager — it owns none of that state, only
 ## reads and restores it.
@@ -47,6 +47,7 @@ const _UNSAFE_FILENAME_CHARS: Array[String] = [":", "/", "\\", "?", "*", "\"", "
 @export var reclamation_manager_path: NodePath
 @export var horde_manager_path: NodePath
 @export var unit_manager_path: NodePath
+@export var territory_controller_path: NodePath
 
 var _building_manager: BuildingManager
 var _resource_manager: ResourceManager
@@ -58,6 +59,7 @@ var _wall_manager: WallManager
 var _reclamation_manager: ReclamationManager
 var _horde_manager: HordeManager
 var _unit_manager: UnitManager
+var _territory_controller: TerritoryController
 
 func _ready() -> void:
 	if building_manager_path != NodePath():
@@ -80,6 +82,8 @@ func _ready() -> void:
 		_horde_manager = get_node(horde_manager_path)
 	if unit_manager_path != NodePath():
 		_unit_manager = get_node(unit_manager_path)
+	if territory_controller_path != NodePath():
+		_territory_controller = get_node(territory_controller_path)
 
 ## Every campaign with at least one save slot on disk, alphabetical. Empty if
 ## nothing has ever been saved yet.
@@ -199,6 +203,8 @@ func _build_save_data(campaign_name: String, slot_name: String) -> SaveGameData:
 		data.units = _unit_manager.get_save_entries()
 		data.next_unit_id = _unit_manager.get_next_id()
 		data.unit_rally_points = _unit_manager.get_rally_points_save_state()
+	if _territory_controller:
+		data.lost_territory_hexes.assign(_territory_controller.get_save_state().lost_hexes)
 
 	var tick_state := TickManager.get_save_state()
 	data.current_day = tick_state.current_day
@@ -211,10 +217,15 @@ func _build_save_data(campaign_name: String, slot_name: String) -> SaveGameData:
 ## terrain_feature/biome_type need to already reflect any past draining
 ## before anything else queries them — see ReclamationManager's own doc
 ## comment for why this is the one bit of terrain state saved at all), then
-## buildings (LogisticsNetwork/FogOfWarManager both react to
-## building_placed signals and recompute against whatever they currently
-## know), then supply lines (so LogisticsNetwork's own recompute sees the
-## full restored building set), then DiscontentManager (its region
+## TerritoryController (Phase 5.8 — a hex's District.is_contested state
+## needs to already reflect any past territorial loss before LogisticsNetwork
+## reads it, same "terrain-like state that doesn't regenerate from the seed"
+## reasoning ReclamationManager's own ordering already follows — see that
+## class's own doc comment), then buildings (LogisticsNetwork/FogOfWarManager
+## both react to building_placed signals and recompute against whatever they
+## currently know, including the just-restored territory state), then supply
+## lines (so LogisticsNetwork's own recompute sees the full restored
+## building set), then DiscontentManager (its region
 ## flood-fill, Phase 2.11, needs LogisticsNetwork's ZoC coverage already
 ## recomputed against the restored buildings/supply lines above), then
 ## WallManager (no dependency on the others, just grouped here), and
@@ -227,6 +238,8 @@ func _apply_save_data(data: SaveGameData) -> void:
 		_resource_manager.load_state(data.resource_stockpile, data.resource_storage_caps)
 	if _reclamation_manager:
 		_reclamation_manager.load_save_state(data.drained_hexes)
+	if _territory_controller:
+		_territory_controller.load_save_state(data.lost_territory_hexes)
 	if _building_manager:
 		_building_manager.load_save_entries(data.buildings, data.next_building_id)
 	if _logistics_network:

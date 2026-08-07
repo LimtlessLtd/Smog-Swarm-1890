@@ -126,11 +126,21 @@ func _prop_color(prop_type: GameEnums.PropType) -> Color:
 
 func _build_building_node(building: BuildingInstance, index: int) -> Node2D:
 	var box := Polygon2D.new()
-	box.color = BuildingVisuals.category_color(building.definition.category)
-	var half := 10.0
-	box.polygon = PackedVector2Array([Vector2(-half, -half), Vector2(half, -half), Vector2(half, half), Vector2(-half, half)])
+	if building.is_ruined:
+		# Phase 5.12: a jagged rubble silhouette, deliberately distinct from
+		# every intact building's clean square — "a visible scar", not just
+		# a recolored box.
+		box.color = BuildingVisuals.ruin_color()
+		box.polygon = _ruin_polygon()
+	else:
+		box.color = BuildingVisuals.category_color(building.definition.category)
+		var half := 10.0
+		box.polygon = PackedVector2Array([Vector2(-half, -half), Vector2(half, -half), Vector2(half, half), Vector2(-half, half)])
 	box.position = _resolved_building_position(building, index)
 	return box
+
+func _ruin_polygon() -> PackedVector2Array:
+	return PackedVector2Array([Vector2(-10, -6), Vector2(-4, -10), Vector2(3, -7), Vector2(10, -9), Vector2(9, 2), Vector2(4, 10), Vector2(-6, 8), Vector2(-9, 3)])
 
 ## Buildings placed through the plain hex-coordinate API (BuildingManager.place_building()
 ## with no explicit local_position) all default to the hex center, which

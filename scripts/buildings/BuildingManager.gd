@@ -26,10 +26,43 @@ extends Node
 ## region-scoped concept BuildingManager itself has no reason to compute)
 ## is consulted here too — its per-hex production penalty is applied to
 ## each instance's own output as part of the same daily loop.
+##
+## Phase 5.12 (Building Destruction & Ruins): damage_building() reduces a
+## BuildingInstance's own current_hp (BuildingDefinition.get_max_hp(), a
+## construction-cost-derived toughness — "same spirit as walls' own
+## toughness", design doc) and, at zero, flips is_ruined true — the
+## instance stays in _instances forever after (never removed, "a visible
+## scar rather than empty ground"), just skipped entirely by
+## _on_day_completed()'s upkeep/output/population tally. Whoever called
+## damage_building() (CombatCoordinator, Phase 5.4/5.9/5.10/5.12's siege
+## trigger) never needs to know about ruination itself — building_ruined
+## carries the population lost at that instant for HordeManager to convert
+## to a casualty (Phase 5.9), same "manager emits, HordeManager listens"
+## precedent civilians_starved already set. repair_building()/destroy_ruin()
+## are the other half — gated on the optional TerritoryController reference
+## ("Ruins are inert until the district is recaptured", design doc), same
+## "queryable without side effects" get_*_error() pattern every other
+## action in this project already follows.
 
 signal building_placed(instance: BuildingInstance)
 signal building_removed(instance: BuildingInstance)
 signal placement_rejected(building_type: GameEnums.BuildingType, coord: Vector2i, reason: String)
+
+## Design doc Phase 5.12. Fires on every damage_building() call, whether or
+## not it actually ruins the building this time — mirrors
+## WallManager.wall_segment_damaged's own "every hit, not just the fatal
+## one" shape.
+signal building_damaged(instance: BuildingInstance, amount: float)
+signal building_repaired(instance: BuildingInstance)
+signal repair_rejected(instance: BuildingInstance, reason: String)
+
+## Design doc Phase 5.12: "whatever current_population the building held at
+## the moment of destruction converts to zombies right there ... a Phase 5.9
+## casualty event, same as a starvation death, just triggered by direct
+## assault instead of hunger." HordeManager listens for this exactly the way
+## it already listens to civilians_starved — see that signal's own doc
+## comment for the precedent this follows.
+signal building_ruined(instance: BuildingInstance, lost_population: int)
 
 ## Design doc Phase 2.10.2: the day's food_demand/available_food ratio,
 ## recomputed every day_completed — a future HUD indicator or Phase 2.11's
@@ -67,10 +100,15 @@ const POPULATION_REGROWTH_PER_DAY: int = 1        ## Flat per-instance regrowth 
 ## per-hex production penalty (get_production_multiplier() query) entirely,
 ## same as every other optional manager reference in this class.
 @export var discontent_manager_path: NodePath
+## Optional — Phase 5.8/5.12's ruin-repair gate. Unset means repair_building()/
+## destroy_ruin() never check territory state at all (same "gracefully skip
+## it" convention as every other optional dependency here).
+@export var territory_controller_path: NodePath
 
 var _hex_grid_map: HexGridMap
 var _resource_manager: ResourceManager
 var _discontent_manager: DiscontentManager
+var _territory_controller: TerritoryController
 var _instances: Array[BuildingInstance] = []
 var _instances_by_hex: Dictionary = {}  # Vector2i -> Array[BuildingInstance]
 var _next_id: int = 1
@@ -82,6 +120,8 @@ func _ready() -> void:
 		_resource_manager = get_node(resource_manager_path)
 	if discontent_manager_path != NodePath():
 		_discontent_manager = get_node(discontent_manager_path)
+	if territory_controller_path != NodePath():
+		_territory_controller = get_node(territory_controller_path)
 	TickManager.day_completed.connect(_on_day_completed)
 	seed_starting_buildings()
 
@@ -202,8 +242,8 @@ func place_building(building_type: GameEnums.BuildingType, coord: Vector2i, loca
 ## load_save_entries() passes the actual saved value instead, since Phase
 ## 2.10.1 makes population real mutable state that can differ from that
 ## baseline after starvation deaths/regrowth.
-func _register_instance(definition: BuildingDefinition, coord: Vector2i, id: int, local_position: Vector2, advance_next_id: bool, current_population: int = -1) -> BuildingInstance:
-	var instance := BuildingInstance.new(definition, coord, id, local_position, current_population)
+func _register_instance(definition: BuildingDefinition, coord: Vector2i, id: int, local_position: Vector2, advance_next_id: bool, current_population: int = -1, current_hp: float = -1.0, is_ruined: bool = false) -> BuildingInstance:
+	var instance := BuildingInstance.new(definition, coord, id, local_position, current_population, current_hp, is_ruined)
 	if advance_next_id:
 		_next_id = id + 1
 	_instances.append(instance)
@@ -232,12 +272,97 @@ func remove_building(instance: BuildingInstance) -> void:
 		_instances_by_hex[instance.hex_coord].erase(instance)
 	building_removed.emit(instance)
 
+## Design doc Phase 5.12: reduces `instance.current_hp`, and at zero flips
+## `is_ruined = true` — stops producing/consuming/housing (see
+## _on_day_completed()'s own skip-ruined-instances guard) without removing
+## the instance from BuildingManager's records, "a visible scar rather than
+## empty ground" (design doc, decided). Mirrors WallManager.damage_segment()
+## exactly — same "manager mutates a passed-in Resource directly" shape.
+## A no-op against an already-ruined instance, same "can't re-breach a
+## breached wall segment" guard that class already has.
+func damage_building(instance: BuildingInstance, amount: float) -> void:
+	if not instance or instance.is_ruined:
+		return
+	instance.current_hp = maxf(instance.current_hp - amount, 0.0)
+	building_damaged.emit(instance, amount)
+	if instance.is_destroyed():
+		var lost_population := instance.current_population
+		instance.current_population = 0
+		instance.is_ruined = true
+		building_ruined.emit(instance, lost_population)
+
+## Design doc Phase 5.12: "cheaper than building it from scratch" — same
+## framing WallManager.get_repair_cost() uses for the wall equivalent,
+## reusing the same 50% fraction rather than inventing a second one.
+const REPAIR_COST_FRACTION: float = 0.5
+
+## Design doc Phase 5.12: "Ruins are inert until the district is
+## recaptured (Phase 5.8), at which point the player can repair a ruin
+## (rebuilds the original building) or destroy the ruin." Restores
+## current_hp to a fresh get_max_hp() and current_population to the
+## definition's own baseline — the same "seed from the definition" fresh-
+## placement convention BuildingInstance._init() already uses, rather than
+## a partial/regrowth-gated restore; a repaired building starts fully
+## staffed again, not empty and waiting on Phase 2.10.4's regrowth.
+func get_repair_error(instance: BuildingInstance) -> String:
+	if not instance or not instance.is_ruined:
+		return "This building isn't ruined."
+	if _territory_controller and _territory_controller.is_lost(instance.hex_coord):
+		return "%s's district must be recaptured before it can be repaired." % instance.definition.display_name
+	if _resource_manager and not _resource_manager.can_afford(_repair_cost(instance.definition)):
+		return "Not enough resources to repair %s." % instance.definition.display_name
+	return ""
+
+func can_repair_building(instance: BuildingInstance) -> bool:
+	return get_repair_error(instance).is_empty()
+
+func repair_building(instance: BuildingInstance) -> bool:
+	var error := get_repair_error(instance)
+	if not error.is_empty():
+		repair_rejected.emit(instance, error)
+		return false
+	if _resource_manager:
+		_resource_manager.spend(_repair_cost(instance.definition))
+	instance.current_hp = instance.definition.get_max_hp()
+	instance.is_ruined = false
+	instance.current_population = instance.definition.population_provided
+	building_repaired.emit(instance)
+	return true
+
+func _repair_cost(definition: BuildingDefinition) -> Dictionary:
+	var cost: Dictionary = {}
+	for resource_type in definition.construction_cost:
+		cost[resource_type] = float(definition.construction_cost[resource_type]) * REPAIR_COST_FRACTION
+	return cost
+
+## The other Phase 5.12 recapture option: clear a ruin's rubble outright
+## rather than rebuild it — same territory-recaptured gate as repair, no
+## resource cost either way (demolition, not construction). Reuses
+## remove_building() directly; no dedicated rejection signal since
+## building_removed already gives a caller everything it needs to know a
+## ruin is gone.
+func get_destroy_ruin_error(instance: BuildingInstance) -> String:
+	if not instance or not instance.is_ruined:
+		return "This building isn't ruined."
+	if _territory_controller and _territory_controller.is_lost(instance.hex_coord):
+		return "%s's district must be recaptured before its ruin can be cleared." % instance.definition.display_name
+	return ""
+
+func can_destroy_ruin(instance: BuildingInstance) -> bool:
+	return get_destroy_ruin_error(instance).is_empty()
+
+func destroy_ruin(instance: BuildingInstance) -> bool:
+	if not get_destroy_ruin_error(instance).is_empty():
+		return false
+	remove_building(instance)
+	return true
+
 ## Every placed instance reduced to its saveable footprint (Phase 2.8.1) —
 ## see BuildingSaveEntry for why the full BuildingDefinition isn't included.
 func get_save_entries() -> Array[BuildingSaveEntry]:
 	var result: Array[BuildingSaveEntry] = []
 	for instance in _instances:
-		result.append(BuildingSaveEntry.new(instance.definition.building_type, instance.hex_coord, instance.id, instance.local_position, instance.current_population))
+		result.append(BuildingSaveEntry.new(instance.definition.building_type, instance.hex_coord, instance.id, instance.local_position, instance.current_population, instance.current_hp, instance.is_ruined))
 	return result
 
 ## Restores placed instances from a save (Phase 2.8.2): clears whatever is
@@ -254,7 +379,7 @@ func load_save_entries(entries: Array[BuildingSaveEntry], next_id: int) -> void:
 		if not definition:
 			push_warning("BuildingManager: unknown building type %s in save data, skipping." % entry.building_type)
 			continue
-		_register_instance(definition, entry.hex_coord, entry.id, entry.local_position, false, entry.current_population)
+		_register_instance(definition, entry.hex_coord, entry.id, entry.local_position, false, entry.current_population, entry.current_hp, entry.is_ruined)
 	_next_id = next_id
 
 func _on_day_completed(_day_number: int) -> void:
@@ -266,6 +391,8 @@ func _on_day_completed(_day_number: int) -> void:
 	var total_population := 0
 
 	for instance in _instances:
+		if instance.is_ruined:
+			continue  ## Phase 5.12: a ruin stops producing/consuming/housing entirely — current_population was already zeroed the moment it ruined (damage_building()).
 		var definition := instance.definition
 		total_population += instance.current_population  ## Phase 2.10.1: real mutable population, not the static definition value.
 

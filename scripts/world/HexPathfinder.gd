@@ -38,6 +38,29 @@ const BASE_HEX_COST: float = 1.0
 ## usable.
 const LOGISTICS_EDGE_COST_MULTIPLIER: float = 0.5
 
+## Design doc Phase 2.12.1: each biome gets its own movement-cost multiplier
+## instead of every passable hex costing the flat BASE_HEX_COST — "Highland/
+## Wetland slower than Farmland/Moorland" (design doc's own worked example).
+## A balancing pass, not an architecture decision, same framing as
+## LOGISTICS_EDGE_COST_MULTIPLIER above; a biome with no entry here costs the
+## unmodified baseline. Applied to the DESTINATION hex of a step (moving
+## INTO dense terrain is what's slow, not leaving it) and stacks
+## multiplicatively with the logistics discount — a road through a highland
+## pass is still cheaper than the bare hillside beside it, just not as cheap
+## as a road through open farmland.
+##
+## Strategic scale only (HordeManager/UnitOrderController routing several
+## hexes across the map) — the design doc's own "applies at both scales"
+## aspiration also wants this at Tactical local movement within one
+## hydrated hex, but that's blocked on Phase 5.5's own still-unbuilt local
+## pathfinding (see that class's own doc comment); nothing to apply a
+## per-biome multiplier to there yet.
+const _BIOME_COST_MULTIPLIER: Dictionary = {
+	GameEnums.BiomeType.HIGHLAND: 1.6,  ## Elevated terrain — Pennine/Chiltern/Cotswold chokepoints.
+	GameEnums.BiomeType.WETLAND: 1.8,   ## Boggy going even where it's not outright impassable MARSH/PEAT_BOG.
+	GameEnums.BiomeType.WATERWAY: 1.4,  ## Fording a river/canal hex rather than bridging it.
+}
+
 ## A* search from `start` to `goal` over `hex_grid_map`'s cells, weighted by
 ## HexCell.is_passable() (impassable hexes — marsh/peat bog, see Phase 4.2's
 ## reclamation — are never entered, not even as a detour) and discounted
@@ -58,15 +81,18 @@ static func find_path(hex_grid_map: HexGridMap, start: Vector2i, goal: Vector2i,
 
 	# Standard A*: open_set is a cheap Vector2i -> true membership map (the
 	# frontier), g_score is the cheapest known cost from `start` to a given
-	# hex, f_score is g_score plus the hex-distance heuristic to `goal` (an
-	# admissible heuristic here — HexCoord.distance is the true minimum step
-	# count ignoring cost multipliers, which are all <= BASE_HEX_COST, so it
-	# never overestimates). A linear scan for the lowest f_score each
-	# iteration (_lowest_f_score) rather than a binary heap — no consumer
-	# exists yet to have a real performance profile against, and every other
-	# recompute in this codebase (LogisticsNetwork, FogOfWarManager) makes
-	# the same "cheap enough at this scale" call rather than optimizing
-	# ahead of an actual need.
+	# hex, f_score is g_score plus the hex-distance heuristic to `goal`.
+	# NOT strictly admissible once LOGISTICS_EDGE_COST_MULTIPLIER (0.5, below
+	# BASE_HEX_COST) or Phase 2.12.1's per-biome multipliers (some below 1.0
+	# too, e.g. any future fast-terrain entry) are in play — a long enough
+	# discounted route could in principle cost less than the plain hex-count
+	# heuristic assumes, which can occasionally steer A* away from the
+	# GLOBAL optimum toward "a" reachable, still-perfectly-valid path
+	# instead. Accepted, not fixed: same "cheap enough at this scale, no
+	# consumer has ever needed provably-optimal routing" call every other
+	# recompute in this codebase (LogisticsNetwork, FogOfWarManager) already
+	# makes over a real performance/precision profile, rather than a binary
+	# heap or a corrected heuristic ahead of an actual need.
 	var open_set: Dictionary = {start: true}
 	var came_from: Dictionary = {}          # Vector2i -> Vector2i
 	var g_score: Dictionary = {start: 0.0}  # Vector2i -> float
@@ -82,7 +108,7 @@ static func find_path(hex_grid_map: HexGridMap, start: Vector2i, goal: Vector2i,
 			var cell := hex_grid_map.get_cell(neighbor)
 			if not cell or not cell.is_passable():
 				continue
-			var tentative_g: float = g_score[current] + _step_cost(current, neighbor, logistics_network)
+			var tentative_g: float = g_score[current] + _step_cost(current, neighbor, cell, logistics_network)
 			if tentative_g < g_score.get(neighbor, INF):
 				came_from[neighbor] = current
 				g_score[neighbor] = tentative_g
@@ -91,12 +117,13 @@ static func find_path(hex_grid_map: HexGridMap, start: Vector2i, goal: Vector2i,
 
 	return []  # Frontier exhausted without reaching goal — unreachable (e.g. sealed off by impassable terrain).
 
-static func _step_cost(from: Vector2i, to: Vector2i, logistics_network: LogisticsNetwork) -> float:
+static func _step_cost(from: Vector2i, to: Vector2i, to_cell: HexCell, logistics_network: LogisticsNetwork) -> float:
+	var cost := BASE_HEX_COST * float(_BIOME_COST_MULTIPLIER.get(to_cell.biome_type, 1.0))
 	if logistics_network:
 		var segment := logistics_network.get_segment_between(from, to)
 		if segment and not segment.is_severed:
-			return BASE_HEX_COST * LOGISTICS_EDGE_COST_MULTIPLIER
-	return BASE_HEX_COST
+			return cost * LOGISTICS_EDGE_COST_MULTIPLIER
+	return cost
 
 static func _lowest_f_score(open_set: Dictionary, f_score: Dictionary) -> Vector2i:
 	var best: Vector2i

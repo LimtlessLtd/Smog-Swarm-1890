@@ -49,13 +49,24 @@ const FORCED_MELEE_DAMAGE_TAKEN_MULTIPLIER: float = 1.5 ## Incoming damage while
 ## today, but this signature doesn't care what produced it. Applied to
 ## OUTGOING damage only, before the forced-melee multiplier below.
 ##
+## `incoming_damage_multiplier` (default 1.0) is the same shape of
+## caller-supplied scalar, applied to INCOMING damage instead — Phase
+## 5.6/4.1's "stationary defense bonus"/"Searchlight Tower ... granting
+## combat bonuses to garrisoned units", both previously blocked on this
+## exact input not existing. `CombatCoordinator` derives it from whether
+## the attacker's own order is GARRISON (and, further, whether a
+## Searchlight Tower lights the position at night); this signature again
+## doesn't care what produced it — same "manager mutates a passed-in
+## Resource, engine stays ignorant of why" split every other combat
+## multiplier here already keeps.
+##
 ## Returns a plain Dictionary — a single transient computation result, not
 ## persistent state anything needs to save, so this deliberately isn't a
 ## new Resource/RefCounted subtype: `damage_dealt` (to the defender),
 ## `defender_hp_remaining`, `attacker_hp_remaining`, and
 ## `attacker_forced_melee` (whether the Gunpowder-depletion penalty applied
 ## this round).
-static func resolve_engagement(attacker: UnitInstance, attacker_gunpowder_available: bool, defender_hp: float, defender_damage: float, damage_multiplier: float = 1.0) -> Dictionary:
+static func resolve_engagement(attacker: UnitInstance, attacker_gunpowder_available: bool, defender_hp: float, defender_damage: float, damage_multiplier: float = 1.0, incoming_damage_multiplier: float = 1.0) -> Dictionary:
 	var forced_melee := attacker.definition.requires_gunpowder and not attacker_gunpowder_available
 
 	var outgoing_damage := attacker.definition.attack_damage * damage_multiplier
@@ -65,6 +76,7 @@ static func resolve_engagement(attacker: UnitInstance, attacker_gunpowder_availa
 	var incoming_damage := defender_damage
 	if forced_melee:
 		incoming_damage *= FORCED_MELEE_DAMAGE_TAKEN_MULTIPLIER
+	incoming_damage *= incoming_damage_multiplier
 
 	var defender_hp_remaining := maxf(defender_hp - outgoing_damage, 0.0)
 	attacker.current_hp = maxf(attacker.current_hp - incoming_damage, 0.0)
