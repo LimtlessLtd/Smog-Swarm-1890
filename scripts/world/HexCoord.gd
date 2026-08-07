@@ -5,11 +5,42 @@ extends RefCounted
 ## Reference algorithms: https://www.redblobgames.com/grids/hexagons/
 ##
 ## Each hex represents a ~5x5 mile macro-region (see design overview), but
-## that scale is a gameplay/world-building fact, not a rendering one — the
-## pixel radius below (HEX_SIZE) is purely a placeholder visual scale until
-## real art defines tile dimensions.
-
-const HEX_SIZE: float = 64.0
+## that scale is a gameplay/world-building fact, not a literal miles-per-unit
+## conversion — the pixel radius below (HEX_SIZE) is still a placeholder
+## visual scale until real art defines tile dimensions.
+##
+## Phase 2.5.6 (grilling session — "25 square miles is a big place"):
+## increased 8x from the original 64.0 so a hydrated hex's own local space
+## (Phase 2.5 Tactical view — props, buildings, and Phase 2.5.4's future
+## squads/zombies) has genuine room to spread out and read as spatially
+## distinct, and enough room to actually pan across at close zoom instead of
+## the whole hex fitting inside one small diorama. Chosen as a straight
+## world-space scale multiplier rather than a dual-coordinate-space/
+## floating-origin rearchitecture: every system that places or reads a world
+## position already goes through this class (axial_to_world/world_to_axial),
+## so a single constant change keeps Strategic click/render math, the
+## minimap, fog of war and every marker system automatically consistent —
+## nothing about them needed to change. CameraController's zoom-related
+## constants (min_zoom/max_zoom/tactical_zoom_threshold/zoom_step) and
+## Main.tscn's starting camera zoom were all scaled by 1/8 alongside this
+## (Camera2D's visible world width is viewport/zoom.x — see
+## CameraController's own zoom-direction doc comment — so a bigger world
+## needs SMALLER zoom values to keep framing the same fraction of it),
+## pan_speed was scaled by 8x^2 = 64x to compensate (see its own doc comment
+## on CameraController), and Main.tscn's starting camera *position* was
+## scaled by the same 8x as HEX_SIZE itself (position is a world coordinate,
+## not a zoom value — axial_to_world scales linearly with HEX_SIZE, so any
+## previously-correct position stays correct after a uniform multiply).
+## Together these preserve the exact same Strategic-view experience (same
+## relative pan speed, same fraction of the map visible at a given zoom
+## level) even though the world-space numbers underneath got bigger.
+## Verified safe against float precision: the full 40x28 hex map now spans
+## roughly 48,000x21,500 world units at its extremes, comfortably under the
+## ~100,000 unit range where single-precision float jitter typically starts
+## to show. If the map ever grows dramatically larger than that, revisit
+## with a real floating-origin camera rebase instead of pushing this
+## constant further.
+const HEX_SIZE: float = 512.0
 
 const NEIGHBOR_DIRECTIONS: Array[Vector2i] = [
 	Vector2i(1, 0), Vector2i(1, -1), Vector2i(0, -1),

@@ -32,11 +32,11 @@ extends Camera2D
 ## + value needed to move to the other side of the default zoom.
 
 @export var world_root_path: NodePath
-@export var pan_speed: float = 800.0
-@export var min_zoom: float = 0.03  ## The most zoomed-OUT allowed value (smallest zoom.x = largest visible area) — see tactical_zoom_threshold.
-@export var max_zoom: float = 2.5  ## The most zoomed-IN allowed value — low enough to fill the screen with roughly one hex's ~5x5 mile footprint at HEX_SIZE's original placeholder scale.
-@export var zoom_step: float = 0.1
-@export var tactical_zoom_threshold: float = 1.5  ## zoom.x at/above this = Tactical view (Camera2D: LARGER zoom = more zoomed in — see the class doc comment).
+@export var pan_speed: float = 51200.0  ## Phase 2.5.6: scaled by 8x^2 = 64x alongside HexCoord.HEX_SIZE's 8x increase (800 -> 51,200). Effective world-space pan speed is pan_speed*zoom.x, and since visible width is viewport/zoom.x, the zoom bounds below had to shrink by the same 8x factor HEX_SIZE grew by, which on its own would have made panning feel 8x SLOWER relative to hex size; squaring the correction here (8x for the bigger world, another 8x to cancel the shrunk zoom.x) keeps "seconds to cross one hex while panning" exactly unchanged.
+@export var min_zoom: float = 0.00375  ## The most zoomed-OUT allowed value. Phase 2.5.6: scaled by 1/8 alongside HexCoord.HEX_SIZE's 8x increase (0.03 -> 0.00375) — visible world width is viewport/zoom.x, so a bigger world needs a SMALLER zoom value to keep framing the same fraction of it — see tactical_zoom_threshold.
+@export var max_zoom: float = 0.3125  ## The most zoomed-IN allowed value. Phase 2.5.6: scaled by 1/8 alongside HexCoord.HEX_SIZE's 8x increase (2.5 -> 0.3125) — same viewport/zoom.x reasoning as min_zoom, so full zoom-in still frames the same fraction of a hex as before the world-space scale-up.
+@export var zoom_step: float = 0.0125  ## Phase 2.5.6: scaled by 1/8 alongside HexCoord.HEX_SIZE's 8x increase (0.1 -> 0.0125) so one scroll click still feels like the same proportional zoom change.
+@export var tactical_zoom_threshold: float = 0.1875  ## zoom.x at/above this = Tactical view (Camera2D: LARGER zoom = more zoomed in — see the class doc comment). Phase 2.5.6: scaled by 1/8 alongside HexCoord.HEX_SIZE's 8x increase (1.5 -> 0.1875) — the Strategic/Tactical cut still happens at the same relative zoom level.
 @export var perspective_tween_duration: float = 0.6
 @export var isometric_y_scale: float = 0.577
 @export var isometric_rotation_degrees: float = 45.0
