@@ -30,6 +30,51 @@ static func negative_tone() -> AudioStreamWAV:
 		{"freq": 155.0, "duration": 0.12},
 	])
 
+## Design doc Phase 6.2's AlertManager — a calmer, level double-beep for
+## GameEnums.EventSeverity.WARNING world events (a unit takes a hit and
+## survives, food dips under 100%, a resource stockpile runs dry).
+## Deliberately distinct from negative_tone() above (a UI-rejection buzz,
+## lower and harsher) and from critical_tone() below (this doesn't escalate
+## in pitch) — a different context should sound different, not just louder.
+static func warning_tone() -> AudioStreamWAV:
+	return _build_tone([
+		{"freq": 440.0, "duration": 0.1},
+		{"freq": 440.0, "duration": 0.1},
+	])
+
+## The urgent counterpart for GameEnums.EventSeverity.CRITICAL world events
+## (a wall breaches, a unit or building is destroyed, territory is lost, a
+## large horde is spotted, the colony starves) — a three-note ascending
+## alarm, the most insistent tone in this project, matching how much more it
+## costs to miss one of these at 1000x game speed.
+static func critical_tone() -> AudioStreamWAV:
+	return _build_tone([
+		{"freq": 330.0, "duration": 0.12},
+		{"freq": 415.0, "duration": 0.12},
+		{"freq": 523.0, "duration": 0.18},
+	])
+
+## Design doc Phase 5.1/6.1's "Nightfall in 04:15" countdown finally has a
+## sound at its own 2-minute warning mark: a slow, low two-toll approximation
+## of a "Church bell toll" (design doc's own example). A code-synthesized
+## square wave, not a sampled bell — same placeholder convention as every
+## other tone here, swappable for real audio once Phase 6.3's art/audio
+## pipeline exists.
+static func sunset_chime() -> AudioStreamWAV:
+	return _build_tone([
+		{"freq": 196.0, "duration": 0.4},
+		{"freq": 196.0, "duration": 0.5},
+	])
+
+## The dawn counterpart — a bright ascending three-note warble approximating
+## a rooster call (design doc's own example), same placeholder convention.
+static func sunrise_chime() -> AudioStreamWAV:
+	return _build_tone([
+		{"freq": 660.0, "duration": 0.08},
+		{"freq": 880.0, "duration": 0.08},
+		{"freq": 990.0, "duration": 0.14},
+	])
+
 static func _build_tone(segments: Array) -> AudioStreamWAV:
 	var pcm := PackedByteArray()
 	for segment in segments:

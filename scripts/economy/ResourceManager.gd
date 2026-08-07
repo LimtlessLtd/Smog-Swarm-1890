@@ -85,6 +85,21 @@ func add(resource_type: GameEnums.ResourceType, amount: float) -> void:
 	_stockpile[resource_type] = minf(get_amount(resource_type) + amount, get_storage_cap(resource_type))
 	resources_changed.emit(get_full_stockpile())
 
+## An unconditional decrement — distinct from spend(), which enforces
+## can_afford() and refuses the WHOLE transaction if it isn't. Building
+## Phase 2.2's Energy grid-allocation ledger needs this: a power PRODUCER
+## ruining while its capacity is still allocated to live consumers should
+## show as a real deficit (a negative stockpile) — the same honest "you're
+## short" signal any other resource running low already gives, not
+## silently blocked or floored to zero the way a player-initiated spend()
+## should be. No storage-cap clamp either, for the same reason add() clamps
+## at the cap but this doesn't clamp at 0 — the cap models a maximum, not a
+## minimum. Not intended for ordinary player-facing costs; use spend() for
+## those.
+func remove(resource_type: GameEnums.ResourceType, amount: float) -> void:
+	_stockpile[resource_type] = get_amount(resource_type) - amount
+	resources_changed.emit(get_full_stockpile())
+
 ## Called once per in-game day (by BuildingManager, driven off
 ## TickManager.day_completed) with the totals every placed building consumed
 ## and produced that day. Upkeep is applied first; a resource that can't

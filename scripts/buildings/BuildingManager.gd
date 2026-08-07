@@ -209,6 +209,8 @@ func get_placement_error(building_type: GameEnums.BuildingType, coord: Vector2i)
 		return "%s needs better soil than this hex has." % definition.display_name
 	if _resource_manager and not _resource_manager.can_afford(definition.construction_cost):
 		return "Not enough resources to build %s." % definition.display_name
+	if _resource_manager and not _resource_manager.can_afford(_construction_energy_cost(definition)):
+		return "Not enough Energy capacity to build %s." % definition.display_name
 	return ""
 
 func can_place_building(building_type: GameEnums.BuildingType, coord: Vector2i) -> bool:
@@ -228,6 +230,7 @@ func place_building(building_type: GameEnums.BuildingType, coord: Vector2i, loca
 		_resource_manager.spend(definition.construction_cost)
 		for resource_type in definition.storage_bonus:
 			_resource_manager.add_storage_cap(resource_type, float(definition.storage_bonus[resource_type]))
+		_apply_construction_energy(definition)
 
 	return _register_instance(definition, coord, _next_id, local_position, true)
 
@@ -289,7 +292,65 @@ func damage_building(instance: BuildingInstance, amount: float) -> void:
 		var lost_population := instance.current_population
 		instance.current_population = 0
 		instance.is_ruined = true
+		_refund_construction_energy(instance.definition)
 		building_ruined.emit(instance, lost_population)
+
+## --- Energy grid allocation (design doc, decided) --------------------------
+##
+## Energy is deliberately NOT a recurring daily drain/income like Food or
+## Gunpowder — a building's ENERGY entry in daily_upkeep/daily_output (see
+## those fields' own doc comments on BuildingDefinition) is a one-time grid
+## allocation: a consumer PAYS it once, when the building starts drawing
+## power (fresh construction, or a repair reconnecting a ruin); a producer
+## GRANTS it once, when the building starts contributing (same two
+## moments). Both reverse — consumer refunded, producer's contribution
+## withdrawn — the instant the building stops drawing/contributing (ruin).
+## `_on_day_completed()` below explicitly skips ResourceType.ENERGY in its
+## daily tally so these entries are never ALSO drained/produced per day —
+## this pair of methods is the only place ENERGY moves for these buildings.
+##
+## Read directly from the BuildingDefinition rather than
+## BuildingInstance.get_effective_output(): none of today's ENERGY
+## producers/consumers have soil_fertility_scales_output, and a one-time
+## grid allocation shouldn't fluctuate with a per-day Discontent production
+## penalty the way a recurring daily output would — it's a capacity number,
+## not a harvest.
+func _construction_energy_cost(definition: BuildingDefinition) -> Dictionary:
+	var amount := float(definition.daily_upkeep.get(GameEnums.ResourceType.ENERGY, 0.0))
+	return {GameEnums.ResourceType.ENERGY: amount} if amount > 0.0 else {}
+
+## Called once, at the moment a building starts drawing/contributing power —
+## fresh placement (place_building()) or a ruin being reconnected
+## (repair_building()). Affordability for the consumer side is the caller's
+## job (get_placement_error()/get_repair_error() both already check
+## _construction_energy_cost() before spending anything) — this method
+## itself just performs the transaction.
+func _apply_construction_energy(definition: BuildingDefinition) -> void:
+	if not _resource_manager:
+		return
+	var cost := _construction_energy_cost(definition)
+	if not cost.is_empty():
+		_resource_manager.spend(cost)
+	var granted := float(definition.daily_output.get(GameEnums.ResourceType.ENERGY, 0.0))
+	if granted > 0.0:
+		_resource_manager.add(GameEnums.ResourceType.ENERGY, granted)
+
+## The exact reverse of _apply_construction_energy() — called the instant a
+## building ruins (damage_building(), above): a consumer's allocation is
+## freed back to the grid (ResourceManager.add(), always succeeds), a
+## producer's contribution is withdrawn (ResourceManager.remove(),
+## deliberately unconditional/uncapped — see that method's own doc comment
+## for why a producer ruining while its capacity is still allocated to live
+## consumers should be allowed to show as a real deficit).
+func _refund_construction_energy(definition: BuildingDefinition) -> void:
+	if not _resource_manager:
+		return
+	var refund := float(definition.daily_upkeep.get(GameEnums.ResourceType.ENERGY, 0.0))
+	if refund > 0.0:
+		_resource_manager.add(GameEnums.ResourceType.ENERGY, refund)
+	var withdrawn := float(definition.daily_output.get(GameEnums.ResourceType.ENERGY, 0.0))
+	if withdrawn > 0.0:
+		_resource_manager.remove(GameEnums.ResourceType.ENERGY, withdrawn)
 
 ## Design doc Phase 5.12: "cheaper than building it from scratch" — same
 ## framing WallManager.get_repair_cost() uses for the wall equivalent,
@@ -311,6 +372,12 @@ func get_repair_error(instance: BuildingInstance) -> String:
 		return "%s's district must be recaptured before it can be repaired." % instance.definition.display_name
 	if _resource_manager and not _resource_manager.can_afford(_repair_cost(instance.definition)):
 		return "Not enough resources to repair %s." % instance.definition.display_name
+	# Full amount, not REPAIR_COST_FRACTION — repairing reconnects the SAME
+	# operational power draw a fresh construction would (see
+	# _apply_construction_energy()'s own doc comment), not half of one; the
+	# 50% discount only ever applied to physical rebuilding material.
+	if _resource_manager and not _resource_manager.can_afford(_construction_energy_cost(instance.definition)):
+		return "Not enough Energy capacity to repair %s." % instance.definition.display_name
 	return ""
 
 func can_repair_building(instance: BuildingInstance) -> bool:
@@ -323,6 +390,7 @@ func repair_building(instance: BuildingInstance) -> bool:
 		return false
 	if _resource_manager:
 		_resource_manager.spend(_repair_cost(instance.definition))
+		_apply_construction_energy(instance.definition)
 	instance.current_hp = instance.definition.get_max_hp()
 	instance.is_ruined = false
 	instance.current_population = instance.definition.population_provided
@@ -397,12 +465,15 @@ func _on_day_completed(_day_number: int) -> void:
 		total_population += instance.current_population  ## Phase 2.10.1: real mutable population, not the static definition value.
 
 		for resource_type in definition.daily_upkeep:
+			if resource_type == GameEnums.ResourceType.ENERGY:
+				continue  ## A one-time grid allocation now (see _apply_construction_energy()), not a daily drain.
 			consumed[resource_type] = consumed.get(resource_type, 0.0) + float(definition.daily_upkeep[resource_type])
 
 		var cell: HexCell = null
 		if _hex_grid_map:
 			cell = _hex_grid_map.get_cell(instance.hex_coord)
 		var output := instance.get_effective_output(cell)
+		output.erase(GameEnums.ResourceType.ENERGY)  ## Same exception, output side — a one-time grid contribution, not a daily yield.
 
 		# Design doc 2.11.1 Consequences: a high-Discontent region's own
 		# buildings take a production penalty — applied per-instance, here,

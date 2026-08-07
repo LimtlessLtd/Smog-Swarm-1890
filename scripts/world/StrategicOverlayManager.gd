@@ -32,6 +32,14 @@ extends Node2D
 ## HexGridMap and LocalDetailManager in Main.tscn — draws its icons on top
 ## by plain sibling order.
 
+## Design doc Phase 6.2's EventManager: fires whenever a horde transitions
+## INTO live-tracking (a fresh spot, or a ghost re-spotted) — see
+## _reveal_live_marker()'s own doc comment for exactly which call sites that
+## covers. Already implicitly filtered to "marker-worthy" hordes
+## (size >= HORDE_MARKER_MIN_SIZE below) — EventManager reuses that filter
+## rather than re-deriving "dangerous enough to interrupt play" itself.
+signal horde_spotted(horde: Horde)
+
 ## A consistent "friendly unit" color, distinct from any BuildingVisuals
 ## category color and shaped differently (a circle vs. buildings'
 ## triangle) — same accessibility principle BuildPlacementController's own
@@ -59,6 +67,19 @@ const HORDE_DIRECTION_LENGTH := 20.0
 ## which hordes qualify for a marker in the first place.
 const HORDE_MARKER_MIN_SIZE: int = 100
 
+## Design doc Phase 2.7.5 — a pulsing marker at the hex under attack.
+## **Simplification, documented:** the design doc's own wording is "cleared
+## once the threat resolves"; tracking that precisely would need every
+## combat-adjacent system (CombatCoordinator, WallManager, BuildingManager)
+## to also signal "this specific threat is over", none of which exist today.
+## A fixed-duration pulse — re-triggered (timer restarted, not stacked) by
+## any further COMBAT event at the same hex while it's still showing — reads
+## as "notice, then fade" without that plumbing, close enough to the
+## design doc's intent for a first pass.
+const ATTACK_ALERT_COLOR := Color(0.95, 0.75, 0.1, 0.9)  ## Amber ring — distinct from buildings' triangle, units' filled circle, and hordes' filled diamond (shape-and-color, never color alone).
+const ATTACK_ALERT_RADIUS := 22.0
+const ATTACK_ALERT_SECONDS: float = 8.0
+
 @export var hex_grid_map_path: NodePath
 @export var building_manager_path: NodePath
 @export var unit_manager_path: NodePath
@@ -66,6 +87,7 @@ const HORDE_MARKER_MIN_SIZE: int = 100
 @export var horde_manager_path: NodePath
 @export var fog_of_war_manager_path: NodePath  ## Required for horde markers to do anything — without it every horde is treated as never-spotted (see _is_visible()).
 @export var camera_path: NodePath
+@export var event_manager_path: NodePath  ## Optional — without it, COMBAT events simply don't pulse a marker (Phase 6.2's EventManager is the source; see _on_event_raised()).
 
 var _hex_grid_map: HexGridMap
 var _building_manager: BuildingManager
@@ -81,6 +103,8 @@ var _frontier_markers: Dictionary = {}  # Vector2i -> Node2D
 var _horde_markers: Dictionary = {}            # int (Horde.id) -> Node2D (container: "Body" Polygon2D + "Direction" Line2D)
 var _horde_live: Dictionary = {}               # int (Horde.id) -> bool; true while live-tracking a VISIBLE hex, false once ghosted
 var _horde_last_known_coord: Dictionary = {}   # int (Horde.id) -> Vector2i; live position while tracked, frozen ghost position once not
+
+var _attack_markers: Dictionary = {}  # Vector2i -> {"node": Node2D, "timer": Timer}
 
 func _ready() -> void:
 	if hex_grid_map_path != NodePath():
@@ -119,6 +143,9 @@ func _ready() -> void:
 		_camera = get_node(camera_path)
 		_camera.tactical_mode_changed.connect(_on_tactical_mode_changed)
 		visible = not _camera.is_tactical_zoom()
+	if event_manager_path != NodePath():
+		var event_manager: EventManager = get_node(event_manager_path)
+		event_manager.event_raised.connect(_on_event_raised)
 	_refresh_frontier_markers()
 
 func _on_tactical_mode_changed(is_tactical: bool) -> void:
@@ -281,6 +308,7 @@ func _reveal_live_marker(horde: Horde, coord: Vector2i) -> void:
 	(marker.get_node("Direction") as Line2D).visible = false
 	_horde_live[horde.id] = true
 	_horde_last_known_coord[horde.id] = coord
+	horde_spotted.emit(horde)  ## Design doc Phase 6.2 — see this signal's own doc comment for why every call site here qualifies as "newly spotted".
 
 func _update_live_marker_position(horde: Horde, coord: Vector2i) -> void:
 	var marker: Node2D = _horde_markers.get(horde.id)
@@ -360,3 +388,57 @@ func _build_frontier_marker(coord: Vector2i) -> Node2D:
 	marker.position = HexCoord.axial_to_world(coord)
 	marker.points = HexCoord.corner_points(Vector2.ZERO)
 	return marker
+
+## --- Under-Attack Alerts (Phase 2.7.5) -------------------------------------
+
+## EventManager.event_raised's own COMBAT category already covers exactly
+## what 2.7.5 asks for (a wall breach, a unit engaged, a building ruined) —
+## every one of those carries a real hex_coord (see EventManager's own
+## handlers), so no further filtering is needed beyond the category check.
+func _on_event_raised(event: GameEvent) -> void:
+	if event.category == GameEnums.EventCategory.COMBAT:
+		_pulse_attack_marker(event.hex_coord)
+
+## Creates a pulsing ring at `coord`, or — if one's already showing there —
+## just restarts its clear-timer rather than stacking a second marker.
+func _pulse_attack_marker(coord: Vector2i) -> void:
+	var existing: Dictionary = _attack_markers.get(coord, {})
+	if not existing.is_empty():
+		(existing["timer"] as Timer).start()
+		return
+	var ring := _build_attack_ring()
+	ring.position = HexCoord.axial_to_world(coord)
+	add_child(ring)
+	_start_attack_ring_pulse(ring)
+
+	var timer := Timer.new()
+	timer.one_shot = true
+	timer.wait_time = ATTACK_ALERT_SECONDS
+	add_child(timer)
+	timer.timeout.connect(_on_attack_marker_timeout.bind(coord))
+	timer.start()
+
+	_attack_markers[coord] = {"node": ring, "timer": timer}
+
+func _on_attack_marker_timeout(coord: Vector2i) -> void:
+	var entry: Dictionary = _attack_markers.get(coord, {})
+	if not entry.is_empty():
+		(entry["node"] as Node2D).queue_free()
+		(entry["timer"] as Timer).queue_free()
+	_attack_markers.erase(coord)
+
+func _build_attack_ring() -> Line2D:
+	var ring := Line2D.new()
+	ring.width = 4.0
+	ring.default_color = ATTACK_ALERT_COLOR
+	ring.closed = true
+	ring.points = _circle_points(ATTACK_ALERT_RADIUS, 16)
+	return ring
+
+## `ring` must already be inside the tree (create_tween() requires it) —
+## called right after add_child() above, never before.
+func _start_attack_ring_pulse(ring: Line2D) -> void:
+	var tween := ring.create_tween()
+	tween.set_loops()
+	tween.tween_property(ring, "modulate:a", 0.25, 0.5)
+	tween.tween_property(ring, "modulate:a", 1.0, 0.5)
