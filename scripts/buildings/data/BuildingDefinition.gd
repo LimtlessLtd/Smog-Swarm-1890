@@ -13,8 +13,21 @@ extends Resource
 @export var category: GameEnums.BuildingCategory = GameEnums.BuildingCategory.HOUSING_CIVIL
 
 @export var construction_cost: Dictionary = {}  ## GameEnums.ResourceType -> int, paid once on placement.
-@export var daily_upkeep: Dictionary = {}       ## GameEnums.ResourceType -> float, drained every day_completed.
-@export var daily_output: Dictionary = {}       ## GameEnums.ResourceType -> float, produced every day_completed.
+## GameEnums.ResourceType -> float, drained every day_completed — EXCEPT
+## ResourceType.ENERGY, a deliberate special case (design doc, decided):
+## Energy isn't a recurring drain at all, it's a one-time grid allocation
+## taken once at construction/repair and refunded the instant the building
+## ruins. Reuses this same field (rather than a dedicated one) since it's
+## still "what this building needs to operate," just settled once instead
+## of every day — see BuildingManager._apply_construction_energy()'s own
+## doc comment for the full mechanism. Every OTHER resource type here still
+## means exactly what the field name says.
+@export var daily_upkeep: Dictionary = {}
+## GameEnums.ResourceType -> float, produced every day_completed — same
+## ENERGY exception as daily_upkeep above, mirrored: an ENERGY entry here is
+## a one-time grid contribution granted at construction/repair and
+## withdrawn on ruin, not a daily income.
+@export var daily_output: Dictionary = {}
 @export var storage_bonus: Dictionary = {}      ## GameEnums.ResourceType -> float, added to ResourceManager's cap once on placement.
 
 @export var population_provided: int = 0  ## Housing only; drives colony-wide Food upkeep (see BuildingManager.FOOD_PER_POPULATION).
