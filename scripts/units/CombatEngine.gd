@@ -42,16 +42,23 @@ const FORCED_MELEE_DAMAGE_TAKEN_MULTIPLIER: float = 1.5 ## Incoming damage while
 ## is true: Toxophilite and every melee/special unit fight at full strength
 ## regardless of Gunpowder stock, by design.
 ##
+## `damage_multiplier` (default 1.0, i.e. no effect) is likewise a plain
+## caller-supplied float, not a live reference to whatever computed it —
+## `CombatCoordinator` derives it from `UnitMorale.get_damage_multiplier()`
+## (Phase 5.7's morale penalty and veterancy bonus, folded into one number)
+## today, but this signature doesn't care what produced it. Applied to
+## OUTGOING damage only, before the forced-melee multiplier below.
+##
 ## Returns a plain Dictionary — a single transient computation result, not
 ## persistent state anything needs to save, so this deliberately isn't a
 ## new Resource/RefCounted subtype: `damage_dealt` (to the defender),
 ## `defender_hp_remaining`, `attacker_hp_remaining`, and
 ## `attacker_forced_melee` (whether the Gunpowder-depletion penalty applied
 ## this round).
-static func resolve_engagement(attacker: UnitInstance, attacker_gunpowder_available: bool, defender_hp: float, defender_damage: float) -> Dictionary:
+static func resolve_engagement(attacker: UnitInstance, attacker_gunpowder_available: bool, defender_hp: float, defender_damage: float, damage_multiplier: float = 1.0) -> Dictionary:
 	var forced_melee := attacker.definition.requires_gunpowder and not attacker_gunpowder_available
 
-	var outgoing_damage := attacker.definition.attack_damage
+	var outgoing_damage := attacker.definition.attack_damage * damage_multiplier
 	if forced_melee:
 		outgoing_damage *= FORCED_MELEE_DAMAGE_MULTIPLIER
 

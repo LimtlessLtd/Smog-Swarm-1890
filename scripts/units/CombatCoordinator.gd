@@ -58,18 +58,30 @@ extends Node
 ## mode, only about deliberately seeking a fight out (a targeting/UI
 ## concern for a future order-issuing screen, Phase 6+, not a resolution one).
 ##
+## **Phase 5.7 (Morale & Veterancy):** `UnitMorale.get_damage_multiplier()`
+## folds a unit's current morale (HP/equipment/rank/tier) and veterancy
+## bonus (rank alone) into the one scalar `CombatEngine.resolve_engagement()`
+## accepts as `damage_multiplier` — computed fresh per engagement, never
+## cached. A win that destroys a Horde outright increments
+## `UnitInstance.kill_count` (`UnitMorale.get_rank()`'s own doc comment
+## explains why "destroys a Horde" is the decided definition of a kill).
+## `CombatCoordinator` is the only thing that references both `CombatEngine`
+## and `UnitMorale` — neither references the other or this class back.
+##
 ## **Still NOT implemented:**
 ##   - Phase 5.10's ATTACKING state, wall-segment targeting, and Phase
 ##     5.8's territory capture — this resolves an engagement wherever units
 ##     and a horde meet, it doesn't make a horde seek one out, target a
 ##     wall segment, or flip district control on a win/loss.
-##   - Combat bonuses (Searchlight Tower night defense, Garrison orders'
-##     "stationary defense bonus", veterancy) — CombatEngine has no inputs
-##     for any of these yet, so none apply here either.
+##   - Combat bonuses beyond morale/veterancy (Searchlight Tower night
+##     defense, Garrison orders' "stationary defense bonus") — CombatEngine
+##     has no inputs for either yet, so neither applies here either.
 ##   - Building-vs-horde combat (a horde besieging an undefended settlement
 ##     directly) — this only resolves engagements against a UnitInstance;
 ##     Phase 5.12's building HP/ruins state doesn't exist yet to be a
 ##     defender_hp source of its own.
+##   - Phase 5.7's own "reasonable fifth" morale input (a severe famine
+##     ratio) — see UnitMorale's own doc comment for why it's not wired.
 
 signal engagement_resolved(instance: UnitInstance, horde: Horde, result: Dictionary)
 
@@ -122,12 +134,15 @@ func _engage(instance: UnitInstance, horde: Horde) -> void:
 	if _resource_manager:
 		gunpowder_available = _resource_manager.get_amount(GameEnums.ResourceType.GUNPOWDER) > 0.0
 
-	var result := CombatEngine.resolve_engagement(instance, gunpowder_available, horde.get_combat_hp(), horde.get_combat_damage())
+	var damage_multiplier := UnitMorale.get_damage_multiplier(instance, gunpowder_available)
+	var result := CombatEngine.resolve_engagement(instance, gunpowder_available, horde.get_combat_hp(), horde.get_combat_damage(), damage_multiplier)
 	horde.apply_remaining_hp(result.defender_hp_remaining)
 	engagement_resolved.emit(instance, horde, result)
 
-	if horde.size <= 0 and _horde_manager:
-		_horde_manager.remove_horde(horde)
+	if horde.size <= 0:
+		instance.kill_count += 1  # Phase 5.7: destroying a Horde outright is the decided definition of "a kill" — see UnitMorale.get_rank()'s own doc comment.
+		if _horde_manager:
+			_horde_manager.remove_horde(horde)
 
 	if instance.is_destroyed():
 		if _horde_manager:
