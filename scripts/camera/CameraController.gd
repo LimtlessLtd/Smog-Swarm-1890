@@ -37,11 +37,23 @@ extends Camera2D
 @export var max_zoom: float = 0.3125  ## The most zoomed-IN allowed value. Phase 2.5.6: scaled by 1/8 alongside HexCoord.HEX_SIZE's 8x increase (2.5 -> 0.3125) — same viewport/zoom.x reasoning as min_zoom, so full zoom-in still frames the same fraction of a hex as before the world-space scale-up.
 @export var zoom_step: float = 0.0125  ## Phase 2.5.6: scaled by 1/8 alongside HexCoord.HEX_SIZE's 8x increase (0.1 -> 0.0125) so one scroll click still feels like the same proportional zoom change.
 @export var tactical_zoom_threshold: float = 0.1875  ## zoom.x at/above this = Tactical view (Camera2D: LARGER zoom = more zoomed in — see the class doc comment). Phase 2.5.6: scaled by 1/8 alongside HexCoord.HEX_SIZE's 8x increase (1.5 -> 0.1875) — the Strategic/Tactical cut still happens at the same relative zoom level.
+
+## Phase 2.5.5: subdivides [tactical_zoom_threshold, max_zoom] into three
+## LOW/MEDIUM/HIGH fidelity bands (GameEnums.TacticalFidelity) as the camera
+## keeps zooming in past the Strategic/Tactical cut — see get_tactical_fidelity().
+## Evenly divides the range into thirds; exact values are a balancing/feel
+## pass once this is actually running in-engine, per the design doc, not an
+## architecture decision — same framing as tactical_zoom_threshold's own
+## position was before 2.5.6 fixed its direction.
+@export var medium_fidelity_threshold: float = 0.2292
+@export var high_fidelity_threshold: float = 0.2708
+
 @export var perspective_tween_duration: float = 0.6
 @export var isometric_y_scale: float = 0.577
 @export var isometric_rotation_degrees: float = 45.0
 
 signal tactical_mode_changed(is_tactical: bool)
+signal tactical_fidelity_changed(fidelity: GameEnums.TacticalFidelity)  ## Phase 2.5.5 — fires on every LOW<->MEDIUM<->HIGH band crossing, independent of tactical_mode_changed (which only fires on the Strategic/Tactical cut itself).
 
 var perspective: GameEnums.CameraPerspective = GameEnums.CameraPerspective.TOP_DOWN
 
@@ -54,9 +66,20 @@ func _ready() -> void:
 		_world_root = get_node(world_root_path)
 	make_current()
 	tactical_mode_changed.emit(is_tactical_zoom())  ## Sync any listener already wired up to our starting zoom.
+	tactical_fidelity_changed.emit(get_tactical_fidelity())  ## Phase 2.5.5 — same "sync on ready" reasoning.
 
 func is_tactical_zoom() -> bool:
 	return zoom.x >= tactical_zoom_threshold
+
+## Phase 2.5.5 — see GameEnums.TacticalFidelity's own doc comment for why
+## this is meaningless (always reports LOW) while not actually in Tactical
+## zoom; every real consumer already checks is_tactical_zoom() first.
+func get_tactical_fidelity() -> GameEnums.TacticalFidelity:
+	if zoom.x >= high_fidelity_threshold:
+		return GameEnums.TacticalFidelity.HIGH
+	if zoom.x >= medium_fidelity_threshold:
+		return GameEnums.TacticalFidelity.MEDIUM
+	return GameEnums.TacticalFidelity.LOW
 
 func _process(delta: float) -> void:
 	_handle_pan_input(delta)
@@ -123,7 +146,10 @@ func _handle_zoom_input(event: InputEventMouseButton) -> void:
 
 func _apply_zoom_delta(delta: float) -> void:
 	var was_tactical := is_tactical_zoom()
+	var was_fidelity := get_tactical_fidelity()
 	var new_zoom := clampf(zoom.x + delta, min_zoom, max_zoom)
 	zoom = Vector2(new_zoom, new_zoom)
 	if is_tactical_zoom() != was_tactical:
 		tactical_mode_changed.emit(is_tactical_zoom())
+	if get_tactical_fidelity() != was_fidelity:
+		tactical_fidelity_changed.emit(get_tactical_fidelity())

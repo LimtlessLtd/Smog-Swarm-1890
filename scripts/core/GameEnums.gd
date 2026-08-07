@@ -179,6 +179,20 @@ enum HordeState {
 	ATTACKING,  ## Besieging a specific wall segment/hex, handed off to combat. Not yet produced — needs Phase 5.4's CombatEngine, which doesn't exist yet.
 }
 
+## Design doc Phase 2.5.5: three internal fidelity bands subdividing Tactical
+## zoom (past `CameraController.tactical_zoom_threshold`) as the camera keeps
+## zooming in toward `max_zoom` — Strategic view's own icon-based rendering
+## (`StrategicOverlayManager`) is untouched by this and doesn't consult it.
+## Meaningless outside Tactical zoom; every consumer (`TacticalEntityLayer`,
+## `TacticalHexView`/`LocalDetailManager`) already gates on
+## `CameraController.is_tactical_zoom()` before reading this, same as every
+## other Tactical-only system.
+enum TacticalFidelity {
+	LOW,     ## Just past the Strategic/Tactical cut — simple silhouettes/blobs, shape-and-color differentiated enough to tell unit from building from zombie, no finer detail.
+	MEDIUM,  ## Some discernible detail — a unit's role/tier reads at a glance, not yet individual-figure detail.
+	HIGH,    ## Full detail — individual squad figures/zombies (Phase 2.5.4).
+}
+
 enum TechUnlockType {
 	WALL_TIER,        ## Unlocks a Phase 4.1 wall tier (unlock_value: 1=Brick, 2=Concrete; tier 0/Wooden is baseline, no tech needed).
 	UNIT_TIER,        ## Unlocks a whole Phase 5.4 unit tier, all 3 roles at once (unlock_value: 1-5; tier 0 is baseline, no tech needed).

@@ -13,6 +13,12 @@ extends Node2D
 ## the other Phase 2 systems) specifically so its spawned TacticalHexViews
 ## share HexGridMap's local coordinate space and render on top of it by
 ## plain sibling draw order — added after HexGridMap in Main.tscn.
+##
+## Phase 2.5.5: also tracks CameraController's internal Tactical fidelity
+## band (GameEnums.TacticalFidelity) and pushes it to every hydrated
+## TacticalHexView (see _on_fidelity_changed()) — a hex hydrating fresh
+## picks up whatever band is current at that moment, an already-hydrated
+## one updates live as the camera zooms deeper within Tactical view.
 
 const DETAIL_RADIUS: int = 1  ## Hex disk radius hydrated around the camera; 1 = center + its 6 neighbors.
 
@@ -29,6 +35,7 @@ var _camera: CameraController
 var _fog_of_war: FogOfWarManager
 
 var _is_tactical_mode: bool = false
+var _fidelity: GameEnums.TacticalFidelity = GameEnums.TacticalFidelity.HIGH  ## Phase 2.5.5 — pushed to every hydrated TacticalHexView; see _on_fidelity_changed().
 var _last_centered_coord: Vector2i = Vector2i.ZERO
 var _tactical_views: Dictionary = {}  # Vector2i -> TacticalHexView
 
@@ -45,6 +52,8 @@ func _ready() -> void:
 	if camera_path != NodePath():
 		_camera = get_node(camera_path)
 		_camera.tactical_mode_changed.connect(_on_tactical_mode_changed)
+		_camera.tactical_fidelity_changed.connect(_on_fidelity_changed)
+		_fidelity = _camera.get_tactical_fidelity()
 	if fog_of_war_path != NodePath():
 		_fog_of_war = get_node(fog_of_war_path)
 		_fog_of_war.fog_state_changed.connect(_on_fog_state_changed)
@@ -110,7 +119,7 @@ func _hydrate_hex(coord: Vector2i) -> void:
 	if _fog_of_war:
 		fog_state = _fog_of_war.get_fog_state(coord)
 	var view := TacticalHexView.new()
-	view.setup(cell, LocalDetailGenerator.generate(cell), buildings, fog_state)
+	view.setup(cell, LocalDetailGenerator.generate(cell), buildings, fog_state, _fidelity)
 	add_child(view)
 	_tactical_views[coord] = view
 
@@ -139,6 +148,15 @@ func _on_buildings_changed(instance: BuildingInstance) -> void:
 func _on_network_recomputed() -> void:
 	if _is_tactical_mode:
 		_refresh_hydrated_neighborhood(_last_centered_coord)
+
+## Phase 2.5.5: pushes the new band to every currently-hydrated hex in
+## place (TacticalHexView.set_fidelity() itself no-ops/skips a redraw if
+## nothing actually changed) — no dehydrate/rehydrate needed, same "update
+## live" precedent _on_fog_state_changed() already sets for fog.
+func _on_fidelity_changed(fidelity: GameEnums.TacticalFidelity) -> void:
+	_fidelity = fidelity
+	for view: TacticalHexView in _tactical_views.values():
+		view.set_fidelity(fidelity)
 
 ## Fog of War (Phase 2.6): an already-hydrated hex just needs its dimming
 ## updated live (EXPLORED <-> VISIBLE); a newly-EXPLORED hex that wasn't
