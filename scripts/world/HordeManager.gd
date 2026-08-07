@@ -33,6 +33,14 @@ extends Node
 ##     "contested" abstraction. The OTHER Phase 5.9 casualty source (a
 ##     UnitInstance dying in combat) still isn't wired — see below, it needs
 ##     a live combat trigger that doesn't exist.
+##   - Phase 5.2's "lone zombie" decision: _on_ambient_spawn_day() rolls a
+##     flat daily chance to seed one genuinely tiny (1-3) horde on ambient
+##     wilderness, independent of the starting seed and casualty conversion
+##     — no dedicated noise/attraction system exists to trigger this off
+##     yet, so a flat chance is the real spawn-side path per that decision.
+##   - Phase 5.10's merge/split: _check_merges()/_check_splits(), rolled
+##     once per movement tick alongside the existing drift — co-located
+##     hordes can combine, a large enough horde can fragment in two.
 ##
 ## Deliberately NOT wired here yet — each blocked on a system that doesn't
 ## exist, same "not implemented, deliberately" convention as every other
@@ -93,6 +101,27 @@ const MOVE_INTERVAL_SECONDS: float = 20.0
 ## position when it needs to replan.
 const DRIFT_TARGET_RADIUS: int = 5
 
+## Design doc Phase 5.2, decided (grilling session): "a 'lone zombie' isn't
+## a new entity type, it's just a Horde at small size ... ambient wilderness
+## spawning needs a path to occasionally seed a genuinely tiny (1-3) horde,
+## not just today's STARTING_HORDE_SIZE_MIN-MAX (10-25) range." No dedicated
+## noise/attraction system exists to trigger this off yet (see this class's
+## own "Deliberately NOT wired" list above) — a flat daily chance is the
+## simplest real spawn-side path, reusing seed_starting_hordes()'s own
+## _spawnable_coords()/Horde.new() machinery. Balancing numbers, not
+## architecture, same framing as every other constant table here.
+const AMBIENT_SPAWN_CHANCE_PER_DAY: float = 0.35
+const AMBIENT_HORDE_SIZE_MIN: int = 1
+const AMBIENT_HORDE_SIZE_MAX: int = 3
+
+## Design doc Phase 5.10, decided (grilling session): "hordes get a small
+## periodic chance to merge or split." Checked once per movement tick
+## alongside the existing drift, not a separate timer. Balancing numbers,
+## not architecture, same framing as every other constant table here.
+const MERGE_CHANCE_PER_TICK: float = 0.1   ## Rolled once per co-located pair, per tick.
+const SPLIT_CHANCE_PER_TICK: float = 0.05  ## Rolled once per eligible horde, per tick.
+const SPLIT_MIN_SIZE: int = 20             ## A horde must be at least this big to be eligible to fragment.
+
 func _ready() -> void:
 	# Same reasoning as TickManager/TimeCycleManager: background-simulation
 	# infrastructure that shouldn't freeze if a future system ever pauses
@@ -105,6 +134,7 @@ func _ready() -> void:
 	if building_manager_path != NodePath():
 		_building_manager = get_node(building_manager_path)
 		_building_manager.civilians_starved.connect(_on_civilians_starved)
+	TickManager.day_completed.connect(_on_ambient_spawn_day)
 	_rng.seed = HORDE_SEED
 	seed_starting_hordes()
 
@@ -116,6 +146,8 @@ func _process(delta: float) -> void:
 		_move_timer -= MOVE_INTERVAL_SECONDS
 		for horde in _hordes:
 			_advance_horde(horde)
+		_check_merges()
+		_check_splits()
 
 func get_all_hordes() -> Array[Horde]:
 	return _hordes.duplicate()
@@ -166,6 +198,65 @@ func _find_horde_at(coord: Vector2i) -> Horde:
 
 func _on_civilians_starved(hex_coord: Vector2i, count: int) -> void:
 	add_casualty_zombies(hex_coord, count)
+
+## Design doc Phase 5.2's "lone zombie" decision: a flat daily chance to seed
+## one genuinely tiny (1-3) horde on ambient wilderness, independent of the
+## one-time starting seed and the casualty-conversion spawn source — reuses
+## _spawnable_coords() exactly as seed_starting_hordes() does, so the same
+## "far enough from a settlement" rule applies.
+func _on_ambient_spawn_day(_day_number: int) -> void:
+	if not _hex_grid_map or _rng.randf() >= AMBIENT_SPAWN_CHANCE_PER_DAY:
+		return
+	var candidates := _spawnable_coords()
+	if candidates.is_empty():
+		return
+	var coord: Vector2i = candidates[_rng.randi_range(0, candidates.size() - 1)]
+	var size := _rng.randi_range(AMBIENT_HORDE_SIZE_MIN, AMBIENT_HORDE_SIZE_MAX)
+	var horde := Horde.new(coord, size, _next_id)
+	_next_id += 1
+	_hordes.append(horde)
+	horde_spawned.emit(horde)
+
+## Design doc Phase 5.10: "two hordes that end up on/near the same hex can
+## combine into one." Scoped to hordes sharing the EXACT same hex_coord —
+## the same "same hex" granularity add_casualty_zombies() already merges
+## casualties into — checked once per movement tick, one merge roll per
+## co-located pair per tick rather than a guaranteed instant cascade on a
+## crowded hex.
+func _check_merges() -> void:
+	var by_hex: Dictionary = {}  # Vector2i -> Array[Horde]
+	for horde in _hordes:
+		if not by_hex.has(horde.hex_coord):
+			by_hex[horde.hex_coord] = []
+		by_hex[horde.hex_coord].append(horde)
+	for coord in by_hex:
+		var group: Array = by_hex[coord]
+		if group.size() < 2 or _rng.randf() >= MERGE_CHANCE_PER_TICK:
+			continue
+		var survivor: Horde = group[0]
+		var absorbed: Horde = group[1]
+		survivor.size += absorbed.size
+		horde_size_changed.emit(survivor, absorbed.size)
+		remove_horde(absorbed)
+
+## Design doc Phase 5.10: "a large horde can fragment into two smaller
+## ones." Splits roughly in half; the new fragment starts WANDERING from the
+## same hex (no reason to displace it elsewhere) and gets its own fresh
+## drift replan next tick, same as any other horde. Iterates a duplicate()
+## snapshot since this appends fresh hordes to _hordes mid-loop.
+func _check_splits() -> void:
+	for horde: Horde in _hordes.duplicate():
+		if horde.size < SPLIT_MIN_SIZE or _rng.randf() >= SPLIT_CHANCE_PER_TICK:
+			continue
+		var fragment_size := horde.size / 2
+		if fragment_size <= 0:
+			continue
+		horde.size -= fragment_size
+		horde_size_changed.emit(horde, -fragment_size)
+		var fragment := Horde.new(horde.hex_coord, fragment_size, _next_id)
+		_next_id += 1
+		_hordes.append(fragment)
+		horde_spawned.emit(fragment)
 
 ## Seeds the handful of starting hordes on a truly fresh start — mirrors
 ## BuildingManager.seed_starting_buildings()'s own "only if nothing's placed
