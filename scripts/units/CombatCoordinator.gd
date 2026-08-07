@@ -86,10 +86,12 @@ extends Node
 ##   - Combat bonuses beyond morale/veterancy (Searchlight Tower night
 ##     defense, Garrison orders' "stationary defense bonus") — CombatEngine
 ##     has no inputs for either yet, so neither applies here either.
-##   - Building-vs-horde combat (a horde besieging an undefended settlement
-##     directly) — this only resolves engagements against a UnitInstance;
-##     Phase 5.12's building HP/ruins state doesn't exist yet to be a
-##     defender_hp source of its own.
+##   - The full defense-in-depth cascade (outer wall -> legacy wall ->
+##     garrison -> buildings, Phase 4.2) — `_siege_buildings()` (Phase
+##     5.10/5.12) covers the simplest case (no wall, no garrison, nothing
+##     between a horde and an undefended building) but doesn't check Zone
+##     of Control or wall-segment state, since Phase 4.1's own outer/inner-
+##     wall distinction and horde-vs-wall targeting don't exist yet either.
 ##   - Phase 5.7's own "reasonable fifth" morale input (a severe famine
 ##     ratio) — see UnitMorale's own doc comment for why it's not wired.
 
@@ -114,10 +116,12 @@ const CASUALTY_ZOMBIES_PER_UNIT: int = 1
 @export var horde_manager_path: NodePath
 @export var unit_order_controller_path: NodePath
 @export var resource_manager_path: NodePath  ## Optional — unset always resolves as "Gunpowder available", same "gracefully skip it" convention as every other optional dependency.
+@export var building_manager_path: NodePath  ## Optional — Phase 5.12's undefended-building siege trigger; unset gracefully skips it, same convention as every other optional dependency here.
 
 var _unit_manager: UnitManager
 var _horde_manager: HordeManager
 var _resource_manager: ResourceManager
+var _building_manager: BuildingManager
 
 func _ready() -> void:
 	if unit_manager_path != NodePath():
@@ -130,12 +134,17 @@ func _ready() -> void:
 		unit_order_controller.unit_moved.connect(_on_unit_moved)
 	if resource_manager_path != NodePath():
 		_resource_manager = get_node(resource_manager_path)
+	if building_manager_path != NodePath():
+		_building_manager = get_node(building_manager_path)
 
 func _on_horde_moved(horde: Horde, _from_coord: Vector2i, to_coord: Vector2i) -> void:
-	if not _unit_manager:
-		return
-	for instance in _unit_manager.get_units_at(to_coord):
+	var defenders: Array[UnitInstance] = []
+	if _unit_manager:
+		defenders = _unit_manager.get_units_at(to_coord)
+	for instance in defenders:
 		_engage(instance, horde)
+	if defenders.is_empty():
+		_siege_buildings(horde, to_coord)
 
 func _on_unit_moved(instance: UnitInstance, _from_coord: Vector2i, to_coord: Vector2i) -> void:
 	if not _horde_manager:
@@ -174,3 +183,30 @@ func _engage(instance: UnitInstance, horde: Horde) -> void:
 
 	if instance.is_destroyed() and _unit_manager:
 		_unit_manager.remove_unit(instance)
+
+## Design doc Phase 5.10/5.12: closes the exact gap this class's own doc
+## comment used to flag ("an undefended-but-covered hex currently has
+## nothing to fight back with, since Phase 5.12's building combat doesn't
+## exist") — a horde reaching a hex with NO defending UnitInstance now
+## sieges whatever non-ruined building stands there instead of the contact
+## being a no-op. One building damaged per contact event (same "one
+## attacking side, one engagement" granularity _engage() already uses for
+## units) — the first non-ruined instance found, not every building on the
+## hex at once; a hex with several buildings falls one at a time across
+## repeated contacts, not in a single visit.
+##
+## Deliberately does NOT check Zone of Control coverage or wall segments —
+## this is the SIMPLEST possible "the layer in front has failed" case
+## (there is no wall, no garrison here, nothing between the horde and the
+## building but the building itself), not the full defense-in-depth cascade
+## (outer wall -> legacy wall -> garrison -> buildings) Phase 4.1/4.2's own
+## still-missing outer/inner-wall distinction and horde-vs-wall targeting
+## describe. Extends naturally once those exist; doesn't block on them.
+func _siege_buildings(horde: Horde, coord: Vector2i) -> void:
+	if not _building_manager or horde.size <= 0:
+		return
+	for instance in _building_manager.get_buildings_at(coord):
+		if instance.is_ruined:
+			continue
+		_building_manager.damage_building(instance, horde.get_combat_damage())
+		return  # One building per contact event — see this method's own doc comment.

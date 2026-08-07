@@ -89,6 +89,7 @@ func _ready() -> void:
 		_building_manager = get_node(building_manager_path)
 		_building_manager.building_placed.connect(_on_building_placed)
 		_building_manager.building_removed.connect(_on_building_removed)
+		_building_manager.building_ruined.connect(_on_building_ruined)
 		for instance in _building_manager.get_all_buildings():
 			_on_building_placed(instance)
 	if unit_manager_path != NodePath():
@@ -136,9 +137,19 @@ func _on_building_removed(instance: BuildingInstance) -> void:
 	_building_icons.erase(instance.id)
 	_refresh_frontier_markers()
 
+## Design doc Phase 5.12: recolors the existing icon in place (same "update
+## live, don't tear down and rebuild" shape TacticalHexView.set_fidelity()/
+## set_fog_state() already use) — the building stays on the map as a ruin,
+## it doesn't vanish, so building_removed's queue_free()/erase() path isn't
+## the right one here.
+func _on_building_ruined(instance: BuildingInstance, _lost_population: int) -> void:
+	var icon: Polygon2D = _building_icons.get(instance.id)
+	if icon:
+		icon.color = BuildingVisuals.ruin_color()
+
 func _build_building_icon(instance: BuildingInstance) -> Node2D:
 	var icon := Polygon2D.new()
-	icon.color = BuildingVisuals.category_color(instance.definition.category)
+	icon.color = BuildingVisuals.ruin_color() if instance.is_ruined else BuildingVisuals.category_color(instance.definition.category)
 	var r := 16.0  # Bigger than TacticalHexView's building boxes — needs to read at zoomed-out scale.
 	icon.polygon = PackedVector2Array([Vector2(0, -r), Vector2(r, r * 0.6), Vector2(-r, r * 0.6)])
 	icon.position = HexCoord.axial_to_world(instance.hex_coord) + instance.local_position

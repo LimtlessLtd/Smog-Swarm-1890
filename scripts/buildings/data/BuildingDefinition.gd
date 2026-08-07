@@ -52,3 +52,21 @@ extends Resource
 func _init(p_type: GameEnums.BuildingType = GameEnums.BuildingType.TERRACED_TENEMENT, p_display_name: String = "") -> void:
 	building_type = p_type
 	display_name = p_display_name
+
+## Design doc Phase 5.12: "same spirit as walls' own toughness in Phase 4.1,
+## scaling with construction tier/cost" — BuildingDefinition has no explicit
+## tier field the way WallCatalog's per-tier table does, so construction_cost
+## (already authored per building, already a reasonable proxy for "how
+## substantial is this") stands in for it directly: a flat baseline plus the
+## sum of what it cost to build. Lands in roughly the same 100-400 range
+## WallCatalog.get_max_hp() spans across its own three tiers. Placeholder
+## balancing numbers, not an architecture decision, same framing as every
+## other constant table in this project.
+const _BASE_HP: float = 80.0
+const _HP_PER_COST_UNIT: float = 1.0
+
+func get_max_hp() -> float:
+	var total_cost := 0.0
+	for resource_type in construction_cost:
+		total_cost += float(construction_cost[resource_type])
+	return _BASE_HP + total_cost * _HP_PER_COST_UNIT

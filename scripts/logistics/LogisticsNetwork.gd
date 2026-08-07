@@ -20,6 +20,25 @@ extends Node
 ##   least one secured (non-contested) district — design doc: "Can only be
 ##   placed on secure hex tiles (no zombies)". Not supply-line sensitive;
 ##   the design doc only calls out severance for Military ZoC.
+##
+## Phase 5.8: Military ZoC also checks `TerritoryController.is_lost()` now,
+## not just supply-line intactness — a hex flipped to contested (a building
+## there was overwhelmed and ruined while a horde occupied it) genuinely
+## "loses whatever Civilian/Military ZoC coverage it was projecting"
+## (design doc Phase 5.8's own Loss bullet), not just the civilian half.
+## Deliberately NOT the same `_has_secured_ground()` check Civilian ZoC
+## already uses, even though both are "is this hex safe" in spirit: that
+## check requires the hex to ALREADY have a safe district (only true for
+## settlement hexes per DistrictPartitioner), which would break the Forward
+## Ammo Dump's own explicit "no biome/settlement restriction ... projecting
+## Military ZoC out into not-yet-secured frontier hexes" design — ordinary
+## unclaimed wilderness never had a safe district to lose in the first
+## place, so it must never be treated as "lost territory". `is_lost()` only
+## ever returns true for a hex TerritoryController itself flipped, which is
+## exactly the narrower "this SPECIFIC hex fell" signal Military ZoC needs.
+## `territory_controller_path` is optional — unset simply means no hex is
+## ever territorially lost yet, same "gracefully skip it" convention every
+## other optional dependency here follows.
 
 signal network_recomputed
 
@@ -27,9 +46,11 @@ const MILITARY_AURA_COVERAGE: float = 0.66
 
 @export var hex_grid_map_path: NodePath
 @export var building_manager_path: NodePath
+@export var territory_controller_path: NodePath  ## Optional — Phase 5.8. Unset skips recompute-on-territory-change; _has_secured_ground() still reads live HexCell.districts state either way.
 
 var _hex_grid_map: HexGridMap
 var _building_manager: BuildingManager
+var _territory_controller: TerritoryController
 var _segments: Array[SupplyLineSegment] = []
 var _zoc_by_hex: Dictionary = {}  # Vector2i -> ZoneOfControlState
 
@@ -40,6 +61,9 @@ func _ready() -> void:
 		_building_manager = get_node(building_manager_path)
 		_building_manager.building_placed.connect(_on_buildings_changed)
 		_building_manager.building_removed.connect(_on_buildings_changed)
+	if territory_controller_path != NodePath():
+		_territory_controller = get_node(territory_controller_path)
+		_territory_controller.district_state_changed.connect(_on_territory_changed)
 	recompute()
 
 func add_supply_line(line_type: GameEnums.SupplyLineType, hex_a: Vector2i, hex_b: Vector2i) -> SupplyLineSegment:
@@ -130,12 +154,16 @@ func recompute() -> void:
 	_zoc_by_hex.clear()
 	if _building_manager:
 		for instance in _building_manager.get_buildings_with_zoc_role(GameEnums.ZoneOfControlType.CIVILIAN):
-			if not _has_secured_ground(instance.hex_coord):
+			# Phase 5.12: a ruined building is rubble, not a functioning civic
+			# seat — it projects nothing, independent of district/territory
+			# state (which a Recapture, Phase 5.8, can flip back to safe
+			# without the ruin itself ever being repaired).
+			if instance.is_ruined or not _has_secured_ground(instance.hex_coord):
 				continue
 			_state_for(instance.hex_coord).has_civilian_coverage = true
 
 		for instance in _building_manager.get_buildings_with_zoc_role(GameEnums.ZoneOfControlType.MILITARY):
-			if not _is_supply_intact(instance.hex_coord):
+			if instance.is_ruined or not _is_supply_intact(instance.hex_coord) or _is_territorially_lost(instance.hex_coord):
 				continue
 			var state := _state_for(instance.hex_coord)
 			state.military_coverage = maxf(state.military_coverage, MILITARY_AURA_COVERAGE)
@@ -151,6 +179,9 @@ func _has_secured_ground(coord: Vector2i) -> bool:
 		return false
 	var cell := _hex_grid_map.get_cell(coord)
 	return cell != null and not cell.get_safe_districts().is_empty()
+
+func _is_territorially_lost(coord: Vector2i) -> bool:
+	return _territory_controller != null and _territory_controller.is_lost(coord)
 
 func _is_supply_intact(coord: Vector2i) -> bool:
 	var connected_segments := _segments.filter(func(segment: SupplyLineSegment) -> bool:
@@ -170,4 +201,7 @@ func _set_severed_between(hex_a: Vector2i, hex_b: Vector2i, severed: bool) -> vo
 	recompute()
 
 func _on_buildings_changed(_instance: BuildingInstance) -> void:
+	recompute()
+
+func _on_territory_changed(_coord: Vector2i, _is_contested: bool) -> void:
 	recompute()

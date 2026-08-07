@@ -85,3 +85,12 @@ extends Resource
 ## UnitManager (Phase 5.6) — rally-point configuration per training
 ## building, independent of which units currently exist.
 @export var unit_rally_points: Dictionary = {}  # Vector2i -> Vector2i
+
+## TerritoryController (Phase 5.8) — which hexes are currently territorially
+## lost. Same "terrain regenerates byte-identically from a fixed seed, EXCEPT
+## the one piece a runtime system can mutate" pattern ReclamationManager's
+## own drained_hexes already established — District.is_contested lives on a
+## freshly-regenerated HexCell on every boot, so which hexes this controller
+## flipped needs its own explicit save, or a reload would silently un-lose
+## every fallen district.
+@export var lost_territory_hexes: Array[Vector2i] = []

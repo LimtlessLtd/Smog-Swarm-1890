@@ -20,7 +20,16 @@ extends Resource
 ## 0 for any non-housing building, same as population_provided itself.
 @export var current_population: int = 0
 
-func _init(p_definition: BuildingDefinition = null, p_hex_coord: Vector2i = Vector2i.ZERO, p_id: int = 0, p_local_position: Vector2 = Vector2.ZERO, p_current_population: int = -1) -> void:
+## Design doc Phase 5.12 ("They Are Billions convention: a destroyed
+## building doesn't disappear — it becomes a Ruins state"). Seeded from
+## definition.get_max_hp() on placement, same -1-sentinel convention
+## current_population uses. At 0, is_ruined flips true (BuildingManager.
+## damage_building()) — the instance stays in BuildingManager's records
+## (never removed) but stops producing/consuming/housing anything.
+@export var current_hp: float = 0.0
+@export var is_ruined: bool = false
+
+func _init(p_definition: BuildingDefinition = null, p_hex_coord: Vector2i = Vector2i.ZERO, p_id: int = 0, p_local_position: Vector2 = Vector2.ZERO, p_current_population: int = -1, p_current_hp: float = -1.0, p_is_ruined: bool = false) -> void:
 	definition = p_definition
 	hex_coord = p_hex_coord
 	id = p_id
@@ -30,6 +39,11 @@ func _init(p_definition: BuildingDefinition = null, p_hex_coord: Vector2i = Vect
 	# the actual saved value explicitly instead, which may differ from the
 	# baseline after starvation deaths/regrowth (see BuildingManager.load_save_entries()).
 	current_population = p_current_population if p_current_population >= 0 else (p_definition.population_provided if p_definition else 0)
+	current_hp = p_current_hp if p_current_hp >= 0.0 else (p_definition.get_max_hp() if p_definition else 0.0)
+	is_ruined = p_is_ruined
+
+func is_destroyed() -> bool:
+	return current_hp <= 0.0
 
 ## `daily_output` scaled by the occupied hex's soil fertility when the
 ## definition opts in (see BuildingDefinition.soil_fertility_scales_output).

@@ -30,9 +30,11 @@ extends Node
 ##     (that signal's own doc comment). Finds-or-creates a WANDERING horde
 ##     at the hex a Tenement's population starved in and grows it by the
 ##     death count, rather than the loss vanishing into a generic
-##     "contested" abstraction. The OTHER Phase 5.9 casualty source (a
-##     UnitInstance dying in combat) still isn't wired — see below, it needs
-##     a live combat trigger that doesn't exist.
+##     "contested" abstraction. The other two Phase 5.9 casualty sources —
+##     a UnitInstance dying in combat, and now a BuildingInstance being
+##     ruined (Phase 5.12) — both go through CombatCoordinator/
+##     BuildingManager.building_ruined the same way, see those classes'
+##     own doc comments.
 ##   - Phase 5.2's "lone zombie" decision: _on_ambient_spawn_day() rolls a
 ##     flat daily chance to seed one genuinely tiny (1-3) horde on ambient
 ##     wilderness, independent of the starting seed and casualty conversion
@@ -134,6 +136,7 @@ func _ready() -> void:
 	if building_manager_path != NodePath():
 		_building_manager = get_node(building_manager_path)
 		_building_manager.civilians_starved.connect(_on_civilians_starved)
+		_building_manager.building_ruined.connect(_on_building_ruined)
 	TickManager.day_completed.connect(_on_ambient_spawn_day)
 	_rng.seed = HORDE_SEED
 	seed_starting_hordes()
@@ -198,6 +201,15 @@ func _find_horde_at(coord: Vector2i) -> Horde:
 
 func _on_civilians_starved(hex_coord: Vector2i, count: int) -> void:
 	add_casualty_zombies(hex_coord, count)
+
+## Design doc Phase 5.12/5.9: a ruined building's population "converts to
+## zombies right there ... same as a starvation death, just triggered by
+## direct assault instead of hunger." `count` may legitimately be 0 (an
+## industrial/agricultural building with no housed population) —
+## add_casualty_zombies() already no-ops on count <= 0, so no extra guard
+## is needed here.
+func _on_building_ruined(instance: BuildingInstance, lost_population: int) -> void:
+	add_casualty_zombies(instance.hex_coord, lost_population)
 
 ## Design doc Phase 5.2's "lone zombie" decision: a flat daily chance to seed
 ## one genuinely tiny (1-3) horde on ambient wilderness, independent of the
