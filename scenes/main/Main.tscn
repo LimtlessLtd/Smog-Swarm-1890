@@ -119,6 +119,7 @@ camera_path = NodePath("../../CameraController")
 [node name="BuildPlacementController" parent="WorldRoot" instance=ExtResource("10")]
 hex_grid_map_path = NodePath("../HexGridMap")
 building_manager_path = NodePath("../../BuildingManager")
+camera_path = NodePath("../../CameraController")
 
 [node name="UnitCommandController" parent="WorldRoot" instance=ExtResource("20")]
 hex_grid_map_path = NodePath("../HexGridMap")
