@@ -78,20 +78,36 @@ extends Node
 ## alive) still only ever fires this once, on its own death, so this is a
 ## strict generalization, not a behavior change for those.
 ##
+## **Garrison/Searchlight defense bonus, now real:** `_garrison_incoming_multiplier()`
+## folds into `CombatEngine.resolve_engagement()`'s new `incoming_damage_multiplier`
+## parameter — a flat `GARRISON_INCOMING_DAMAGE_MULTIPLIER` reduction whenever
+## the defending `UnitInstance.order` is `GARRISON`, stacking with a further
+## `SEARCHLIGHT_NIGHT_INCOMING_DAMAGE_MULTIPLIER` reduction at night if a
+## non-ruined Searchlight Tower's own `vision_radius` reaches the unit's
+## hex — "during night defense, granting combat bonuses to garrisoned
+## units" (design doc Phase 4.1), previously blocked purely on
+## `CombatEngine` having no input for it at all. `TimeCycleManager.is_night()`
+## (autoload) and the already-optional `building_manager_path` (wired in
+## Phase 5.12 for `_siege_buildings()`) supply everything this needs — no
+## new export.
+##
 ## **Still NOT implemented:**
-##   - Phase 5.10's ATTACKING state, wall-segment targeting, and Phase
-##     5.8's territory capture — this resolves an engagement wherever units
-##     and a horde meet, it doesn't make a horde seek one out, target a
-##     wall segment, or flip district control on a win/loss.
-##   - Combat bonuses beyond morale/veterancy (Searchlight Tower night
-##     defense, Garrison orders' "stationary defense bonus") — CombatEngine
-##     has no inputs for either yet, so neither applies here either.
+##   - Phase 5.10's ATTACKING state as a deliberate seek-out-a-target
+##     behavior (the wall-siege slice — a horde attacking whichever segment
+##     its own WANDERING drift happens to reach — is real now, see
+##     `HordeManager._siege_wall()`; a horde CHOOSING a target on purpose
+##     still needs the still-nonexistent ATTRACTED/noise system), and Phase
+##     5.8's territory capture is a separate class (`TerritoryController`)
+##     entirely, reacting to `BuildingManager.building_ruined` rather than
+##     anything here.
 ##   - The full defense-in-depth cascade (outer wall -> legacy wall ->
 ##     garrison -> buildings, Phase 4.2) — `_siege_buildings()` (Phase
 ##     5.10/5.12) covers the simplest case (no wall, no garrison, nothing
-##     between a horde and an undefended building) but doesn't check Zone
-##     of Control or wall-segment state, since Phase 4.1's own outer/inner-
-##     wall distinction and horde-vs-wall targeting don't exist yet either.
+##     between a horde and an undefended building) and `HordeManager`'s own
+##     wall siege covers "a wall blocks a horde's step, full stop" — but
+##     there's still no distinct "outer" vs "legacy inner" wall tier, so a
+##     horde that breaches one segment just walks into the hex behind it,
+##     it doesn't hit a second layer.
 ##   - Phase 5.7's own "reasonable fifth" morale input (a severe famine
 ##     ratio) — see UnitMorale's own doc comment for why it's not wired.
 
@@ -111,6 +127,14 @@ signal engagement_resolved(instance: UnitInstance, horde: Horde, result: Diction
 ## same effective behavior as before this phase, just derived generically
 ## instead of special-cased on is_destroyed().
 const CASUALTY_ZOMBIES_PER_UNIT: int = 1
+
+## Design doc Phase 4.1/5.6: "granting combat bonuses to garrisoned units" /
+## "a stationary defense bonus instead of patrolling" — placeholder
+## balancing numbers, not an architecture decision, same framing as every
+## other constant table in this project. The Searchlight bonus stacks
+## (multiplies) with the flat Garrison one, not replaces it.
+const GARRISON_INCOMING_DAMAGE_MULTIPLIER: float = 0.75          ## 25% less incoming damage while GARRISON, any time of day.
+const SEARCHLIGHT_NIGHT_INCOMING_DAMAGE_MULTIPLIER: float = 0.6  ## A further 40% off at night, specifically near a lit Searchlight Tower.
 
 @export var unit_manager_path: NodePath
 @export var horde_manager_path: NodePath
@@ -161,8 +185,9 @@ func _engage(instance: UnitInstance, horde: Horde) -> void:
 		gunpowder_available = _resource_manager.get_amount(GameEnums.ResourceType.GUNPOWDER) > 0.0
 
 	var damage_multiplier := UnitMorale.get_damage_multiplier(instance, gunpowder_available)
+	var incoming_damage_multiplier := _garrison_incoming_multiplier(instance)
 	var headcount_before := instance.get_squad_headcount()
-	var result := CombatEngine.resolve_engagement(instance, gunpowder_available, horde.get_combat_hp(), horde.get_combat_damage(), damage_multiplier)
+	var result := CombatEngine.resolve_engagement(instance, gunpowder_available, horde.get_combat_hp(), horde.get_combat_damage(), damage_multiplier, incoming_damage_multiplier)
 	horde.apply_remaining_hp(result.defender_hp_remaining)
 	engagement_resolved.emit(instance, horde, result)
 
@@ -183,6 +208,29 @@ func _engage(instance: UnitInstance, horde: Horde) -> void:
 
 	if instance.is_destroyed() and _unit_manager:
 		_unit_manager.remove_unit(instance)
+
+## Design doc Phase 5.6/4.1: a `GARRISON`-ordered unit takes less incoming
+## damage, stacking further at night if a non-ruined Searchlight Tower's own
+## `vision_radius` reaches this hex — "illuminate perimeter walls ...
+## granting combat bonuses to garrisoned units". `HOLD` deliberately does
+## NOT qualify — the design doc frames this as Garrison's own payoff over
+## plain Hold (see `UnitOrderController`'s own doc comment on Phase 2.5.4's
+## healing mechanic making the same Garrison-vs-Hold distinction).
+func _garrison_incoming_multiplier(instance: UnitInstance) -> float:
+	if instance.order != GameEnums.UnitOrderType.GARRISON:
+		return 1.0
+	var multiplier := GARRISON_INCOMING_DAMAGE_MULTIPLIER
+	if _building_manager and TimeCycleManager.is_night() and _is_near_searchlight_tower(instance.hex_coord):
+		multiplier *= SEARCHLIGHT_NIGHT_INCOMING_DAMAGE_MULTIPLIER
+	return multiplier
+
+func _is_near_searchlight_tower(coord: Vector2i) -> bool:
+	for instance in _building_manager.get_all_buildings():
+		if instance.is_ruined or instance.definition.building_type != GameEnums.BuildingType.SEARCHLIGHT_TOWER:
+			continue
+		if HexCoord.distance(instance.hex_coord, coord) <= instance.definition.vision_radius:
+			return true
+	return false
 
 ## Design doc Phase 5.10/5.12: closes the exact gap this class's own doc
 ## comment used to flag ("an undefended-but-covered hex currently has

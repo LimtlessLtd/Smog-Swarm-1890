@@ -38,7 +38,11 @@ extends Node
 ## trigger) never needs to know about ruination itself — building_ruined
 ## carries the population lost at that instant for HordeManager to convert
 ## to a casualty (Phase 5.9), same "manager emits, HordeManager listens"
-## precedent civilians_starved already set.
+## precedent civilians_starved already set. repair_building()/destroy_ruin()
+## are the other half — gated on the optional TerritoryController reference
+## ("Ruins are inert until the district is recaptured", design doc), same
+## "queryable without side effects" get_*_error() pattern every other
+## action in this project already follows.
 
 signal building_placed(instance: BuildingInstance)
 signal building_removed(instance: BuildingInstance)
@@ -49,6 +53,8 @@ signal placement_rejected(building_type: GameEnums.BuildingType, coord: Vector2i
 ## WallManager.wall_segment_damaged's own "every hit, not just the fatal
 ## one" shape.
 signal building_damaged(instance: BuildingInstance, amount: float)
+signal building_repaired(instance: BuildingInstance)
+signal repair_rejected(instance: BuildingInstance, reason: String)
 
 ## Design doc Phase 5.12: "whatever current_population the building held at
 ## the moment of destruction converts to zombies right there ... a Phase 5.9
@@ -94,10 +100,15 @@ const POPULATION_REGROWTH_PER_DAY: int = 1        ## Flat per-instance regrowth 
 ## per-hex production penalty (get_production_multiplier() query) entirely,
 ## same as every other optional manager reference in this class.
 @export var discontent_manager_path: NodePath
+## Optional — Phase 5.8/5.12's ruin-repair gate. Unset means repair_building()/
+## destroy_ruin() never check territory state at all (same "gracefully skip
+## it" convention as every other optional dependency here).
+@export var territory_controller_path: NodePath
 
 var _hex_grid_map: HexGridMap
 var _resource_manager: ResourceManager
 var _discontent_manager: DiscontentManager
+var _territory_controller: TerritoryController
 var _instances: Array[BuildingInstance] = []
 var _instances_by_hex: Dictionary = {}  # Vector2i -> Array[BuildingInstance]
 var _next_id: int = 1
@@ -109,6 +120,8 @@ func _ready() -> void:
 		_resource_manager = get_node(resource_manager_path)
 	if discontent_manager_path != NodePath():
 		_discontent_manager = get_node(discontent_manager_path)
+	if territory_controller_path != NodePath():
+		_territory_controller = get_node(territory_controller_path)
 	TickManager.day_completed.connect(_on_day_completed)
 	seed_starting_buildings()
 
@@ -277,6 +290,72 @@ func damage_building(instance: BuildingInstance, amount: float) -> void:
 		instance.current_population = 0
 		instance.is_ruined = true
 		building_ruined.emit(instance, lost_population)
+
+## Design doc Phase 5.12: "cheaper than building it from scratch" — same
+## framing WallManager.get_repair_cost() uses for the wall equivalent,
+## reusing the same 50% fraction rather than inventing a second one.
+const REPAIR_COST_FRACTION: float = 0.5
+
+## Design doc Phase 5.12: "Ruins are inert until the district is
+## recaptured (Phase 5.8), at which point the player can repair a ruin
+## (rebuilds the original building) or destroy the ruin." Restores
+## current_hp to a fresh get_max_hp() and current_population to the
+## definition's own baseline — the same "seed from the definition" fresh-
+## placement convention BuildingInstance._init() already uses, rather than
+## a partial/regrowth-gated restore; a repaired building starts fully
+## staffed again, not empty and waiting on Phase 2.10.4's regrowth.
+func get_repair_error(instance: BuildingInstance) -> String:
+	if not instance or not instance.is_ruined:
+		return "This building isn't ruined."
+	if _territory_controller and _territory_controller.is_lost(instance.hex_coord):
+		return "%s's district must be recaptured before it can be repaired." % instance.definition.display_name
+	if _resource_manager and not _resource_manager.can_afford(_repair_cost(instance.definition)):
+		return "Not enough resources to repair %s." % instance.definition.display_name
+	return ""
+
+func can_repair_building(instance: BuildingInstance) -> bool:
+	return get_repair_error(instance).is_empty()
+
+func repair_building(instance: BuildingInstance) -> bool:
+	var error := get_repair_error(instance)
+	if not error.is_empty():
+		repair_rejected.emit(instance, error)
+		return false
+	if _resource_manager:
+		_resource_manager.spend(_repair_cost(instance.definition))
+	instance.current_hp = instance.definition.get_max_hp()
+	instance.is_ruined = false
+	instance.current_population = instance.definition.population_provided
+	building_repaired.emit(instance)
+	return true
+
+func _repair_cost(definition: BuildingDefinition) -> Dictionary:
+	var cost: Dictionary = {}
+	for resource_type in definition.construction_cost:
+		cost[resource_type] = float(definition.construction_cost[resource_type]) * REPAIR_COST_FRACTION
+	return cost
+
+## The other Phase 5.12 recapture option: clear a ruin's rubble outright
+## rather than rebuild it — same territory-recaptured gate as repair, no
+## resource cost either way (demolition, not construction). Reuses
+## remove_building() directly; no dedicated rejection signal since
+## building_removed already gives a caller everything it needs to know a
+## ruin is gone.
+func get_destroy_ruin_error(instance: BuildingInstance) -> String:
+	if not instance or not instance.is_ruined:
+		return "This building isn't ruined."
+	if _territory_controller and _territory_controller.is_lost(instance.hex_coord):
+		return "%s's district must be recaptured before its ruin can be cleared." % instance.definition.display_name
+	return ""
+
+func can_destroy_ruin(instance: BuildingInstance) -> bool:
+	return get_destroy_ruin_error(instance).is_empty()
+
+func destroy_ruin(instance: BuildingInstance) -> bool:
+	if not get_destroy_ruin_error(instance).is_empty():
+		return false
+	remove_building(instance)
+	return true
 
 ## Every placed instance reduced to its saveable footprint (Phase 2.8.1) —
 ## see BuildingSaveEntry for why the full BuildingDefinition isn't included.

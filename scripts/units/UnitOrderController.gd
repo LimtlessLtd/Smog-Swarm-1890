@@ -21,8 +21,10 @@ extends Node
 ## unit's current order (see its own doc comment, "contact matters however
 ## it happens"), so an attack-moving unit and a merely-passing-through one
 ## fight identically the moment either touches a horde's hex. Garrison
-## orders' "stationary defense bonus" is still unimplemented — nothing
-## computes a combat bonus of any kind yet.
+## orders' "stationary defense bonus" is real now too, though not computed
+## here — CombatCoordinator._garrison_incoming_multiplier() reads
+## UnitInstance.order directly at engagement time, the same "owns neither,
+## only reads the shared data" split this file already keeps from combat.
 ##
 ## UnitManager and UnitOrderController never reference each other's
 ## methods, only the UnitInstance data both read/write (order/move_target/

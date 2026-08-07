@@ -63,3 +63,10 @@ static func get_upgrade_cost(tier: int) -> Dictionary:
 	for resource_type in cost:
 		result[resource_type] = float(cost[resource_type]) * 0.5
 	return result
+
+## Design doc Phase 4.1/4.2: repairing a breached segment back to its
+## current tier — "cheaper than building it from scratch" is the same
+## framing WallManager.upgrade_segment()'s own 50% already uses, reused
+## here rather than inventing a separate fraction.
+static func get_repair_cost(tier: int) -> Dictionary:
+	return get_upgrade_cost(tier)

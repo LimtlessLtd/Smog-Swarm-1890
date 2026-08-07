@@ -40,6 +40,7 @@ world_root_path = NodePath("../WorldRoot")
 hex_grid_map_path = NodePath("../WorldRoot/HexGridMap")
 resource_manager_path = NodePath("../ResourceManager")
 discontent_manager_path = NodePath("../DiscontentManager")
+territory_controller_path = NodePath("../TerritoryController")
 
 [node name="LogisticsNetwork" parent="." instance=ExtResource("5")]
 hex_grid_map_path = NodePath("../WorldRoot/HexGridMap")
@@ -73,6 +74,7 @@ logistics_network_path = NodePath("../LogisticsNetwork")
 hex_grid_map_path = NodePath("../WorldRoot/HexGridMap")
 logistics_network_path = NodePath("../LogisticsNetwork")
 building_manager_path = NodePath("../BuildingManager")
+wall_manager_path = NodePath("../WallManager")
 
 [node name="TerritoryController" parent="." instance=ExtResource("22")]
 hex_grid_map_path = NodePath("../WorldRoot/HexGridMap")
