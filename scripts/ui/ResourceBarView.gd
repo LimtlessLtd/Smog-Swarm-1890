@@ -12,9 +12,13 @@ var _resource_manager: ResourceManager
 var _labels: Dictionary = {}  # GameEnums.ResourceType -> Label
 
 func _ready() -> void:
-	add_theme_constant_override("separation", 24)
+	add_theme_constant_override("separation", 18)
+	HUDStyles.style_panel(self)
 	for resource_type in ResourceVisuals.display_order():
 		var label := Label.new()
+		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		HUDStyles.style_label(label)
 		add_child(label)
 		_labels[resource_type] = label
 

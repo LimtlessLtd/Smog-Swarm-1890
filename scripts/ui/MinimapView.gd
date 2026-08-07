@@ -39,9 +39,9 @@ extends Control
 const VIEWPORT_REFRESH_SECONDS: float = 0.1
 const HEX_DOT_HALF_SIZE: float = 1.5   ## Minimap-space pixels, not world-space — every hex draws as the same small flat square regardless of actual hex size.
 const BUILDING_DOT_RADIUS: float = 2.5
-const BACKGROUND_COLOR: Color = Color(0.05, 0.05, 0.05, 0.85)
-const BORDER_COLOR: Color = Color(1.0, 1.0, 1.0, 0.25)
-const VIEWPORT_FRAME_COLOR: Color = Color(1.0, 1.0, 1.0, 0.8)
+const BACKGROUND_COLOR: Color = Color("#1f150f")
+const BORDER_COLOR: Color = Color("#cfa24e")
+const VIEWPORT_FRAME_COLOR: Color = Color("#f4e7c5")
 
 var _hex_grid_map: HexGridMap
 var _building_manager: BuildingManager

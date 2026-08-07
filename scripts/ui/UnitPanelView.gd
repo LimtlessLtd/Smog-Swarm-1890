@@ -24,7 +24,9 @@ var _list: VBoxContainer
 
 func _ready() -> void:
 	custom_minimum_size = Vector2(260, 220)
+	HUDStyles.style_panel(self)
 	_list = VBoxContainer.new()
+	_list.add_theme_constant_override("separation", 6)
 	_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	add_child(_list)
 	_render_idle()
@@ -76,12 +78,14 @@ func _render_idle() -> void:
 	_clear_list()
 	var hint := Label.new()
 	hint.text = "Click a unit to command it, or a Garrison to train one."
+	HUDStyles.style_label(hint)
 	_list.add_child(hint)
 
 func _render_training_panel(coord: Vector2i) -> void:
 	_clear_list()
 	var header := Label.new()
 	header.text = "Train at %s" % coord
+	HUDStyles.style_label(header, true)
 	_list.add_child(header)
 	if not _unit_manager:
 		return
@@ -92,6 +96,7 @@ func _render_training_panel(coord: Vector2i) -> void:
 		button.disabled = not error.is_empty()
 		button.tooltip_text = error if not error.is_empty() else _format_cost(definition.training_cost)
 		button.pressed.connect(_on_train_pressed.bind(coord, definition.unit_type))
+		HUDStyles.style_button(button)
 		_list.add_child(button)
 
 func _on_train_pressed(coord: Vector2i, unit_type: GameEnums.UnitType) -> void:
@@ -104,39 +109,47 @@ func _render_unit_panel(instance: UnitInstance) -> void:
 
 	var header := Label.new()
 	header.text = "%s (T%d %s)" % [definition.display_name, definition.tier, _role_name(definition.role)]
+	HUDStyles.style_label(header, true)
 	_list.add_child(header)
 
 	var stats := Label.new()
 	stats.text = "HP %d/%d — %s — %s" % [int(instance.current_hp), int(definition.max_hp), _rank_name(UnitMorale.get_rank(instance)), _order_name(instance.order)]
+	HUDStyles.style_label(stats)
 	_list.add_child(stats)
 
 	var hold_button := Button.new()
 	hold_button.text = "Hold"
 	hold_button.pressed.connect(_unit_command_controller.order_hold)
+	HUDStyles.style_button(hold_button)
 	_list.add_child(hold_button)
 
 	var garrison_button := Button.new()
 	garrison_button.text = "Garrison"
 	garrison_button.pressed.connect(_unit_command_controller.order_garrison)
+	HUDStyles.style_button(garrison_button)
 	_list.add_child(garrison_button)
 
 	if _unit_command_controller.is_recording_patrol():
 		var recording_label := Label.new()
 		recording_label.text = "Recording patrol — %d waypoint(s). Left-click the map to add, right-click/Esc to cancel." % _unit_command_controller.get_patrol_waypoint_count()
+		HUDStyles.style_label(recording_label)
 		_list.add_child(recording_label)
 		var confirm_button := Button.new()
 		confirm_button.text = "Confirm Patrol"
 		confirm_button.disabled = _unit_command_controller.get_patrol_waypoint_count() == 0
 		confirm_button.pressed.connect(_unit_command_controller.confirm_patrol_recording)
+		HUDStyles.style_button(confirm_button)
 		_list.add_child(confirm_button)
 	else:
 		var patrol_button := Button.new()
 		patrol_button.text = "Patrol… (click waypoints on map)"
 		patrol_button.pressed.connect(_unit_command_controller.begin_patrol_recording)
+		HUDStyles.style_button(patrol_button)
 		_list.add_child(patrol_button)
 
 	var retrain_header := Label.new()
 	retrain_header.text = "Retrain into:"
+	HUDStyles.style_label(retrain_header, true)
 	_list.add_child(retrain_header)
 	var any_retrain_candidate := false
 	for candidate in UnitCatalog.get_all_definitions():
@@ -149,10 +162,12 @@ func _render_unit_panel(instance: UnitInstance) -> void:
 		retrain_button.disabled = not error.is_empty()
 		retrain_button.tooltip_text = error if not error.is_empty() else _format_cost(_retrain_preview_cost(candidate))
 		retrain_button.pressed.connect(_on_retrain_pressed.bind(candidate.unit_type))
+		HUDStyles.style_button(retrain_button)
 		_list.add_child(retrain_button)
 	if not any_retrain_candidate:
 		var none_label := Label.new()
 		none_label.text = "(top tier for this role)"
+		HUDStyles.style_label(none_label)
 		_list.add_child(none_label)
 
 func _on_retrain_pressed(unit_type: GameEnums.UnitType) -> void:

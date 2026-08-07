@@ -4,14 +4,14 @@ extends HBoxContainer
 ## Top-right HUD strip (design doc Phase 6.1): day counter + Victorian
 ## calendar date (TimeCycleManager, Phase 5.1) + Day/Night phase countdown
 ## clock ("Nightfall in 04:15" — the design doc's own example, shown here as
-## the more compact "Night (04:15)"/"Day (04:15)") + 0x/1x/2x/3x/5x speed
-## buttons. Pure UI over TickManager/TimeCycleManager (autoloads, globally
+## the more compact "Night (04:15)"/"Day (04:15)") + 0x/5x/20x/50x/100x/1000x
+## speed buttons. Pure UI over TickManager/TimeCycleManager (autoloads, globally
 ## accessible — no NodePath needed) with no simulation logic of its own.
 ## Widened from its original day-counter-only footprint to fit the new text;
 ## still a code-drawn placeholder like the rest of the HUD, not a final
 ## art/layout pass — see MainHUD's own doc comment on that convention.
 
-const SPEED_LABELS: Array[String] = ["0x", "1x", "2x", "3x", "5x"]
+const SPEED_LABELS: Array[String] = ["0x", "5x", "20x", "50x", "100x", "1000x"]  ## Must stay index-parallel with TickManager.SPEED_MULTIPLIERS.
 const COUNTDOWN_REFRESH_SECONDS: float = 1.0  ## No need to update a mm:ss label every single frame.
 
 var _day_label: Label
@@ -20,11 +20,14 @@ var _speed_buttons: Array[Button] = []
 var _countdown_timer: Timer
 
 func _ready() -> void:
-	add_theme_constant_override("separation", 12)
+	add_theme_constant_override("separation", 10)
+	HUDStyles.style_panel(self)
 	_day_label = Label.new()
+	HUDStyles.style_label(_day_label, true)
 	add_child(_day_label)
 
 	_phase_label = Label.new()
+	HUDStyles.style_label(_phase_label)
 	add_child(_phase_label)
 
 	for i in range(SPEED_LABELS.size()):
@@ -32,6 +35,7 @@ func _ready() -> void:
 		button.text = SPEED_LABELS[i]
 		button.toggle_mode = true
 		button.pressed.connect(_on_speed_button_pressed.bind(i))
+		HUDStyles.style_button(button)
 		add_child(button)
 		_speed_buttons.append(button)
 
