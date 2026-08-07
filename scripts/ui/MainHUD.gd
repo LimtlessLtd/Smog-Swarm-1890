@@ -2,16 +2,19 @@ class_name MainHUD
 extends CanvasLayer
 
 ## Root HUD coordinator — the essential slice of design doc Phase 6.1:
-## resource display, the build/placement menu, time controls, and the
-## Strategic-layer minimap (shown only during Tactical zoom — see
-## MinimapView's own doc comment for why). The per-sector Threat Meter
-## bullet stays unbuilt (see todo.md — it needs Phase 5's horde-attraction
-## system to have a level to show, which doesn't exist yet).
+## resource display, the build/placement menu, unit training/orders panel,
+## time controls, and the Strategic-layer minimap (shown only during
+## Tactical zoom — see MinimapView's own doc comment for why). The
+## per-sector Threat Meter bullet stays unbuilt (see todo.md — it needs
+## Phase 5's horde-attraction system to have a level to show, which doesn't
+## exist yet).
 ##
 ## Owns no game logic itself: only wires the dumb display components
-## (ResourceBarView / TimeControlsView / BuildMenuView) to the systems they
-## read from, and forwards BuildMenuView's selection into
-## BuildPlacementController. Every child Control is built in code rather
+## (ResourceBarView / TimeControlsView / BuildMenuView / UnitPanelView) to
+## the systems they read from, and forwards BuildMenuView's selection into
+## BuildPlacementController and UnitPanelView's button presses into
+## UnitCommandController (which owns the actual map-click selection/order
+## input — see its own doc comment). Every child Control is built in code rather
 ## than scene-authored, matching HexCellView/StrategicOverlayManager's
 ## "code-drawn placeholder" convention — there's no art pass to wait for
 ## before wiring this up, and no editor session in this workflow to lay out
@@ -27,6 +30,8 @@ extends CanvasLayer
 @export var building_manager_path: NodePath
 @export var save_load_manager_path: NodePath
 @export var build_placement_controller_path: NodePath
+@export var unit_command_controller_path: NodePath
+@export var unit_manager_path: NodePath
 @export var hex_grid_map_path: NodePath
 @export var fog_of_war_manager_path: NodePath
 @export var camera_path: NodePath
@@ -41,10 +46,12 @@ const TIME_CONTROLS_WIDTH := 460.0  ## Widened for Phase 5.1's date + phase coun
 const SAVE_LOAD_WIDTH := 220.0
 const BUILD_MENU_SIZE := Vector2(260.0, 260.0)
 const MINIMAP_SIZE := Vector2(220.0, 160.0)
+const UNIT_PANEL_SIZE := Vector2(260.0, 260.0)
 
 var _building_manager: BuildingManager
 var _save_load_manager: SaveLoadManager
 var _build_placement_controller: BuildPlacementController
+var _unit_command_controller: UnitCommandController
 
 var _mode_label: Label
 var _toast_label: Label
@@ -66,6 +73,11 @@ func _ready() -> void:
 		_build_placement_controller = get_node(build_placement_controller_path)
 		_build_placement_controller.placement_started.connect(_on_placement_started)
 		_build_placement_controller.placement_ended.connect(_on_placement_ended)
+	if unit_command_controller_path != NodePath():
+		_unit_command_controller = get_node(unit_command_controller_path)
+	var unit_manager: UnitManager = null
+	if unit_manager_path != NodePath():
+		unit_manager = get_node(unit_manager_path)
 
 	var hex_grid_map: HexGridMap = null
 	if hex_grid_map_path != NodePath():
@@ -83,6 +95,7 @@ func _ready() -> void:
 	_build_minimap(hex_grid_map, fog_of_war_manager, camera)
 	_build_mode_label()
 	_build_build_menu()
+	_build_unit_panel(unit_manager)
 	_build_toast()
 
 func _build_resource_bar(resource_manager: ResourceManager) -> void:
@@ -145,6 +158,20 @@ func _build_build_menu() -> void:
 	_place_bottom_left(build_menu, BUILD_MENU_SIZE)
 	build_menu.building_selected.connect(_on_building_selected)
 
+## UnitPanelView (Phase 6.1's unit training/orders counterpart to the Build
+## Menu) — top-left corner, the one spot nothing else in this HUD claims
+## (top-wide strip: resource bar/mode label; top-right: time controls/
+## save-load; bottom-left: build menu; bottom-right: minimap; bottom-wide:
+## toast). Gracefully empty if unit_command_controller_path wasn't wired,
+## same "unset gracefully skips it" convention every other optional MainHUD
+## dependency already follows.
+func _build_unit_panel(unit_manager: UnitManager) -> void:
+	var unit_panel := UnitPanelView.new()
+	add_child(unit_panel)
+	_place_top_left(unit_panel, UNIT_PANEL_SIZE)
+	if _unit_command_controller:
+		unit_panel.setup(_unit_command_controller, unit_manager)
+
 func _build_toast() -> void:
 	_toast_label = Label.new()
 	add_child(_toast_label)
@@ -203,6 +230,19 @@ func _place_top_right(control: Control, width: float, row: int) -> void:
 	control.offset_left = -MARGIN - width
 	control.offset_top = MARGIN + row * (ROW_HEIGHT + MARGIN)
 	control.offset_bottom = control.offset_top + ROW_HEIGHT
+
+## Fixed-`size` rect pinned to the top-left corner, below the top-wide
+## resource bar/mode label strip (2 rows tall) — UnitPanelView's own spot,
+## the one corner nothing else in this HUD claims.
+func _place_top_left(control: Control, size: Vector2) -> void:
+	control.anchor_left = 0.0
+	control.anchor_right = 0.0
+	control.anchor_top = 0.0
+	control.anchor_bottom = 0.0
+	control.offset_left = MARGIN
+	control.offset_right = MARGIN + size.x
+	control.offset_top = MARGIN + 2 * (ROW_HEIGHT + MARGIN)
+	control.offset_bottom = control.offset_top + size.y
 
 ## Fixed-`size` rect pinned to the bottom-left corner.
 func _place_bottom_left(control: Control, size: Vector2) -> void:

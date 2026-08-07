@@ -68,7 +68,7 @@ func _process(delta: float) -> void:
 		for instance in _unit_manager.get_all_units():
 			_advance_unit(instance)
 
-## --- Order issuing (player-facing API; no UI calls these yet — Phase 6+) --
+## --- Order issuing (player-facing API — called by UnitCommandController, Phase 6.1) --
 
 func issue_move_order(instance: UnitInstance, destination: Vector2i) -> void:
 	_set_order(instance, GameEnums.UnitOrderType.MOVE)
