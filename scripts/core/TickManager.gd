@@ -7,11 +7,21 @@ extends Node
 ## it).
 ##
 ## Minimal implementation of the "Global TickManager" promised by the design
-## overview: real-time day length plus the 0x/1x/2x/3x/5x speed control
+## overview: real-time day length plus the 0x/5x/20x/50x/100x/1000x speed control
 ## (applied via Engine.time_scale, as the overview specifies). This exists
 ## now purely so Phase 2.2's "daily upkeep drains" have a "day" to hang off
 ## (`day_completed`); Phase 5.1 owns the actual Day/Night visual phase split
 ## within that day and should extend this rather than replace it.
+##
+## Re-tuned per user request ("quite long even with 5x") — replaced the
+## original 0x/1x/2x/3x/5x ladder with a fast-forward-focused one that keeps
+## 0x (pause) and 5x (new default, index 1) but otherwise climbs steeply —
+## 20x/50x/100x/1000x — rather than adding finer-grained low-end steps.
+## Every consumer of speed here (day length, unit/horde movement, resource
+## drains, the countdown timer) is already plain delta-based and scales via
+## Engine.time_scale, so a bigger multiplier needs no extra wiring — see
+## this array and TimeControlsView.SPEED_LABELS, the only two places a speed
+## step is defined, kept index-parallel.
 
 signal day_completed(day_number: int)
 signal speed_changed(multiplier: float)
@@ -21,7 +31,7 @@ signal speed_changed(multiplier: float)
 ## higher speeds shorten a day's real-time length instead of changing its
 ## meaning.
 const DAY_LENGTH_SECONDS: float = 2400.0
-const SPEED_MULTIPLIERS: Array[float] = [0.0, 1.0, 2.0, 3.0, 5.0]  ## 0x, 1x, 2x, 3x, 5x.
+const SPEED_MULTIPLIERS: Array[float] = [0.0, 5.0, 20.0, 50.0, 100.0, 1000.0]
 
 var current_day: int = 1
 var elapsed_in_day: float = 0.0

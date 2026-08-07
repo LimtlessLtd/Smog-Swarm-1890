@@ -20,7 +20,9 @@ const CATEGORY_ORDER: Array[GameEnums.BuildingCategory] = [
 
 func _ready() -> void:
 	custom_minimum_size = Vector2(260, 260)
+	HUDStyles.style_panel(self)
 	var list := VBoxContainer.new()
+	list.add_theme_constant_override("separation", 6)
 	list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	add_child(list)
 	_populate(list)
@@ -29,6 +31,7 @@ func _populate(list: VBoxContainer) -> void:
 	for category in CATEGORY_ORDER:
 		var header := Label.new()
 		header.text = _category_name(category)
+		HUDStyles.style_label(header, true)
 		list.add_child(header)
 		for definition in BuildingCatalog.get_definitions_in_category(category):
 			var button := Button.new()
@@ -38,6 +41,7 @@ func _populate(list: VBoxContainer) -> void:
 			# Iron") run too long to fit the panel alongside the name.
 			button.tooltip_text = _format_cost(definition.construction_cost)
 			button.pressed.connect(_on_building_button_pressed.bind(definition.building_type))
+			HUDStyles.style_button(button)
 			list.add_child(button)
 
 func _on_building_button_pressed(building_type: GameEnums.BuildingType) -> void:

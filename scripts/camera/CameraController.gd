@@ -67,7 +67,7 @@ extends Camera2D
 ## constant on-screen (not world-space) rate — see _handle_pan_input()'s
 ## own comment for why the old formula would have made panning catastrophically
 ## twitchy at the new, much deeper max_zoom.
-@export var pan_speed: float = 128.0
+@export var pan_speed: float = 220.0
 @export var min_zoom: float = 0.00375  ## The most zoomed-OUT allowed value. Phase 2.5.6: scaled by 1/8 alongside HexCoord.HEX_SIZE's 8x increase (0.03 -> 0.00375) — visible world width is viewport/zoom.x, so a bigger world needs a SMALLER zoom value to keep framing the same fraction of it — see tactical_zoom_threshold.
 @export var max_zoom: float = 6.0  ## The most zoomed-IN allowed value — see this class's own doc comment for why this was raised 19.2x from the Phase 2.5.6 value (0.3125): individual unit/zombie figures need to actually be visible, not sub-pixel, at the closest zoom.
 @export var zoom_factor_per_step: float = 1.12  ## Multiplicative zoom per scroll click (12%) — see this class's own doc comment for why this replaced a flat additive zoom_step.
@@ -97,6 +97,7 @@ var perspective: GameEnums.CameraPerspective = GameEnums.CameraPerspective.TOP_D
 
 var _world_root: Node2D
 var _perspective_tween: Tween
+var _middle_dragging: bool = false
 
 func _ready() -> void:
 	InputBindings.register_defaults()
@@ -120,7 +121,16 @@ func get_tactical_fidelity() -> GameEnums.TacticalFidelity:
 	return GameEnums.TacticalFidelity.LOW
 
 func _process(delta: float) -> void:
-	_handle_pan_input(delta)
+	var pan_delta := delta
+	if Engine.time_scale != 0.0:
+		pan_delta = delta / Engine.time_scale
+	_handle_pan_input(pan_delta)
+
+func _input(event: InputEvent) -> void:
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_MIDDLE:
+		_handle_middle_mouse(event)
+	elif event is InputEventMouseMotion:
+		_handle_middle_drag(event)
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
@@ -177,6 +187,16 @@ func _handle_pan_input(delta: float) -> void:
 		# own doc comment) so this reads identically to the old formula at
 		# the default starting Strategic zoom.
 		position += direction.normalized() * (pan_speed / zoom.x) * delta
+
+func _handle_middle_mouse(event: InputEventMouseButton) -> void:
+	_middle_dragging = event.pressed
+
+func _handle_middle_drag(event: InputEventMouseMotion) -> void:
+	if not _middle_dragging:
+		return
+	# Dragging the world by the middle mouse button should feel direct and
+	# screen-space consistent across zoom levels.
+	position -= event.relative / zoom.x
 
 func _handle_zoom_input(event: InputEventMouseButton) -> void:
 	if not event.pressed:

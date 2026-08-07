@@ -42,7 +42,7 @@ const TOAST_SECONDS := 3.0
 
 const MARGIN := 8.0
 const ROW_HEIGHT := 32.0
-const TIME_CONTROLS_WIDTH := 460.0  ## Widened for Phase 5.1's date + phase countdown text alongside the day counter/speed buttons.
+const TIME_CONTROLS_WIDTH := 520.0  ## Widened for Phase 5.1's date + phase countdown text alongside the day counter/speed buttons; widened again for the 50x speed button.
 const SAVE_LOAD_WIDTH := 220.0
 const BUILD_MENU_SIZE := Vector2(260.0, 260.0)
 const MINIMAP_SIZE := Vector2(220.0, 160.0)
@@ -100,6 +100,7 @@ func _ready() -> void:
 
 func _build_resource_bar(resource_manager: ResourceManager) -> void:
 	var resource_bar := ResourceBarView.new()
+	resource_bar.name = "ResourceBar"
 	add_child(resource_bar)
 	_place_top_wide(resource_bar, 0)
 	if resource_manager:
@@ -107,6 +108,7 @@ func _build_resource_bar(resource_manager: ResourceManager) -> void:
 
 func _build_time_controls() -> void:
 	var time_controls := TimeControlsView.new()
+	time_controls.name = "TimeControls"
 	add_child(time_controls)
 	# Row 1, not 0: ResourceBarView (row 0) is a full-width top-wide strip
 	# whose resource chips can run most of the screen's width (8 resource
@@ -120,17 +122,20 @@ func _build_time_controls() -> void:
 
 func _build_save_load_bar() -> void:
 	var bar := HBoxContainer.new()
+	bar.name = "SaveLoadBar"
 	add_child(bar)
 	_place_top_right(bar, SAVE_LOAD_WIDTH, 2)  # Row 2: stacks below TimeControlsView in the same corner.
 
 	var save_button := Button.new()
 	save_button.text = "Quick Save"
 	save_button.pressed.connect(_on_quick_save_pressed)
+	HUDStyles.style_button(save_button)
 	bar.add_child(save_button)
 
 	var load_button := Button.new()
 	load_button.text = "Quick Load"
 	load_button.pressed.connect(_on_quick_load_pressed)
+	HUDStyles.style_button(load_button)
 	bar.add_child(load_button)
 
 ## Design doc Phase 6.1's minimap — bottom-right corner is the only one of
@@ -142,18 +147,24 @@ func _build_save_load_bar() -> void:
 ## MainHUD dependency already follows.
 func _build_minimap(hex_grid_map: HexGridMap, fog_of_war_manager: FogOfWarManager, camera: CameraController) -> void:
 	var minimap := MinimapView.new()
+	minimap.name = "Minimap"
 	add_child(minimap)
 	_place_bottom_right(minimap, MINIMAP_SIZE)
 	minimap.setup(hex_grid_map, _building_manager, fog_of_war_manager, camera, MINIMAP_SIZE)
 
 func _build_mode_label() -> void:
 	_mode_label = Label.new()
+	_mode_label.name = "ModeLabel"
 	add_child(_mode_label)
 	_place_top_wide(_mode_label, 1)  # Row 1: below the resource bar, same top-wide strip.
 	_mode_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_mode_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_mode_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	HUDStyles.style_label(_mode_label, true)
 
 func _build_build_menu() -> void:
 	var build_menu := BuildMenuView.new()
+	build_menu.name = "BuildMenu"
 	add_child(build_menu)
 	_place_bottom_left(build_menu, BUILD_MENU_SIZE)
 	build_menu.building_selected.connect(_on_building_selected)
@@ -167,6 +178,7 @@ func _build_build_menu() -> void:
 ## dependency already follows.
 func _build_unit_panel(unit_manager: UnitManager) -> void:
 	var unit_panel := UnitPanelView.new()
+	unit_panel.name = "UnitPanel"
 	add_child(unit_panel)
 	_place_top_left(unit_panel, UNIT_PANEL_SIZE)
 	if _unit_command_controller:
@@ -174,6 +186,7 @@ func _build_unit_panel(unit_manager: UnitManager) -> void:
 
 func _build_toast() -> void:
 	_toast_label = Label.new()
+	_toast_label.name = "ToastLabel"
 	add_child(_toast_label)
 	_place_bottom_wide(_toast_label)
 	_toast_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
