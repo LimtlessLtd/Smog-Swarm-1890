@@ -611,10 +611,24 @@ func _build_wall_marker(segment: WallSegment) -> Node2D:
 
 	return container
 
+## User request, this pass: real tileable wall art (WallVisuals.tier_texture(),
+## assets/walls/README.md) for an INTACT segment — Line2D natively tiles a
+## texture along its own length (texture_mode = LINE_TEXTURE_TILE), so this
+## needs no UV-mapping of its own the way a Polygon2D would. A breached
+## segment always keeps the flat alarm-red look regardless of art (clear the
+## texture rather than tile it red) — see WallVisuals.tier_texture()'s own
+## doc comment for why. default_color still gets set even with a texture
+## assigned: Line2D multiplies texture color by default_color, so leaving it
+## at the tier color would tint real art an unintended hue — reset to plain
+## white (no tint) whenever a real texture is in play, tier color only
+## otherwise.
 func _apply_wall_segment_look(marker: Node2D, segment: WallSegment) -> void:
 	var body := marker.get_node("Body") as Line2D
 	var breached := segment.is_breached()
-	body.default_color = WallVisuals.breached_color() if breached else WallVisuals.tier_color(segment.tier)
+	var texture := WallVisuals.tier_texture(segment.tier) if not breached else null
+	body.texture = texture
+	body.texture_mode = Line2D.LINE_TEXTURE_TILE
+	body.default_color = Color.WHITE if texture else (WallVisuals.breached_color() if breached else WallVisuals.tier_color(segment.tier))
 	body.width = WallVisuals.line_width(segment.tier, breached)
 	var is_legacy := _wall_manager != null and _wall_manager.is_legacy_segment(segment)
 	marker.modulate = WallVisuals.legacy_modulate() if is_legacy else WallVisuals.outer_modulate()
@@ -649,13 +663,23 @@ func _update_defense_work_marker(marker: Node2D, segment: WallSegment) -> void:
 		work.visible = false
 		return
 	work.visible = true
-	work.color = WallVisuals.defense_work_color(segment.has_ditch, segment.has_oil_pit)
 	var midpoint := (HexCoord.axial_to_world(segment.hex_a) + HexCoord.axial_to_world(segment.hex_b)) / 2.0
 	var half := 5.0
 	work.polygon = PackedVector2Array([
 		midpoint + Vector2(-half, -half), midpoint + Vector2(half, -half),
 		midpoint + Vector2(half, half), midpoint + Vector2(-half, half),
 	])
+	# User request, this pass: real art (WallVisuals.defense_work_texture(),
+	# assets/walls/README.md) where authored — a genuine 4-vertex quad (the
+	# square built above), so a plain corner-to-corner uv mapping is exactly
+	# the SAFE case TacticalHexView's own building-quad code already relies
+	# on (not the hex-fan case that bit terrain art once — see that class's
+	# own doc comment). Falls back to the flat blended color when no texture
+	# exists yet, unchanged from before this pass.
+	var texture := WallVisuals.defense_work_texture(segment.has_ditch, segment.has_oil_pit)
+	work.texture = texture
+	work.uv = PackedVector2Array([Vector2(0, 0), Vector2(1, 0), Vector2(1, 1), Vector2(0, 1)])
+	work.color = Color.WHITE if texture else WallVisuals.defense_work_color(segment.has_ditch, segment.has_oil_pit)
 
 ## --- Threat Meter (Phase 6.1) — world-view surface ---------------------
 ##

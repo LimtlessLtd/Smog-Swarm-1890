@@ -8,6 +8,11 @@ extends HBoxContainer
 ## matching HexCellView/StrategicOverlayManager's "code-drawn placeholder"
 ## convention.
 
+## Icon pixel size — small enough to sit comfortably inline with a Label at
+## this bar's own font size, matching HUDStyles' existing text scale rather
+## than a hand-picked number disconnected from it.
+const ICON_SIZE: int = 20
+
 var _resource_manager: ResourceManager
 var _labels: Dictionary = {}  # GameEnums.ResourceType -> Label
 
@@ -15,11 +20,28 @@ func _ready() -> void:
 	add_theme_constant_override("separation", 18)
 	HUDStyles.style_panel(self)
 	for resource_type in ResourceVisuals.display_order():
+		# User request, this pass: a real icon (assets/icons/README.md) next
+		# to each resource's text where one exists yet — an inner HBoxContainer
+		# per resource so the icon (TextureRect, only added when
+		# ResourceVisuals.icon() returns non-null) and Label sit side by side.
+		# No icon authored yet just means today's exact text-only look, same
+		# "art lands incrementally" contract every other *Visuals.gd here
+		# already follows.
+		var entry := HBoxContainer.new()
+		entry.add_theme_constant_override("separation", 4)
+		var icon_texture := ResourceVisuals.icon(resource_type)
+		if icon_texture:
+			var icon_rect := TextureRect.new()
+			icon_rect.texture = icon_texture
+			icon_rect.custom_minimum_size = Vector2(ICON_SIZE, ICON_SIZE)
+			icon_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+			entry.add_child(icon_rect)
 		var label := Label.new()
 		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 		HUDStyles.style_label(label)
-		add_child(label)
+		entry.add_child(label)
+		add_child(entry)
 		_labels[resource_type] = label
 
 ## Called by MainHUD once it has resolved its ResourceManager NodePath — this

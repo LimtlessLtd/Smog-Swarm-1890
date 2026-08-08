@@ -227,7 +227,7 @@ func _advance_toward(instance: UnitInstance, destination: Vector2i, revert_to_ho
 	while remaining > 0.0 and not instance.path.is_empty():
 		var next_coord: Vector2i = instance.path[0]
 		var from_coord := instance.hex_coord  ## Captured BEFORE the call below overwrites it — this is the hex actually being left this crossing.
-		var speed := _movement_speed(from_coord, next_coord)
+		var speed := _movement_speed(instance, from_coord, next_coord)
 		var obstacles := _gather_obstacles(from_coord, next_coord)
 		var result := MovementStepper.advance_toward_hex(from_coord, instance.local_position, next_coord, remaining, speed, obstacles, ENTITY_RADIUS)
 		instance.hex_coord = result["hex_coord"]
@@ -268,8 +268,11 @@ func _replan(instance: UnitInstance, destination: Vector2i) -> void:
 ## plus Phase 5.1's Day movement bonus, stacking multiplicatively with
 ## terrain/logistics like every other factor here rather than replacing
 ## them. No Night case — see DAY_MOVE_SPEED_MULTIPLIER's own doc comment.
-func _movement_speed(from_coord: Vector2i, to_coord: Vector2i) -> float:
-	var speed := MovementStepper.BASE_MOVE_SPEED
+## `instance.definition.move_speed_multiplier` (user request, this pass —
+## mounted SPECIAL units run faster) stacks on top the same way; 1.0 for
+## every unit that isn't mounted, so this is a no-op for the other 15.
+func _movement_speed(instance: UnitInstance, from_coord: Vector2i, to_coord: Vector2i) -> float:
+	var speed := MovementStepper.BASE_MOVE_SPEED * instance.definition.move_speed_multiplier
 	if _hex_grid_map:
 		speed *= HexPathfinder.get_terrain_speed_multiplier(_hex_grid_map.get_cell(from_coord))
 	speed *= HexPathfinder.get_logistics_speed_multiplier(_logistics_network, from_coord, to_coord)

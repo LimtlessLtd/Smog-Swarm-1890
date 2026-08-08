@@ -97,11 +97,25 @@ static func _texture_key(building_type: GameEnums.BuildingType) -> String:
 		_:  # DITCH/OIL_PIT never reach here — placed via WallManager, never rendered as a BuildingInstance box (see WallManager's own doc comment).
 			return ""
 
+## User request (this pass): real AI-generated building art (see
+## `assets/buildings/README.md`) is meant to eventually supersede the
+## hand-drawn SVGs the same way those superseded the original flat-color
+## placeholders — checked FIRST, not instead. A `.png` at this building's
+## key wins if present; otherwise this falls through to the existing `.svg`
+## exactly as before this pass; otherwise `null` (category_color() fallback,
+## unchanged). No building loses its art the moment this shipped — every one
+## of the 18 already-authored SVGs keeps rendering exactly as it does today
+## until a nicer PNG actually replaces it, one building at a time, same
+## "art lands incrementally, zero further code changes" contract every
+## other `*Visuals.gd` in this project already follows.
 static func _load_texture(building_type: GameEnums.BuildingType) -> Texture2D:
 	var key := _texture_key(building_type)
 	if key.is_empty():
 		return null
-	var path := "res://assets/buildings/%s.svg" % key
-	if not ResourceLoader.exists(path):
-		return null
-	return load(path) as Texture2D
+	var png_path := "res://assets/buildings/%s.png" % key
+	if ResourceLoader.exists(png_path):
+		return load(png_path) as Texture2D
+	var svg_path := "res://assets/buildings/%s.svg" % key
+	if ResourceLoader.exists(svg_path):
+		return load(svg_path) as Texture2D
+	return null
