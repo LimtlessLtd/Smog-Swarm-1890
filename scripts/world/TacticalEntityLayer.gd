@@ -56,6 +56,18 @@ extends Node2D
 ## outright (their cached value now encodes fidelity too, via a Vector2i
 ## key) so every currently-tracked group redraws under the new band on the
 ## very next _process() poll — no per-group bookkeeping needed beyond that.
+##
+## **Phase 6.3.1 (real unit art, AI-generated per todo.md's decided plan):**
+## `_build_unit_figure()`/`_build_role_marker()` both consult
+## `UnitVisuals.unit_texture()` and draw a real sprite in place of the flat
+## procedural shape wherever a PNG has been authored — HIGH and MEDIUM only.
+## LOW deliberately stays the uniform per-category blob forever (see its
+## own branch below) — it was never meant to distinguish unit types, only
+## "unit vs. building vs. zombie", so there's no art gap to fill there. As
+## of this pass no PNGs exist yet (see assets/units/README.md — no image
+## generation tool is available in this Claude Code environment), so every
+## unit still renders via the original procedural fallback; this is tested,
+## ready infrastructure, not yet visible art.
 
 const FIGURE_COLOR := Color(0.85, 0.8, 0.7)    ## Player-unit squad figures (HIGH) — pale "uniform" tone, distinct from terrain/prop/building colors.
 const VEHICLE_COLOR := Color(0.5, 0.46, 0.32)  ## Tier 4-5 single-model units (HIGH) — a heavier, darker tone than a squad figure.
@@ -182,21 +194,59 @@ func _update_unit_group(instance: UnitInstance) -> void:
 
 	match _fidelity:
 		GameEnums.TacticalFidelity.LOW:
+			# Deliberately NOT UnitVisuals-aware, even where art exists —
+			# LOW is a uniform per-category blob by design (design doc:
+			# "tell unit from building from zombie", not unit-from-unit),
+			# see this class's own doc comment.
 			group.add_child(_build_figure(FIGURE_COLOR, LOW_UNIT_RADIUS, Vector2.ZERO))
 		GameEnums.TacticalFidelity.MEDIUM:
 			group.add_child(_build_role_marker(instance))
-		_:  # HIGH — unchanged from before 2.5.5.
+		_:  # HIGH — unchanged from before 2.5.5, now UnitVisuals-aware (Phase 6.3.1).
 			if instance.is_squad_rendered():
 				for i in range(headcount):
-					group.add_child(_build_figure(FIGURE_COLOR, FIGURE_RADIUS, _scatter_offset(i, headcount)))
+					group.add_child(_build_unit_figure(instance, FIGURE_RADIUS, _scatter_offset(i, headcount), FIGURE_COLOR))
 			else:
-				group.add_child(_build_figure(VEHICLE_COLOR, VEHICLE_RADIUS, Vector2.ZERO))
+				group.add_child(_build_unit_figure(instance, VEHICLE_RADIUS, Vector2.ZERO, VEHICLE_COLOR))
 
-## MEDIUM fidelity's "tell a unit's role or tier apart" marker — shape by
-## role (never color alone, same accessibility principle every other marker
-## in this project follows), radius by tier.
+## Phase 6.3.1: real per-unit-type sprite art (UnitVisuals.unit_texture())
+## in place of the flat circle where authored, sized to the same diameter
+## the fallback circle would have used so real art slots into the existing
+## squad-ring/vehicle sizing with no other layout change. Falls back to
+## _build_figure()'s flat circle for any type with no PNG authored yet —
+## same "art lands incrementally, zero code changes elsewhere" contract
+## BuildingVisuals/TerrainVisuals already established. Uses Sprite2D rather
+## than TacticalHexView's Polygon2D-quad-with-explicit-uv approach — there's
+## no pre-existing polygon shape to texture here (figures are built ad hoc,
+## not drawn onto an existing box), so a plain sprite scaled to the target
+## diameter is the simpler, equally-correct choice for a standalone image.
+func _build_unit_figure(instance: UnitInstance, radius: float, offset: Vector2, fallback_color: Color) -> Node2D:
+	var texture := UnitVisuals.unit_texture(instance.definition.unit_type)
+	if not texture:
+		return _build_figure(fallback_color, radius, offset)
+	var sprite := Sprite2D.new()
+	sprite.texture = texture
+	sprite.position = offset
+	var largest_dim := maxf(texture.get_width(), texture.get_height())
+	sprite.scale = Vector2.ONE * ((radius * 2.0) / largest_dim)
+	return sprite
+
+## MEDIUM fidelity's "tell a unit's role or tier apart" marker. Real art
+## (Phase 6.3.1), when authored, replaces the procedural shape here too —
+## the SAME texture HIGH fidelity uses, just scaled to this tier's smaller
+## radius rather than a separately-generated MEDIUM-specific asset (todo.md
+## Phase 6.3.2's own decision: one generated image per unit, reused at both
+## fidelity bands, not a per-band asset set). Falls back to the original
+## shape-by-role marker (never color alone, same accessibility principle
+## every other marker in this project follows) when no art exists yet.
 func _build_role_marker(instance: UnitInstance) -> Node2D:
 	var radius := MEDIUM_UNIT_BASE_RADIUS + float(instance.definition.tier) * MEDIUM_UNIT_TIER_STEP
+	var texture := UnitVisuals.unit_texture(instance.definition.unit_type)
+	if texture:
+		var sprite := Sprite2D.new()
+		sprite.texture = texture
+		var largest_dim := maxf(texture.get_width(), texture.get_height())
+		sprite.scale = Vector2.ONE * ((radius * 2.0) / largest_dim)
+		return sprite
 	var shape := Polygon2D.new()
 	match instance.definition.role:
 		GameEnums.UnitRole.MELEE:
