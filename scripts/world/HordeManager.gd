@@ -182,6 +182,20 @@ const ATTRACTION_THRESHOLD: float = 3.0
 ## spreads across a similar radius, TacticalEntityLayer.FIGURE_SPREAD).
 const ENTITY_RADIUS: float = 20.0
 
+## Design doc Phase 5.1's Day/Night movement modifiers — unblocked now that
+## movement is continuous (Phase 5.5) rather than a fixed per-hex timer,
+## which is exactly what that phase's own note said it needed. "Zombies are
+## slow/sluggish" (Day) has no exact number in the design doc — a
+## placeholder balancing multiplier, same disclaimer every other constant
+## table in this project already carries. "Zombie move speed +50%" (Night)
+## IS an exact design-doc number, applied literally. Deliberately NOT
+## modeling "aggression +100%" or "double noise-attraction multiplier" here
+## — neither an aggression stat nor a noise-attraction system exists yet
+## (still blocked exactly as this phase's own note already says), so those
+## stay unbuilt; only the movement-speed half of the Night bullet is real.
+const DAY_MOVE_SPEED_MULTIPLIER: float = 0.65
+const NIGHT_MOVE_SPEED_MULTIPLIER: float = 1.5
+
 ## Design doc Phase 5.2, decided (grilling session): "a 'lone zombie' isn't
 ## a new entity type, it's just a Horde at small size ... ambient wilderness
 ## spawning needs a path to occasionally seed a genuinely tiny (1-3) horde,
@@ -575,12 +589,16 @@ func load_save_state(hordes: Array[Horde], next_id: int) -> void:
 ## Terrain (current hex) and logistics (this specific edge) speed
 ## multipliers stacked onto MovementStepper.BASE_MOVE_SPEED — same
 ## HexPathfinder table the drift route itself was chosen against, now also
-## shaping how fast continuous movement crosses it (Phase 2.12.1).
+## shaping how fast continuous movement crosses it (Phase 2.12.1) — plus
+## Phase 5.1's Day/Night modifier (sluggish by day, faster by night),
+## stacking multiplicatively with terrain/logistics like every other factor
+## here rather than replacing them.
 func _movement_speed(from_coord: Vector2i, to_coord: Vector2i) -> float:
 	var speed := MovementStepper.BASE_MOVE_SPEED
 	if _hex_grid_map:
 		speed *= HexPathfinder.get_terrain_speed_multiplier(_hex_grid_map.get_cell(from_coord))
 	speed *= HexPathfinder.get_logistics_speed_multiplier(_logistics_network, from_coord, to_coord)
+	speed *= NIGHT_MOVE_SPEED_MULTIPLIER if TimeCycleManager.is_night() else DAY_MOVE_SPEED_MULTIPLIER
 	return speed
 
 ## Buildings (always queryable) + props (only where Tactical-hydrated) near

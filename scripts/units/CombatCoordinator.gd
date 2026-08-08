@@ -62,11 +62,16 @@ extends Node
 ## folds a unit's current morale (HP/equipment/rank/tier) and veterancy
 ## bonus (rank alone) into the one scalar `CombatEngine.resolve_engagement()`
 ## accepts as `damage_multiplier` — computed fresh per engagement, never
-## cached. A win that destroys a Horde outright increments
-## `UnitInstance.kill_count` (`UnitMorale.get_rank()`'s own doc comment
-## explains why "destroys a Horde" is the decided definition of a kill).
-## `CombatCoordinator` is the only thing that references both `CombatEngine`
-## and `UnitMorale` — neither references the other or this class back.
+## cached. **Phase 5.1's Day bonus (`DAY_DAMAGE_MULTIPLIER`) stacks
+## multiplicatively on top of that same scalar**, `_engage()`'s own doing,
+## not `UnitMorale`'s — the two are independent inputs feeding one output,
+## same "orchestration layer folds independent systems together" role this
+## class already plays for morale + garrison/searchlight incoming-damage. A
+## win that destroys a Horde outright increments `UnitInstance.kill_count`
+## (`UnitMorale.get_rank()`'s own doc comment explains why "destroys a
+## Horde" is the decided definition of a kill). `CombatCoordinator` is the
+## only thing that references both `CombatEngine` and `UnitMorale` —
+## neither references the other or this class back.
 ##
 ## **Phase 2.5.4 (Individual Units & Squads):** `UnitInstance.get_squad_headcount()`
 ## derives a Tier 0-3 unit's visible figure count from `current_hp` alone —
@@ -136,6 +141,17 @@ const CASUALTY_ZOMBIES_PER_UNIT: int = 1
 const GARRISON_INCOMING_DAMAGE_MULTIPLIER: float = 0.75          ## 25% less incoming damage while GARRISON, any time of day.
 const SEARCHLIGHT_NIGHT_INCOMING_DAMAGE_MULTIPLIER: float = 0.6  ## A further 40% off at night, specifically near a lit Searchlight Tower.
 
+## Design doc Phase 5.1's Day Phase bullet: "Military units get increased
+## movement speed and damage" — the damage half (see
+## UnitOrderController.DAY_MOVE_SPEED_MULTIPLIER for the movement half,
+## which lives there instead since this class has no movement code of its
+## own). No exact number in the design doc — a placeholder balancing
+## multiplier, same disclaimer every other constant table here already
+## carries. Applies to every unit's OUTGOING damage during Day, not a
+## horde's — the design doc frames this bullet as a benefit specifically
+## for "Military units", not a general Day/Night combat-wide swing.
+const DAY_DAMAGE_MULTIPLIER: float = 1.1
+
 @export var unit_manager_path: NodePath
 @export var horde_manager_path: NodePath
 @export var unit_order_controller_path: NodePath
@@ -185,6 +201,8 @@ func _engage(instance: UnitInstance, horde: Horde) -> void:
 		gunpowder_available = _resource_manager.get_amount(GameEnums.ResourceType.GUNPOWDER) > 0.0
 
 	var damage_multiplier := UnitMorale.get_damage_multiplier(instance, gunpowder_available)
+	if TimeCycleManager.is_day():
+		damage_multiplier *= DAY_DAMAGE_MULTIPLIER
 	var incoming_damage_multiplier := _garrison_incoming_multiplier(instance)
 	var headcount_before := instance.get_squad_headcount()
 	var result := CombatEngine.resolve_engagement(instance, gunpowder_available, horde.get_combat_hp(), horde.get_combat_damage(), damage_multiplier, incoming_damage_multiplier)
