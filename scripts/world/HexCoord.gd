@@ -34,12 +34,27 @@ extends RefCounted
 ## Together these preserve the exact same Strategic-view experience (same
 ## relative pan speed, same fraction of the map visible at a given zoom
 ## level) even though the world-space numbers underneath got bigger.
-## Verified safe against float precision: the full 40x28 hex map now spans
+## Verified safe against float precision AT THE TIME: the original 40x28
+## hex map (just England's Manchester-Midlands-London corridor) spanned
 ## roughly 48,000x21,500 world units at its extremes, comfortably under the
 ## ~100,000 unit range where single-precision float jitter typically starts
-## to show. If the map ever grows dramatically larger than that, revisit
-## with a real floating-origin camera rebase instead of pushing this
-## constant further.
+## to show. **That's no longer true.** The map now spans the whole UK and
+## Ireland (design doc, user request — see BritishGeographyData's own doc
+## comment for the full expansion), and its real landmass alone (not even
+## counting the padded ocean margin around it) now reaches roughly 140,000
+## world units on its long (east-west) axis — past the threshold this exact
+## comment already flagged as the trigger for "revisit with a real
+## floating-origin camera rebase instead of pushing this constant further."
+## **Deliberately NOT done here** — a floating-origin rebase is a genuinely
+## separate architecture change (every system that reads a world position
+## would need to rebase against a moving reference point, not just this one
+## constant), and its actual necessity can't be confirmed without seeing
+## real rendered jitter at the map's far extremes, which this headless
+## environment can't do (same "can't screenshot to verify" limitation
+## already flagged throughout this project's own history for terrain art,
+## building art, and continuous movement). Flagged honestly as a real,
+## disclosed follow-up risk rather than silently left for someone to
+## rediscover — see todo.md's own note under the map-expansion entry.
 const HEX_SIZE: float = 512.0
 
 const NEIGHBOR_DIRECTIONS: Array[Vector2i] = [
