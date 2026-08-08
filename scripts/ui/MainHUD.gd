@@ -26,7 +26,12 @@ extends CanvasLayer
 ## a "Browse Saves..." button opens it) — the deferred piece that phase's
 ## own note used to point at. Phase 2.9.3's Tech Tree screen (`TechTreeView`,
 ## a "Tech Tree..." button) follows the exact same toggleable-panel
-## convention, the second view to do so.
+## convention, the second view to do so. **`DisplayOptionsView`** (user
+## request — "add options so we can enable and disable the overlays," a
+## "Display..." button) is the third, letting the player toggle every
+## `StrategicOverlayManager` marker layer AND the Threat Meter's two
+## surfaces independently via the `DisplaySettings` autoload; all three
+## centered panels close each other on open so they never visibly stack.
 ##
 ## Phase 5.3's Reconnaissance countdown (`_recon_label`) is a single status
 ## row, not a separate view class — deliberately as minimal as `_mode_label`
@@ -57,11 +62,13 @@ const ROW_HEIGHT := 32.0
 const TIME_CONTROLS_WIDTH := 520.0  ## Widened for Phase 5.1's date + phase countdown text alongside the day counter/speed buttons; widened again for the 50x speed button.
 const SAVE_LOAD_WIDTH := 220.0
 const TECH_BAR_WIDTH := 150.0
+const DISPLAY_BAR_WIDTH := 150.0
 const BUILD_MENU_SIZE := Vector2(260.0, 260.0)
 const MINIMAP_SIZE := Vector2(220.0, 160.0)
 const UNIT_PANEL_SIZE := Vector2(260.0, 260.0)
 const SAVE_LOAD_VIEW_SIZE := Vector2(320.0, 320.0)
 const TECH_TREE_VIEW_SIZE := Vector2(380.0, 360.0)
+const DISPLAY_OPTIONS_VIEW_SIZE := Vector2(320.0, 300.0)
 
 var _building_manager: BuildingManager
 var _save_load_manager: SaveLoadManager
@@ -70,6 +77,7 @@ var _unit_command_controller: UnitCommandController
 var _save_load_view: SaveLoadView
 var _tech_manager: TechManager
 var _tech_tree_view: TechTreeView
+var _display_options_view: DisplayOptionsView
 var _horde_manager: HordeManager
 var _fog_of_war_manager: FogOfWarManager
 
@@ -127,6 +135,8 @@ func _ready() -> void:
 	_build_save_load_view()
 	_build_tech_bar()
 	_build_tech_tree_view()
+	_build_display_bar()
+	_build_display_options_view()
 	_build_minimap(hex_grid_map, _fog_of_war_manager, camera, noise_manager)
 	_build_mode_label()
 	_build_recon_label()
@@ -221,6 +231,32 @@ func _build_tech_tree_view() -> void:
 	if _tech_manager:
 		_tech_tree_view.setup(_tech_manager)
 	_tech_tree_view.research_requested.connect(_on_research_requested)
+
+## User request ("add options so we can enable and disable the overlays"):
+## a single "Display..." button, row 4 — stacks below TechBar in the same
+## top-right corner, same row-stacking convention as SaveLoadBar/TechBar.
+func _build_display_bar() -> void:
+	var bar := HBoxContainer.new()
+	bar.name = "DisplayBar"
+	add_child(bar)
+	_place_top_right(bar, DISPLAY_BAR_WIDTH, 4)
+
+	var display_button := Button.new()
+	display_button.text = "Display..."
+	display_button.pressed.connect(_on_display_options_pressed)
+	HUDStyles.style_button(display_button)
+	bar.add_child(display_button)
+
+## Centered, hidden until "Display..." opens it — the third panel here to
+## follow SaveLoadView/TechTreeView's own toggleable convention. No
+## `setup()` call needed (unlike those two) — DisplayOptionsView reads/
+## writes the DisplaySettings autoload directly, see its own doc comment
+## for why that's a deliberate exception to this HUD's usual pattern.
+func _build_display_options_view() -> void:
+	_display_options_view = DisplayOptionsView.new()
+	_display_options_view.name = "DisplayOptionsView"
+	add_child(_display_options_view)
+	_place_center(_display_options_view, DISPLAY_OPTIONS_VIEW_SIZE)
 
 ## Design doc Phase 6.1's minimap — bottom-right corner is the only one of
 ## the four still unclaimed by another HUD element (top strip: resource
@@ -458,7 +494,14 @@ func _on_quick_load_pressed() -> void:
 	if _save_load_manager:
 		_save_load_manager.load_game(DEFAULT_CAMPAIGN, DEFAULT_SLOT)
 
+## Each of the three centered panels (SaveLoadView/TechTreeView/
+## DisplayOptionsView) shares the same screen position — closing the other
+## two before opening this one keeps them from visibly stacking on top of
+## each other. Harmless to call close() on an already-closed panel (it's
+## just a redundant visible = false).
 func _on_browse_saves_pressed() -> void:
+	_tech_tree_view.close()
+	_display_options_view.close()
 	_save_load_view.open()
 
 func _on_save_load_view_save_requested(campaign_name: String, slot_name: String) -> void:
@@ -479,7 +522,14 @@ func _on_load_failed(_campaign_name: String, _slot_name: String, reason: String)
 	_show_toast("Load failed: %s" % reason)
 
 func _on_tech_tree_pressed() -> void:
+	_save_load_view.close()
+	_display_options_view.close()
 	_tech_tree_view.open()
+
+func _on_display_options_pressed() -> void:
+	_save_load_view.close()
+	_tech_tree_view.close()
+	_display_options_view.open()
 
 func _on_research_requested(tech_id: StringName) -> void:
 	if _tech_manager:

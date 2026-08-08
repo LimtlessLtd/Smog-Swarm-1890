@@ -56,17 +56,12 @@ const BACKGROUND_COLOR: Color = Color("#1f150f")
 const BORDER_COLOR: Color = Color("#cfa24e")
 const VIEWPORT_FRAME_COLOR: Color = Color("#f4e7c5")
 
-## Threat Meter visualization bands — a display-only normalization ceiling,
-## deliberately NOT the same value as HordeManager.ATTRACTION_THRESHOLD
-## (that's the gameplay threshold a horde actually reacts to; this is just
-## "what noise level reads as visually maxed-out on this tiny map"), though
-## roughly in the same ballpark by design (a couple of stacked industrial
-## buildings, or one doubled by night).
-const THREAT_VISUALIZATION_MAX_NOISE: float = 12.0
+## Threat Meter marker radius bounds — minimap-space pixels, not world
+## units (see NoiseVisuals.gd for the shared color/intensity curve this
+## scales against, also used by StrategicOverlayManager's own world-view
+## copy of the same overlay).
 const THREAT_MARKER_RADIUS_MIN: float = 2.0
 const THREAT_MARKER_RADIUS_MAX: float = 6.0
-const THREAT_COLOR_LOW: Color = Color(0.95, 0.75, 0.1, 0.5)   ## Amber, translucent — a faint threat.
-const THREAT_COLOR_HIGH: Color = Color(0.85, 0.15, 0.1, 0.8)  ## Red, more opaque — a serious one.
 
 var _hex_grid_map: HexGridMap
 var _building_manager: BuildingManager
@@ -104,6 +99,7 @@ func setup(hex_grid_map: HexGridMap, building_manager: BuildingManager, fog_of_w
 		_building_manager.building_removed.connect(_on_building_changed)
 	if _noise_manager:
 		_noise_manager.noise_recomputed.connect(_on_noise_recomputed)
+	DisplaySettings.changed.connect(_on_display_settings_changed)
 	if _camera:
 		_camera.tactical_mode_changed.connect(_on_tactical_mode_changed)
 		visible = _camera.is_tactical_zoom()
@@ -122,6 +118,18 @@ func _on_tactical_mode_changed(is_tactical: bool) -> void:
 		queue_redraw()  ## Content may be stale from while hidden (buildings placed, fog changed, elsewhere on the map).
 
 func _on_fog_state_changed(_coord: Vector2i, _state: GameEnums.FogState) -> void:
+	if visible:
+		queue_redraw()
+
+## Design doc (user request): "add options so we can enable and disable the
+## overlays" — DisplaySettings.show_threat_meter_minimap is the only flag
+## this class itself consults (terrain/buildings/viewport frame aren't
+## "overlays" in the sense being toggled here, they're the minimap's own
+## baseline content). A blanket redraw on ANY flag changing (not just this
+## one) is simplest and cheap enough at this scale — same "just redraw,
+## don't bother diffing which flag actually changed" reasoning
+## fog_state_changed/building_changed already lean on.
+func _on_display_settings_changed() -> void:
 	if visible:
 		queue_redraw()
 
@@ -195,16 +203,17 @@ func _draw() -> void:
 func _draw_threat_markers() -> void:
 	if not _noise_manager or not _hex_grid_map:
 		return
+	if not DisplaySettings.show_threat_meter_minimap:
+		return
 	for cell in _hex_grid_map.get_all_cells():
 		var noise := _noise_manager.get_noise_at(cell.coord)
 		if noise <= 0.0:
 			continue
 		if _fog_of_war_manager and not _fog_of_war_manager.is_at_least_explored(cell.coord):
 			continue
-		var t := clampf(noise / THREAT_VISUALIZATION_MAX_NOISE, 0.0, 1.0)
 		var pos := _world_to_minimap(HexCoord.axial_to_world(cell.coord))
-		var radius := lerpf(THREAT_MARKER_RADIUS_MIN, THREAT_MARKER_RADIUS_MAX, t)
-		var color := THREAT_COLOR_LOW.lerp(THREAT_COLOR_HIGH, t)
+		var radius := NoiseVisuals.radius(noise, THREAT_MARKER_RADIUS_MIN, THREAT_MARKER_RADIUS_MAX)
+		var color := NoiseVisuals.color(noise)
 		# A diamond, not a circle/square — shape-distinct from building dots
 		# (circles) and hex tiles (flat squares), same accessibility
 		# principle every other marker in this project already follows.
