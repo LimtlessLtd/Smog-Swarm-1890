@@ -94,6 +94,18 @@ const LOGIC_TICK_SECONDS: float = 20.0
 ## architecture decision, same framing as ObstacleRadii's own table.
 const ENTITY_RADIUS: float = 20.0
 
+## Design doc Phase 5.1's Day Phase bullet: "Military units get increased
+## movement speed and damage" — the movement-speed half, unblocked now that
+## movement is continuous (Phase 5.5) rather than a fixed per-hex timer.
+## No exact number in the design doc — a placeholder balancing multiplier,
+## same disclaimer every other constant table in this project already
+## carries. Deliberately no Night-time penalty — the doc only ever frames
+## this as a Day bonus, not a Night debuff, so Night is plain baseline
+## speed (`1.0`, i.e. this constant simply doesn't apply). The damage half
+## of the same bullet lives in CombatCoordinator.DAY_DAMAGE_MULTIPLIER
+## instead — this class has no combat code of its own to fold it into.
+const DAY_MOVE_SPEED_MULTIPLIER: float = 1.2
+
 ## Phase 2.5.4's first-ever regen mechanic — a fraction of max_hp (not a
 ## flat number) so a Tier 5 unit's much larger HP pool doesn't heal
 ## proportionally slower than a Tier 0 unit's. Placeholder balancing
@@ -252,12 +264,17 @@ func _replan(instance: UnitInstance, destination: Vector2i) -> void:
 ## Terrain (current hex) and logistics (this specific edge) speed
 ## multipliers stacked onto MovementStepper.BASE_MOVE_SPEED — same
 ## HexPathfinder table the Strategic route itself was chosen against, now
-## also shaping how fast continuous movement crosses it (Phase 2.12.1).
+## also shaping how fast continuous movement crosses it (Phase 2.12.1) —
+## plus Phase 5.1's Day movement bonus, stacking multiplicatively with
+## terrain/logistics like every other factor here rather than replacing
+## them. No Night case — see DAY_MOVE_SPEED_MULTIPLIER's own doc comment.
 func _movement_speed(from_coord: Vector2i, to_coord: Vector2i) -> float:
 	var speed := MovementStepper.BASE_MOVE_SPEED
 	if _hex_grid_map:
 		speed *= HexPathfinder.get_terrain_speed_multiplier(_hex_grid_map.get_cell(from_coord))
 	speed *= HexPathfinder.get_logistics_speed_multiplier(_logistics_network, from_coord, to_coord)
+	if TimeCycleManager.is_day():
+		speed *= DAY_MOVE_SPEED_MULTIPLIER
 	return speed
 
 ## Buildings (always queryable) + props (only where Tactical-hydrated) near
