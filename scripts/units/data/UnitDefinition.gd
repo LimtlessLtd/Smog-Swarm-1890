@@ -43,15 +43,23 @@ extends Resource
 @export var requires_gunpowder: bool = false
 
 ## Design doc, user request: "each special unit type should do something
-## special." NONE for every MELEE/RANGED unit and any SPECIAL unit not yet
-## given a distinct mechanic — see GameEnums.UnitAbility's own doc comment
-## for what each real value does and which system reads it.
+## special." Originally SPECIAL-exclusive; Tier 4-5's Traction Ram and Holt
+## Breaker (both MELEE) now carry TRAMPLE_KNOCKBACK too — a real mechanic
+## grounded in their own art/description ("crush obstacles under its
+## immense weight"), not a role restriction that still holds. NONE for
+## every unit without a distinct mechanic (most MELEE/RANGED units, and any
+## SPECIAL unit not yet given one) — see GameEnums.UnitAbility's own doc
+## comment for what each real value does and which system reads it.
 @export var ability: GameEnums.UnitAbility = GameEnums.UnitAbility.NONE
 
 ## Stacks multiplicatively with terrain/logistics/Day-Night speed factors —
-## see UnitOrderController._movement_speed(). 1.0 = no change (every
-## MELEE/RANGED unit and most SPECIAL units); mounted SPECIAL units
-## (Outrider, Chasseur, Dragoon) run faster than an unmounted soldier.
+## see UnitOrderController._movement_speed(). 1.0 = no change (most units);
+## mounted SPECIAL units (Outrider, Chasseur, Dragoon) run faster than an
+## unmounted soldier, and Tier 4-5's vehicles now lean the same way their
+## own description implies — quicker for a light wheeled vehicle (Maxim
+## Quadricycle, Armoured Command Car), slower for something that "slow-rolls"
+## under its own weight (Traction Ram, Holt Breaker, Field Howitzer Gun
+## Tractor).
 @export var move_speed_multiplier: float = 1.0
 
 func _init(p_type: GameEnums.UnitType = GameEnums.UnitType.TRUNCHEONEER, p_display_name: String = "", p_tier: int = 0, p_role: GameEnums.UnitRole = GameEnums.UnitRole.MELEE) -> void:

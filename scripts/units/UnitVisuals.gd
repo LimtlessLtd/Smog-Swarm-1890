@@ -62,18 +62,18 @@ static func _texture_key(unit_type: GameEnums.UnitType) -> String:
 			return "sharpshooter"
 		GameEnums.UnitType.DRAGOON:
 			return "dragoon"
-		GameEnums.UnitType.STEAM_PRAM_RAMMER:
-			return "steam_pram_rammer"
-		GameEnums.UnitType.ARMORED_LOCOMOTIVE_GUNNER:
-			return "armored_locomotive_gunner"
-		GameEnums.UnitType.STEAM_TRACTOR_LANDSHIP:
-			return "steam_tractor_landship"
-		GameEnums.UnitType.STEAM_MACHINE_LEG:
-			return "steam_machine_leg"
-		GameEnums.UnitType.RAILWAY_SIEGE_HOWITZER:
-			return "railway_siege_howitzer"
-		GameEnums.UnitType.WAR_MACHINE_ARMORED_CAR:
-			return "war_machine_armored_car"
+		GameEnums.UnitType.TRACTION_RAM:
+			return "traction_ram"
+		GameEnums.UnitType.MAXIM_QUADRICYCLE:
+			return "maxim_quadricycle"
+		GameEnums.UnitType.SEARCHLIGHT_TENDER:
+			return "searchlight_tender"
+		GameEnums.UnitType.HOLT_BREAKER:
+			return "holt_breaker"
+		GameEnums.UnitType.FIELD_HOWITZER_GUN_TRACTOR:
+			return "field_howitzer_gun_tractor"
+		GameEnums.UnitType.ARMOURED_COMMAND_CAR:
+			return "armoured_command_car"
 		_:
 			return ""
 

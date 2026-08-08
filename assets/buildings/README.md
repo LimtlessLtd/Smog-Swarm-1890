@@ -49,7 +49,7 @@ below assigns:
   bronze/verdigris), Gas Streetlamp (warm gaslight amber), Telegraph Relay
   Office (copper/brass), Steam Printing Press (deep ink burgundy), Town
   Hall (civic navy blue), Garrison (martial rust-red).
-- **Industry & Extraction:** Clay Brickworks (muddy ochre), Charcoal Kiln
+- **Industry & Extraction:** Timber Camp (fresh sap green), Clay Brickworks (muddy ochre), Charcoal Kiln
   (smoldering ember orange), Coal Pithead (warning yellow), Cast Iron
   Foundry (molten furnace orange-red), Saltpetre & Powder Mill (hazard
   red), Forward Ammo Dump (khaki-green).
@@ -89,9 +89,9 @@ A row of cramped Victorian terraced housing under one shared roofline — narrow
 A grim, institutional Victorian workhouse — plain heavy stone walls, small barred windows in even rows, an imposing rectangular block. Style: hand-painted / illustrated game asset art — clean, bold cartoon-baroque style with visible brushwork and flat painterly cel-shading, matching this project's unit and prop art. Britain, 1890s, in the grip of a zombie plague — a defended, weathered outpost building, not a pristine museum piece: soot, patched repairs, a few boarded or reinforced details. View: bird's-eye/overhead — seen from above at a steep downward strategy-game camera angle, roof and frontage both readable at once. Palette: grey stone as the base material, with a sickly institutional-green accent on window frames/doors — distinct from every other Housing & Civil building's own accent color. Distinctive silhouette detail: a tall narrow central bell-cupola on the roof ridge. Format: single building, isolated, centered, small margin, bold clear silhouette readable at small size, plain flat white (#FFFFFF) background, evenly lit with no shadow or gradient, a thick bold black outline around the whole building. Square aspect ratio (1:1), PNG format.
 ```
 
-**`church_steeple_watchtower.png`**
+**`watchtower.png`**
 ```
-A converted parish church, its steeple reinforced into a lookout watchtower — pale stone chapel walls, a tall pointed spire, a small platform and rail built onto the spire itself for a lookout post. Style: hand-painted / illustrated game asset art — clean, bold cartoon-baroque style with visible brushwork and flat painterly cel-shading, matching this project's unit and prop art. Britain, 1890s, in the grip of a zombie plague — a defended, weathered outpost building, not a pristine museum piece: soot, patched repairs, a few boarded or reinforced details. View: bird's-eye/overhead — seen from above at a steep downward strategy-game camera angle, roof and frontage both readable at once. Palette: pale limestone as the base material, with an aged bronze/verdigris accent on the spire's own metalwork and clock face — distinct from every other Housing & Civil building's own accent color. Distinctive silhouette detail: the tall pointed spire itself, unmistakably taller than every other Housing & Civil building. Format: single building, isolated, centered, small margin, bold clear silhouette readable at small size, plain flat white (#FFFFFF) background, evenly lit with no shadow or gradient, a thick bold black outline around the whole building. Square aspect ratio (1:1), PNG format.
+A reinforced lookout watchtower — a wooden watchtower building with rail built onto the upper level, a ladder stretches up from far below as it is tall. Style: hand-painted / illustrated game asset art — clean, bold cartoon-baroque style with visible brushwork and flat painterly cel-shading, matching this project's unit and prop art. Britain, 1890s, in the grip of a zombie plague — a defended, weathered outpost building, not a pristine museum piece: soot, patched repairs, a few boarded or reinforced details. View: bird's-eye/overhead — seen from above at a steep downward strategy-game camera angle, roof and frontage both readable at once. Palette: pale limestone as the base material, with an aged bronze/verdigris accent on the spire's own metalwork and clock face — distinct from every other Housing & Civil building's own accent color. Distinctive silhouette detail: the tall pointed spire itself, unmistakably taller than every other Housing & Civil building. Format: single building, isolated, centered, small margin, bold clear silhouette readable at small size, plain flat white (#FFFFFF) background, evenly lit with no shadow or gradient, a thick bold black outline around the whole building. Square aspect ratio (1:1), PNG format.
 ```
 
 **`gas_streetlamp.png`**
@@ -120,6 +120,11 @@ A fortified militia garrison building — thick grey stone walls, narrow firing-
 ```
 
 ### Industry & Extraction
+
+**`timber_camp.png`** (added post-launch, economy-balance pass — the Wood producer)
+```
+A working timber camp at the edge of cleared woodland — a simple crosscut-saw rig over a sawpit, a stack of freshly felled logs, a woodsman's lean-to shelter. Style: hand-painted / illustrated game asset art — clean, bold cartoon-baroque style with visible brushwork and flat painterly cel-shading, matching this project's unit and prop art. Britain, 1890s, in the grip of a zombie plague — a defended, weathered outpost building, not a pristine museum piece: soot, patched repairs, a few boarded or reinforced details. View: bird's-eye/overhead — seen from above at a steep downward strategy-game camera angle, the sawpit and log stack both readable at once. Palette: raw sawn timber and bark as the base material, with a fresh sap-green accent on the lean-to canvas and tool handles — distinct from every other Industry & Extraction building's own accent color. Distinctive silhouette detail: the stacked felled-log pile beside the open sawpit, unlike any enclosed shed or stack elsewhere in this category. Format: single subject, isolated, centered, small margin, bold clear silhouette readable at small size, plain flat white (#FFFFFF) background, evenly lit with no shadow or gradient, a thick bold black outline around the whole subject. Square aspect ratio (1:1), PNG format.
+```
 
 **`clay_brickworks.png`**
 ```

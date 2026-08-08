@@ -26,6 +26,16 @@ static func tier_color(tier: int) -> Color:
 static func breached_color() -> Color:
 	return Color(0.7, 0.16, 0.12)
 
+## An intact Gate segment (WallSegment.is_gate) — one warm brass/gold tone
+## regardless of tier, same "one flat color overrides tier_color()" shape
+## breached_color() already uses, so a gate reads as "a gate" at a glance
+## rather than needing the player to check its (lower) HP first. Only
+## applies while intact — a breached gate still reads as breached_color(),
+## same as any other segment (see _apply_wall_segment_look()'s priority
+## order at the call site).
+static func gate_color() -> Color:
+	return Color(0.80, 0.64, 0.20)
+
 ## Line thickness scales with tier — a Concrete wall should visibly read as
 ## sturdier than a Wooden one even before the player checks its HP. A
 ## breached segment renders at half its intact width (WallManager.gd's own

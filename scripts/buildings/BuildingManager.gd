@@ -112,6 +112,13 @@ var _territory_controller: TerritoryController
 var _instances: Array[BuildingInstance] = []
 var _instances_by_hex: Dictionary = {}  # Vector2i -> Array[BuildingInstance]
 var _next_id: int = 1
+## Exposed via get_starting_settlement_hexes() for WallManager.seed_starting_defenses()
+## — the hex(es) making up the game's own free opening compound (Town Hall +
+## Foundry, and the Farm + connecting corridor if one was found), so it
+## knows what to wall the OUTER boundary of without re-deriving settlement
+## placement logic of its own. Empty before seed_starting_buildings() has
+## run (or on a map with no qualifying settlement at all).
+var _starting_settlement_hexes: Array[Vector2i] = []
 
 func _ready() -> void:
 	if hex_grid_map_path != NodePath():
@@ -147,6 +154,70 @@ func _ready() -> void:
 ## future alternate map seed doesn't use that name.
 const _STARTING_REGION_NAME := "Manchester"
 
+## Economy-balance pass (user request: "start the game with an iron foundry
+## already inside a set of walls") — a second free building alongside the
+## Town Hall, same free-via-_register_instance() opening-move treatment,
+## not a player purchase. Directly addresses the soft-lock this same pass's
+## own economy simulation found: Cast Iron Foundry is the ONLY Cast Iron
+## producer in the whole tree, but it itself costs 30 Iron + 70 Bricks to
+## build, competing against every other early building that also wants
+## Iron out of the same small 40-unit starting stock — a naive opening
+## build order can spend past the point of ever affording it, permanently.
+## Seeding it already-built removes that trap entirely: Iron production
+## (5/day) starts from day one, for free, regardless of what the player
+## chooses to build first. Offset local_position so it doesn't render
+## exactly on top of the Town Hall at Tactical zoom — same hex, same
+## Vector2.ZERO-is-hex-center convention, just nudged off-center.
+const _STARTING_FOUNDRY_OFFSET := Vector2(150.0, -100.0)
+
+## Economy-balance pass (user request: "let's also start with a farm"). Town
+## Hall's own hex is always URBAN (requires_settlement), which Tenant Farm
+## can never be placed on (FARMLAND/MOORLAND only) — so this has to search
+## outward. Reads TENANT_FARM's own BuildingCatalog entry for what counts as
+## valid (biome + soil fertility) rather than duplicating that list here, so
+## this stays correct if that definition ever changes. Searches ring by ring
+## (HexCoord.hex_disk() is cumulative, so each radius is checked against
+## everything already seen) up to _STARTING_FARM_SEARCH_RADIUS and returns
+## the FIRST radius with any qualifying hex — among that radius's own
+## candidates, prefers higher soil_fertility (LUSH doubles Tenant Farm's
+## Food output over POOR, see BuildingInstance._fertility_multiplier())
+## before falling back to raw distance as a final, deterministic tiebreak.
+## Vector2i(-1, -1) (an off-map sentinel) means nothing qualified anywhere
+## in range — a real possibility this can't paper over on a sufficiently
+## unlucky map seed.
+const _STARTING_FARM_SEARCH_RADIUS: int = 6
+const _NO_FARM_HEX := Vector2i(-1, -1)
+
+func _find_starting_farm_hex(from: Vector2i) -> Vector2i:
+	var farm_definition := BuildingCatalog.get_definition(GameEnums.BuildingType.TENANT_FARM)
+	if not farm_definition:
+		return _NO_FARM_HEX
+	var seen: Dictionary = {}  # Vector2i -> true
+	for radius in range(1, _STARTING_FARM_SEARCH_RADIUS + 1):
+		var candidates: Array[Vector2i] = []
+		for coord in HexCoord.hex_disk(from, radius):
+			if coord == from or seen.has(coord):
+				continue
+			seen[coord] = true
+			var cell := _hex_grid_map.get_cell(coord)
+			if not cell or not cell.is_passable():
+				continue
+			if not farm_definition.allowed_biomes.has(cell.biome_type):
+				continue
+			if not farm_definition.allowed_soil_fertility.is_empty() and not farm_definition.allowed_soil_fertility.has(cell.soil_fertility):
+				continue
+			candidates.append(coord)
+		if candidates.is_empty():
+			continue
+		candidates.sort_custom(func(a: Vector2i, b: Vector2i) -> bool:
+			var fa := _hex_grid_map.get_cell(a).soil_fertility
+			var fb := _hex_grid_map.get_cell(b).soil_fertility
+			if fa != fb:
+				return fa < fb  ## LOWER GameEnums.SoilFertility enum value == better (LUSH=0 is the best, declared first) — see that enum's own doc comment and BuildingInstance._fertility_multiplier().
+			return HexCoord.distance(from, a) < HexCoord.distance(from, b))
+		return candidates[0]
+	return _NO_FARM_HEX
+
 func seed_starting_buildings() -> void:
 	if not _instances.is_empty() or not _hex_grid_map:
 		return
@@ -161,9 +232,43 @@ func seed_starting_buildings() -> void:
 		if not fallback:
 			fallback = cell
 	target = target if target else fallback
-	if target:
-		var definition := BuildingCatalog.get_definition(GameEnums.BuildingType.TOWN_HALL)
-		_register_instance(definition, target.coord, _next_id, Vector2.ZERO, true)
+	if not target:
+		return
+
+	var town_hall := BuildingCatalog.get_definition(GameEnums.BuildingType.TOWN_HALL)
+	_register_instance(town_hall, target.coord, _next_id, Vector2.ZERO, true)
+	var foundry := BuildingCatalog.get_definition(GameEnums.BuildingType.CAST_IRON_FOUNDRY)
+	_register_instance(foundry, target.coord, _next_id, _STARTING_FOUNDRY_OFFSET, true)
+
+	_starting_settlement_hexes = [target.coord]
+	var farm_hex := _find_starting_farm_hex(target.coord)
+	if farm_hex != _NO_FARM_HEX:
+		var farm := BuildingCatalog.get_definition(GameEnums.BuildingType.TENANT_FARM)
+		_register_instance(farm, farm_hex, _next_id, Vector2.ZERO, true)
+		# WallManager.seed_starting_defenses() walls the OUTER boundary of
+		# whatever this array holds, so the Farm needs to be reachable by an
+		# unbroken chain of passable hexes from Town Hall for that perimeter
+		# to actually be one connected loop rather than two separate rings.
+		# HexPathfinder.find_path() (Phase 5.5's shared strategic A*, real
+		# terrain-aware pathfinding, not a geometric guess) already
+		# guarantees every hex on the route is passable — a straight
+		# HexCoord.hex_line() was tried first and rejected: it's a pure
+		# geometric line with no awareness of the actual terrain, so it
+		# happily crossed genuinely impassable ground (Chat Moss again)
+		# and produced two disconnected rings instead of one perimeter.
+		# find_path() returns [] only if the farm is truly unreachable by
+		# any passable route at all, in which case the two endpoints alone
+		# still get fenced as two separate compounds — the same disclosed
+		# fallback as before, just now the actual last resort instead of
+		# the common case.
+		var corridor := HexPathfinder.find_path(_hex_grid_map, target.coord, farm_hex)
+		if not corridor.is_empty():
+			_starting_settlement_hexes = corridor
+		else:
+			_starting_settlement_hexes.append(farm_hex)
+
+func get_starting_settlement_hexes() -> Array[Vector2i]:
+	return _starting_settlement_hexes.duplicate()
 
 func get_buildings_at(coord: Vector2i) -> Array[BuildingInstance]:
 	var result: Array[BuildingInstance] = []

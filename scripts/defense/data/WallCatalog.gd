@@ -13,6 +13,16 @@ const BRICK: int = 1
 const CONCRETE: int = 2
 const MAX_TIER: int = CONCRETE
 
+## Start-of-game/gate pass (user request): a Gate segment (WallSegment.is_gate)
+## is the traditional weak point of a fortification — same tier, same build
+## cost, same siege/repair/upgrade path as a solid wall, just a fraction of
+## its max HP. Applied by WallSegment.get_max_hp(), not here — this class
+## stays the single "what does tier N cost/hold" source of truth, a segment
+## layers its own gate modifier on top rather than this table needing to
+## know about individual segment state. Balancing number, not an
+## architecture decision, same framing as every other constant table here.
+const GATE_HP_FRACTION: float = 0.4
+
 static func get_display_name(tier: int) -> String:
 	match tier:
 		WOODEN:

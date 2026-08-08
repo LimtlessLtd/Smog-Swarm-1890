@@ -48,6 +48,7 @@ static func _build_definitions() -> Array[BuildingDefinition]:
 		_terraced_tenement(), _workhouse(), _church_steeple_watchtower(),
 		_gas_streetlamp(), _telegraph_relay_office(), _steam_printing_press(),
 		_town_hall(), _garrison(),
+		_timber_camp(),
 		_clay_brickworks(), _charcoal_kiln(), _coal_pithead(),
 		_cast_iron_foundry(), _saltpetre_powder_mill(), _forward_ammo_dump(),
 		_tenant_farm(), _grain_silo(), _cattle_yard(),
@@ -155,11 +156,48 @@ static func _garrison() -> BuildingDefinition:
 
 # --- Industry & Extraction --------------------------------------------------
 
+## Economy-balance pass (user request, "add a timber camp please and balance
+## it"): the ONLY Wood producer in the whole tree. Every other raw
+## construction material (Bricks/Cast Iron/Gunpowder) already had a
+## dedicated extractor building; Wood never did — a real gap in the original
+## Phase 2.1 checklist, found by simulating a realistic opening and watching
+## Wood run to zero (150 starting, no income anywhere, and Charcoal Kiln
+## actively drains 10/day on top) with no way back up. Deliberately does NOT
+## cost Wood itself (unlike Clay Brickworks, which happily spends Wood to
+## build something that makes Bricks) — it's the resource's own bootstrap,
+## so it shouldn't compete with itself for the stockpile a fresh colony is
+## trying to grow. Output (10/day) is set a notch above Clay Brickworks'
+## own 8/day for Bricks: Wood is asked for by more buildings than any other
+## single resource in the tree, so its base producer earns a slightly
+## higher rate, not the same one. FARMLAND/MOORLAND/HIGHLAND (deliberately
+## excluding URBAN/INDUSTRIAL, unlike Clay Brickworks/Cast Iron Foundry) —
+## this is timber cut from actual wild land, not a refinery that could sit
+## on any city plot.
+static func _timber_camp() -> BuildingDefinition:
+	var d := BuildingDefinition.new(GameEnums.BuildingType.TIMBER_CAMP, "Timber Camp")
+	d.category = GameEnums.BuildingCategory.INDUSTRY_EXTRACTION
+	d.construction_cost = {GameEnums.ResourceType.BRICKS: 20}
+	d.daily_output = {GameEnums.ResourceType.WOOD: 10.0}
+	d.allowed_biomes = [GameEnums.BiomeType.FARMLAND, GameEnums.BiomeType.MOORLAND, GameEnums.BiomeType.HIGHLAND]
+	d.noise_output = 2  # Axes/saws/cartage — quieter than a kiln or foundry, louder than nothing.
+	return d
+
 static func _clay_brickworks() -> BuildingDefinition:
 	var d := BuildingDefinition.new(GameEnums.BuildingType.CLAY_BRICKWORKS, "Clay Brickworks")
 	d.category = GameEnums.BuildingCategory.INDUSTRY_EXTRACTION
 	d.construction_cost = {GameEnums.ResourceType.WOOD: 50}
-	d.daily_output = {GameEnums.ResourceType.BRICKS: 8.0}
+	# Economy-balance pass (user request, "raise output of brickworks"):
+	# raised 8 -> 14/day. Bricks is the single most Brick-hungry early
+	# bottleneck in the whole tree — Workhouse (80), Garrison (90),
+	# Saltpetre Mill (60), Church Watchtower (100) all draw on the same
+	# 100-unit starting stock, and at the old 8/day a realistic opening
+	# build order never actually reaches an affordable Garrison within a
+	# full simulated month (found by the same simulation that caught the
+	# Wood/Cast-Iron gaps this pass's earlier work fixed). 14/day clears
+	# that same opening's Garrison purchase by ~day 12 and Saltpetre Mill
+	# by ~day 6 — a real early-game milestone, not an instant one, but no
+	# longer an unreachable one either.
+	d.daily_output = {GameEnums.ResourceType.BRICKS: 14.0}
 	d.allowed_biomes = [GameEnums.BiomeType.INDUSTRIAL, GameEnums.BiomeType.URBAN]
 	d.noise_output = 3  # Kilns firing (Phase 5.2's Threat Meter source).
 	return d
