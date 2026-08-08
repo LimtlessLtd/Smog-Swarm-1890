@@ -20,11 +20,10 @@ extends CanvasLayer
 ## before wiring this up, and no editor session in this workflow to lay out
 ## a Control tree by hand anyway.
 ##
-## Quick Save/Load buttons use a single fixed campaign/slot rather than a
-## real campaign browser — Phase 2.8.3's actual Save/Load UI (name a
-## campaign, browse slots) is still deferred to fuller Phase 6 HUD work;
-## this is just enough to prove the save system is reachable by a player at
-## all, not the intended final UI for it.
+## Quick Save/Load buttons stay for a one-click fixed campaign/slot, but a
+## real campaign/slot browser now exists too (`SaveLoadView`, Phase 2.8.3,
+## a "Browse Saves..." button opens it) — the deferred piece that phase's
+## own note used to point at.
 
 @export var resource_manager_path: NodePath
 @export var building_manager_path: NodePath
@@ -48,11 +47,13 @@ const SAVE_LOAD_WIDTH := 220.0
 const BUILD_MENU_SIZE := Vector2(260.0, 260.0)
 const MINIMAP_SIZE := Vector2(220.0, 160.0)
 const UNIT_PANEL_SIZE := Vector2(260.0, 260.0)
+const SAVE_LOAD_VIEW_SIZE := Vector2(320.0, 320.0)
 
 var _building_manager: BuildingManager
 var _save_load_manager: SaveLoadManager
 var _build_placement_controller: BuildPlacementController
 var _unit_command_controller: UnitCommandController
+var _save_load_view: SaveLoadView
 
 var _mode_label: Label
 var _toast_label: Label
@@ -96,6 +97,7 @@ func _ready() -> void:
 	_build_resource_bar(resource_manager)
 	_build_time_controls()
 	_build_save_load_bar()
+	_build_save_load_view()
 	_build_minimap(hex_grid_map, fog_of_war_manager, camera)
 	_build_mode_label()
 	_build_build_menu()
@@ -141,6 +143,26 @@ func _build_save_load_bar() -> void:
 	load_button.pressed.connect(_on_quick_load_pressed)
 	HUDStyles.style_button(load_button)
 	bar.add_child(load_button)
+
+	var browse_button := Button.new()
+	browse_button.text = "Browse Saves..."
+	browse_button.pressed.connect(_on_browse_saves_pressed)
+	HUDStyles.style_button(browse_button)
+	bar.add_child(browse_button)
+
+## Phase 2.8.3's actual Save/Load UI — centered, hidden until
+## "Browse Saves..." opens it (see SaveLoadView's own doc comment for why
+## it's the first toggleable panel in this HUD rather than another
+## always-visible corner view).
+func _build_save_load_view() -> void:
+	_save_load_view = SaveLoadView.new()
+	_save_load_view.name = "SaveLoadView"
+	add_child(_save_load_view)
+	_place_center(_save_load_view, SAVE_LOAD_VIEW_SIZE)
+	if _save_load_manager:
+		_save_load_view.setup(_save_load_manager)
+	_save_load_view.save_requested.connect(_on_save_load_view_save_requested)
+	_save_load_view.load_requested.connect(_on_save_load_view_load_requested)
 
 ## Design doc Phase 6.1's minimap — bottom-right corner is the only one of
 ## the four still unclaimed by another HUD element (top strip: resource
@@ -284,6 +306,19 @@ func _place_bottom_right(control: Control, size: Vector2) -> void:
 	control.offset_bottom = -MARGIN
 	control.offset_top = -MARGIN - size.y
 
+## Fixed-`size` rect centered on screen — SaveLoadView's own spot, the
+## first HUD element here that isn't pinned to a corner/edge (it's a
+## toggleable dialog, not an always-visible panel like everything above).
+func _place_center(control: Control, size: Vector2) -> void:
+	control.anchor_left = 0.5
+	control.anchor_right = 0.5
+	control.anchor_top = 0.5
+	control.anchor_bottom = 0.5
+	control.offset_left = -size.x / 2.0
+	control.offset_right = size.x / 2.0
+	control.offset_top = -size.y / 2.0
+	control.offset_bottom = size.y / 2.0
+
 func _on_building_selected(building_type: GameEnums.BuildingType) -> void:
 	if _build_placement_controller:
 		_build_placement_controller.begin_placement(building_type)
@@ -306,6 +341,17 @@ func _on_quick_save_pressed() -> void:
 func _on_quick_load_pressed() -> void:
 	if _save_load_manager:
 		_save_load_manager.load_game(DEFAULT_CAMPAIGN, DEFAULT_SLOT)
+
+func _on_browse_saves_pressed() -> void:
+	_save_load_view.open()
+
+func _on_save_load_view_save_requested(campaign_name: String, slot_name: String) -> void:
+	if _save_load_manager:
+		_save_load_manager.save_game(campaign_name, slot_name)
+
+func _on_save_load_view_load_requested(campaign_name: String, slot_name: String) -> void:
+	if _save_load_manager:
+		_save_load_manager.load_game(campaign_name, slot_name)
 
 func _on_game_saved(_campaign_name: String, _slot_name: String) -> void:
 	_show_toast("Game saved.")
