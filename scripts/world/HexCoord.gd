@@ -40,20 +40,30 @@ extends RefCounted
 ## ~100,000 unit range where single-precision float jitter typically starts
 ## to show. **That's no longer true.** The map now spans the whole UK and
 ## Ireland (design doc, user request — see BritishGeographyData's own doc
-## comment for the full expansion), and its real landmass alone (not even
-## counting the padded ocean margin around it) now reaches roughly 140,000
-## world units on its long (east-west) axis — past the threshold this exact
-## comment already flagged as the trigger for "revisit with a real
+## comment for both the expansion and its later re-bake from real Natural
+## Earth coastline data). The real landmass itself now spans roughly
+## 52,000x80,000 world units (smaller on its long axis than the original
+## hand-authored approximation's ~140,000, now that the shape traces real
+## coastline instead of a chain of generously-sized disks) — still past the
+## ~100,000 unit range on MAP_BOUNDS' own full extent (padded ocean margin
+## included, ~158,000x91,000), which is what actually matters for float
+## jitter since the camera can pan into that margin. Past the threshold this
+## exact comment already flagged as the trigger for "revisit with a real
 ## floating-origin camera rebase instead of pushing this constant further."
 ## **Deliberately NOT done here** — a floating-origin rebase is a genuinely
 ## separate architecture change (every system that reads a world position
 ## would need to rebase against a moving reference point, not just this one
 ## constant), and its actual necessity can't be confirmed without seeing
-## real rendered jitter at the map's far extremes, which this headless
-## environment can't do (same "can't screenshot to verify" limitation
-## already flagged throughout this project's own history for terrain art,
-## building art, and continuous movement). Flagged honestly as a real,
-## disclosed follow-up risk rather than silently left for someone to
+## real rendered jitter at the map's far extremes. Screenshotting the live
+## game (user request, this same pass — at the earlier, even larger
+## ~140,000-unit hand-authored landmass, before it was re-baked from real
+## coastline data down to the ~52,000x80,000 figures above) DID confirm the
+## map renders and scrolls correctly at every zoom level tested, including
+## panning well out toward the ocean margin — no visible jitter observed,
+## though a targeted pixel-level check at the most extreme corner still
+## hasn't been done, and that screenshot pass hasn't been repeated against
+## this smaller, real-coastline version specifically. Flagged honestly as a
+## real, disclosed follow-up risk rather than silently left for someone to
 ## rediscover — see todo.md's own note under the map-expansion entry.
 const HEX_SIZE: float = 512.0
 

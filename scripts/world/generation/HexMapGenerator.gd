@@ -95,6 +95,16 @@ func _apply_feature(cells: Dictionary, feature: GeographyFeature) -> void:
 		if not cells.has(coord):
 			continue
 		var cell: HexCell = cells[coord]
+		# Real coastline data (BritishGeographyData, re-baked from Natural
+		# Earth) means a hand-placed feature anchor/line/disk can legitimately
+		# clip a hex or two of open sea at this resolution (e.g. a marsh disk
+		# centered right at a real estuary's edge) — unlike the map's own
+		# settlements, which the baking pipeline already snaps onto real land
+		# before they ever get here, non-settlement features aren't guaranteed
+		# to stay off the water. Skip rather than let a farmland/wetland/
+		# mountain stamp silently paint over an OCEAN cell.
+		if cell.biome_type == GameEnums.BiomeType.OCEAN and feature.feature_type != GeographyFeature.FeatureType.SETTLEMENT:
+			continue
 		cell.region_name = feature.feature_name
 		match feature.feature_type:
 			GeographyFeature.FeatureType.SETTLEMENT:
