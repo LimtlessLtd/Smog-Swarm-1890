@@ -37,7 +37,7 @@
 hex_grid_map_path = NodePath("../HexGridMap")
 
 [node name="CameraController" parent="." instance=ExtResource("2")]
-position = Vector2(78014, 54720)
+position = Vector2(124572, 92352)
 zoom = Vector2(0.05, 0.05)
 world_root_path = NodePath("../WorldRoot")
 

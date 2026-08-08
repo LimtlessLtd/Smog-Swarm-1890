@@ -38,33 +38,33 @@ extends RefCounted
 ## hex map (just England's Manchester-Midlands-London corridor) spanned
 ## roughly 48,000x21,500 world units at its extremes, comfortably under the
 ## ~100,000 unit range where single-precision float jitter typically starts
-## to show. **That's no longer true.** The map now spans the whole UK and
-## Ireland (design doc, user request — see BritishGeographyData's own doc
-## comment for both the expansion and its later re-bake from real Natural
-## Earth coastline data). The real landmass itself now spans roughly
-## 52,000x80,000 world units (smaller on its long axis than the original
-## hand-authored approximation's ~140,000, now that the shape traces real
-## coastline instead of a chain of generously-sized disks) — still past the
-## ~100,000 unit range on MAP_BOUNDS' own full extent (padded ocean margin
-## included, ~158,000x91,000), which is what actually matters for float
-## jitter since the camera can pan into that margin. Past the threshold this
+## to show. **That's no longer true, and got LARGER across two follow-up
+## corrections, not smaller.** The map now spans the whole UK and Ireland
+## (design doc, user request — see BritishGeographyData's own doc comment
+## for the full history: hand-authored approximation, then a re-bake from
+## real Natural Earth coastline data, then a second correction once the
+## first re-bake turned out not to honor the game's own "~25 sq mi/hex"
+## scale constant). At the CURRENT correct scale, `MAP_BOUNDS` itself (154x179
+## hexes, padded ocean margin included — what actually matters for float
+## jitter, since the camera can pan into that margin) spans roughly
+## 214,600x136,700 world units — well past the ~100,000 unit range this
 ## exact comment already flagged as the trigger for "revisit with a real
-## floating-origin camera rebase instead of pushing this constant further."
-## **Deliberately NOT done here** — a floating-origin rebase is a genuinely
-## separate architecture change (every system that reads a world position
-## would need to rebase against a moving reference point, not just this one
-## constant), and its actual necessity can't be confirmed without seeing
-## real rendered jitter at the map's far extremes. Screenshotting the live
-## game (user request, this same pass — at the earlier, even larger
-## ~140,000-unit hand-authored landmass, before it was re-baked from real
-## coastline data down to the ~52,000x80,000 figures above) DID confirm the
-## map renders and scrolls correctly at every zoom level tested, including
-## panning well out toward the ocean margin — no visible jitter observed,
-## though a targeted pixel-level check at the most extreme corner still
-## hasn't been done, and that screenshot pass hasn't been repeated against
-## this smaller, real-coastline version specifically. Flagged honestly as a
-## real, disclosed follow-up risk rather than silently left for someone to
-## rediscover — see todo.md's own note under the map-expansion entry.
+## floating-origin camera rebase instead of pushing this constant further,"
+## and larger than either of the two prior (now-superseded) figures this
+## comment used to cite. **Deliberately NOT done here** — a floating-origin
+## rebase is a genuinely separate architecture change (every system that
+## reads a world position would need to rebase against a moving reference
+## point, not just this one constant), and its actual necessity can't be
+## confirmed without seeing real rendered jitter at the map's far extremes.
+## A live screenshot pass (user request, an earlier round of this same
+## overall map-scale work) DID confirm the map renders/scrolls correctly at
+## every zoom level tested, including panning well out toward the ocean
+## margin, with no visible jitter — but that was against a smaller
+## landmass than the current one, and hasn't been repeated since this
+## latest scale correction grew the grid further. Flagged honestly as a
+## real, disclosed follow-up risk that keeps growing rather than shrinking,
+## not silently left for someone to rediscover — see todo.md's own note
+## under the map-expansion entry.
 const HEX_SIZE: float = 512.0
 
 const NEIGHBOR_DIRECTIONS: Array[Vector2i] = [
