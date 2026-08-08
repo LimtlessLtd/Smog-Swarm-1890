@@ -41,10 +41,15 @@ signal repair_rejected(segment: WallSegment, reason: String)
 ## Optional — gates upgrade_segment() against Phase 2.9's Tech Tree. Unset
 ## means every wall tier is treated as unlocked (no tech-gate check).
 @export var tech_manager_path: NodePath
+## Optional — feeds is_legacy_segment()'s outer/inner classification (Phase
+## 4.1). Unset means every segment reads as "outer" (today's pre-4.1-decision
+## look), same "gracefully skip it" convention as tech_manager_path above.
+@export var logistics_network_path: NodePath
 
 var _hex_grid_map: HexGridMap
 var _resource_manager: ResourceManager
 var _tech_manager: TechManager
+var _logistics_network: LogisticsNetwork
 var _segments: Array[WallSegment] = []
 var _next_id: int = 1
 
@@ -55,6 +60,8 @@ func _ready() -> void:
 		_resource_manager = get_node(resource_manager_path)
 	if tech_manager_path != NodePath():
 		_tech_manager = get_node(tech_manager_path)
+	if logistics_network_path != NodePath():
+		_logistics_network = get_node(logistics_network_path)
 
 func get_segments() -> Array[WallSegment]:
 	return _segments.duplicate()
@@ -75,6 +82,40 @@ func get_segments_at(coord: Vector2i) -> Array[WallSegment]:
 ## Exposed for SaveLoadManager (Phase 2.8) — mirrors BuildingManager.get_next_id().
 func get_next_id() -> int:
 	return _next_id
+
+## Design doc Phase 4.1: "retain legacy inner walls as fallback bulkheads
+## during breach events" — **decided:** this is a purely POSITIONAL
+## classification derived live from Zone of Control coverage
+## (LogisticsNetwork, Phase 2.3), not a new stored WallSegment field. A
+## segment is "legacy" (an inner ring — once the frontier, now fully
+## enclosed by the settlement's own controlled ground) once BOTH the hexes
+## it connects carry ZoC coverage, meaning some other edge — another wall,
+## or simply distance — now stands between it and any unclaimed ground. A
+## segment with at least one uncovered end is still "outer": the currently
+## exposed defensive line. Territory shifting (Phase 5.8 loss/recapture,
+## ZoC recompute) means this can and does flip live, same as ZoC itself.
+##
+## Deliberately NOT a new combat concept — an "inner" segment blocks and
+## sieges exactly like an "outer" one, same WallCatalog HP/tier math for
+## both. The actual fallback-bulkhead BEHAVIOR the design doc asks for
+## already falls out for free from HordeManager._advance_horde()'s existing
+## per-edge peek, which re-checks for an unbreached WallSegment on EVERY hex
+## boundary a horde's path crosses, not just the first one — a horde that
+## breaches an outer segment and keeps walking its pre-planned route simply
+## hits whatever the next edge holds, an inner ring included, and sieges it
+## the same way. Verified, not just assumed (see this phase's own todo.md
+## note). This method exists purely so a renderer (StrategicOverlayManager's
+## wall markers, Phase 2.7.3) — or a future wall-selection UI — can tell the
+## two apart; it changes nothing about how either one behaves in combat.
+##
+## No LogisticsNetwork wired means no distinction is knowable — every
+## segment reads as "outer", the same "gracefully skip it" fallback every
+## other optional dependency here already uses.
+func is_legacy_segment(segment: WallSegment) -> bool:
+	if not _logistics_network or not segment:
+		return false
+	var covered := _logistics_network.get_covered_hexes()
+	return covered.has(segment.hex_a) and covered.has(segment.hex_b)
 
 ## Returns "" if a fresh Wooden segment can legally be placed between
 ## `hex_a`/`hex_b` right now, or a human-readable rejection reason otherwise

@@ -36,6 +36,24 @@ static func line_width(tier: int, breached: bool) -> float:
 	var base := 3.0 + float(tier) * 2.0
 	return base * 0.5 if breached else base
 
+## A "legacy inner" wall (WallManager.is_legacy_segment(), Phase 4.1) — still
+## fully functional, but no longer the settlement's outermost defended edge.
+## Renders dimmed via the whole marker's `modulate` rather than a distinct
+## hue, same "still there, just less current/prominent" idea
+## StrategicOverlayManager's own ghosted horde markers (Phase 2.7.6) already
+## use for a not-currently-primary state — the segment's own tier/breached
+## color already carries every mechanically-relevant fact (tier, HP state);
+## legacy status is purely "how deep into my own territory this ring sits,"
+## a dimmer, not a fourth color to learn.
+static func legacy_modulate() -> Color:
+	return Color(1.0, 1.0, 1.0, 0.55)
+
+## The counterpart to legacy_modulate() — full brightness, today's exact
+## pre-4.1-decision look. A named constant (not a bare Color(1,1,1,1)
+## inline) so both states read as an intentional pair at the call site.
+static func outer_modulate() -> Color:
+	return Color(1.0, 1.0, 1.0, 1.0)
+
 ## Defense works (Ditch/Oil Pit, Phase 4.1) stack alongside a segment
 ## rather than replacing it — a small distinct marker color at the
 ## segment's midpoint on top of the line itself, not a second line.
