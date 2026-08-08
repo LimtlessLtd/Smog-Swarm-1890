@@ -35,6 +35,19 @@ extends Control
 ## reconnaissance; see todo.md's own 2.7.6 entry). This draws what
 ## StrategicOverlayManager already draws today (buildings) plus terrain,
 ## not a superset invented just for the minimap.
+##
+## **Threat Meter (design doc Phase 6.1), implemented here:** "an indicator
+## per sector showing horde attraction levels, visible on the hex overview
+## map" — this minimap IS that overview map. A translucent diamond marker
+## (shape-distinct from the plain square hex dots and circular building
+## dots already drawn here, same "never color alone" accessibility rule
+## every other marker in this project follows) at every hex
+## `NoiseManager.get_noise_at()` reports as nonzero, sized AND colored by
+## intensity (amber, low, small -> red, high, large) via one shared lerp —
+## two independent visual cues for the same value, not just a color ramp.
+## Same fog gate as building icons (at-least-EXPLORED, not full VISIBLE) —
+## a noise source is the player's own industry, already-known territory
+## works the same way a building icon already does here.
 
 const VIEWPORT_REFRESH_SECONDS: float = 0.1
 const HEX_DOT_HALF_SIZE: float = 1.5   ## Minimap-space pixels, not world-space — every hex draws as the same small flat square regardless of actual hex size.
@@ -43,9 +56,22 @@ const BACKGROUND_COLOR: Color = Color("#1f150f")
 const BORDER_COLOR: Color = Color("#cfa24e")
 const VIEWPORT_FRAME_COLOR: Color = Color("#f4e7c5")
 
+## Threat Meter visualization bands — a display-only normalization ceiling,
+## deliberately NOT the same value as HordeManager.ATTRACTION_THRESHOLD
+## (that's the gameplay threshold a horde actually reacts to; this is just
+## "what noise level reads as visually maxed-out on this tiny map"), though
+## roughly in the same ballpark by design (a couple of stacked industrial
+## buildings, or one doubled by night).
+const THREAT_VISUALIZATION_MAX_NOISE: float = 12.0
+const THREAT_MARKER_RADIUS_MIN: float = 2.0
+const THREAT_MARKER_RADIUS_MAX: float = 6.0
+const THREAT_COLOR_LOW: Color = Color(0.95, 0.75, 0.1, 0.5)   ## Amber, translucent — a faint threat.
+const THREAT_COLOR_HIGH: Color = Color(0.85, 0.15, 0.1, 0.8)  ## Red, more opaque — a serious one.
+
 var _hex_grid_map: HexGridMap
 var _building_manager: BuildingManager
 var _fog_of_war_manager: FogOfWarManager
+var _noise_manager: NoiseManager
 var _camera: CameraController
 
 var _panel_size: Vector2 = Vector2.ZERO
@@ -57,12 +83,17 @@ var _world_bounds_size: Vector2 = Vector2.ONE
 ## flags Control.size/get_combined_minimum_size() as able to read stale on
 ## the same frame a Control is first positioned; an explicit fixed size
 ## sidesteps that class of bug entirely rather than risking hitting it again.
-func setup(hex_grid_map: HexGridMap, building_manager: BuildingManager, fog_of_war_manager: FogOfWarManager, camera: CameraController, panel_size: Vector2) -> void:
+##
+## `noise_manager` is optional — same "gracefully skip it" convention every
+## other optional dependency in this project follows; unset just means no
+## Threat Meter markers, everything else here is unaffected.
+func setup(hex_grid_map: HexGridMap, building_manager: BuildingManager, fog_of_war_manager: FogOfWarManager, camera: CameraController, panel_size: Vector2, noise_manager: NoiseManager = null) -> void:
 	_hex_grid_map = hex_grid_map
 	_building_manager = building_manager
 	_fog_of_war_manager = fog_of_war_manager
 	_camera = camera
 	_panel_size = panel_size
+	_noise_manager = noise_manager
 
 	_compute_world_bounds()
 
@@ -71,6 +102,8 @@ func setup(hex_grid_map: HexGridMap, building_manager: BuildingManager, fog_of_w
 	if _building_manager:
 		_building_manager.building_placed.connect(_on_building_changed)
 		_building_manager.building_removed.connect(_on_building_changed)
+	if _noise_manager:
+		_noise_manager.noise_recomputed.connect(_on_noise_recomputed)
 	if _camera:
 		_camera.tactical_mode_changed.connect(_on_tactical_mode_changed)
 		visible = _camera.is_tactical_zoom()
@@ -93,6 +126,10 @@ func _on_fog_state_changed(_coord: Vector2i, _state: GameEnums.FogState) -> void
 		queue_redraw()
 
 func _on_building_changed(_instance: BuildingInstance) -> void:
+	if visible:
+		queue_redraw()
+
+func _on_noise_recomputed() -> void:
 	if visible:
 		queue_redraw()
 
@@ -146,8 +183,35 @@ func _draw() -> void:
 			var pos := _world_to_minimap(HexCoord.axial_to_world(instance.hex_coord))
 			draw_circle(pos, BUILDING_DOT_RADIUS, BuildingVisuals.category_color(instance.definition.category))
 
+	_draw_threat_markers()
 	_draw_viewport_frame()
 	draw_rect(Rect2(Vector2.ZERO, _panel_size), BORDER_COLOR, false, 1.5)
+
+## Threat Meter (design doc Phase 6.1) — see this class's own doc comment
+## for the full reasoning. Iterates every generated cell same as the
+## terrain pass above (cheap at this scale, same reasoning that pass
+## already relies on) rather than trying to enumerate only "interesting"
+## hexes — NoiseManager.get_noise_at() is already a plain Dictionary lookup.
+func _draw_threat_markers() -> void:
+	if not _noise_manager or not _hex_grid_map:
+		return
+	for cell in _hex_grid_map.get_all_cells():
+		var noise := _noise_manager.get_noise_at(cell.coord)
+		if noise <= 0.0:
+			continue
+		if _fog_of_war_manager and not _fog_of_war_manager.is_at_least_explored(cell.coord):
+			continue
+		var t := clampf(noise / THREAT_VISUALIZATION_MAX_NOISE, 0.0, 1.0)
+		var pos := _world_to_minimap(HexCoord.axial_to_world(cell.coord))
+		var radius := lerpf(THREAT_MARKER_RADIUS_MIN, THREAT_MARKER_RADIUS_MAX, t)
+		var color := THREAT_COLOR_LOW.lerp(THREAT_COLOR_HIGH, t)
+		# A diamond, not a circle/square — shape-distinct from building dots
+		# (circles) and hex tiles (flat squares), same accessibility
+		# principle every other marker in this project already follows.
+		draw_polygon(PackedVector2Array([
+			pos + Vector2(0, -radius), pos + Vector2(radius, 0),
+			pos + Vector2(0, radius), pos + Vector2(-radius, 0),
+		]), PackedColorArray([color]))
 
 ## The main camera's current world-space view as a rectangle on the
 ## minimap — this is the whole point of showing a minimap specifically
