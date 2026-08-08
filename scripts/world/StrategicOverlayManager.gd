@@ -37,13 +37,19 @@ extends Node2D
 ## **Display Options (user request): every marker category here lives under
 ## its own Node2D layer** (`_building_layer`/`_frontier_layer`/
 ## `_wall_layer`/`_unit_layer`/`_horde_layer`/`_attack_layer`/
-## `_threat_layer`), toggled on/off via the `DisplaySettings` autoload
-## rather than each marker's own individual `visible` flag — Godot combines
-## a child's visibility with its parent's, so hiding a layer hides every
-## marker under it (present AND future) for free, no per-marker bookkeeping
-## needed. `_sync_layer_visibility()` is the only place that reads
-## `DisplaySettings` directly; every `_build_*_marker()`/`_on_*` handler
-## below is completely unaware of it, same as before this feature existed.
+## `_threat_layer`/`_zoc_layer`), toggled on/off via the `DisplaySettings`
+## autoload rather than each marker's own individual `visible` flag — Godot
+## combines a child's visibility with its parent's, so hiding a layer hides
+## every marker under it (present AND future) for free, no per-marker
+## bookkeeping needed. `_sync_layer_visibility()` is the only place that
+## reads `DisplaySettings` directly; every `_build_*_marker()`/`_on_*`
+## handler below is completely unaware of it, same as before this feature
+## existed.
+##
+## Also draws Zone of Control markers (design doc Phase 2.3, visualized for
+## the first time this pass — user request) — see `ZoneOfControlVisuals.gd`'s
+## own doc comment for the outline-vs-fill shape reasoning shared with
+## `TacticalHexView`'s own copy on the Tactical view.
 
 ## Design doc Phase 6.2's EventManager: fires whenever a horde transitions
 ## INTO live-tracking (a fresh spot, or a ghost re-spotted) — see
@@ -134,6 +140,7 @@ var _unit_layer: Node2D
 var _horde_layer: Node2D
 var _attack_layer: Node2D
 var _threat_layer: Node2D
+var _zoc_layer: Node2D
 
 var _building_icons: Dictionary = {}    # int (BuildingInstance.id) -> Node2D
 var _unit_icons: Dictionary = {}        # int (UnitInstance.id) -> Node2D
@@ -146,6 +153,7 @@ var _horde_last_known_coord: Dictionary = {}   # int (Horde.id) -> Vector2i; liv
 
 var _attack_markers: Dictionary = {}  # Vector2i -> {"node": Node2D, "timer": Timer}
 var _threat_markers: Dictionary = {}  # Vector2i -> Node2D
+var _zoc_markers: Dictionary = {}     # Vector2i -> Node2D (container: "MilitaryOutline" Line2D + "CivilianFill" Polygon2D)
 
 func _ready() -> void:
 	_building_layer = _new_layer("BuildingLayer")
@@ -155,6 +163,7 @@ func _ready() -> void:
 	_horde_layer = _new_layer("HordeLayer")
 	_attack_layer = _new_layer("AttackLayer")
 	_threat_layer = _new_layer("ThreatLayer")
+	_zoc_layer = _new_layer("ZocLayer")
 
 	if hex_grid_map_path != NodePath():
 		_hex_grid_map = get_node(hex_grid_map_path)
@@ -207,6 +216,7 @@ func _ready() -> void:
 	if logistics_network_path != NodePath():
 		_logistics_network = get_node(logistics_network_path)
 		_logistics_network.network_recomputed.connect(_on_logistics_network_recomputed)
+		_refresh_zoc_markers()
 	if noise_manager_path != NodePath():
 		_noise_manager = get_node(noise_manager_path)
 		_noise_manager.noise_recomputed.connect(_refresh_threat_markers)
@@ -234,6 +244,7 @@ func _sync_layer_visibility() -> void:
 	_horde_layer.visible = DisplaySettings.show_horde_markers
 	_attack_layer.visible = DisplaySettings.show_attack_alerts
 	_threat_layer.visible = DisplaySettings.show_threat_meter_world
+	_zoc_layer.visible = DisplaySettings.show_zoc_world
 
 func _on_tactical_mode_changed(is_tactical: bool) -> void:
 	visible = not is_tactical
@@ -617,6 +628,7 @@ func _apply_wall_segment_look(marker: Node2D, segment: WallSegment) -> void:
 ## infer it from wall-specific signals that wouldn't cover every case.
 func _on_logistics_network_recomputed() -> void:
 	_refresh_wall_marker_looks()
+	_refresh_zoc_markers()
 
 func _refresh_wall_marker_looks() -> void:
 	if not _wall_manager:
@@ -695,3 +707,60 @@ func _apply_threat_marker_look(marker: Polygon2D, noise: float) -> void:
 	# distinct here from buildings' triangle, units' circle, and hordes'
 	# (larger, opaque) diamond by color/translucency alone.
 	marker.polygon = PackedVector2Array([Vector2(0, -r), Vector2(r, 0), Vector2(0, r), Vector2(-r, 0)])
+
+## --- Zone of Control (Phase 2.3) — world-view surface -------------------
+##
+## `ZoneOfControlVisuals.gd`'s own doc comment covers the "why an outline
+## for Military, why a fill for Civilian" reasoning — this is that overlay's
+## Strategic surface, `TacticalHexView`'s own copy is the other. Rebuilt
+## from scratch on every `LogisticsNetwork.network_recomputed` — same
+## "small enough to just rebuild" reasoning `_refresh_frontier_markers()`/
+## `_refresh_threat_markers()` above already rely on (dozens of ZoC-covered
+## hexes at most). No fog-of-war gating, matching wall/building markers'
+## own precedent — a ZoC aura is the player's own projected presence, same
+## as a building or a wall, not something to "spot" about someone else's.
+
+func _refresh_zoc_markers() -> void:
+	if not _logistics_network:
+		return
+	var wanted: Dictionary = {}  # Vector2i -> true
+	for coord in _logistics_network.get_covered_hexes():
+		wanted[coord] = true
+
+	for coord in _zoc_markers.keys():
+		if not wanted.has(coord):
+			_zoc_markers[coord].queue_free()
+			_zoc_markers.erase(coord)
+	for coord in wanted:
+		var state := _logistics_network.get_zoc_state(coord)
+		if _zoc_markers.has(coord):
+			_apply_zoc_marker_look(_zoc_markers[coord], state)
+		else:
+			var marker := _build_zoc_marker(coord, state)
+			_zoc_layer.add_child(marker)
+			_zoc_markers[coord] = marker
+
+func _build_zoc_marker(coord: Vector2i, state: ZoneOfControlState) -> Node2D:
+	var container := Node2D.new()
+	container.position = HexCoord.axial_to_world(coord)
+
+	var outline := Line2D.new()
+	outline.name = "MilitaryOutline"
+	outline.closed = true
+	outline.default_color = ZoneOfControlVisuals.MILITARY_OUTLINE_COLOR
+	outline.width = ZoneOfControlVisuals.MILITARY_OUTLINE_WIDTH
+	outline.points = HexCoord.corner_points(Vector2.ZERO)
+	container.add_child(outline)
+
+	var fill := Polygon2D.new()
+	fill.name = "CivilianFill"
+	fill.color = ZoneOfControlVisuals.CIVILIAN_FILL_COLOR
+	fill.polygon = HexCoord.corner_points(Vector2.ZERO)
+	container.add_child(fill)
+
+	_apply_zoc_marker_look(container, state)
+	return container
+
+func _apply_zoc_marker_look(marker: Node2D, state: ZoneOfControlState) -> void:
+	(marker.get_node("MilitaryOutline") as Line2D).visible = state.has_military_coverage()
+	(marker.get_node("CivilianFill") as Polygon2D).visible = state.has_civilian_coverage

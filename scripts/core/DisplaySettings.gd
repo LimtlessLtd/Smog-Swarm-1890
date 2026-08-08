@@ -38,11 +38,18 @@ var show_unit_markers: bool = true
 var show_horde_markers: bool = true
 var show_attack_alerts: bool = true
 var show_threat_meter_world: bool = true
+## Zone of Control (Phase 2.3), visualized for the first time this pass —
+## consulted by `StrategicOverlayManager`'s own ZoC layer.
+var show_zoc_world: bool = true
 
 ## Consulted by `MinimapView` — the Threat Meter's OTHER surface (Phase
 ## 6.1's own "hex overview map" reading), independent of the world-view
 ## flag above so either can be toggled without the other.
 var show_threat_meter_minimap: bool = true
+## Consulted by `TacticalHexView` — Zone of Control's OTHER surface (the
+## Tactical close-up view), independent of the world-view flag above for
+## the same reason the Threat Meter's two surfaces are independent.
+var show_zoc_tactical: bool = true
 
 func set_flag(property_name: StringName, value: bool) -> void:
 	set(property_name, value)

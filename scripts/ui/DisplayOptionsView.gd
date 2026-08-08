@@ -8,7 +8,8 @@ extends Panel
 ## checkbox per `DisplaySettings` flag: every `StrategicOverlayManager`
 ## marker layer on the Strategic hex-tile world view (buildings, frontier,
 ## walls, units, spotted hordes, under-attack alerts), plus the Threat
-## Meter's two independent surfaces (world view AND minimap).
+## Meter's and Zone of Control's own two independent surfaces each
+## (world view AND minimap/Tactical, respectively).
 ##
 ## **Deliberate exception to this HUD's usual "dumb view, MainHUD owns the
 ## actual call" convention** (see SaveLoadView/TechTreeView's own doc
@@ -34,7 +35,9 @@ const OPTIONS: Array[Array] = [
 	["Spotted Horde Markers (World Map)", "show_horde_markers"],
 	["Under-Attack Alerts (World Map)", "show_attack_alerts"],
 	["Threat Meter (World Map)", "show_threat_meter_world"],
+	["Zone of Control (World Map)", "show_zoc_world"],
 	["Threat Meter (Minimap)", "show_threat_meter_minimap"],
+	["Zone of Control (Tactical View)", "show_zoc_tactical"],
 ]
 
 func _ready() -> void:

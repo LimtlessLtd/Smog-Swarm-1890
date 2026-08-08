@@ -8,12 +8,24 @@ extends Node
 ##
 ## - Military ZoC: projected by Forward Ammo Dumps, Garrisons and Church
 ##   Steeple Watchtowers (their MILITARY zoc_role). Covers
-##   MILITARY_AURA_COVERAGE (66%) of the projecting hex only. Deactivates if
-##   every supply line connected to the projecting hex is severed (design
-##   doc: "If zombies sever a road, rail, or canal segment connected to an
-##   Ammo Dump, its Military ZoC supply aura deactivates") — a projector with
-##   no supply lines at all is treated as self-sufficient, since disruption
-##   only makes sense once it has actually been wired into the network.
+##   MILITARY_AURA_COVERAGE (66%) of every hex within MILITARY_AURA_RADIUS —
+##   **user request, this pass: "the military zoc shouldn't be limited to 1
+##   hex, it should extend across hex tile borders"** — a real gap: until
+##   now this only ever touched the projecting hex's own coord, despite the
+##   design doc's own "Supply, Vision & Suppression" framing already
+##   implying an area, not a point. Same flat-radius-aura shape (no
+##   distance falloff) `FogOfWarManager.vision_radius`/`NoiseManager.
+##   NOISE_RADIUS` already established — MILITARY_AURA_RADIUS is a
+##   placeholder balancing number, not an architecture decision, same
+##   framing as those. Deactivates if every supply line connected to the
+##   PROJECTING hex specifically is severed (design doc: "If zombies sever a
+##   road, rail, or canal segment connected to an Ammo Dump, its Military
+##   ZoC supply aura deactivates") — a projector with no supply lines at all
+##   is treated as self-sufficient, since disruption only makes sense once
+##   it has actually been wired into the network. This severance/territory
+##   gate is still checked against the PROJECTING hex only, not every hex in
+##   its radius — losing supply at the source silences the whole aura, but
+##   which hexes it would have covered isn't itself a severance condition.
 ## - Civilian ZoC: projected by Town Halls, Churches (the Watchtower's
 ##   civilian half) and Telegraph Relay Offices (their CIVILIAN zoc_role).
 ##   Covers the entire projecting hex, but only while that hex still has at
@@ -43,6 +55,10 @@ extends Node
 signal network_recomputed
 
 const MILITARY_AURA_COVERAGE: float = 0.66
+## How far (in hexes) Military ZoC now projects beyond its own hex — see
+## this class's own doc comment above for the "why" and why a flat radius,
+## not a falloff.
+const MILITARY_AURA_RADIUS: int = 1
 
 @export var hex_grid_map_path: NodePath
 @export var building_manager_path: NodePath
@@ -165,8 +181,17 @@ func recompute() -> void:
 		for instance in _building_manager.get_buildings_with_zoc_role(GameEnums.ZoneOfControlType.MILITARY):
 			if instance.is_ruined or not _is_supply_intact(instance.hex_coord) or _is_territorially_lost(instance.hex_coord):
 				continue
-			var state := _state_for(instance.hex_coord)
-			state.military_coverage = maxf(state.military_coverage, MILITARY_AURA_COVERAGE)
+			# Extends across hex borders now (user request) — every hex
+			# within MILITARY_AURA_RADIUS gets the same flat coverage
+			# fraction, not just the projecting hex itself. Deliberately NOT
+			# gated on _hex_grid_map.has_cell() here the way FogOfWarManager's
+			# own vision-disk loop is — a coord with no real HexCell behind
+			# it just never gets queried by anything real (no marker, no
+			# gameplay check ever looks it up), so skipping the check costs
+			# nothing and keeps this loop simple.
+			for coord in HexCoord.hex_disk(instance.hex_coord, MILITARY_AURA_RADIUS):
+				var state := _state_for(coord)
+				state.military_coverage = maxf(state.military_coverage, MILITARY_AURA_COVERAGE)
 	network_recomputed.emit()
 
 func _state_for(coord: Vector2i) -> ZoneOfControlState:
