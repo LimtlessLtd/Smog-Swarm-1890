@@ -99,6 +99,23 @@ enum UnitRole {
 	SPECIAL,
 }
 
+## Design doc, user request: "each special unit type should do something
+## special (indicated by the name)" — a real, mechanical differentiator for
+## every SPECIAL-role unit, not just flavor text (until this pass all six
+## shared one identical baseline stat curve — see UnitCatalog's own doc
+## comment on that gap). NONE covers every MELEE/RANGED unit (their
+## differentiation is the existing tier/role HP-damage curve alone) and any
+## SPECIAL unit that hasn't been given a distinct mechanic.
+enum UnitAbility {
+	NONE,
+	UNARMED_SCOUT,       ## Outrider — cannot fight (near-zero attack_damage), fast mounted vision/recon only. See UnitCatalog.
+	MOUNTED_FIREARM,     ## Chasseur — mounted AND actually armed, a real combat option unlike the Outrider it out-classes. See UnitCatalog.
+	EXPLOSIVE_SPLASH,    ## Grenadier — grenades; expressed as a real damage bonus (a horde is already one clustered "blob" target, so splash reads as extra effectiveness against it). See UnitCatalog.
+	CHARGE_KNOCKBACK,    ## Dragoon — charging into a horde on contact knocks it back a hex AND stuns it briefly. See CombatCoordinator._apply_special_ability_effects().
+	TRAMPLE_KNOCKBACK,   ## Steam-Tractor Landship — same knockback as a Charge, no stun, riding on a much larger HP pool (a damage sponge that shoves zombies aside rather than a fast shock unit). See CombatCoordinator._apply_special_ability_effects().
+	MOBILE_SUPPLY_DUMP,  ## War Machine Armored Car — projects a small Military ZoC/resupply aura around wherever it currently stands, like a walking (much-reduced-radius) Forward Ammo Dump. See LogisticsNetwork.recompute().
+}
+
 ## Design doc Phase 5.4's decided roster — 6 tiers (0-5) x 3 roles = 18
 ## units. Declared tier-by-tier, melee/ranged/special within each tier, same
 ## grouped-comment convention BuildingType uses.

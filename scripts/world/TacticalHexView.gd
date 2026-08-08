@@ -160,7 +160,32 @@ func _update_zoc_overlay_on(container: Node2D) -> void:
 	(container.get_node("MilitaryOutline") as Line2D).visible = has_military and DisplaySettings.show_zoc_tactical
 	(container.get_node("CivilianFill") as Polygon2D).visible = has_civilian and DisplaySettings.show_zoc_tactical
 
+## Real per-species prop art (PropVisuals.prop_texture(), user request this
+## pass — see assets/props/README.md), Sprite2D-scaled-to-a-target-diameter
+## same as TacticalEntityLayer._build_unit_figure()/_build_zombie_figure()
+## already do — a prop's own species silhouette has no pre-existing quad or
+## hex to texture onto (each _prop_polygon() shape is an irregular hand-drawn
+## silhouette, not a quad — texturing it via uv would risk the exact
+## non-affine sampling bug TerrainVisuals/HexCellView's own doc comment
+## already documents and fixed once), so a standalone sprite is the correct
+## choice here, not a UV-mapped Polygon2D. Only consulted at MEDIUM/HIGH —
+## LOW keeps its uniform procedural blob regardless (PropVisuals' own doc
+## comment). Falls back to the original procedural polygon per-prop wherever
+## no art exists yet, same "art lands incrementally" contract as everywhere
+## else in this project.
+const PROP_SPRITE_DIAMETER: float = 20.0
+
 func _build_prop_node(prop: PropInstance) -> Node2D:
+	var texture := PropVisuals.prop_texture(prop.prop_type) if _fidelity != GameEnums.TacticalFidelity.LOW else null
+	if texture:
+		var sprite := Sprite2D.new()
+		sprite.texture = texture
+		sprite.position = prop.local_position
+		sprite.rotation = prop.rotation
+		var largest_dim := maxf(texture.get_width(), texture.get_height())
+		sprite.scale = Vector2.ONE * ((PROP_SPRITE_DIAMETER * prop.scale) / largest_dim)
+		return sprite
+
 	var shape := Polygon2D.new()
 	shape.polygon = _low_fidelity_blob() if _fidelity == GameEnums.TacticalFidelity.LOW else _prop_polygon(prop.prop_type)
 	shape.color = _prop_color(prop.prop_type)

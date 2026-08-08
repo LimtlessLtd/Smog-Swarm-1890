@@ -60,13 +60,25 @@ const MILITARY_AURA_COVERAGE: float = 0.66
 ## not a falloff.
 const MILITARY_AURA_RADIUS: int = 1
 
+## Design doc, user request: the War Machine Armored Car (GameEnums.
+## UnitAbility.MOBILE_SUPPLY_DUMP) "acts as a mobile ammo supply dump, just
+## with much reduced military zone of control" — 0 (its own hex only) vs. a
+## stationary Forward Ammo Dump building's MILITARY_AURA_RADIUS of 1, the
+## literal "much reduced" the request asked for. Still `hex_disk()`, not a
+## direct single-hex write, purely so a future balancing pass can raise
+## this without restructuring the loop below.
+const MOBILE_SUPPLY_AURA_RADIUS: int = 0
+
 @export var hex_grid_map_path: NodePath
 @export var building_manager_path: NodePath
 @export var territory_controller_path: NodePath  ## Optional — Phase 5.8. Unset skips recompute-on-territory-change; _has_secured_ground() still reads live HexCell.districts state either way.
+@export var unit_manager_path: NodePath          ## Optional — user request's MOBILE_SUPPLY_DUMP ability (War Machine Armored Car); unset means no unit ever projects ZoC, same "gracefully skip it" convention as every other optional dependency here.
+@export var unit_order_controller_path: NodePath ## Optional — recompute-on-move for the mobile aura above; without this, a MOBILE_SUPPLY_DUMP unit's aura only ever updates on train/remove, not as it walks. Unset alongside unit_manager_path is a legitimate "don't bother" configuration, same as leaving territory_controller_path unset.
 
 var _hex_grid_map: HexGridMap
 var _building_manager: BuildingManager
 var _territory_controller: TerritoryController
+var _unit_manager: UnitManager
 var _segments: Array[SupplyLineSegment] = []
 var _zoc_by_hex: Dictionary = {}  # Vector2i -> ZoneOfControlState
 
@@ -80,6 +92,13 @@ func _ready() -> void:
 	if territory_controller_path != NodePath():
 		_territory_controller = get_node(territory_controller_path)
 		_territory_controller.district_state_changed.connect(_on_territory_changed)
+	if unit_manager_path != NodePath():
+		_unit_manager = get_node(unit_manager_path)
+		_unit_manager.unit_trained.connect(_on_units_changed)
+		_unit_manager.unit_removed.connect(_on_units_changed)
+	if unit_order_controller_path != NodePath():
+		var unit_order_controller: UnitOrderController = get_node(unit_order_controller_path)
+		unit_order_controller.unit_moved.connect(_on_unit_moved)
 	recompute()
 
 func add_supply_line(line_type: GameEnums.SupplyLineType, hex_a: Vector2i, hex_b: Vector2i) -> SupplyLineSegment:
@@ -192,6 +211,27 @@ func recompute() -> void:
 			for coord in HexCoord.hex_disk(instance.hex_coord, MILITARY_AURA_RADIUS):
 				var state := _state_for(coord)
 				state.military_coverage = maxf(state.military_coverage, MILITARY_AURA_COVERAGE)
+
+	# User request: the War Machine Armored Car "acts as a mobile ammo
+	# supply dump" — same MILITARY_AURA_COVERAGE fraction a building
+	# projects, just from wherever the unit currently stands and at
+	# MOBILE_SUPPLY_AURA_RADIUS instead of MILITARY_AURA_RADIUS. A sibling
+	# of the `if _building_manager:` block above, not nested inside it —
+	# this must keep working even in a hypothetical configuration with no
+	# BuildingManager wired at all.
+	# Deliberately NOT gated on supply-line intactness or territory loss the
+	# way a building's Military ZoC is — a mobile unit has no supply line of
+	# its own to sever and isn't "lost territory" in TerritoryController's
+	# sense, it just walks away; the only real gate is "does this unit still
+	# exist" (is_destroyed(), the same check every other live-unit query in
+	# this project already uses).
+	if _unit_manager:
+		for instance: UnitInstance in _unit_manager.get_all_units():
+			if instance.definition.ability != GameEnums.UnitAbility.MOBILE_SUPPLY_DUMP or instance.is_destroyed():
+				continue
+			for coord in HexCoord.hex_disk(instance.hex_coord, MOBILE_SUPPLY_AURA_RADIUS):
+				var state := _state_for(coord)
+				state.military_coverage = maxf(state.military_coverage, MILITARY_AURA_COVERAGE)
 	network_recomputed.emit()
 
 func _state_for(coord: Vector2i) -> ZoneOfControlState:
@@ -229,4 +269,17 @@ func _on_buildings_changed(_instance: BuildingInstance) -> void:
 	recompute()
 
 func _on_territory_changed(_coord: Vector2i, _is_contested: bool) -> void:
+	recompute()
+
+func _on_units_changed(_instance: UnitInstance) -> void:
+	recompute()
+
+## Recomputes on every hex boundary a unit actually crosses (same signal
+## CombatCoordinator already wires) so a MOBILE_SUPPLY_DUMP unit's aura
+## visibly follows it as it walks, not just on training/loss. Fires for
+## every unit's every hex crossing, not just the rare MOBILE_SUPPLY_DUMP
+## one — recompute() is "cheap enough... revisit with incremental updates
+## if that stops being true" per this class's own doc comment, same
+## disclosed scale assumption, now exercised by unit movement too.
+func _on_unit_moved(_instance: UnitInstance, _from_coord: Vector2i, _to_coord: Vector2i) -> void:
 	recompute()

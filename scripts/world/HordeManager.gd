@@ -482,6 +482,14 @@ func _spawnable_coords() -> Array[Vector2i]:
 ## burst can't glide through an un-breached wall on an intermediate hex
 ## just because the loop's first iteration found the immediate edge clear.
 func _advance_horde(horde: Horde, delta: float) -> void:
+	# Design doc, user request: a Dragoon's charge stuns the horde it hits —
+	# see Horde.stun_seconds_remaining's own doc comment. A stunned horde
+	# doesn't move, doesn't progress a wall siege, full stop, for however
+	# long remains; it resumes exactly where it left off (same path, same
+	# ATTACKING/WANDERING/ATTRACTED state) the instant the stun expires.
+	if horde.stun_seconds_remaining > 0.0:
+		horde.stun_seconds_remaining = maxf(0.0, horde.stun_seconds_remaining - delta)
+		return
 	if horde.path.is_empty():
 		_replan(horde)
 	if horde.path.is_empty():

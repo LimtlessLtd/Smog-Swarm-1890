@@ -42,6 +42,18 @@ extends Resource
 ## knocked into the fragile melee-mode penalty.
 @export var requires_gunpowder: bool = false
 
+## Design doc, user request: "each special unit type should do something
+## special." NONE for every MELEE/RANGED unit and any SPECIAL unit not yet
+## given a distinct mechanic — see GameEnums.UnitAbility's own doc comment
+## for what each real value does and which system reads it.
+@export var ability: GameEnums.UnitAbility = GameEnums.UnitAbility.NONE
+
+## Stacks multiplicatively with terrain/logistics/Day-Night speed factors —
+## see UnitOrderController._movement_speed(). 1.0 = no change (every
+## MELEE/RANGED unit and most SPECIAL units); mounted SPECIAL units
+## (Outrider, Chasseur, Dragoon) run faster than an unmounted soldier.
+@export var move_speed_multiplier: float = 1.0
+
 func _init(p_type: GameEnums.UnitType = GameEnums.UnitType.TRUNCHEONEER, p_display_name: String = "", p_tier: int = 0, p_role: GameEnums.UnitRole = GameEnums.UnitRole.MELEE) -> void:
 	unit_type = p_type
 	display_name = p_display_name

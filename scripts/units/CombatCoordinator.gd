@@ -152,16 +152,24 @@ const SEARCHLIGHT_NIGHT_INCOMING_DAMAGE_MULTIPLIER: float = 0.6  ## A further 40
 ## for "Military units", not a general Day/Night combat-wide swing.
 const DAY_DAMAGE_MULTIPLIER: float = 1.1
 
+## Design doc, user request: a Dragoon's charge stuns whatever it hits for
+## "a second" — a literal number from the request, not a derived one. The
+## Steam-Tractor Landship's TRAMPLE_KNOCKBACK deliberately does NOT use
+## this — see _apply_special_ability_effects()'s own doc comment for why.
+const CHARGE_STUN_SECONDS: float = 1.0
+
 @export var unit_manager_path: NodePath
 @export var horde_manager_path: NodePath
 @export var unit_order_controller_path: NodePath
 @export var resource_manager_path: NodePath  ## Optional — unset always resolves as "Gunpowder available", same "gracefully skip it" convention as every other optional dependency.
 @export var building_manager_path: NodePath  ## Optional — Phase 5.12's undefended-building siege trigger; unset gracefully skips it, same convention as every other optional dependency here.
+@export var hex_grid_map_path: NodePath      ## Optional — user request's CHARGE_KNOCKBACK/TRAMPLE_KNOCKBACK abilities need to validate a knockback destination is a real, passable hex; unset just means those two abilities never physically knock a horde anywhere (a stun from CHARGE_KNOCKBACK still applies regardless — see _knock_back()'s own doc comment).
 
 var _unit_manager: UnitManager
 var _horde_manager: HordeManager
 var _resource_manager: ResourceManager
 var _building_manager: BuildingManager
+var _hex_grid_map: HexGridMap
 
 func _ready() -> void:
 	if unit_manager_path != NodePath():
@@ -176,23 +184,30 @@ func _ready() -> void:
 		_resource_manager = get_node(resource_manager_path)
 	if building_manager_path != NodePath():
 		_building_manager = get_node(building_manager_path)
+	if hex_grid_map_path != NodePath():
+		_hex_grid_map = get_node(hex_grid_map_path)
 
-func _on_horde_moved(horde: Horde, _from_coord: Vector2i, to_coord: Vector2i) -> void:
+func _on_horde_moved(horde: Horde, from_coord: Vector2i, to_coord: Vector2i) -> void:
 	var defenders: Array[UnitInstance] = []
 	if _unit_manager:
 		defenders = _unit_manager.get_units_at(to_coord)
 	for instance in defenders:
-		_engage(instance, horde)
+		_engage(instance, horde, from_coord, to_coord)
 	if defenders.is_empty():
 		_siege_buildings(horde, to_coord)
 
-func _on_unit_moved(instance: UnitInstance, _from_coord: Vector2i, to_coord: Vector2i) -> void:
+func _on_unit_moved(instance: UnitInstance, from_coord: Vector2i, to_coord: Vector2i) -> void:
 	if not _horde_manager:
 		return
 	for horde in _horde_manager.get_hordes_at(to_coord):
-		_engage(instance, horde)
+		_engage(instance, horde, from_coord, to_coord)
 
-func _engage(instance: UnitInstance, horde: Horde) -> void:
+## `movement_from`/`movement_to` are whichever side's own move triggered
+## this specific contact event (the horde's for `_on_horde_moved`, the
+## unit's for `_on_unit_moved`) — passed through purely so
+## `_apply_special_ability_effects()` can knock a surviving horde back
+## along that same line of travel; ordinary engagements ignore both.
+func _engage(instance: UnitInstance, horde: Horde, movement_from: Vector2i, movement_to: Vector2i) -> void:
 	if instance.is_destroyed() or horde.size <= 0:
 		return  ## Already resolved earlier this same contact event (e.g. multiple units on one hex vs. one horde).
 
@@ -213,6 +228,8 @@ func _engage(instance: UnitInstance, horde: Horde) -> void:
 		instance.kill_count += 1  # Phase 5.7: destroying a Horde outright is the decided definition of "a kill" — see UnitMorale.get_rank()'s own doc comment.
 		if _horde_manager:
 			_horde_manager.remove_horde(horde)
+	else:
+		_apply_special_ability_effects(instance, horde, movement_from, movement_to)
 
 	# Phase 2.5.4, decided: "a fallen squad member becomes a real, fightable
 	# threat" — every derived headcount point this engagement cost `instance`
@@ -276,3 +293,53 @@ func _siege_buildings(horde: Horde, coord: Vector2i) -> void:
 			continue
 		_building_manager.damage_building(instance, horde.get_combat_damage())
 		return  # One building per contact event — see this method's own doc comment.
+
+## Design doc, user request: "each special unit type should do something
+## special." Called only once `_engage()` already knows `horde` survived
+## this round (a destroyed horde has nothing left to knock back or stun).
+## CHARGE_KNOCKBACK (Dragoon) gets both a knockback AND a stun; TRAMPLE_
+## KNOCKBACK (Steam-Tractor Landship) gets the same knockback with NO
+## stun — deliberately: the Landship is a slow damage sponge that shoves
+## zombies aside as it grinds forward, not a shock unit that needs to
+## freeze its target the way a fast charging Dragoon does. Every other
+## ability value (including plain NONE) does nothing here — Outrider's
+## unarmed-ness, Chasseur/Grenadier's damage bonuses, and the Armored Car's
+## mobile ZoC aura are all expressed elsewhere (UnitCatalog's stat curve,
+## LogisticsNetwork.recompute() respectively), not in this method.
+func _apply_special_ability_effects(instance: UnitInstance, horde: Horde, movement_from: Vector2i, movement_to: Vector2i) -> void:
+	match instance.definition.ability:
+		GameEnums.UnitAbility.CHARGE_KNOCKBACK:
+			_knock_back(horde, movement_from, movement_to)
+			horde.stun_seconds_remaining = CHARGE_STUN_SECONDS
+		GameEnums.UnitAbility.TRAMPLE_KNOCKBACK:
+			_knock_back(horde, movement_from, movement_to)
+
+## Displaces `horde` one further hex along whichever line of travel caused
+## this contact — `movement_to + (movement_to - movement_from)`, i.e. "the
+## same direction the moving side was already heading, continued one more
+## step," which reads correctly regardless of whether the HORDE walked into
+## the unit or the UNIT walked into the horde (both callers pass their OWN
+## from/to pair — see _engage()'s own doc comment). Requires an optional
+## `_hex_grid_map` to validate the destination is a real, passable hex
+## (never shoves a horde into open ocean or a marsh) — unset, or no valid
+## destination (map edge, impassable terrain), just means the knockback
+## itself fizzles; a CHARGE_KNOCKBACK's stun is applied by the caller
+## regardless, since being stunned doesn't require successfully being
+## shoved anywhere. Directly mutates the passed-in Horde Resource (same
+## "manager mutates a passed-in Resource, engine/coordinator stays
+## ignorant of who owns it" pattern CombatEngine/WallManager.damage_segment()
+## already use) rather than going through HordeManager — this does NOT
+## emit HordeManager.horde_moved, a deliberate, minor, accepted gap: any
+## listener keyed off that signal (StrategicOverlayManager's marker,
+## TerritoryController) just reflects the knock-back on the horde's own
+## NEXT real movement tick instead of instantly, not incorrectly.
+func _knock_back(horde: Horde, movement_from: Vector2i, movement_to: Vector2i) -> void:
+	if movement_from == movement_to or not _hex_grid_map:
+		return
+	var target := movement_to + (movement_to - movement_from)
+	var cell := _hex_grid_map.get_cell(target)
+	if cell == null or not cell.is_passable():
+		return
+	horde.hex_coord = target
+	horde.local_position = Vector2.ZERO
+	horde.path.clear()  # Forces HordeManager to replan fresh from the new position next _advance_horde() call.

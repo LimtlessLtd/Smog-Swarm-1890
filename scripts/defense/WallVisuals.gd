@@ -63,3 +63,63 @@ static func defense_work_color(has_ditch: bool, has_oil_pit: bool) -> Color:
 	if has_oil_pit:
 		return Color(0.72, 0.42, 0.12)  # Warm amber-orange — oil.
 	return Color(0.36, 0.30, 0.20)  # Dark earth — a ditch.
+
+## Lazily-loaded, cached TILEABLE strip texture for an intact wall segment
+## (user request, this pass — see `assets/walls/README.md`) — same
+## `ResourceLoader.exists()`-gated-null pattern every other `*Visuals.gd`
+## here follows. Only for INTACT segments: a breached one keeps rendering
+## as `breached_color()`'s flat alarm-red `Line2D` (unchanged) — a wall
+## that's failed reads better as an obvious flat warning color than a
+## tiled texture, same reasoning `ruin_color()` already gives for a ruined
+## building losing its category color. Applied via `Line2D.texture` +
+## `texture_mode = Line2D.LINE_TEXTURE_TILE` at the call site
+## (StrategicOverlayManager._apply_wall_segment_look()) — `Line2D` tiles a
+## texture along its own length natively, no UV-mapping pitfall the way a
+## `Polygon2D` would have (see TerrainVisuals/HexCellView's own documented
+## bug on that).
+static var _texture_cache: Dictionary = {}  # int (WallCatalog tier) -> Texture2D (nullable)
+
+static func tier_texture(tier: int) -> Texture2D:
+	if not _texture_cache.has(tier):
+		_texture_cache[tier] = _load_texture(tier)
+	return _texture_cache[tier]
+
+static func _texture_key(tier: int) -> String:
+	match tier:
+		WallCatalog.WOODEN:
+			return "wall_wooden"
+		WallCatalog.BRICK:
+			return "wall_brick"
+		WallCatalog.CONCRETE:
+			return "wall_concrete"
+		_:
+			return ""
+
+static func _load_texture(tier: int) -> Texture2D:
+	var key := _texture_key(tier)
+	if key.is_empty():
+		return null
+	var path := "res://assets/walls/%s.png" % key
+	if not ResourceLoader.exists(path):
+		return null
+	return load(path) as Texture2D
+
+## Lazily-loaded, cached point icon for a defense work (Ditch/Oil Pit) at a
+## segment's midpoint — same gated-null pattern, a Sprite2D-on-a-point
+## rather than a tiled strip (a defense work sits at one spot, it doesn't
+## run the segment's own length). `has_ditch`/`has_oil_pit` both true (both
+## present) falls back to `defense_work_color()`'s existing blended-color
+## Polygon2D — a "both present" icon is a real, separate asset nobody's
+## authored, not worth inventing a compositing scheme for a placeholder.
+static var _defense_work_texture_cache: Dictionary = {}  # String (key) -> Texture2D (nullable)
+
+static func defense_work_texture(has_ditch: bool, has_oil_pit: bool) -> Texture2D:
+	if has_ditch and has_oil_pit:
+		return null
+	var key := "oil_pit" if has_oil_pit else "ditch" if has_ditch else ""
+	if key.is_empty():
+		return null
+	if not _defense_work_texture_cache.has(key):
+		var path := "res://assets/walls/%s.png" % key
+		_defense_work_texture_cache[key] = load(path) as Texture2D if ResourceLoader.exists(path) else null
+	return _defense_work_texture_cache[key]

@@ -46,6 +46,16 @@ extends Resource
 ## state worth persisting anyway.
 var path: Array[Vector2i] = []
 
+## Design doc, user request: a Dragoon's charge (GameEnums.UnitAbility.
+## CHARGE_KNOCKBACK) "knocks them back and stuns them for a second" — set by
+## CombatCoordinator._apply_special_ability_effects(), decremented and
+## enforced by HordeManager._advance_horde() (movement/wall-siege progress
+## both pause while stunned). Deliberately NOT @export, same reasoning as
+## `path` above — a stun this short-lived (order of one second) is never
+## meaningful state worth surviving a save/load; a horde reloaded mid-stun
+## just resumes unstunned, which reads fine.
+var stun_seconds_remaining: float = 0.0
+
 ## Placeholder balancing numbers, not an architecture decision — same
 ## framing as every other constant table in this project (UnitCatalog's
 ## per-tier curve, CombatEngine's forced-melee multipliers). A modest

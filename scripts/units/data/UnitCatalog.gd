@@ -42,27 +42,66 @@ static func _build_definitions() -> Array[UnitDefinition]:
 		# --- Tier 0 ("Free Ammo" — no tech needed) ---
 		_unit(GameEnums.UnitType.TRUNCHEONEER, "Truncheoneer", 0, GameEnums.UnitRole.MELEE),
 		_unit(GameEnums.UnitType.TOXOPHILITE, "Toxophilite", 0, GameEnums.UnitRole.RANGED),  # No Gunpowder upkeep by design — arrows aren't a tracked resource.
-		_unit(GameEnums.UnitType.OUTRIDER, "Outrider", 0, GameEnums.UnitRole.SPECIAL),
+		# Outrider: unarmed mounted scout (user request) — damage_multiplier 0.0
+		# means attack_damage works out to exactly 0.0 regardless of the tier
+		# curve underneath, not a small residual number; it genuinely cannot
+		# fight. move_speed_multiplier 1.6 is the payoff — fast reconnaissance,
+		# not combat, same "does something special" framing every SPECIAL unit
+		# below gets.
+		_unit(GameEnums.UnitType.OUTRIDER, "Outrider", 0, GameEnums.UnitRole.SPECIAL, false, GameEnums.UnitAbility.UNARMED_SCOUT, 1.0, 0.0, 1.6),
 		# --- Tier 1 (unit_tier_1) ---
 		_unit(GameEnums.UnitType.NAVVY, "Navvy", 1, GameEnums.UnitRole.MELEE),
 		_unit(GameEnums.UnitType.YEOMAN_MARKSMAN, "Yeoman Marksman", 1, GameEnums.UnitRole.RANGED, true),  # First firearm-era ranged unit — Gunpowder depletion penalty starts here.
-		_unit(GameEnums.UnitType.GRENADIER, "Grenadier", 1, GameEnums.UnitRole.SPECIAL),
+		# Grenadier: grenades (user request) — a horde is already one
+		# clustered "blob" target in this game's combat model (Horde.gd),
+		# so there's no separate multi-target AOE to build; splash
+		# effectiveness against a mob is expressed as a straight damage
+		# bonus instead.
+		_unit(GameEnums.UnitType.GRENADIER, "Grenadier", 1, GameEnums.UnitRole.SPECIAL, false, GameEnums.UnitAbility.EXPLOSIVE_SPLASH, 1.0, 1.5, 1.0),
 		# --- Tier 2 (unit_tier_2) ---
 		_unit(GameEnums.UnitType.REDCOAT, "Redcoat", 2, GameEnums.UnitRole.MELEE),
 		_unit(GameEnums.UnitType.RIFLEMAN, "Rifleman", 2, GameEnums.UnitRole.RANGED, true),
-		_unit(GameEnums.UnitType.CHASSEUR, "Chasseur", 2, GameEnums.UnitRole.SPECIAL),
+		# Chasseur: mounted AND armed with a firearm (user request) — a real
+		# damage_multiplier (not the Outrider's 0.0) makes it a genuine
+		# combat option, strictly better/more useful than the Outrider it
+		# shares a tier-progression role with, while keeping the same fast
+		# move_speed_multiplier the "mounted" half of its identity implies.
+		# Deliberately still exempt from requires_gunpowder, same as every
+		# other SPECIAL-role unit (UnitDefinition.requires_gunpowder's own
+		# doc comment: the depletion penalty is scoped to RANGED units by
+		# design, not "every unit that logically uses a firearm") — not
+		# re-litigating that standing decision just because this unit is
+		# now explicitly armed.
+		_unit(GameEnums.UnitType.CHASSEUR, "Chasseur", 2, GameEnums.UnitRole.SPECIAL, false, GameEnums.UnitAbility.MOUNTED_FIREARM, 1.0, 1.3, 1.4),
 		# --- Tier 3 (unit_tier_3) ---
 		_unit(GameEnums.UnitType.HIGHLANDER, "Highlander", 3, GameEnums.UnitRole.MELEE),
 		_unit(GameEnums.UnitType.SHARPSHOOTER, "Sharpshooter", 3, GameEnums.UnitRole.RANGED, true),
-		_unit(GameEnums.UnitType.DRAGOON, "Dragoon", 3, GameEnums.UnitRole.SPECIAL),
+		# Dragoon: a mounted charge (user request) — knocks a horde back a hex
+		# and stuns it briefly on contact (CombatCoordinator, not a stat on
+		# this Resource at all); attack_damage stays at the plain baseline
+		# curve since the charge itself, not raw damage, is this unit's real
+		# value. Still mounted (move_speed_multiplier), same as Outrider/Chasseur.
+		_unit(GameEnums.UnitType.DRAGOON, "Dragoon", 3, GameEnums.UnitRole.SPECIAL, false, GameEnums.UnitAbility.CHARGE_KNOCKBACK, 1.0, 1.0, 1.3),
 		# --- Tier 4 (unit_tier_4) — grounded heavy engineering, not battle-mechs (design doc, decided). ---
 		_unit(GameEnums.UnitType.STEAM_PRAM_RAMMER, "Steam-Pram Rammer", 4, GameEnums.UnitRole.MELEE),
 		_unit(GameEnums.UnitType.ARMORED_LOCOMOTIVE_GUNNER, "Armored Locomotive Gunner", 4, GameEnums.UnitRole.RANGED, true),
-		_unit(GameEnums.UnitType.STEAM_TRACTOR_LANDSHIP, "Steam-Tractor Landship", 4, GameEnums.UnitRole.SPECIAL),
+		# Steam-Tractor Landship: a big bulky tank (user request) — 2.5x the
+		# baseline HP curve ("take significant amounts of damage before
+		# dying"), plus the same knockback a Dragoon's charge applies
+		# (CombatCoordinator) but with NO stun — this is a slow damage sponge
+		# that shoves zombies aside on every contact, not a fast shock unit.
+		_unit(GameEnums.UnitType.STEAM_TRACTOR_LANDSHIP, "Steam-Tractor Landship", 4, GameEnums.UnitRole.SPECIAL, false, GameEnums.UnitAbility.TRAMPLE_KNOCKBACK, 2.5, 1.0, 1.0),
 		# --- Tier 5 (unit_tier_5) — same "no retro-futuristic steampunk tropes" rule as Tier 4. ---
 		_unit(GameEnums.UnitType.STEAM_MACHINE_LEG, "Steam Machine-Leg", 5, GameEnums.UnitRole.MELEE),
 		_unit(GameEnums.UnitType.RAILWAY_SIEGE_HOWITZER, "Railway Siege Howitzer", 5, GameEnums.UnitRole.RANGED, true),
-		_unit(GameEnums.UnitType.WAR_MACHINE_ARMORED_CAR, "War Machine Armored Car", 5, GameEnums.UnitRole.SPECIAL),
+		# War Machine Armored Car: a mobile ammo supply dump (user request) —
+		# projects its own small Military ZoC/resupply aura wherever it
+		# currently stands (LogisticsNetwork.recompute(), radius 0 vs. a
+		# Forward Ammo Dump building's radius 1 — "much reduced" per the
+		# request). 1.3x HP keeps it "a decent chunk of health like the
+		# others," explicitly not the fragile pure-support framing its old
+		# flavor text implied.
+		_unit(GameEnums.UnitType.WAR_MACHINE_ARMORED_CAR, "War Machine Armored Car", 5, GameEnums.UnitRole.SPECIAL, false, GameEnums.UnitAbility.MOBILE_SUPPLY_DUMP, 1.3, 1.0, 1.0),
 	]
 
 ## Shared placeholder balancing curve — one formula for training cost/
@@ -75,7 +114,19 @@ static func _build_definitions() -> Array[UnitDefinition]:
 ## — no building anywhere in the project produces it yet (see that enum
 ## entry's own comment), so requiring it here would make Tier 4-5 units
 ## uncraftable rather than merely expensive.
-static func _unit(type: GameEnums.UnitType, display_name: String, tier: int, role: GameEnums.UnitRole, requires_gunpowder: bool = false) -> UnitDefinition:
+##
+## `ability`/`hp_multiplier`/`damage_multiplier`/`move_speed_multiplier`
+## (user request, this pass — "each special unit type should do something
+## special") apply ON TOP of the shared curve/role multiplier below, not
+## instead of it — every SPECIAL unit still starts from the same tier
+## baseline every other unit does, these four just let six specific units
+## (see their own call sites' comments) diverge from what used to be an
+## identical, undifferentiated SPECIAL-role baseline. Every MELEE/RANGED
+## unit and any not-yet-differentiated SPECIAL unit passes none of these,
+## leaving all four at their neutral default (NONE/1.0/1.0/1.0) — this
+## helper's signature grew, but every pre-existing call site above still
+## reads exactly as it did before this pass.
+static func _unit(type: GameEnums.UnitType, display_name: String, tier: int, role: GameEnums.UnitRole, requires_gunpowder: bool = false, ability: GameEnums.UnitAbility = GameEnums.UnitAbility.NONE, hp_multiplier: float = 1.0, damage_multiplier: float = 1.0, move_speed_multiplier: float = 1.0) -> UnitDefinition:
 	var d := UnitDefinition.new(type, display_name, tier, role)
 	d.requires_gunpowder = requires_gunpowder
 	if requires_gunpowder:
@@ -94,5 +145,10 @@ static func _unit(type: GameEnums.UnitType, display_name: String, tier: int, rol
 			d.max_hp *= 0.9      # Fragile — the Gunpowder-depletion "unarmored melee mode" penalty (UnitDefinition.requires_gunpowder) hits this role hardest.
 			d.attack_damage *= 1.3
 		GameEnums.UnitRole.SPECIAL:
-			pass  # Left at baseline — "exact combat identity ... is a balancing/design pass per unit, not fixed by this spec" (design doc, decided).
+			pass  # Baseline before the four per-unit overrides below apply — no role-wide multiplier of its own, unlike MELEE/RANGED.
+
+	d.ability = ability
+	d.move_speed_multiplier = move_speed_multiplier
+	d.max_hp *= hp_multiplier
+	d.attack_damage *= damage_multiplier
 	return d

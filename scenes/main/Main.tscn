@@ -53,6 +53,8 @@ territory_controller_path = NodePath("../TerritoryController")
 hex_grid_map_path = NodePath("../WorldRoot/HexGridMap")
 building_manager_path = NodePath("../BuildingManager")
 territory_controller_path = NodePath("../TerritoryController")
+unit_manager_path = NodePath("../UnitManager")
+unit_order_controller_path = NodePath("../UnitOrderController")
 
 [node name="DiscontentManager" parent="." instance=ExtResource("13")]
 logistics_network_path = NodePath("../LogisticsNetwork")
@@ -114,6 +116,7 @@ horde_manager_path = NodePath("../HordeManager")
 unit_order_controller_path = NodePath("../UnitOrderController")
 resource_manager_path = NodePath("../ResourceManager")
 building_manager_path = NodePath("../BuildingManager")
+hex_grid_map_path = NodePath("../WorldRoot/HexGridMap")
 
 [node name="EventManager" parent="." instance=ExtResource("23")]
 building_manager_path = NodePath("../BuildingManager")

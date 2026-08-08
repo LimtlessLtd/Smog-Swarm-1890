@@ -260,6 +260,24 @@ func _build_role_marker(instance: UnitInstance) -> Node2D:
 			shape.polygon = PackedVector2Array([Vector2(0, -radius), Vector2(radius, 0), Vector2(0, radius), Vector2(-radius, 0)])  # Diamond.
 	return shape
 
+## Real zombie art (ZombieVisuals.zombie_texture()), same Sprite2D-scaled-to-
+## diameter approach _build_unit_figure() already uses, in place of the flat
+## circle where authored — falls back to it individually per figure, same
+## "art lands incrementally" contract. `horde_id + index` seeds which of
+## ZombieVisuals.VARIANT_COUNT looks this specific figure gets — deterministic
+## (same figure always looks the same across redraws) but varied across a
+## horde's own figures so a cluster doesn't read as identical clones.
+func _build_zombie_figure(horde_id: int, index: int, offset: Vector2) -> Node2D:
+	var texture := ZombieVisuals.zombie_texture(horde_id + index)
+	if not texture:
+		return _build_figure(ZOMBIE_COLOR, ZOMBIE_RADIUS, offset)
+	var sprite := Sprite2D.new()
+	sprite.texture = texture
+	sprite.position = offset
+	var largest_dim := maxf(texture.get_width(), texture.get_height())
+	sprite.scale = Vector2.ONE * ((ZOMBIE_RADIUS * 2.0) / largest_dim)
+	return sprite
+
 ## --- Hordes (zombie blobs / clusters) --------------------------------------
 
 func _refresh_hordes() -> void:
@@ -302,10 +320,13 @@ func _update_horde_group(horde: Horde) -> void:
 		return
 
 	if _fidelity == GameEnums.TacticalFidelity.LOW:
+		# Deliberately NOT ZombieVisuals-aware, even where art exists — same
+		# "LOW is a uniform per-category blob by design" call this class
+		# already makes for units (see _update_unit_group()'s own doc comment).
 		group.add_child(_build_diamond(ZOMBIE_COLOR, LOW_ZOMBIE_RADIUS))
 	else:
 		for i in range(display_count):
-			group.add_child(_build_figure(ZOMBIE_COLOR, ZOMBIE_RADIUS, _scatter_offset(i, display_count)))
+			group.add_child(_build_zombie_figure(horde.id, i, _scatter_offset(i, display_count)))
 
 ## How many individual zombie figures to actually draw for a horde of
 ## `size` — LOW collapses to a single blob (display_count itself doesn't
