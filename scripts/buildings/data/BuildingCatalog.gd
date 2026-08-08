@@ -161,6 +161,7 @@ static func _clay_brickworks() -> BuildingDefinition:
 	d.construction_cost = {GameEnums.ResourceType.WOOD: 50}
 	d.daily_output = {GameEnums.ResourceType.BRICKS: 8.0}
 	d.allowed_biomes = [GameEnums.BiomeType.INDUSTRIAL, GameEnums.BiomeType.URBAN]
+	d.noise_output = 3  # Kilns firing (Phase 5.2's Threat Meter source).
 	return d
 
 static func _charcoal_kiln() -> BuildingDefinition:
@@ -170,6 +171,7 @@ static func _charcoal_kiln() -> BuildingDefinition:
 	d.daily_upkeep = {GameEnums.ResourceType.WOOD: 10.0}
 	d.daily_output = {GameEnums.ResourceType.ENERGY: 6.0}
 	d.allowed_biomes = [GameEnums.BiomeType.INDUSTRIAL, GameEnums.BiomeType.MOORLAND, GameEnums.BiomeType.FARMLAND]
+	d.noise_output = 3
 	return d
 
 static func _coal_pithead() -> BuildingDefinition:
@@ -178,6 +180,7 @@ static func _coal_pithead() -> BuildingDefinition:
 	d.construction_cost = {GameEnums.ResourceType.WOOD: 60, GameEnums.ResourceType.CAST_IRON: 20}
 	d.daily_output = {GameEnums.ResourceType.ENERGY: 10.0}
 	d.allowed_biomes = [GameEnums.BiomeType.INDUSTRIAL, GameEnums.BiomeType.MOORLAND, GameEnums.BiomeType.HIGHLAND]
+	d.noise_output = 5  # Winding gear/heavy machinery — louder than a surface kiln.
 	return d
 
 static func _cast_iron_foundry() -> BuildingDefinition:
@@ -187,6 +190,7 @@ static func _cast_iron_foundry() -> BuildingDefinition:
 	d.daily_upkeep = {GameEnums.ResourceType.ENERGY: 8.0}
 	d.daily_output = {GameEnums.ResourceType.CAST_IRON: 5.0}
 	d.allowed_biomes = [GameEnums.BiomeType.INDUSTRIAL, GameEnums.BiomeType.URBAN]
+	d.noise_output = 6  # Hammering/casting — the loudest single source in the tree today.
 	return d
 
 static func _saltpetre_powder_mill() -> BuildingDefinition:
@@ -196,6 +200,7 @@ static func _saltpetre_powder_mill() -> BuildingDefinition:
 	d.daily_upkeep = {GameEnums.ResourceType.ENERGY: 4.0}
 	d.daily_output = {GameEnums.ResourceType.GUNPOWDER: 6.0}
 	d.allowed_biomes = [GameEnums.BiomeType.INDUSTRIAL]
+	d.noise_output = 4
 	return d
 
 static func _forward_ammo_dump() -> BuildingDefinition:

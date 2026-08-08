@@ -62,6 +62,16 @@ extends Resource
 ## vision_radius is already >0 for a non-light reason.
 @export var lit_at_night: bool = false
 
+## Design doc Phase 5.2: "Industrial noise fills Threat Meters, triggering
+## night raids from uncleared wilderness" — a flat per-building noise level
+## (NoiseManager, Phase 5.2/5.10), 0 (the default) for anything that isn't
+## running loud machinery. Only INDUSTRY_EXTRACTION category buildings set
+## this today, per-building rather than a flat category-wide value (a
+## Foundry's hammering is louder than a Brickworks' kiln) — placeholder
+## balancing numbers, not an architecture decision, same framing as every
+## other constant table in this project.
+@export var noise_output: int = 0
+
 func _init(p_type: GameEnums.BuildingType = GameEnums.BuildingType.TERRACED_TENEMENT, p_display_name: String = "") -> void:
 	building_type = p_type
 	display_name = p_display_name

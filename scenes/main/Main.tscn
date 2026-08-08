@@ -1,4 +1,4 @@
-[gd_scene load_steps=18 format=3]
+[gd_scene load_steps=19 format=3]
 
 [ext_resource type="PackedScene" path="res://scenes/world/HexGridMap.tscn" id="1"]
 [ext_resource type="PackedScene" path="res://scenes/camera/CameraController.tscn" id="2"]
@@ -24,6 +24,7 @@
 [ext_resource type="PackedScene" path="res://scenes/world/TerritoryController.tscn" id="22"]
 [ext_resource type="PackedScene" path="res://scenes/events/EventManager.tscn" id="23"]
 [ext_resource type="PackedScene" path="res://scenes/audio/AlertManager.tscn" id="24"]
+[ext_resource type="PackedScene" path="res://scenes/world/NoiseManager.tscn" id="25"]
 
 [node name="Main" type="Node2D"]
 
@@ -59,6 +60,10 @@ hex_grid_map_path = NodePath("../WorldRoot/HexGridMap")
 building_manager_path = NodePath("../BuildingManager")
 logistics_network_path = NodePath("../LogisticsNetwork")
 
+[node name="NoiseManager" parent="." instance=ExtResource("25")]
+hex_grid_map_path = NodePath("../WorldRoot/HexGridMap")
+building_manager_path = NodePath("../BuildingManager")
+
 [node name="TechManager" parent="." instance=ExtResource("12")]
 resource_manager_path = NodePath("../ResourceManager")
 
@@ -77,6 +82,7 @@ hex_grid_map_path = NodePath("../WorldRoot/HexGridMap")
 logistics_network_path = NodePath("../LogisticsNetwork")
 building_manager_path = NodePath("../BuildingManager")
 wall_manager_path = NodePath("../WallManager")
+noise_manager_path = NodePath("../NoiseManager")
 local_detail_manager_path = NodePath("../WorldRoot/LocalDetailManager")
 
 [node name="TerritoryController" parent="." instance=ExtResource("22")]

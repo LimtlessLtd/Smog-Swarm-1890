@@ -39,8 +39,8 @@ extends Node
 ##   - Phase 5.2's "lone zombie" decision: _on_ambient_spawn_day() rolls a
 ##     flat daily chance to seed one genuinely tiny (1-3) horde on ambient
 ##     wilderness, independent of the starting seed and casualty conversion
-##     — no dedicated noise/attraction system exists to trigger this off
-##     yet, so a flat chance is the real spawn-side path per that decision.
+##     and independent of the noise system below — a flat chance is still
+##     the real spawn-side path here, per that decision.
 ##   - Phase 5.10's merge/split: _check_merges()/_check_splits(), rolled
 ##     once per movement tick alongside the existing drift — co-located
 ##     hordes can combine, a large enough horde can fragment in two.
@@ -52,10 +52,16 @@ extends Node
 ##     reverting to WANDERING once the segment actually breaches and it
 ##     steps through. This is deliberately the SIMPLEST version of "wall
 ##     targeting" — whichever segment a horde's own drift happens to walk
-##     into, not a deliberate seek-out-the-nearest-wall behavior (still no
-##     ATTRACTED state to drive that) — matching "contact matters however
-##     it happens" (5.10's own already-decided framing for unit combat,
-##     applied here to walls).
+##     into, not a deliberate seek-out-the-nearest-wall behavior — matching
+##     "contact matters however it happens" (5.10's own already-decided
+##     framing for unit combat, applied here to walls).
+##   - Phase 5.2/5.10's ATTRACTED state, now real too: _replan() (called
+##     whenever a horde's path empties) checks NoiseManager (optional
+##     noise_manager_path) FIRST, before falling back to the unbiased
+##     WANDERING pick — a horde within ATTRACTION_AWARENESS_RADIUS of a hex
+##     whose noise clears ATTRACTION_THRESHOLD paths deliberately toward the
+##     loudest one instead of drifting at random. See _pick_attraction_target()
+##     for the full "local, not global" reasoning.
 ##
 ## **Real-time continuous movement (user request, this pass) replaces the
 ## old hex-stepping model** — a horde used to snap instantly from one hex
@@ -84,14 +90,21 @@ extends Node
 ## Deliberately NOT wired here yet — each blocked on a system that doesn't
 ## exist, same "not implemented, deliberately" convention as every other
 ## forward-reference already in todo.md:
-##   - ATTRACTED (industrial-noise/night-light attraction) — nothing tracks
-##     a noise value per building/hex yet, so a horde has no way to
-##     deliberately seek out a target; ATTACKING (below) only ever happens
-##     as a byproduct of WANDERING drift stumbling into a wall.
-##   - ATTACKING's "deliberately besieging a hex it sought out" half — the
-##     wall-siege slice (a horde attacking whichever segment its own drift
-##     happens to reach) is real now, see this class's own doc comment
-##     above; a horde choosing a target on purpose still needs ATTRACTED.
+##   - ATTACKING's "deliberately besieging a HEX it sought out" half — an
+##     ATTRACTED horde today still only ever besieges a WALL, and only as a
+##     byproduct of its route happening to cross one (see the ATTACKING
+##     bullet above); nothing yet lets a horde treat an undefended building
+##     or ZoC-covered-but-unwalled hex itself as a deliberate siege target
+##     the way Phase 5.10's own "or Military-ZoC-covered hex" framing wants
+##     — that still needs Phase 5.12-style building-siege awareness wired
+##     into the pathing/targeting layer, not just CombatCoordinator's
+##     reactive contact-triggered siege.
+##   - Reconnaissance & Early Warning (Phase 5.3) — an ETA/countdown
+##     presentation layer over an ATTRACTED horde's route, once a UI exists
+##     to show it (still Phase 6+ work); this phase only owns the
+##     underlying attraction mechanic ATTRACTED now drives.
+##   - Threat Meter HUD (Phase 6.1) — NoiseManager.get_noise_at() is a real,
+##     queryable per-hex field now; nothing in MainHUD reads it yet.
 ##   - Horde-size/spawn-frequency ramp-up over time (Phase 7.1's Act pacing
 ##     / Phase 7.6's difficulty presets) — neither campaign system exists yet;
 ##     STARTING_HORDE_COUNT/SIZE below are a flat one-time seed, not a curve.
@@ -109,12 +122,14 @@ signal horde_removed(horde: Horde)
 @export var building_manager_path: NodePath   ## Optional — Phase 5.9's starvation-casualty spawn source, AND (user request) local obstacle avoidance: buildings steer continuous movement around them regardless of Tactical hydration. Unset gracefully skips both.
 @export var wall_manager_path: NodePath       ## Optional — Phase 4.1/5.10's horde-vs-wall siege; unset means walls simply never block a horde's drift (same "gracefully skip it" convention).
 @export var local_detail_manager_path: NodePath  ## Optional — local obstacle avoidance: props (trees/rocks/etc.) only exist as live data while their hex is Tactical-hydrated (LocalDetailManager.get_props_at()) — unset (or a currently-dehydrated hex) just means no prop avoidance there.
+@export var noise_manager_path: NodePath      ## Optional — Phase 5.2/5.10's ATTRACTED state; unset means a horde only ever WANDERs, never deliberately seeks out a noise/light source (same "gracefully skip it" convention).
 
 var _hex_grid_map: HexGridMap
 var _logistics_network: LogisticsNetwork
 var _building_manager: BuildingManager
 var _wall_manager: WallManager
 var _local_detail_manager: LocalDetailManager
+var _noise_manager: NoiseManager
 var _hordes: Array[Horde] = []
 var _next_id: int = 1
 var _rng := RandomNumberGenerator.new()
@@ -147,6 +162,19 @@ const LOGIC_TICK_SECONDS: float = 20.0
 ## How far (in hexes) a fresh drift target is picked from a horde's current
 ## position when it needs to replan.
 const DRIFT_TARGET_RADIUS: int = 5
+
+## Design doc Phase 5.10, decided: "attraction is local, not global" — how
+## far (in hexes) a horde scans for a noise/light source (NoiseManager,
+## Phase 5.2) above threshold when replanning. Deliberately the same order
+## of magnitude as DRIFT_TARGET_RADIUS above, not colony-wide — a horde on
+## the far side of the map has no way to know a distant city is loud.
+const ATTRACTION_AWARENESS_RADIUS: int = 6
+## The noise level (NoiseManager.get_noise_at()) a hex must clear before a
+## horde within range treats it as worth deliberately walking toward,
+## rather than continuing its unbiased WANDERING drift. Placeholder
+## balancing number, not an architecture decision, same framing as every
+## other constant table here.
+const ATTRACTION_THRESHOLD: float = 3.0
 
 ## Rough clearance radius a horde presents to
 ## MovementStepper.steer_around_obstacles() — same placeholder value as
@@ -206,6 +234,8 @@ func _ready() -> void:
 		_wall_manager = get_node(wall_manager_path)
 	if local_detail_manager_path != NodePath():
 		_local_detail_manager = get_node(local_detail_manager_path)
+	if noise_manager_path != NodePath():
+		_noise_manager = get_node(noise_manager_path)
 	TickManager.day_completed.connect(_on_ambient_spawn_day)
 	_rng.seed = HORDE_SEED
 	seed_starting_hordes()
@@ -461,14 +491,54 @@ func _siege_wall(horde: Horde, segment: WallSegment, seconds: float) -> void:
 	if horde.size <= 0:
 		remove_horde(horde)
 
+## Design doc Phase 5.10: ATTRACTED is checked FIRST on every replan, before
+## falling back to the unbiased WANDERING pick below — "a horde within
+## range of a noise or light source above threshold ... paths deliberately
+## toward it" takes priority over "no deliberate beeline anywhere" once
+## there's actually something to be deliberate ABOUT. Re-evaluated fresh
+## every time a horde's path empties (same "cheap to re-derive, not a
+## persistent commitment" philosophy the whole file already uses for
+## WANDERING) rather than a mid-route redirect — a horde already walking
+## somewhere doesn't abandon that route just because a nearer hex got
+## louder mid-walk; it'll pick that up on its NEXT replan instead, same as
+## a WANDERING horde would.
 func _replan(horde: Horde) -> void:
-	var target := _pick_drift_target(horde.hex_coord)
+	var attraction_target := _pick_attraction_target(horde.hex_coord)
+	var is_attracted := attraction_target != horde.hex_coord
+	var target := attraction_target if is_attracted else _pick_drift_target(horde.hex_coord)
 	if target == horde.hex_coord:
 		return
 	var path := HexPathfinder.find_path(_hex_grid_map, horde.hex_coord, target, _logistics_network)
 	if path.size() > 1:
 		path.remove_at(0)  # path[0] is the horde's own current hex — the walk starts at path[1] onward.
 		horde.path = path
+		horde.state = GameEnums.HordeState.ATTRACTED if is_attracted else GameEnums.HordeState.WANDERING
+		# Known cosmetic gap, not a functional one: if this ATTRACTED walk
+		# later crosses an unbreached wall, _advance_horde()'s existing
+		# breach-through code unconditionally relabels the horde WANDERING
+		# again afterward (it predates ATTRACTED existing at all) — the
+		# horde's `path` is completely unaffected by that mislabel and keeps
+		# walking toward the same attraction target regardless, and the
+		# label self-corrects the next time this method runs. Not worth a
+		# special case for a purely cosmetic state-label inaccuracy on one
+		# specific hex crossing.
+
+## Design doc Phase 5.10, decided: a purely POSITIONAL, re-derived-every-time
+## check against NoiseManager's own per-hex field (Phase 5.2) — no persistent
+## "am I currently attracted" flag to keep in sync, matching every other
+## derived-not-stored decision already made throughout this project (Zone of
+## Control, Fog of War's VISIBLE set, WallManager.is_legacy_segment()).
+## Returns `from_coord` itself (the same no-op sentinel _pick_drift_target()
+## already uses) when no NoiseManager is wired, nothing in range clears
+## ATTRACTION_THRESHOLD, or the loudest hex in range turns out to be the
+## horde's own current hex (nothing to walk toward).
+func _pick_attraction_target(from_coord: Vector2i) -> Vector2i:
+	if not _noise_manager:
+		return from_coord
+	var candidate := _noise_manager.get_loudest_hex_within(from_coord, ATTRACTION_AWARENESS_RADIUS)
+	if candidate == from_coord or _noise_manager.get_noise_at(candidate) < ATTRACTION_THRESHOLD:
+		return from_coord
+	return candidate
 
 ## An unbiased (any direction) pick from the ring of hexes exactly
 ## DRIFT_TARGET_RADIUS away, filtered to passable frontier ground — "no
