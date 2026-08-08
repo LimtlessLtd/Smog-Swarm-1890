@@ -1,11 +1,22 @@
 class_name HexMapGenerator
 extends RefCounted
 
-## Builds the full HexCell grid in four passes:
-##   1. Base layer   — every hex in bounds defaults to open moorland.
+## Builds the full HexCell grid in five passes:
+##   1. Landmass     — every hex in bounds defaults to OCEAN; hexes inside
+##                      BritishGeographyData's landmass silhouette (design
+##                      doc, user request: "ensure our hex tile map is
+##                      representative of the entire UK and Ireland") flip
+##                      to open moorland instead. Previously this WAS the
+##                      base layer (no ocean existed at all — the whole map
+##                      was just England's Manchester-Midlands-London
+##                      corridor); this pass is what actually gives the map
+##                      real coastline shape rather than an arbitrary
+##                      rectangle.
 ##   2. Feature stamp — named geography (settlements, ranges, waterways,
 ##                      wetlands, farmland) from BritishGeographyData
-##                      overrides the base layer.
+##                      overrides the land layer. Ocean hexes are never
+##                      targeted by a feature (every GeographyFeature's own
+##                      hex_coords sit on land by construction).
 ##   3. Soil noise    — layered noise varies fertility within open
 ##                      countryside for the "granular soil fertility"
 ##                      requirement, independent of named regions.
@@ -45,14 +56,20 @@ func _init() -> void:
 func generate() -> Dictionary:
 	var cells: Dictionary = {}  # Vector2i -> HexCell
 	var bounds := BritishGeographyData.MAP_BOUNDS
+	var land := BritishGeographyData.get_landmass_hexes()
 
 	for q in range(bounds.position.x, bounds.position.x + bounds.size.x):
 		for r in range(bounds.position.y, bounds.position.y + bounds.size.y):
 			var coord := Vector2i(q, r)
 			var cell := HexCell.new(coord)
-			cell.biome_type = GameEnums.BiomeType.MOORLAND
-			cell.soil_fertility = GameEnums.SoilFertility.POOR
-			cell.elevation = _base_elevation(coord)
+			if land.has(coord):
+				cell.biome_type = GameEnums.BiomeType.MOORLAND
+				cell.soil_fertility = GameEnums.SoilFertility.POOR
+				cell.elevation = _base_elevation(coord)
+			else:
+				cell.biome_type = GameEnums.BiomeType.OCEAN
+				cell.soil_fertility = GameEnums.SoilFertility.NOT_ARABLE
+				cell.elevation = 0.0
 			cells[coord] = cell
 
 	var features := BritishGeographyData.get_features()

@@ -1,4 +1,4 @@
-[gd_scene load_steps=19 format=3]
+[gd_scene load_steps=20 format=3]
 
 [ext_resource type="PackedScene" path="res://scenes/world/HexGridMap.tscn" id="1"]
 [ext_resource type="PackedScene" path="res://scenes/camera/CameraController.tscn" id="2"]
@@ -25,6 +25,7 @@
 [ext_resource type="PackedScene" path="res://scenes/events/EventManager.tscn" id="23"]
 [ext_resource type="PackedScene" path="res://scenes/audio/AlertManager.tscn" id="24"]
 [ext_resource type="PackedScene" path="res://scenes/world/NoiseManager.tscn" id="25"]
+[ext_resource type="PackedScene" path="res://scenes/world/CoastlineOutlineView.tscn" id="26"]
 
 [node name="Main" type="Node2D"]
 
@@ -32,8 +33,11 @@
 
 [node name="HexGridMap" parent="WorldRoot" instance=ExtResource("1")]
 
+[node name="CoastlineOutlineView" parent="WorldRoot" instance=ExtResource("26")]
+hex_grid_map_path = NodePath("../HexGridMap")
+
 [node name="CameraController" parent="." instance=ExtResource("2")]
-position = Vector2(8400, 4800)
+position = Vector2(77571, 38592)
 zoom = Vector2(0.05, 0.05)
 world_root_path = NodePath("../WorldRoot")
 

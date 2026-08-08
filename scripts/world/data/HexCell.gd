@@ -19,9 +19,13 @@ func _init(p_coord: Vector2i = Vector2i.ZERO) -> void:
 	coord = p_coord
 
 ## Marshes, peat bogs and steep escarpments are natural barriers/chokepoints
-## until reclaimed (drained or bridged — Phase 4.2).
+## until reclaimed (drained or bridged — Phase 4.2). Open OCEAN (design doc,
+## user request: map now represents the whole UK+Ireland) is impassable too,
+## on the same "not walkable, needs a future system to cross" footing —
+## unlike a marsh, nothing reclaims it; Phase 7.5's Naval Logistics/ships
+## are the only thing that will ever let a unit or horde reach across it.
 func is_passable() -> bool:
-	return terrain_feature != GameEnums.TerrainFeature.MARSH and terrain_feature != GameEnums.TerrainFeature.PEAT_BOG
+	return terrain_feature != GameEnums.TerrainFeature.MARSH and terrain_feature != GameEnums.TerrainFeature.PEAT_BOG and biome_type != GameEnums.BiomeType.OCEAN
 
 func is_frontier() -> bool:
 	for district in districts:

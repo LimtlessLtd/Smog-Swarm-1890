@@ -11,8 +11,9 @@ enum BiomeType {
 	FARMLAND,     ## Open, tillable countryside (fertility varies, see SoilFertility).
 	MOORLAND,     ## Open, less fertile countryside.
 	HIGHLAND,     ## Elevated terrain / mountain chains (Pennines, Chilterns, Cotswolds).
-	WATERWAY,     ## River or canal hex.
+	WATERWAY,     ## River or canal hex — fordable (Phase 2.12.1), unlike open OCEAN below.
 	WETLAND,      ## Marsh, fen or peat bog.
+	OCEAN,        ## Open sea (design doc, user request: "ensure our hex tile map is representative of the entire UK and Ireland") — impassable (HexCell.is_passable()) until Phase 7.5's Naval Logistics/ships exist; the map's own default base layer before BritishGeographyData's landmass stamp turns land hexes to MOORLAND.
 }
 
 enum SoilFertility {

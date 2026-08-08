@@ -23,7 +23,17 @@ func generate_map() -> void:
 	var generator := HexMapGenerator.new()
 	_cells = generator.generate()
 	for coord in _cells:
-		_spawn_view(_cells[coord])
+		# Design doc, user request: the map now spans the whole UK+Ireland
+		# bounding box, most of which is open OCEAN — a real HexCellView per
+		# ocean hex (a Polygon2D/textured ground node) would be pure waste,
+		# there's nothing to render there beyond "not land" (CoastlineOutlineView
+		# draws that boundary separately, once, not per-hex). Cuts total
+		# spawned view count roughly to the actual landmass, not the full
+		# bounding rectangle. HexCell DATA still exists for every hex in
+		# bounds either way (get_cell()/has_cell() work the same) — only the
+		# VISUAL is skipped.
+		if _cells[coord].biome_type != GameEnums.BiomeType.OCEAN:
+			_spawn_view(_cells[coord])
 	generation_completed.emit(_cells.size())
 
 func get_cell(coord: Vector2i) -> HexCell:

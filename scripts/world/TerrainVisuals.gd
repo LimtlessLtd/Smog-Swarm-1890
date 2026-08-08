@@ -30,6 +30,8 @@ static func biome_color(biome: GameEnums.BiomeType, soil: GameEnums.SoilFertilit
 			return Color(0.29, 0.46, 0.63)
 		GameEnums.BiomeType.WETLAND:
 			return Color(0.33, 0.40, 0.28)
+		GameEnums.BiomeType.OCEAN:
+			return Color(0.10, 0.18, 0.28)  ## Deeper/darker than WATERWAY's river-blue — open sea, not a fordable river.
 		GameEnums.BiomeType.FARMLAND, GameEnums.BiomeType.MOORLAND:
 			return soil_color(soil)
 		_:
@@ -75,6 +77,8 @@ static func _texture_key(biome: GameEnums.BiomeType, soil: GameEnums.SoilFertili
 			return "waterway"
 		GameEnums.BiomeType.WETLAND:
 			return "wetland"
+		GameEnums.BiomeType.OCEAN:
+			return "ocean"  ## No assets/terrain/ocean.svg authored — deliberately falls back to biome_color()'s flat OCEAN color below, same "art lands incrementally" contract every other biome already follows. Explicit case so it does NOT fall into the "_:" MOORLAND bucket, which WOULD resolve to a real, wrong texture.
 		GameEnums.BiomeType.FARMLAND:
 			return "farmland_%s" % _soil_key(soil)
 		_:  # MOORLAND
