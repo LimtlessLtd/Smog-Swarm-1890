@@ -39,9 +39,11 @@ var cell: HexCell
 var _props: Array[PropInstance] = []
 var _buildings: Array[BuildingInstance] = []
 var _fidelity: GameEnums.TacticalFidelity = GameEnums.TacticalFidelity.HIGH
+var _zoc_state: ZoneOfControlState
 
 func _ready() -> void:
 	position = HexCoord.axial_to_world(cell.coord)
+	DisplaySettings.changed.connect(_on_display_settings_changed)
 	if cell:
 		_redraw()
 
@@ -50,14 +52,33 @@ func _ready() -> void:
 ## `fog_state` defaults to VISIBLE: LocalDetailManager only ever hydrates a
 ## hex that's at least EXPLORED (Phase 2.6), so the only two values that
 ## actually arrive here are EXPLORED (dimmed) and VISIBLE (full color).
-func setup(p_cell: HexCell, props: Array[PropInstance], buildings: Array[BuildingInstance], fog_state: GameEnums.FogState = GameEnums.FogState.VISIBLE, fidelity: GameEnums.TacticalFidelity = GameEnums.TacticalFidelity.HIGH) -> void:
+## `zoc_state` (Zone of Control, design doc Phase 2.3, visualized for the
+## first time this pass — user request) defaults to null, meaning "no
+## LogisticsNetwork wired" — same "gracefully skip it" convention every
+## other optional dependency in this project follows.
+func setup(p_cell: HexCell, props: Array[PropInstance], buildings: Array[BuildingInstance], fog_state: GameEnums.FogState = GameEnums.FogState.VISIBLE, fidelity: GameEnums.TacticalFidelity = GameEnums.TacticalFidelity.HIGH, zoc_state: ZoneOfControlState = null) -> void:
 	cell = p_cell
 	_props = props
 	_buildings = buildings
 	_fidelity = fidelity
+	_zoc_state = zoc_state
 	set_fog_state(fog_state)
 	if is_inside_tree():
 		_redraw()
+
+## Zone of Control (Phase 2.3): pushed live by LocalDetailManager whenever
+## LogisticsNetwork recomputes — mirrors set_fidelity()'s "update in place,
+## only redraw if it actually changed" shape.
+func set_zoc_state(zoc_state: ZoneOfControlState) -> void:
+	_zoc_state = zoc_state
+	if is_inside_tree():
+		_update_zoc_overlay()
+
+## Display Options (user request): toggles this hex's own ZoC overlay live
+## without a full redraw — the overlay node already exists (or doesn't,
+## if no ZoC applies here), just its visibility needs to follow the flag.
+func _on_display_settings_changed() -> void:
+	_update_zoc_overlay()
 
 ## Fog of War (Phase 2.6): dims the whole hydrated hex (terrain, props and
 ## buildings together) rather than the inner ground HexCellView alone, so a
@@ -92,11 +113,52 @@ func _redraw() -> void:
 	ground.setup(cell)
 	add_child(ground)
 
+	add_child(_build_zoc_overlay())  # Ground-level tint — drawn before props/buildings so they render on top of it, not under.
+
 	for prop in _props:
 		add_child(_build_prop_node(prop))
 
 	for i in range(_buildings.size()):
 		add_child(_build_building_node(_buildings[i], i))
+
+## Zone of Control (Phase 2.3), Tactical surface — see
+## `ZoneOfControlVisuals.gd`'s own doc comment for the outline-vs-fill shape
+## reasoning shared with `StrategicOverlayManager`'s own world-view copy.
+## Always built (even with no `_zoc_state` at all — a plain hidden
+## container) so `_update_zoc_overlay()`/`set_zoc_state()` always have a
+## real node to toggle rather than needing to lazily create one on first
+## use.
+func _build_zoc_overlay() -> Node2D:
+	var container := Node2D.new()
+	container.name = "ZocOverlay"
+
+	var outline := Line2D.new()
+	outline.name = "MilitaryOutline"
+	outline.closed = true
+	outline.default_color = ZoneOfControlVisuals.MILITARY_OUTLINE_COLOR
+	outline.width = ZoneOfControlVisuals.MILITARY_OUTLINE_WIDTH
+	outline.points = HexCoord.corner_points(Vector2.ZERO)
+	container.add_child(outline)
+
+	var fill := Polygon2D.new()
+	fill.name = "CivilianFill"
+	fill.color = ZoneOfControlVisuals.CIVILIAN_FILL_COLOR
+	fill.polygon = HexCoord.corner_points(Vector2.ZERO)
+	container.add_child(fill)
+
+	_update_zoc_overlay_on(container)
+	return container
+
+func _update_zoc_overlay() -> void:
+	var container := get_node_or_null("ZocOverlay")
+	if container:
+		_update_zoc_overlay_on(container)
+
+func _update_zoc_overlay_on(container: Node2D) -> void:
+	var has_military := _zoc_state != null and _zoc_state.has_military_coverage()
+	var has_civilian := _zoc_state != null and _zoc_state.has_civilian_coverage
+	(container.get_node("MilitaryOutline") as Line2D).visible = has_military and DisplaySettings.show_zoc_tactical
+	(container.get_node("CivilianFill") as Polygon2D).visible = has_civilian and DisplaySettings.show_zoc_tactical
 
 func _build_prop_node(prop: PropInstance) -> Node2D:
 	var shape := Polygon2D.new()

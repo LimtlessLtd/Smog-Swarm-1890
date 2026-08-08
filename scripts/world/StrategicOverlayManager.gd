@@ -28,6 +28,28 @@ extends Node2D
 ## LocalDetailManager: shares its coordinate space, and — added after both
 ## HexGridMap and LocalDetailManager in Main.tscn — draws its icons on top
 ## by plain sibling order.
+##
+## Also draws the Threat Meter's world-view surface (design doc Phase 6.1
+## — MinimapView's own doc comment covers its minimap-side twin) — a
+## translucent diamond per noisy hex, sized/colored by intensity via the
+## shared NoiseVisuals lookup both surfaces read from.
+##
+## **Display Options (user request): every marker category here lives under
+## its own Node2D layer** (`_building_layer`/`_frontier_layer`/
+## `_wall_layer`/`_unit_layer`/`_horde_layer`/`_attack_layer`/
+## `_threat_layer`/`_zoc_layer`), toggled on/off via the `DisplaySettings`
+## autoload rather than each marker's own individual `visible` flag — Godot
+## combines a child's visibility with its parent's, so hiding a layer hides
+## every marker under it (present AND future) for free, no per-marker
+## bookkeeping needed. `_sync_layer_visibility()` is the only place that
+## reads `DisplaySettings` directly; every `_build_*_marker()`/`_on_*`
+## handler below is completely unaware of it, same as before this feature
+## existed.
+##
+## Also draws Zone of Control markers (design doc Phase 2.3, visualized for
+## the first time this pass — user request) — see `ZoneOfControlVisuals.gd`'s
+## own doc comment for the outline-vs-fill shape reasoning shared with
+## `TacticalHexView`'s own copy on the Tactical view.
 
 ## Design doc Phase 6.2's EventManager: fires whenever a horde transitions
 ## INTO live-tracking (a fresh spot, or a ghost re-spotted) — see
@@ -77,6 +99,15 @@ const ATTACK_ALERT_COLOR := Color(0.95, 0.75, 0.1, 0.9)  ## Amber ring — disti
 const ATTACK_ALERT_RADIUS := 22.0
 const ATTACK_ALERT_SECONDS: float = 8.0
 
+## Threat Meter (design doc Phase 6.1) — world-space marker radius bounds
+## (hex-sized units, not minimap pixels — see NoiseVisuals.gd for the
+## shared color/intensity curve this scales against, also used by
+## MinimapView's own copy of the same overlay). Sized in the same rough
+## ballpark as this class's other markers (horde diamond 12, attack ring
+## 22) rather than the minimap's tiny fixed pixels.
+const THREAT_MARKER_RADIUS_MIN := 8.0
+const THREAT_MARKER_RADIUS_MAX := 26.0
+
 @export var hex_grid_map_path: NodePath
 @export var building_manager_path: NodePath
 @export var unit_manager_path: NodePath
@@ -87,6 +118,7 @@ const ATTACK_ALERT_SECONDS: float = 8.0
 @export var event_manager_path: NodePath  ## Optional — without it, COMBAT events simply don't pulse a marker (Phase 6.2's EventManager is the source; see _on_event_raised()).
 @export var wall_manager_path: NodePath  ## Optional — without it, wall segments simply have no Strategic marker (Phase 2.7.3).
 @export var logistics_network_path: NodePath  ## Optional — without it, every wall marker just reads as "outer" forever (Phase 4.1's is_legacy_segment() distinction never refreshes).
+@export var noise_manager_path: NodePath  ## Optional — Phase 6.1's Threat Meter, drawn here on the Strategic world view; unset means no threat markers here (MinimapView's own copy is independent).
 
 var _hex_grid_map: HexGridMap
 var _building_manager: BuildingManager
@@ -96,6 +128,19 @@ var _fog_of_war_manager: FogOfWarManager
 var _camera: CameraController
 var _wall_manager: WallManager
 var _logistics_network: LogisticsNetwork
+var _noise_manager: NoiseManager
+
+## Display Options (user request) — one layer Node2D per marker category;
+## see this class's own doc comment for why a layer, not a per-marker
+## visible flag.
+var _building_layer: Node2D
+var _frontier_layer: Node2D
+var _wall_layer: Node2D
+var _unit_layer: Node2D
+var _horde_layer: Node2D
+var _attack_layer: Node2D
+var _threat_layer: Node2D
+var _zoc_layer: Node2D
 
 var _building_icons: Dictionary = {}    # int (BuildingInstance.id) -> Node2D
 var _unit_icons: Dictionary = {}        # int (UnitInstance.id) -> Node2D
@@ -107,8 +152,19 @@ var _horde_live: Dictionary = {}               # int (Horde.id) -> bool; true wh
 var _horde_last_known_coord: Dictionary = {}   # int (Horde.id) -> Vector2i; live position while tracked, frozen ghost position once not
 
 var _attack_markers: Dictionary = {}  # Vector2i -> {"node": Node2D, "timer": Timer}
+var _threat_markers: Dictionary = {}  # Vector2i -> Node2D
+var _zoc_markers: Dictionary = {}     # Vector2i -> Node2D (container: "MilitaryOutline" Line2D + "CivilianFill" Polygon2D)
 
 func _ready() -> void:
+	_building_layer = _new_layer("BuildingLayer")
+	_frontier_layer = _new_layer("FrontierLayer")
+	_wall_layer = _new_layer("WallLayer")
+	_unit_layer = _new_layer("UnitLayer")
+	_horde_layer = _new_layer("HordeLayer")
+	_attack_layer = _new_layer("AttackLayer")
+	_threat_layer = _new_layer("ThreatLayer")
+	_zoc_layer = _new_layer("ZocLayer")
+
 	if hex_grid_map_path != NodePath():
 		_hex_grid_map = get_node(hex_grid_map_path)
 	if building_manager_path != NodePath():
@@ -160,14 +216,42 @@ func _ready() -> void:
 	if logistics_network_path != NodePath():
 		_logistics_network = get_node(logistics_network_path)
 		_logistics_network.network_recomputed.connect(_on_logistics_network_recomputed)
+		_refresh_zoc_markers()
+	if noise_manager_path != NodePath():
+		_noise_manager = get_node(noise_manager_path)
+		_noise_manager.noise_recomputed.connect(_refresh_threat_markers)
+		_refresh_threat_markers()
 	_refresh_frontier_markers()
+
+	DisplaySettings.changed.connect(_sync_layer_visibility)
+	_sync_layer_visibility()
+
+func _new_layer(layer_name: String) -> Node2D:
+	var layer := Node2D.new()
+	layer.name = layer_name
+	add_child(layer)
+	return layer
+
+## Display Options (user request) — the only place this class reads
+## DisplaySettings; every marker builder/handler stays unaware of it. A
+## layer's own `visible` combines with this whole node's (Strategic-vs-
+## Tactical zoom, above) automatically — no interaction to handle.
+func _sync_layer_visibility() -> void:
+	_building_layer.visible = DisplaySettings.show_building_markers
+	_frontier_layer.visible = DisplaySettings.show_frontier_markers
+	_wall_layer.visible = DisplaySettings.show_wall_markers
+	_unit_layer.visible = DisplaySettings.show_unit_markers
+	_horde_layer.visible = DisplaySettings.show_horde_markers
+	_attack_layer.visible = DisplaySettings.show_attack_alerts
+	_threat_layer.visible = DisplaySettings.show_threat_meter_world
+	_zoc_layer.visible = DisplaySettings.show_zoc_world
 
 func _on_tactical_mode_changed(is_tactical: bool) -> void:
 	visible = not is_tactical
 
 func _on_building_placed(instance: BuildingInstance) -> void:
 	var icon := _build_building_icon(instance)
-	add_child(icon)
+	_building_layer.add_child(icon)
 	_building_icons[instance.id] = icon
 	_refresh_frontier_markers()  # a new building can flip a hex's safe/contested mix
 
@@ -198,7 +282,7 @@ func _build_building_icon(instance: BuildingInstance) -> Node2D:
 
 func _on_unit_trained(instance: UnitInstance) -> void:
 	var icon := _build_unit_icon(instance)
-	add_child(icon)
+	_unit_layer.add_child(icon)
 	_unit_icons[instance.id] = icon
 
 func _on_unit_removed(instance: UnitInstance) -> void:
@@ -315,7 +399,7 @@ func _reveal_live_marker(horde: Horde, coord: Vector2i) -> void:
 	var marker: Node2D = _horde_markers.get(horde.id)
 	if not marker:
 		marker = _build_horde_marker()
-		add_child(marker)
+		_horde_layer.add_child(marker)
 		_horde_markers[horde.id] = marker
 	marker.position = HexCoord.axial_to_world(coord)
 	marker.modulate = Color.WHITE
@@ -385,7 +469,7 @@ func _refresh_frontier_markers() -> void:
 	for coord in wanted:
 		if not _frontier_markers.has(coord):
 			var marker := _build_frontier_marker(coord)
-			add_child(marker)
+			_frontier_layer.add_child(marker)
 			_frontier_markers[coord] = marker
 
 ## A hex counts as an active frontier once it has BOTH secured ground and a
@@ -422,13 +506,13 @@ func _pulse_attack_marker(coord: Vector2i) -> void:
 		return
 	var ring := _build_attack_ring()
 	ring.position = HexCoord.axial_to_world(coord)
-	add_child(ring)
+	_attack_layer.add_child(ring)
 	_start_attack_ring_pulse(ring)
 
 	var timer := Timer.new()
 	timer.one_shot = true
 	timer.wait_time = ATTACK_ALERT_SECONDS
-	add_child(timer)
+	add_child(timer)  # Not a visual layer member — a Timer has nothing to hide/show.
 	timer.timeout.connect(_on_attack_marker_timeout.bind(coord))
 	timer.start()
 
@@ -492,7 +576,7 @@ func _start_attack_ring_pulse(ring: Line2D) -> void:
 
 func _on_wall_segment_placed(segment: WallSegment) -> void:
 	var marker := _build_wall_marker(segment)
-	add_child(marker)
+	_wall_layer.add_child(marker)
 	_wall_markers[segment.id] = marker
 
 ## Shared by upgrade/breach/repair — all three change how the SAME segment
@@ -544,6 +628,7 @@ func _apply_wall_segment_look(marker: Node2D, segment: WallSegment) -> void:
 ## infer it from wall-specific signals that wouldn't cover every case.
 func _on_logistics_network_recomputed() -> void:
 	_refresh_wall_marker_looks()
+	_refresh_zoc_markers()
 
 func _refresh_wall_marker_looks() -> void:
 	if not _wall_manager:
@@ -571,3 +656,111 @@ func _update_defense_work_marker(marker: Node2D, segment: WallSegment) -> void:
 		midpoint + Vector2(-half, -half), midpoint + Vector2(half, -half),
 		midpoint + Vector2(half, half), midpoint + Vector2(-half, half),
 	])
+
+## --- Threat Meter (Phase 6.1) — world-view surface ---------------------
+##
+## MinimapView's own doc comment already covers the "why a diamond, why
+## sized+colored by intensity, why NoiseVisuals is shared" reasoning — this
+## is the same overlay's second surface, not a new design. Rebuilt from
+## scratch on every NoiseManager.noise_recomputed (a building placed/
+## removed/ruined, or a day/night flip) — same "small enough to just
+## rebuild" reasoning _refresh_frontier_markers() already relies on (dozens
+## of hexes at most, not thousands, since only hexes actually within some
+## source's NOISE_RADIUS ever have nonzero noise).
+##
+## Same at-least-EXPLORED fog gate building icons already use — a noise
+## source is the player's own industry, already-known territory reads the
+## same way a building icon already does here.
+
+func _refresh_threat_markers() -> void:
+	if not _hex_grid_map or not _noise_manager:
+		return
+	var wanted: Dictionary = {}  # Vector2i -> float (noise level)
+	for cell: HexCell in _hex_grid_map.get_all_cells():
+		var noise := _noise_manager.get_noise_at(cell.coord)
+		if noise > 0.0 and (not _fog_of_war_manager or _fog_of_war_manager.is_at_least_explored(cell.coord)):
+			wanted[cell.coord] = noise
+
+	for coord in _threat_markers.keys():
+		if not wanted.has(coord):
+			_threat_markers[coord].queue_free()
+			_threat_markers.erase(coord)
+	for coord in wanted:
+		var noise: float = wanted[coord]
+		if _threat_markers.has(coord):
+			_apply_threat_marker_look(_threat_markers[coord], noise)
+		else:
+			var marker := _build_threat_marker(coord, noise)
+			_threat_layer.add_child(marker)
+			_threat_markers[coord] = marker
+
+func _build_threat_marker(coord: Vector2i, noise: float) -> Node2D:
+	var marker := Polygon2D.new()
+	marker.position = HexCoord.axial_to_world(coord)
+	_apply_threat_marker_look(marker, noise)
+	return marker
+
+func _apply_threat_marker_look(marker: Polygon2D, noise: float) -> void:
+	var r := NoiseVisuals.radius(noise, THREAT_MARKER_RADIUS_MIN, THREAT_MARKER_RADIUS_MAX)
+	marker.color = NoiseVisuals.color(noise)
+	# A diamond — same shape MinimapView's own copy uses, and already
+	# distinct here from buildings' triangle, units' circle, and hordes'
+	# (larger, opaque) diamond by color/translucency alone.
+	marker.polygon = PackedVector2Array([Vector2(0, -r), Vector2(r, 0), Vector2(0, r), Vector2(-r, 0)])
+
+## --- Zone of Control (Phase 2.3) — world-view surface -------------------
+##
+## `ZoneOfControlVisuals.gd`'s own doc comment covers the "why an outline
+## for Military, why a fill for Civilian" reasoning — this is that overlay's
+## Strategic surface, `TacticalHexView`'s own copy is the other. Rebuilt
+## from scratch on every `LogisticsNetwork.network_recomputed` — same
+## "small enough to just rebuild" reasoning `_refresh_frontier_markers()`/
+## `_refresh_threat_markers()` above already rely on (dozens of ZoC-covered
+## hexes at most). No fog-of-war gating, matching wall/building markers'
+## own precedent — a ZoC aura is the player's own projected presence, same
+## as a building or a wall, not something to "spot" about someone else's.
+
+func _refresh_zoc_markers() -> void:
+	if not _logistics_network:
+		return
+	var wanted: Dictionary = {}  # Vector2i -> true
+	for coord in _logistics_network.get_covered_hexes():
+		wanted[coord] = true
+
+	for coord in _zoc_markers.keys():
+		if not wanted.has(coord):
+			_zoc_markers[coord].queue_free()
+			_zoc_markers.erase(coord)
+	for coord in wanted:
+		var state := _logistics_network.get_zoc_state(coord)
+		if _zoc_markers.has(coord):
+			_apply_zoc_marker_look(_zoc_markers[coord], state)
+		else:
+			var marker := _build_zoc_marker(coord, state)
+			_zoc_layer.add_child(marker)
+			_zoc_markers[coord] = marker
+
+func _build_zoc_marker(coord: Vector2i, state: ZoneOfControlState) -> Node2D:
+	var container := Node2D.new()
+	container.position = HexCoord.axial_to_world(coord)
+
+	var outline := Line2D.new()
+	outline.name = "MilitaryOutline"
+	outline.closed = true
+	outline.default_color = ZoneOfControlVisuals.MILITARY_OUTLINE_COLOR
+	outline.width = ZoneOfControlVisuals.MILITARY_OUTLINE_WIDTH
+	outline.points = HexCoord.corner_points(Vector2.ZERO)
+	container.add_child(outline)
+
+	var fill := Polygon2D.new()
+	fill.name = "CivilianFill"
+	fill.color = ZoneOfControlVisuals.CIVILIAN_FILL_COLOR
+	fill.polygon = HexCoord.corner_points(Vector2.ZERO)
+	container.add_child(fill)
+
+	_apply_zoc_marker_look(container, state)
+	return container
+
+func _apply_zoc_marker_look(marker: Node2D, state: ZoneOfControlState) -> void:
+	(marker.get_node("MilitaryOutline") as Line2D).visible = state.has_military_coverage()
+	(marker.get_node("CivilianFill") as Polygon2D).visible = state.has_civilian_coverage

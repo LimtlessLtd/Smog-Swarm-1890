@@ -153,6 +153,7 @@ camera_path = NodePath("../../CameraController")
 event_manager_path = NodePath("../../EventManager")
 wall_manager_path = NodePath("../../WallManager")
 logistics_network_path = NodePath("../../LogisticsNetwork")
+noise_manager_path = NodePath("../../NoiseManager")
 
 [node name="BuildPlacementController" parent="WorldRoot" instance=ExtResource("10")]
 hex_grid_map_path = NodePath("../HexGridMap")
