@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <ellipse cx="128" cy="222" rx="46" ry="12" fill="#000000" opacity="0.3" />
+
+  <!-- Light beam, cast down and out -->
+  <polygon points="128,58 210,140 190,150 128,84" fill="#f2d78a" opacity="0.16" />
+  <polygon points="128,58 46,140 66,150 128,84" fill="#f2d78a" opacity="0.10" />
+
+  <!-- Iron lattice tower -->
+  <line x1="96" y1="210" x2="128" y2="72" stroke="#454d42" stroke-width="6" />
+  <line x1="160" y1="210" x2="128" y2="72" stroke="#454d42" stroke-width="6" />
+  <line x1="106" y1="210" x2="128" y2="72" stroke="#565f52" stroke-width="3" opacity="0.7" />
+  <line x1="150" y1="210" x2="128" y2="72" stroke="#565f52" stroke-width="3" opacity="0.7" />
+  <line x1="100" y1="180" x2="156" y2="180" stroke="#3a4038" stroke-width="4" />
+  <line x1="106" y1="146" x2="150" y2="146" stroke="#3a4038" stroke-width="4" />
+  <line x1="112" y1="112" x2="144" y2="112" stroke="#3a4038" stroke-width="4" />
+  <line x1="96" y1="210" x2="160" y2="210" stroke="#3a4038" stroke-width="4" />
+
+  <!-- Searchlight housing -->
+  <circle cx="128" cy="66" r="16" fill="#3a4038" />
+  <circle cx="128" cy="66" r="10" fill="#f2d78a" opacity="0.85" />
+  <circle cx="128" cy="66" r="16" fill="none" stroke="#252925" stroke-width="3" />
+  <rect x="122" y="80" width="12" height="12" fill="#252925" />
+</svg>

@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <ellipse cx="128" cy="222" rx="98" ry="14" fill="#000000" opacity="0.3" />
+
+  <!-- Fortified block -->
+  <rect x="46" y="120" width="164" height="90" fill="#565243" />
+
+  <!-- Crenellated parapet -->
+  <rect x="46" y="108" width="18" height="14" fill="#4a4638" />
+  <rect x="76" y="108" width="18" height="14" fill="#4a4638" />
+  <rect x="106" y="108" width="18" height="14" fill="#4a4638" />
+  <rect x="136" y="108" width="18" height="14" fill="#4a4638" />
+  <rect x="166" y="108" width="18" height="14" fill="#4a4638" />
+  <rect x="196" y="108" width="14" height="14" fill="#4a4638" />
+  <rect x="46" y="118" width="164" height="6" fill="#3c392e" />
+
+  <!-- Reinforced door -->
+  <rect x="112" y="164" width="32" height="46" fill="#241a14" />
+  <line x1="128" y1="164" x2="128" y2="210" stroke="#100b08" stroke-width="2" />
+  <rect x="108" y="158" width="40" height="8" fill="#403c30" />
+
+  <!-- Lookout slits -->
+  <rect x="66" y="140" width="8" height="20" fill="#1c1a14" />
+  <rect x="182" y="140" width="8" height="20" fill="#1c1a14" />
+
+  <!-- Sandbag emplacement -->
+  <ellipse cx="52" cy="206" rx="14" ry="7" fill="#8a7550" />
+  <ellipse cx="66" cy="208" rx="14" ry="7" fill="#7c6846" />
+  <ellipse cx="196" cy="206" rx="14" ry="7" fill="#8a7550" />
+  <ellipse cx="210" cy="208" rx="14" ry="7" fill="#7c6846" />
+
+  <!-- Militia flag -->
+  <rect x="196" y="60" width="4" height="50" fill="#2b2822" />
+  <polygon points="200,62 226,70 200,78" fill="#8a2a24" />
+</svg>

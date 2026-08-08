@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <ellipse cx="128" cy="222" rx="88" ry="14" fill="#000000" opacity="0.3" />
+
+  <!-- Nave -->
+  <rect x="88" y="140" width="118" height="70" fill="#746c60" />
+  <polygon points="82,140 147,100 212,140" fill="#4a4642" />
+  <polygon points="82,140 147,100 147,112 96,140" fill="#5c5854" />
+  <rect x="120" y="168" width="20" height="42" fill="#241a14" />
+  <rect x="170" y="158" width="14" height="18" fill="#2e3a42" />
+  <polygon points="177,150 184,158 170,158" fill="#2e3a42" />
+
+  <!-- Steeple tower, doubling as a watchtower (Phase 2.6) -->
+  <rect x="40" y="70" width="52" height="140" fill="#655e54" />
+  <rect x="40" y="70" width="52" height="140" fill="none" stroke="#4a453e" stroke-width="1.5" />
+  <rect x="52" y="176" width="28" height="34" fill="#1c130d" />
+
+  <!-- Clock face -->
+  <circle cx="66" cy="112" r="15" fill="#e6dfc8" stroke="#2b2822" stroke-width="2" />
+  <line x1="66" y1="112" x2="66" y2="102" stroke="#2b2822" stroke-width="2" />
+  <line x1="66" y1="112" x2="74" y2="115" stroke="#2b2822" stroke-width="2" />
+
+  <!-- Lookout slit near the top -->
+  <rect x="58" y="52" width="16" height="14" fill="#20282c" />
+  <polygon points="58,52 66,44 74,52" fill="#20282c" />
+
+  <!-- Pointed spire -->
+  <polygon points="34,70 66,14 98,70" fill="#3a3833" />
+  <polygon points="34,70 66,14 66,28 46,70" fill="#4a4742" />
+  <rect x="63" y="6" width="6" height="12" fill="#2b2822" />
+  <line x1="66" y1="6" x2="66" y2="1" stroke="#2b2822" stroke-width="2" />
+</svg>

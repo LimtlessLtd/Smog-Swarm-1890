@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <ellipse cx="128" cy="222" rx="30" ry="10" fill="#000000" opacity="0.28" />
+
+  <!-- Slender cast-iron post — deliberately small/thin within the canvas, unlike the other structures -->
+  <rect x="122" y="120" width="12" height="90" fill="#2b2b2c" />
+  <rect x="118" y="204" width="20" height="10" fill="#232324" />
+  <rect x="112" y="212" width="32" height="8" fill="#1c1c1d" />
+
+  <!-- Decorative collar -->
+  <rect x="116" y="128" width="24" height="6" fill="#3a3a3b" />
+  <circle cx="128" cy="122" r="5" fill="#3a3a3b" />
+
+  <!-- Lantern head -->
+  <polygon points="128,66 148,88 108,88" fill="#2b2b2c" />
+  <rect x="112" y="88" width="32" height="34" fill="#2b2b2c" />
+  <rect x="116" y="92" width="10" height="26" fill="#e8c169" opacity="0.85" />
+  <rect x="130" y="92" width="10" height="26" fill="#f0cf7f" opacity="0.7" />
+  <ellipse cx="128" cy="60" rx="18" ry="10" fill="#f2d78a" opacity="0.18" />
+  <rect x="123" y="122" width="10" height="8" fill="#232324" />
+</svg>

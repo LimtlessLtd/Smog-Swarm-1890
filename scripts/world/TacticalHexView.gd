@@ -24,11 +24,16 @@ extends Node2D
 ## there's no fabricated difference to invent here without real art
 ## (Phase 6.3) to actually make HIGH "more elaborate" than MEDIUM.
 ## **Decided: buildings are NOT simplified at any fidelity** — their
-## BuildingVisuals.category_color() box is already the single simplest
-## shape that still carries the "which building category is this"
-## signal LOW fidelity's own "tell unit from building from zombie apart"
-## bar depends on; simplifying it further would remove exactly the cue
-## that bar needs, not reduce needless detail.
+## BuildingVisuals.category_color() box (still the fallback for any building
+## type with no art authored — see the real-art note below) is already the
+## single simplest shape that still carries the "which building category is
+## this" signal LOW fidelity's own "tell unit from building from zombie
+## apart" bar depends on; simplifying it further would remove exactly the
+## cue that bar needs, not reduce needless detail. Real per-type sprite art
+## (BuildingVisuals.building_texture(), Phase 6.3) now renders on that same
+## square at every fidelity alike, same as terrain's own art landing without
+## touching the LOD tiers at all — this was never a fidelity distinction to
+## begin with, and still isn't.
 
 var cell: HexCell
 var _props: Array[PropInstance] = []
@@ -59,6 +64,15 @@ func setup(p_cell: HexCell, props: Array[PropInstance], buildings: Array[Buildin
 ## remembered-but-not-currently-visible hex reads as one dimmed scene.
 func set_fog_state(state: GameEnums.FogState) -> void:
 	modulate = FogVisuals.tint_color(state)
+
+## Design doc, user request (local obstacle avoidance): `_props` was
+## previously read only by this class's own `_redraw()` — exposed now so
+## `LocalDetailManager.get_props_at()` can hand a hex's live prop scatter to
+## `MovementStepper`'s callers as steering obstacles. Returns a defensive
+## copy, same "caller reads, doesn't own" convention as
+## `BuildingManager.get_buildings_at()`.
+func get_props() -> Array[PropInstance]:
+	return _props.duplicate()
 
 ## Phase 2.5.5: pushed live by LocalDetailManager on every LOW<->MEDIUM<->HIGH
 ## band crossing — mirrors set_fog_state()'s "update in place, only redraw if
@@ -127,18 +141,42 @@ func _prop_color(prop_type: GameEnums.PropType) -> Color:
 		_:
 			return Color(0.3, 0.3, 0.3)
 
+## Phase 6.3: real per-building-type sprite art (BuildingVisuals.building_texture())
+## replaces the flat category-color square where authored — a plain 4-corner
+## uv mapping onto a 4-vertex quad, unlike the hex-fan case HexCellView's own
+## doc comment warns about: a rectangle-to-rectangle corner correspondence IS
+## a single, exact affine map across the WHOLE quad (not just sampled at a
+## few points and interpolated), so this doesn't reproduce that bug. Falls
+## back to the original flat box for any type with no SVG authored yet —
+## exactly TerrainVisuals.terrain_texture()'s own "art lands incrementally,
+## zero code changes elsewhere" contract.
+## (A PackedVector2Array literal built from Vector2() calls isn't a valid
+## GDScript `const` expression — Godot's static const evaluator rejects
+## nested constructor calls in an array literal — so this is a plain
+## function, computed fresh each call like `_ruin_polygon()` below.)
+static func _box_uv() -> PackedVector2Array:
+	return PackedVector2Array([Vector2(0, 0), Vector2(1, 0), Vector2(1, 1), Vector2(0, 1)])
+
 func _build_building_node(building: BuildingInstance, index: int) -> Node2D:
 	var box := Polygon2D.new()
 	if building.is_ruined:
 		# Phase 5.12: a jagged rubble silhouette, deliberately distinct from
 		# every intact building's clean square — "a visible scar", not just
-		# a recolored box.
+		# a recolored box. Ruins stay code-drawn regardless of whether the
+		# intact building has real art — a collapsed building has no sprite.
 		box.color = BuildingVisuals.ruin_color()
 		box.polygon = _ruin_polygon()
 	else:
-		box.color = BuildingVisuals.category_color(building.definition.category)
 		var half := 10.0
 		box.polygon = PackedVector2Array([Vector2(-half, -half), Vector2(half, -half), Vector2(half, half), Vector2(-half, half)])
+		var texture := BuildingVisuals.building_texture(building.definition.building_type)
+		if texture:
+			box.texture = texture
+			box.uv = _box_uv()
+			box.texture_repeat = CanvasItem.TEXTURE_REPEAT_DISABLED
+			box.color = Color.WHITE  # let the sprite's own colors show — category_color() was only ever a stand-in for this.
+		else:
+			box.color = BuildingVisuals.category_color(building.definition.category)
 	box.position = _resolved_building_position(building, index)
 	return box
 

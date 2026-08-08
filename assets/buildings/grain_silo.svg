@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <ellipse cx="128" cy="222" rx="92" ry="14" fill="#000000" opacity="0.28" />
+
+  <!-- Attached loading shed -->
+  <rect x="150" y="164" width="66" height="46" fill="#7c6440" />
+  <polygon points="144,164 183,142 222,164" fill="#5c4a30" />
+  <rect x="176" y="180" width="14" height="30" fill="#241811" />
+
+  <!-- Twin cylindrical silos -->
+  <rect x="46" y="98" width="46" height="112" fill="#a89468" />
+  <ellipse cx="69" cy="98" rx="23" ry="10" fill="#c2b183" />
+  <path d="M46,98 Q69,76 92,98" fill="#8a7448" />
+  <line x1="46" y1="130" x2="92" y2="130" stroke="#8a7448" stroke-width="1.5" opacity="0.5" />
+  <line x1="46" y1="162" x2="92" y2="162" stroke="#8a7448" stroke-width="1.5" opacity="0.5" />
+  <line x1="46" y1="194" x2="92" y2="194" stroke="#8a7448" stroke-width="1.5" opacity="0.5" />
+
+  <rect x="98" y="120" width="38" height="90" fill="#9a8760" />
+  <ellipse cx="117" cy="120" rx="19" ry="9" fill="#b6a578" />
+  <path d="M98,120 Q117,100 136,120" fill="#7c6840" />
+  <line x1="98" y1="150" x2="136" y2="150" stroke="#7c6840" stroke-width="1.5" opacity="0.5" />
+  <line x1="98" y1="180" x2="136" y2="180" stroke="#7c6840" stroke-width="1.5" opacity="0.5" />
+</svg>

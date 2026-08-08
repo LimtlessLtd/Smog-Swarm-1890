@@ -11,9 +11,10 @@ extends Resource
 ##
 ## Phase 2.5.4: local_position (an offset from hex_coord's center, same
 ## contract as BuildingInstance.local_position) extends that Phase 2.5.3
-## pattern to a moving entity — written by UnitOrderController's movement
-## tick via HexCoord.entry_local_position() every time hex_coord changes,
-## instead of the hex-center jump a unit used to do on every step. ZERO
+## pattern to a moving entity — written continuously, every frame, by
+## UnitOrderController's MovementStepper-driven movement (user request,
+## later pass — see MovementStepper.gd) as the unit actually walks, rather
+## than the old hex-center jump a unit used to do on every step. ZERO
 ## (hex center) for a freshly-trained unit that hasn't moved yet.
 ##
 ## Phase 5.6 order state (order/move_target/patrol_waypoints): written by

@@ -15,15 +15,21 @@ extends RefCounted
 ## this owns neither, only reads them, the same relationship LogisticsNetwork
 ## itself has to HexGridMap/BuildingManager.
 ##
-## Tactical-scale local pathfinding within a single hydrated hex (Phase 2.5)
-## is deliberately NOT here — the design doc calls that out as a separate,
-## much shorter-range problem (scattered props/buildings within one hex)
-## that doesn't need to share this algorithm.
+## Tactical-scale LOCAL movement within a single hydrated hex (steering
+## around scattered props/buildings, user request) deliberately does NOT
+## share this A* graph search — that's `MovementStepper.gd` (continuous,
+## per-frame, geometry-based), a much shorter-range problem that doesn't
+## need a second hex-graph search. This class still supplies the STRATEGIC
+## route (which hexes to cross) that `MovementStepper` walks continuously
+## between, and — via `get_terrain_speed_multiplier()`/
+## `get_logistics_speed_multiplier()` below — the same biome/logistics
+## numbers that shape that route also shape how fast continuous movement
+## crosses each hex, one shared table instead of two.
 ##
-## No consumer exists yet (Phase 5.2's HordeManager and Phase 5.4/5.6's unit
-## movement/orders don't exist yet), so this can't be exercised in-game
-## until then — same "built ahead of its first caller" position TickManager
-## was in before Phase 5.1's TimeCycleManager arrived to extend it.
+## Consumers: `HordeManager` (Phase 5.2/5.10) and `UnitOrderController`
+## (Phase 5.4/5.6) both route several hexes across the map through this
+## same graph, then hand the resulting hex sequence to `MovementStepper`
+## for the actual continuous walk between them.
 
 ## Base traversal cost for an ordinary hex-to-hex step — a balancing number,
 ## not an architecture one, same framing as every other placeholder constant
@@ -49,12 +55,12 @@ const LOGISTICS_EDGE_COST_MULTIPLIER: float = 0.5
 ## pass is still cheaper than the bare hillside beside it, just not as cheap
 ## as a road through open farmland.
 ##
-## Strategic scale only (HordeManager/UnitOrderController routing several
-## hexes across the map) — the design doc's own "applies at both scales"
-## aspiration also wants this at Tactical local movement within one
-## hydrated hex, but that's blocked on Phase 5.5's own still-unbuilt local
-## pathfinding (see that class's own doc comment); nothing to apply a
-## per-biome multiplier to there yet.
+## Shapes both scales now: the Strategic A* route above weighs a step by
+## this multiplier as a path-preference cost, and `get_terrain_speed_multiplier()`
+## below inverts the SAME table into a continuous movement speed for
+## whichever hex an entity is currently crossing (`MovementStepper.gd`) —
+## the design doc's own "applies at both scales" aspiration, closed now
+## that Tactical local movement exists to apply it to.
 const _BIOME_COST_MULTIPLIER: Dictionary = {
 	GameEnums.BiomeType.HIGHLAND: 1.6,  ## Elevated terrain — Pennine/Chiltern/Cotswold chokepoints.
 	GameEnums.BiomeType.WETLAND: 1.8,   ## Boggy going even where it's not outright impassable MARSH/PEAT_BOG.
@@ -124,6 +130,32 @@ static func _step_cost(from: Vector2i, to: Vector2i, to_cell: HexCell, logistics
 		if segment and not segment.is_severed:
 			return cost * LOGISTICS_EDGE_COST_MULTIPLIER
 	return cost
+
+## Design doc, user request (continuous local movement, replacing the old
+## hex-stepping): the exact inverse of `_BIOME_COST_MULTIPLIER` above,
+## reusing the SAME table rather than a second one — terrain that costs
+## more to path THROUGH is also slower to actually walk ACROSS once chosen.
+## Consumed by `MovementStepper.advance_toward_hex()` to scale continuous
+## travel speed by whichever hex the entity is currently crossing. Closes
+## Phase 2.12.1's own flagged gap ("Tactical-scale local movement costs...
+## blocked on Phase 5.5's unbuilt in-hex pathfinding") now that continuous
+## local movement exists to apply it to.
+static func get_terrain_speed_multiplier(cell: HexCell) -> float:
+	if not cell:
+		return 1.0
+	return 1.0 / float(_BIOME_COST_MULTIPLIER.get(cell.biome_type, 1.0))
+
+## Same inversion for the logistics discount — a road/rail/canal edge is
+## FASTER to walk, not just cheaper to path through. `to` isn't required to
+## already be the entity's next hex specifically; any adjacent pair works,
+## same as `LogisticsNetwork.get_segment_between()` itself.
+static func get_logistics_speed_multiplier(logistics_network: LogisticsNetwork, from: Vector2i, to: Vector2i) -> float:
+	if not logistics_network:
+		return 1.0
+	var segment := logistics_network.get_segment_between(from, to)
+	if segment and not segment.is_severed:
+		return 1.0 / LOGISTICS_EDGE_COST_MULTIPLIER
+	return 1.0
 
 static func _lowest_f_score(open_set: Dictionary, f_score: Dictionary) -> Vector2i:
 	var best: Vector2i

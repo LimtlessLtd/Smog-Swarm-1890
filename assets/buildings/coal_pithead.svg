@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <ellipse cx="128" cy="222" rx="104" ry="14" fill="#000000" opacity="0.3" />
+
+  <!-- Winding-gear headframe -->
+  <rect x="82" y="150" width="16" height="60" fill="#3a3632" />
+  <rect x="150" y="150" width="16" height="60" fill="#3a3632" />
+  <line x1="90" y1="150" x2="120" y2="60" stroke="#3a3632" stroke-width="10" />
+  <line x1="158" y1="150" x2="128" y2="60" stroke="#3a3632" stroke-width="10" />
+  <line x1="90" y1="150" x2="158" y2="150" stroke="#2b2825" stroke-width="6" />
+  <circle cx="124" cy="58" r="16" fill="none" stroke="#2b2825" stroke-width="6" />
+  <line x1="124" y1="74" x2="124" y2="150" stroke="#1c1c1d" stroke-width="2" opacity="0.6" />
+
+  <!-- Small brick engine house -->
+  <rect x="26" y="164" width="52" height="46" fill="#5c4a3e" />
+  <polygon points="20,164 52,142 84,164" fill="#4a4642" />
+  <rect x="38" y="112" width="10" height="34" fill="#332a24" />
+  <ellipse cx="43" cy="106" rx="7" ry="5" fill="#8a8a8a" opacity="0.35" />
+  <rect x="38" y="184" width="14" height="26" fill="#241811" />
+  <rect x="58" y="180" width="14" height="16" fill="#31404a" />
+
+  <!-- Coal heap and tub -->
+  <path d="M172,210 Q182,178 206,182 Q230,178 236,210 Z" fill="#161514" />
+  <path d="M180,206 Q188,190 206,192" stroke="#242322" stroke-width="2" fill="none" opacity="0.6" />
+  <rect x="150" y="196" width="26" height="14" fill="#3a3632" />
+  <circle cx="156" cy="212" r="5" fill="#1c1c1d" />
+  <circle cx="170" cy="212" r="5" fill="#1c1c1d" />
+</svg>

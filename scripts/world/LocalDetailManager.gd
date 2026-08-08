@@ -94,6 +94,19 @@ func _hex_qualifies_for_detail(coord: Vector2i) -> bool:
 			return true
 	return false
 
+## Design doc, user request (local obstacle avoidance): props only exist as
+## live `PropInstance` objects while their hex is hydrated — this returns
+## `[]` for a dehydrated/unqualified/off-map hex rather than an error,
+## exactly like `_hex_qualifies_for_detail()`'s own "distant wilderness
+## just doesn't have detail" contract. `MovementStepper`'s callers
+## (`UnitOrderController`/`HordeManager`) use this to gather steering
+## obstacles — meaning prop avoidance only ever applies near the camera
+## (where a hex is actually hydrated), which is also the only place a
+## player can actually see it happen.
+func get_props_at(coord: Vector2i) -> Array[PropInstance]:
+	var view: TacticalHexView = _tactical_views.get(coord)
+	return view.get_props() if view else []
+
 func _refresh_hydrated_neighborhood(center: Vector2i) -> void:
 	if not _hex_grid_map:
 		return

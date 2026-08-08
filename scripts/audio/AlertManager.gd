@@ -44,15 +44,33 @@ extends Node
 ## exactly once per approach: crossing into Day re-arms the sunset warning
 ## (there's a fresh nightfall ahead to warn about), crossing into Night
 ## re-arms the sunrise warning, symmetrically.
+##
+## **Real-time cooldown on top of that (user request, this pass):** the
+## "once per approach" gate above is correct in GAME time, but at high
+## TickManager speeds a whole 40-minute day compresses into a few real
+## seconds (2.4s at 1000x) — sunset and sunrise then legitimately alternate
+## fast enough to sound like a near-continuous chime. `_try_play_chime()`
+## additionally floors how often a chime can actually SOUND to once per
+## `CHIME_MIN_REAL_INTERVAL_MS`, measured against `Time.get_ticks_msec()`
+## (real OS time, deliberately NOT `TickManager`/game time — unaffected by
+## Engine.time_scale, unlike everything else in this class) — a legitimate
+## new crossing while still on cooldown just plays no sound at all rather
+## than queuing or delaying one; the "armed" flags above are untouched by
+## this, so the very next crossing after cooldown still gets checked fresh.
+## Scoped to these two chimes only — EventManager-driven alert tones
+## (_on_event_raised(), below) are a different, higher-stakes category
+## (they gate auto-pause) and stay unthrottled.
 
 @export var event_manager_path: NodePath
 
 const NIGHTFALL_WARNING_SECONDS: float = 120.0  ## Design doc's own "2-minute mark".
 const PHASE_CHECK_INTERVAL_SECONDS: float = 1.0
+const CHIME_MIN_REAL_INTERVAL_MS: int = 30000  ## User request: day/night alarms shouldn't sound more than once every 30 real-world seconds, however fast the in-game clock is running.
 
 var _tone_player: AudioStreamPlayer
 var _sunset_chime_armed: bool = true
 var _sunrise_chime_armed: bool = true
+var _last_chime_real_ms: int = -CHIME_MIN_REAL_INTERVAL_MS  ## Negative headroom so the very first chime of a session is never suppressed by the cooldown.
 
 func _ready() -> void:
 	# Same reasoning as TickManager/TimeCycleManager: keep watching for
@@ -83,12 +101,22 @@ func _on_event_raised(event: GameEvent) -> void:
 func _check_phase_warnings() -> void:
 	if TimeCycleManager.is_day():
 		if _sunset_chime_armed and TimeCycleManager.get_seconds_until_nightfall() <= NIGHTFALL_WARNING_SECONDS:
-			_play(AlertTones.sunset_chime())
+			_try_play_chime(AlertTones.sunset_chime())
 			_sunset_chime_armed = false
 	else:
 		if _sunrise_chime_armed and TimeCycleManager.get_seconds_until_dawn() <= NIGHTFALL_WARNING_SECONDS:
-			_play(AlertTones.sunrise_chime())
+			_try_play_chime(AlertTones.sunrise_chime())
 			_sunrise_chime_armed = false
+
+## See this class's own doc comment for why this real-time floor exists on
+## top of the (game-time) "armed" gate — a no-op if we're still within
+## CHIME_MIN_REAL_INTERVAL_MS of the last chime that actually sounded.
+func _try_play_chime(stream: AudioStreamWAV) -> void:
+	var now := Time.get_ticks_msec()
+	if now - _last_chime_real_ms < CHIME_MIN_REAL_INTERVAL_MS:
+		return
+	_last_chime_real_ms = now
+	_play(stream)
 
 func _on_phase_changed(phase: GameEnums.DayPhase) -> void:
 	if phase == GameEnums.DayPhase.DAY:
