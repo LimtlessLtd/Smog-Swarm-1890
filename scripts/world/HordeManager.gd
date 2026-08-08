@@ -276,6 +276,42 @@ func _process(delta: float) -> void:
 func get_all_hordes() -> Array[Horde]:
 	return _hordes.duplicate()
 
+## Design doc Phase 5.3 (Reconnaissance & Early Warning): "an ETA along an
+## ATTRACTED horde's path ... not just an abstract warning." Sums the
+## real-time seconds remaining to walk `horde`'s current `path`, reusing the
+## exact same per-edge `_movement_speed()` continuous movement already
+## applies frame-by-frame — summed forward here instead of applied once.
+## Purely a math query; "is this horde within observed range" (the design
+## doc's own gating condition) is the CALLER's job (Fog of War VISIBLE, per
+## this phase's own scope — see MainHUD's own consumer), not this method's.
+## Returns 0.0 for a horde with an empty path (arrived, or never replanned
+## yet) — a caller showing "ETA 0:00" for that case reads fine, same as any
+## other just-arrived state.
+func get_eta_seconds(horde: Horde) -> float:
+	if horde.path.is_empty():
+		return 0.0
+
+	var total := 0.0
+	var from_coord := horde.hex_coord
+
+	# First leg is partial — the horde is already partway across it
+	# (`local_position`), not starting fresh from the hex center.
+	var current_world := HexCoord.axial_to_world(horde.hex_coord) + horde.local_position
+	var first_target := HexCoord.axial_to_world(horde.path[0])
+	var first_speed := _movement_speed(from_coord, horde.path[0])
+	if first_speed > 0.0:
+		total += current_world.distance_to(first_target) / first_speed
+	from_coord = horde.path[0]
+
+	for i in range(1, horde.path.size()):
+		var to_coord: Vector2i = horde.path[i]
+		var speed := _movement_speed(from_coord, to_coord)
+		if speed > 0.0:
+			total += HexCoord.axial_to_world(from_coord).distance_to(HexCoord.axial_to_world(to_coord)) / speed
+		from_coord = to_coord
+
+	return total
+
 ## Exposed for CombatCoordinator (Phase 5.4/5.9/5.10's live combat
 ## trigger) — a horde reduced to 0 (Horde.apply_remaining_hp()) is that
 ## caller's cue to remove it, mirroring UnitManager.remove_unit()/

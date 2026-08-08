@@ -4,10 +4,11 @@ extends CanvasLayer
 ## Root HUD coordinator — the essential slice of design doc Phase 6.1:
 ## resource display, the build/placement menu, unit training/orders panel,
 ## time controls, and the Strategic-layer minimap (shown only during
-## Tactical zoom — see MinimapView's own doc comment for why). The
-## per-sector Threat Meter bullet stays unbuilt (see todo.md — it needs
-## Phase 5's horde-attraction system to have a level to show, which doesn't
-## exist yet).
+## Tactical zoom — see MinimapView's own doc comment for why). **The
+## per-sector Threat Meter is implemented now too** — drawn on the minimap
+## itself (MinimapView's own doc comment has the full mechanism), fed by
+## the Phase 5.2 `NoiseManager` system this HUD's own optional
+## `noise_manager_path` wires through.
 ##
 ## Owns no game logic itself: only wires the dumb display components
 ## (ResourceBarView / TimeControlsView / BuildMenuView / UnitPanelView) to
@@ -23,7 +24,19 @@ extends CanvasLayer
 ## Quick Save/Load buttons stay for a one-click fixed campaign/slot, but a
 ## real campaign/slot browser now exists too (`SaveLoadView`, Phase 2.8.3,
 ## a "Browse Saves..." button opens it) — the deferred piece that phase's
-## own note used to point at.
+## own note used to point at. Phase 2.9.3's Tech Tree screen (`TechTreeView`,
+## a "Tech Tree..." button) follows the exact same toggleable-panel
+## convention, the second view to do so. **`DisplayOptionsView`** (user
+## request — "add options so we can enable and disable the overlays," a
+## "Display..." button) is the third, letting the player toggle every
+## `StrategicOverlayManager` marker layer AND the Threat Meter's two
+## surfaces independently via the `DisplaySettings` autoload; all three
+## centered panels close each other on open so they never visibly stack.
+##
+## Phase 5.3's Reconnaissance countdown (`_recon_label`) is a single status
+## row, not a separate view class — deliberately as minimal as `_mode_label`
+## already is for the same "one line of text, blank when nothing relevant"
+## shape, not worth a fourth dumb-display-component class for one Label.
 
 @export var resource_manager_path: NodePath
 @export var building_manager_path: NodePath
@@ -35,27 +48,41 @@ extends CanvasLayer
 @export var fog_of_war_manager_path: NodePath
 @export var camera_path: NodePath
 @export var event_manager_path: NodePath  ## Optional — Phase 6.2's EventManager; without it, world events simply show no toast (AlertManager's own audio/auto-pause is unaffected either way).
+@export var tech_manager_path: NodePath   ## Optional — Phase 2.9.3's Tech Tree screen; unset means the panel/button simply do nothing.
+@export var horde_manager_path: NodePath  ## Optional — Phase 5.3's Reconnaissance countdown; unset means that HUD row stays permanently empty.
+@export var noise_manager_path: NodePath  ## Optional — Phase 6.1's Threat Meter (drawn on the minimap); unset means no threat markers, everything else about the minimap is unaffected.
 
 const DEFAULT_CAMPAIGN := "Default"
 const DEFAULT_SLOT := "QuickSave"
 const TOAST_SECONDS := 3.0
+const RECON_REFRESH_SECONDS := 1.0  ## Matches TimeControlsView's own "refreshed once a second" cadence — no need to recompute an ETA every frame.
 
 const MARGIN := 8.0
 const ROW_HEIGHT := 32.0
 const TIME_CONTROLS_WIDTH := 520.0  ## Widened for Phase 5.1's date + phase countdown text alongside the day counter/speed buttons; widened again for the 50x speed button.
 const SAVE_LOAD_WIDTH := 220.0
+const TECH_BAR_WIDTH := 150.0
+const DISPLAY_BAR_WIDTH := 150.0
 const BUILD_MENU_SIZE := Vector2(260.0, 260.0)
 const MINIMAP_SIZE := Vector2(220.0, 160.0)
 const UNIT_PANEL_SIZE := Vector2(260.0, 260.0)
 const SAVE_LOAD_VIEW_SIZE := Vector2(320.0, 320.0)
+const TECH_TREE_VIEW_SIZE := Vector2(380.0, 360.0)
+const DISPLAY_OPTIONS_VIEW_SIZE := Vector2(320.0, 300.0)
 
 var _building_manager: BuildingManager
 var _save_load_manager: SaveLoadManager
 var _build_placement_controller: BuildPlacementController
 var _unit_command_controller: UnitCommandController
 var _save_load_view: SaveLoadView
+var _tech_manager: TechManager
+var _tech_tree_view: TechTreeView
+var _display_options_view: DisplayOptionsView
+var _horde_manager: HordeManager
+var _fog_of_war_manager: FogOfWarManager
 
 var _mode_label: Label
+var _recon_label: Label
 var _toast_label: Label
 var _toast_timer: Timer
 
@@ -87,19 +114,32 @@ func _ready() -> void:
 	var hex_grid_map: HexGridMap = null
 	if hex_grid_map_path != NodePath():
 		hex_grid_map = get_node(hex_grid_map_path)
-	var fog_of_war_manager: FogOfWarManager = null
 	if fog_of_war_manager_path != NodePath():
-		fog_of_war_manager = get_node(fog_of_war_manager_path)
+		_fog_of_war_manager = get_node(fog_of_war_manager_path)
 	var camera: CameraController = null
 	if camera_path != NodePath():
 		camera = get_node(camera_path)
+	if tech_manager_path != NodePath():
+		_tech_manager = get_node(tech_manager_path)
+		_tech_manager.tech_researched.connect(_on_tech_researched)
+		_tech_manager.research_rejected.connect(_on_research_rejected)
+	if horde_manager_path != NodePath():
+		_horde_manager = get_node(horde_manager_path)
+	var noise_manager: NoiseManager = null
+	if noise_manager_path != NodePath():
+		noise_manager = get_node(noise_manager_path)
 
 	_build_resource_bar(resource_manager)
 	_build_time_controls()
 	_build_save_load_bar()
 	_build_save_load_view()
-	_build_minimap(hex_grid_map, fog_of_war_manager, camera)
+	_build_tech_bar()
+	_build_tech_tree_view()
+	_build_display_bar()
+	_build_display_options_view()
+	_build_minimap(hex_grid_map, _fog_of_war_manager, camera, noise_manager)
 	_build_mode_label()
+	_build_recon_label()
 	_build_build_menu()
 	_build_unit_panel(unit_manager)
 	_build_toast()
@@ -164,19 +204,75 @@ func _build_save_load_view() -> void:
 	_save_load_view.save_requested.connect(_on_save_load_view_save_requested)
 	_save_load_view.load_requested.connect(_on_save_load_view_load_requested)
 
+## Design doc Phase 2.9.3's Tech Tree screen — a single "Tech Tree..."
+## button, same row-stacking convention as SaveLoadBar (row 3, directly
+## below it in the same top-right corner). Gracefully no-ops if
+## tech_manager_path wasn't wired, same convention as everything else here.
+func _build_tech_bar() -> void:
+	var bar := HBoxContainer.new()
+	bar.name = "TechBar"
+	add_child(bar)
+	_place_top_right(bar, TECH_BAR_WIDTH, 3)  # Row 3: stacks below SaveLoadBar in the same corner.
+
+	var tech_button := Button.new()
+	tech_button.text = "Tech Tree..."
+	tech_button.pressed.connect(_on_tech_tree_pressed)
+	HUDStyles.style_button(tech_button)
+	bar.add_child(tech_button)
+
+## Centered, hidden until "Tech Tree..." opens it — same toggleable-panel
+## convention SaveLoadView (Phase 2.8.3) already established; this is the
+## second panel here to follow it, not a new pattern.
+func _build_tech_tree_view() -> void:
+	_tech_tree_view = TechTreeView.new()
+	_tech_tree_view.name = "TechTreeView"
+	add_child(_tech_tree_view)
+	_place_center(_tech_tree_view, TECH_TREE_VIEW_SIZE)
+	if _tech_manager:
+		_tech_tree_view.setup(_tech_manager)
+	_tech_tree_view.research_requested.connect(_on_research_requested)
+
+## User request ("add options so we can enable and disable the overlays"):
+## a single "Display..." button, row 4 — stacks below TechBar in the same
+## top-right corner, same row-stacking convention as SaveLoadBar/TechBar.
+func _build_display_bar() -> void:
+	var bar := HBoxContainer.new()
+	bar.name = "DisplayBar"
+	add_child(bar)
+	_place_top_right(bar, DISPLAY_BAR_WIDTH, 4)
+
+	var display_button := Button.new()
+	display_button.text = "Display..."
+	display_button.pressed.connect(_on_display_options_pressed)
+	HUDStyles.style_button(display_button)
+	bar.add_child(display_button)
+
+## Centered, hidden until "Display..." opens it — the third panel here to
+## follow SaveLoadView/TechTreeView's own toggleable convention. No
+## `setup()` call needed (unlike those two) — DisplayOptionsView reads/
+## writes the DisplaySettings autoload directly, see its own doc comment
+## for why that's a deliberate exception to this HUD's usual pattern.
+func _build_display_options_view() -> void:
+	_display_options_view = DisplayOptionsView.new()
+	_display_options_view.name = "DisplayOptionsView"
+	add_child(_display_options_view)
+	_place_center(_display_options_view, DISPLAY_OPTIONS_VIEW_SIZE)
+
 ## Design doc Phase 6.1's minimap — bottom-right corner is the only one of
 ## the four still unclaimed by another HUD element (top strip: resource
 ## bar/mode label; top-right: time controls/save-load; bottom-left: build
 ## menu; bottom strip: toast). Gracefully no-ops (an empty, permanently
 ## hidden Control) if any of the three optional NodePaths weren't wired —
 ## same "unset gracefully skips it" convention every other optional
-## MainHUD dependency already follows.
-func _build_minimap(hex_grid_map: HexGridMap, fog_of_war_manager: FogOfWarManager, camera: CameraController) -> void:
+## MainHUD dependency already follows. `noise_manager` (optional, Phase 6.1's
+## Threat Meter) is the minimap's own fourth optional input — see
+## MinimapView's own doc comment for what it draws.
+func _build_minimap(hex_grid_map: HexGridMap, fog_of_war_manager: FogOfWarManager, camera: CameraController, noise_manager: NoiseManager) -> void:
 	var minimap := MinimapView.new()
 	minimap.name = "Minimap"
 	add_child(minimap)
 	_place_bottom_right(minimap, MINIMAP_SIZE)
-	minimap.setup(hex_grid_map, _building_manager, fog_of_war_manager, camera, MINIMAP_SIZE)
+	minimap.setup(hex_grid_map, _building_manager, fog_of_war_manager, camera, MINIMAP_SIZE, noise_manager)
 
 func _build_mode_label() -> void:
 	_mode_label = Label.new()
@@ -187,6 +283,62 @@ func _build_mode_label() -> void:
 	_mode_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_mode_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	HUDStyles.style_label(_mode_label, true)
+
+## Design doc Phase 5.3 (Reconnaissance & Early Warning): "horde countdown
+## timers... not just an abstract warning." Row 2, same top-wide strip as
+## the resource bar/mode label above it — empty text (same "blank when
+## nothing relevant" convention _mode_label already uses) whenever no
+## ATTRACTED horde is currently within observed range. "Observed range" is
+## this HUD's own interpretation of the design doc's "high ground
+## observation posts & telegraph alerts" — Fog of War VISIBLE, reusing
+## existing vision sources rather than inventing a new observation-post
+## mechanic (every building already projects vision, Phase 2.6).
+func _build_recon_label() -> void:
+	_recon_label = Label.new()
+	_recon_label.name = "ReconLabel"
+	add_child(_recon_label)
+	_place_top_wide(_recon_label, 2)
+	_recon_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_recon_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	HUDStyles.style_label(_recon_label)
+
+	var timer := Timer.new()
+	timer.wait_time = RECON_REFRESH_SECONDS
+	timer.autostart = true
+	add_child(timer)
+	timer.timeout.connect(_refresh_recon_label)
+	_refresh_recon_label()
+
+## Finds the soonest-arriving currently-observed ATTRACTED horde (if any)
+## and shows its ETA — deliberately just the single most urgent one, not a
+## scrolling list, matching this row's own "one line of status text" shape
+## (same as _mode_label above it). Not gated on
+## StrategicOverlayManager.HORDE_MARKER_MIN_SIZE (Phase 5.10's size>=100
+## Strategic-marker threshold) on purpose: early warning is exactly the
+## case where a smaller, not-yet-marker-worthy horde still matters.
+func _refresh_recon_label() -> void:
+	if not _horde_manager or not _fog_of_war_manager:
+		_recon_label.text = ""
+		return
+	var best_eta := INF
+	var best_horde: Horde = null
+	for horde in _horde_manager.get_all_hordes():
+		if horde.state != GameEnums.HordeState.ATTRACTED:
+			continue
+		if not _fog_of_war_manager.is_visible(horde.hex_coord):
+			continue
+		var eta := _horde_manager.get_eta_seconds(horde)
+		if eta < best_eta:
+			best_eta = eta
+			best_horde = horde
+	if not best_horde:
+		_recon_label.text = ""
+		return
+	_recon_label.text = "⚠ Horde approaching (%d) — ETA %s" % [best_horde.size, _format_eta(best_eta)]
+
+func _format_eta(seconds: float) -> String:
+	var total := int(roundf(seconds))
+	return "%02d:%02d" % [total / 60, total % 60]
 
 func _build_build_menu() -> void:
 	var build_menu := BuildMenuView.new()
@@ -342,7 +494,14 @@ func _on_quick_load_pressed() -> void:
 	if _save_load_manager:
 		_save_load_manager.load_game(DEFAULT_CAMPAIGN, DEFAULT_SLOT)
 
+## Each of the three centered panels (SaveLoadView/TechTreeView/
+## DisplayOptionsView) shares the same screen position — closing the other
+## two before opening this one keeps them from visibly stacking on top of
+## each other. Harmless to call close() on an already-closed panel (it's
+## just a redundant visible = false).
 func _on_browse_saves_pressed() -> void:
+	_tech_tree_view.close()
+	_display_options_view.close()
 	_save_load_view.open()
 
 func _on_save_load_view_save_requested(campaign_name: String, slot_name: String) -> void:
@@ -361,6 +520,27 @@ func _on_game_loaded(_campaign_name: String, _slot_name: String) -> void:
 
 func _on_load_failed(_campaign_name: String, _slot_name: String, reason: String) -> void:
 	_show_toast("Load failed: %s" % reason)
+
+func _on_tech_tree_pressed() -> void:
+	_save_load_view.close()
+	_display_options_view.close()
+	_tech_tree_view.open()
+
+func _on_display_options_pressed() -> void:
+	_save_load_view.close()
+	_tech_tree_view.close()
+	_display_options_view.open()
+
+func _on_research_requested(tech_id: StringName) -> void:
+	if _tech_manager:
+		_tech_manager.start_research(tech_id)
+
+func _on_tech_researched(tech_id: StringName) -> void:
+	var definition := TechCatalog.get_definition(tech_id)
+	_show_toast("%s researched." % (definition.display_name if definition else String(tech_id)))
+
+func _on_research_rejected(_tech_id: StringName, reason: String) -> void:
+	_show_toast(reason)
 
 ## Design doc Phase 6.2 — an independent second listener on EventManager.
 ## event_raised alongside AlertManager's own audio/auto-pause; see

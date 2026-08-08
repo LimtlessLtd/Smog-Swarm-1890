@@ -132,8 +132,11 @@ func _hydrate_hex(coord: Vector2i) -> void:
 	var fog_state := GameEnums.FogState.VISIBLE
 	if _fog_of_war:
 		fog_state = _fog_of_war.get_fog_state(coord)
+	var zoc_state: ZoneOfControlState = null
+	if _logistics_network:
+		zoc_state = _logistics_network.get_zoc_state(coord)
 	var view := TacticalHexView.new()
-	view.setup(cell, LocalDetailGenerator.generate(cell), buildings, fog_state, _fidelity)
+	view.setup(cell, LocalDetailGenerator.generate(cell), buildings, fog_state, _fidelity, zoc_state)
 	add_child(view)
 	_tactical_views[coord] = view
 
@@ -166,7 +169,17 @@ func _on_buildings_changed(instance: BuildingInstance) -> void:
 func _on_building_ruined(instance: BuildingInstance, _lost_population: int) -> void:
 	_on_buildings_changed(instance)
 
+## Zone of Control (Phase 2.3): a ZoC change can flip an already-hydrated
+## hex's own overlay without that hex newly qualifying/disqualifying for
+## detail at all (e.g. a Garrison two hexes away extends Military coverage
+## in here — MILITARY_AURA_RADIUS, user request) — push the new state to
+## every currently-hydrated view directly, same "update live" precedent
+## _on_fog_state_changed() already sets, rather than relying solely on
+## _refresh_hydrated_neighborhood()'s own add/remove-only pass below.
 func _on_network_recomputed() -> void:
+	if _logistics_network:
+		for coord in _tactical_views:
+			_tactical_views[coord].set_zoc_state(_logistics_network.get_zoc_state(coord))
 	if _is_tactical_mode:
 		_refresh_hydrated_neighborhood(_last_centered_coord)
 

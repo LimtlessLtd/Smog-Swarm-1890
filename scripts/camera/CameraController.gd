@@ -44,6 +44,17 @@ extends Camera2D
 ## closest zoom", not by proportionally scaling the old value — this is a
 ## real usability floor, not an aesthetic preference.
 ##
+## **max_zoom doubled again (6.0 -> 12.0), user request ("we should be able
+## to zoom in further too").** Screen radius is `world_radius * zoom.x`
+## (Camera2D magnification, see the zoom-direction note above) — the same
+## 6-unit figure now reads as a 72px radius (144px across) at closest zoom,
+## roomier than the original usability floor called for, deliberately (the
+## floor above was the MINIMUM needed for legibility, not a ceiling on how
+## close the player should ever be able to get). `medium_fidelity_threshold`/
+## `high_fidelity_threshold` below are untouched — this only extends how
+## much further HIGH fidelity's own range now goes, it doesn't move where
+## LOW/MEDIUM/HIGH themselves start.
+##
 ## **zoom_step replaced by zoom_factor_per_step (additive -> multiplicative)**:
 ## the old flat +/-0.0125 per scroll click would need ~465 clicks to cross
 ## just the (old) Tactical range, and with max_zoom now 19x further out,
@@ -69,7 +80,7 @@ extends Camera2D
 ## twitchy at the new, much deeper max_zoom.
 @export var pan_speed: float = 220.0
 @export var min_zoom: float = 0.00375  ## The most zoomed-OUT allowed value. Phase 2.5.6: scaled by 1/8 alongside HexCoord.HEX_SIZE's 8x increase (0.03 -> 0.00375) — visible world width is viewport/zoom.x, so a bigger world needs a SMALLER zoom value to keep framing the same fraction of it — see tactical_zoom_threshold.
-@export var max_zoom: float = 6.0  ## The most zoomed-IN allowed value — see this class's own doc comment for why this was raised 19.2x from the Phase 2.5.6 value (0.3125): individual unit/zombie figures need to actually be visible, not sub-pixel, at the closest zoom.
+@export var max_zoom: float = 12.0  ## The most zoomed-IN allowed value — see this class's own doc comment for the two separate reasons this has been raised: first 19.2x (0.3125 -> 6.0) so individual figures aren't sub-pixel, then doubled again (6.0 -> 12.0) per direct user request for more zoom headroom.
 @export var zoom_factor_per_step: float = 1.12  ## Multiplicative zoom per scroll click (12%) — see this class's own doc comment for why this replaced a flat additive zoom_step.
 @export var tactical_zoom_threshold: float = 0.1875  ## zoom.x at/above this = Tactical view (Camera2D: LARGER zoom = more zoomed in — see the class doc comment). Phase 2.5.6: scaled by 1/8 alongside HexCoord.HEX_SIZE's 8x increase (1.5 -> 0.1875) — the Strategic/Tactical cut still happens at the same relative zoom level. Unchanged by the max_zoom increase — this still marks "left the abstract Strategic map", independent of how much further Tactical itself now goes.
 
