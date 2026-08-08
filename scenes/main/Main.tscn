@@ -144,6 +144,7 @@ horde_manager_path = NodePath("../../HordeManager")
 fog_of_war_manager_path = NodePath("../../FogOfWarManager")
 camera_path = NodePath("../../CameraController")
 event_manager_path = NodePath("../../EventManager")
+wall_manager_path = NodePath("../../WallManager")
 
 [node name="BuildPlacementController" parent="WorldRoot" instance=ExtResource("10")]
 hex_grid_map_path = NodePath("../HexGridMap")

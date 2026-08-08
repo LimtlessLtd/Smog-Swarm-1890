@@ -16,16 +16,13 @@ extends Node2D
 ## `_reveal_live_marker()`/`_freeze_horde_marker()`'s own doc comments for
 ## the full state machine.
 ##
-## This is the "buildable now" slice of the Phase 2.7 plan (todo.md) — wall
-## markers and under-attack alerts still wait on systems this class doesn't
-## read from yet (Phase 4.1/4.2's wall breach events, Phase 6.2's
-## `EventManager`) and stay documented there rather than built here.
-## Whichever of those eventually needs to raise a marker should follow this
-## class's own pattern (a Dictionary of live marker nodes keyed by whatever
-## uniquely identifies the source, added/removed off that source's own
-## placed/removed-style signals) rather than invent a second overlay system
-## — units and hordes (below) are the second and third systems to actually
-## follow it, after buildings.
+## Also draws under-attack alerts (2.7.5, a pulsing ring off Phase 6.2's
+## `EventManager`) and wall segment markers (2.7.3, a `Line2D` per
+## `WallSegment` — see that section's own doc comment for why a line, not a
+## point icon like everything else here). Every marker type here follows
+## the same pattern: a Dictionary of live marker nodes keyed by whatever
+## uniquely identifies the source, added/removed/updated off that source's
+## own signals, rather than a bespoke overlay system per source.
 ##
 ## Parented as a HexGridMap sibling under WorldRoot, same reasoning as
 ## LocalDetailManager: shares its coordinate space, and — added after both
@@ -88,6 +85,7 @@ const ATTACK_ALERT_SECONDS: float = 8.0
 @export var fog_of_war_manager_path: NodePath  ## Required for horde markers to do anything — without it every horde is treated as never-spotted (see _is_visible()).
 @export var camera_path: NodePath
 @export var event_manager_path: NodePath  ## Optional — without it, COMBAT events simply don't pulse a marker (Phase 6.2's EventManager is the source; see _on_event_raised()).
+@export var wall_manager_path: NodePath  ## Optional — without it, wall segments simply have no Strategic marker (Phase 2.7.3).
 
 var _hex_grid_map: HexGridMap
 var _building_manager: BuildingManager
@@ -95,10 +93,12 @@ var _unit_manager: UnitManager
 var _horde_manager: HordeManager
 var _fog_of_war_manager: FogOfWarManager
 var _camera: CameraController
+var _wall_manager: WallManager
 
 var _building_icons: Dictionary = {}    # int (BuildingInstance.id) -> Node2D
 var _unit_icons: Dictionary = {}        # int (UnitInstance.id) -> Node2D
 var _frontier_markers: Dictionary = {}  # Vector2i -> Node2D
+var _wall_markers: Dictionary = {}      # int (WallSegment.id) -> Node2D (container: "Body" Line2D + "DefenseWork" Polygon2D)
 
 var _horde_markers: Dictionary = {}            # int (Horde.id) -> Node2D (container: "Body" Polygon2D + "Direction" Line2D)
 var _horde_live: Dictionary = {}               # int (Horde.id) -> bool; true while live-tracking a VISIBLE hex, false once ghosted
@@ -146,6 +146,15 @@ func _ready() -> void:
 	if event_manager_path != NodePath():
 		var event_manager: EventManager = get_node(event_manager_path)
 		event_manager.event_raised.connect(_on_event_raised)
+	if wall_manager_path != NodePath():
+		_wall_manager = get_node(wall_manager_path)
+		_wall_manager.wall_segment_placed.connect(_on_wall_segment_placed)
+		_wall_manager.wall_segment_upgraded.connect(_on_wall_segment_state_changed)
+		_wall_manager.wall_segment_breached.connect(_on_wall_segment_state_changed)
+		_wall_manager.wall_segment_repaired.connect(_on_wall_segment_state_changed)
+		_wall_manager.defense_work_added.connect(_on_wall_defense_work_added)
+		for segment in _wall_manager.get_segments():
+			_on_wall_segment_placed(segment)
 	_refresh_frontier_markers()
 
 func _on_tactical_mode_changed(is_tactical: bool) -> void:
@@ -442,3 +451,91 @@ func _start_attack_ring_pulse(ring: Line2D) -> void:
 	tween.set_loops()
 	tween.tween_property(ring, "modulate:a", 0.25, 0.5)
 	tween.tween_property(ring, "modulate:a", 1.0, 0.5)
+
+## --- Wall Markers (Phase 2.7.3) ---------------------------------------------
+##
+## The last of this phase's originally-planned marker types — blocked until
+## now on Phase 4.1's `WallManager`/`WallSegment` existing at all (they do,
+## as of that phase's own implementation pass). Follows the same "Dictionary
+## of live marker nodes keyed by whatever uniquely identifies the source,
+## added/removed off that source's own signals" pattern building/unit/horde
+## markers above already established — walls are the fourth system to
+## follow it, not a new shape.
+##
+## A wall defends the shared EDGE between two hexes, not a single hex the
+## way every other marker here does — so unlike a point icon, this marker is
+## a `Line2D` running from `hex_a`'s world center to `hex_b`'s. That's a
+## deliberate, free accessibility win: a line is already visually distinct
+## from buildings' triangle, units' circle, and hordes' diamond by SHAPE
+## alone, without needing a fourth point-marker shape invented for it.
+##
+## No fog-of-war gating, matching building icons' own precedent (not spotted
+## hordes' — a wall is always the player's own construction, same as a
+## building; there's nothing to "spot" about your own perimeter). No
+## `wall_segment_removed` signal exists because walls are never removed once
+## placed (only breached/repaired/upgraded in place), so there's no removal
+## handler to write.
+
+func _on_wall_segment_placed(segment: WallSegment) -> void:
+	var marker := _build_wall_marker(segment)
+	add_child(marker)
+	_wall_markers[segment.id] = marker
+
+## Shared by upgrade/breach/repair — all three change how the SAME segment
+## should currently render (tier color/width, or the distinct breached
+## look) without changing its position, so a single recolor-in-place
+## handler covers all three rather than three near-identical ones.
+func _on_wall_segment_state_changed(segment: WallSegment) -> void:
+	var marker: Node2D = _wall_markers.get(segment.id)
+	if not marker:
+		return
+	_apply_wall_segment_look(marker, segment)
+
+func _on_wall_defense_work_added(segment: WallSegment, _work_type: GameEnums.BuildingType) -> void:
+	var marker: Node2D = _wall_markers.get(segment.id)
+	if marker:
+		_update_defense_work_marker(marker, segment)
+
+func _build_wall_marker(segment: WallSegment) -> Node2D:
+	var container := Node2D.new()
+
+	var body := Line2D.new()
+	body.name = "Body"
+	body.points = PackedVector2Array([HexCoord.axial_to_world(segment.hex_a), HexCoord.axial_to_world(segment.hex_b)])
+	container.add_child(body)
+	_apply_wall_segment_look(container, segment)
+
+	var defense_work := Polygon2D.new()
+	defense_work.name = "DefenseWork"
+	defense_work.visible = false
+	container.add_child(defense_work)
+	_update_defense_work_marker(container, segment)
+
+	return container
+
+func _apply_wall_segment_look(marker: Node2D, segment: WallSegment) -> void:
+	var body := marker.get_node("Body") as Line2D
+	var breached := segment.is_breached()
+	body.default_color = WallVisuals.breached_color() if breached else WallVisuals.tier_color(segment.tier)
+	body.width = WallVisuals.line_width(segment.tier, breached)
+
+## Ditch/Oil Pit (Phase 4.1) stack alongside a segment rather than replacing
+## it — a small square at the segment's own midpoint, on top of the line,
+## rather than a second line. Covers both a live `defense_work_added` signal
+## AND a segment restored from a save that already had one (Phase 2.8's own
+## `_wall_manager.get_segments()` loop in `_ready()` calls this indirectly
+## via `_build_wall_marker()`, same as every other marker type's own
+## "replay existing state on load" precedent).
+func _update_defense_work_marker(marker: Node2D, segment: WallSegment) -> void:
+	var work := marker.get_node("DefenseWork") as Polygon2D
+	if not segment.has_ditch and not segment.has_oil_pit:
+		work.visible = false
+		return
+	work.visible = true
+	work.color = WallVisuals.defense_work_color(segment.has_ditch, segment.has_oil_pit)
+	var midpoint := (HexCoord.axial_to_world(segment.hex_a) + HexCoord.axial_to_world(segment.hex_b)) / 2.0
+	var half := 5.0
+	work.polygon = PackedVector2Array([
+		midpoint + Vector2(-half, -half), midpoint + Vector2(half, -half),
+		midpoint + Vector2(half, half), midpoint + Vector2(-half, half),
+	])
