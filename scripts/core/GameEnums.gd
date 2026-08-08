@@ -72,6 +72,7 @@ enum BuildingType {
 	TOWN_HALL,   ## Not in the Phase 2.1 checklist by name, but required as a Civilian ZoC
 	GARRISON,    ## projector by 2.3; added here as the civic-seat/militia-HQ pairing for it.
 	# --- Industry & Extraction ---
+	TIMBER_CAMP,  ## Added post-launch, economy-balance pass: the ONLY Wood producer in the whole tree — every other raw construction material (Bricks/Cast Iron/Gunpowder) already had a dedicated extractor, Wood never did (a real gap in the original Phase 2.1 checklist, not just an implementation slip — found by simulating a real opening and watching Wood run to zero with no way back up).
 	CLAY_BRICKWORKS,
 	CHARCOAL_KILN,
 	COAL_PITHEAD,
@@ -112,8 +113,9 @@ enum UnitAbility {
 	MOUNTED_FIREARM,     ## Chasseur — mounted AND actually armed, a real combat option unlike the Outrider it out-classes. See UnitCatalog.
 	EXPLOSIVE_SPLASH,    ## Grenadier — grenades; expressed as a real damage bonus (a horde is already one clustered "blob" target, so splash reads as extra effectiveness against it). See UnitCatalog.
 	CHARGE_KNOCKBACK,    ## Dragoon — charging into a horde on contact knocks it back a hex AND stuns it briefly. See CombatCoordinator._apply_special_ability_effects().
-	TRAMPLE_KNOCKBACK,   ## Steam-Tractor Landship — same knockback as a Charge, no stun, riding on a much larger HP pool (a damage sponge that shoves zombies aside rather than a fast shock unit). See CombatCoordinator._apply_special_ability_effects().
-	MOBILE_SUPPLY_DUMP,  ## War Machine Armored Car — projects a small Military ZoC/resupply aura around wherever it currently stands, like a walking (much-reduced-radius) Forward Ammo Dump. See LogisticsNetwork.recompute().
+	TRAMPLE_KNOCKBACK,   ## Traction Ram AND Holt Breaker — same knockback as a Charge, no stun, riding on a much larger HP pool (a damage sponge that shoves zombies aside rather than a fast shock unit); shared by both because they're the same "crush the horde by weight" identity at two tiers, not two different mechanics. See CombatCoordinator._apply_special_ability_effects().
+	MOBILE_SUPPLY_DUMP,  ## Searchlight Tender — projects a small Military ZoC/resupply aura around wherever it currently stands, like a walking (much-reduced-radius) Forward Ammo Dump; doubles as a moving vision source too (FogOfWarManager reads ZoC coverage as vision), which is what actually "illuminates infected sectors" per its own description. See LogisticsNetwork.recompute().
+	RAPID_RESPONSE,      ## Armoured Command Car — fast and lightly armed rather than a heavy hitter: real speed/damage/HP leans (UnitCatalog), no bespoke effect code, same "pure stat lean under a descriptive name" shape as UNARMED_SCOUT/MOUNTED_FIREARM/EXPLOSIVE_SPLASH.
 }
 
 ## Design doc Phase 5.4's decided roster — 6 tiers (0-5) x 3 roles = 18
@@ -136,14 +138,14 @@ enum UnitType {
 	HIGHLANDER,             ## Melee.
 	SHARPSHOOTER,           ## Ranged.
 	DRAGOON,                ## Special.
-	# --- Tier 4 (unit_tier_4) — grounded heavy engineering, not battle-mechs (design doc, decided). ---
-	STEAM_PRAM_RAMMER,      ## Melee.
-	ARMORED_LOCOMOTIVE_GUNNER,  ## Ranged.
-	STEAM_TRACTOR_LANDSHIP, ## Special.
-	# --- Tier 5 (unit_tier_5) — same "no retro-futuristic steampunk tropes" rule as Tier 4. ---
-	STEAM_MACHINE_LEG,      ## Melee.
-	RAILWAY_SIEGE_HOWITZER, ## Ranged.
-	WAR_MACHINE_ARMORED_CAR,  ## Special.
+	# --- Tier 4 (unit_tier_4) — Early Mechanization & Heavy Logistics (1890s-1900s). ---
+	TRACTION_RAM,           ## Melee.
+	MAXIM_QUADRICYCLE,      ## Ranged.
+	SEARCHLIGHT_TENDER,     ## Special.
+	# --- Tier 5 (unit_tier_5) — Peak Industrial Warfare (1910s-1920s). ---
+	HOLT_BREAKER,           ## Melee.
+	FIELD_HOWITZER_GUN_TRACTOR,  ## Ranged.
+	ARMOURED_COMMAND_CAR,   ## Special.
 }
 
 ## Design doc Phase 5.6's "standard RTS order set" — what a UnitInstance is

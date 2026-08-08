@@ -60,19 +60,22 @@ const MILITARY_AURA_COVERAGE: float = 0.66
 ## not a falloff.
 const MILITARY_AURA_RADIUS: int = 1
 
-## Design doc, user request: the War Machine Armored Car (GameEnums.
+## Design doc, user request: the Searchlight Tender (GameEnums.
 ## UnitAbility.MOBILE_SUPPLY_DUMP) "acts as a mobile ammo supply dump, just
 ## with much reduced military zone of control" — 0 (its own hex only) vs. a
 ## stationary Forward Ammo Dump building's MILITARY_AURA_RADIUS of 1, the
-## literal "much reduced" the request asked for. Still `hex_disk()`, not a
-## direct single-hex write, purely so a future balancing pass can raise
-## this without restructuring the loop below.
+## literal "much reduced" the request asked for. Doubles as the unit's own
+## moving vision source too (FogOfWarManager treats ZoC coverage as
+## vision), which is what actually "illuminates infected sectors" per the
+## Tender's own description. Still `hex_disk()`, not a direct single-hex
+## write, purely so a future balancing pass can raise this without
+## restructuring the loop below.
 const MOBILE_SUPPLY_AURA_RADIUS: int = 0
 
 @export var hex_grid_map_path: NodePath
 @export var building_manager_path: NodePath
 @export var territory_controller_path: NodePath  ## Optional — Phase 5.8. Unset skips recompute-on-territory-change; _has_secured_ground() still reads live HexCell.districts state either way.
-@export var unit_manager_path: NodePath          ## Optional — user request's MOBILE_SUPPLY_DUMP ability (War Machine Armored Car); unset means no unit ever projects ZoC, same "gracefully skip it" convention as every other optional dependency here.
+@export var unit_manager_path: NodePath          ## Optional — user request's MOBILE_SUPPLY_DUMP ability (Searchlight Tender); unset means no unit ever projects ZoC, same "gracefully skip it" convention as every other optional dependency here.
 @export var unit_order_controller_path: NodePath ## Optional — recompute-on-move for the mobile aura above; without this, a MOBILE_SUPPLY_DUMP unit's aura only ever updates on train/remove, not as it walks. Unset alongside unit_manager_path is a legitimate "don't bother" configuration, same as leaving territory_controller_path unset.
 
 var _hex_grid_map: HexGridMap
@@ -212,7 +215,7 @@ func recompute() -> void:
 				var state := _state_for(coord)
 				state.military_coverage = maxf(state.military_coverage, MILITARY_AURA_COVERAGE)
 
-	# User request: the War Machine Armored Car "acts as a mobile ammo
+	# User request: the Searchlight Tender "acts as a mobile ammo
 	# supply dump" — same MILITARY_AURA_COVERAGE fraction a building
 	# projects, just from wherever the unit currently stands and at
 	# MOBILE_SUPPLY_AURA_RADIUS instead of MILITARY_AURA_RADIUS. A sibling

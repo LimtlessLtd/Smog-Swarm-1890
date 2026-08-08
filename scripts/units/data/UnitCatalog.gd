@@ -83,25 +83,58 @@ static func _build_definitions() -> Array[UnitDefinition]:
 		# value. Still mounted (move_speed_multiplier), same as Outrider/Chasseur.
 		_unit(GameEnums.UnitType.DRAGOON, "Dragoon", 3, GameEnums.UnitRole.SPECIAL, false, GameEnums.UnitAbility.CHARGE_KNOCKBACK, 1.0, 1.0, 1.3),
 		# --- Tier 4 (unit_tier_4) — grounded heavy engineering, not battle-mechs (design doc, decided). ---
-		_unit(GameEnums.UnitType.STEAM_PRAM_RAMMER, "Steam-Pram Rammer", 4, GameEnums.UnitRole.MELEE),
-		_unit(GameEnums.UnitType.ARMORED_LOCOMOTIVE_GUNNER, "Armored Locomotive Gunner", 4, GameEnums.UnitRole.RANGED, true),
-		# Steam-Tractor Landship: a big bulky tank (user request) — 2.5x the
-		# baseline HP curve ("take significant amounts of damage before
-		# dying"), plus the same knockback a Dragoon's charge applies
-		# (CombatCoordinator) but with NO stun — this is a slow damage sponge
-		# that shoves zombies aside on every contact, not a fast shock unit.
-		_unit(GameEnums.UnitType.STEAM_TRACTOR_LANDSHIP, "Steam-Tractor Landship", 4, GameEnums.UnitRole.SPECIAL, false, GameEnums.UnitAbility.TRAMPLE_KNOCKBACK, 2.5, 1.0, 1.0),
+		# Traction Ram: "a rugged, heavy agricultural-industrial engine
+		# designed to slow-roll and crush obstacles under its immense weight"
+		# (assets/units/README.md) — the same knockback a Dragoon's charge
+		# applies (CombatCoordinator), but no stun, on a heavier HP pool and
+		# a below-baseline move speed: the value is grinding through a horde
+		# by sheer weight, not speed or raw damage. First MELEE unit in the
+		# roster to carry a combat ability rather than only the shared
+		# tier/role curve — "Ram" is the unit's whole identity, that stopped
+		# being optional to express once it had real art/flavor to match.
+		_unit(GameEnums.UnitType.TRACTION_RAM, "Traction Ram", 4, GameEnums.UnitRole.MELEE, false, GameEnums.UnitAbility.TRAMPLE_KNOCKBACK, 1.8, 1.0, 0.85),
+		# Maxim Quadricycle: "high mobility and sustained automatic fire
+		# without heavy armor plating" (README) — a fast, hard-hitting glass
+		# cannon: real damage and speed bonuses, paid for with a real HP
+		# penalty for the "skeletal frame... without heavy armor plating"
+		# its own description insists on.
+		_unit(GameEnums.UnitType.MAXIM_QUADRICYCLE, "Maxim Quadricycle", 4, GameEnums.UnitRole.RANGED, true, GameEnums.UnitAbility.NONE, 0.75, 1.3, 1.4),
+		# Searchlight Tender: "a mobile support unit designed to illuminate
+		# infected sectors and coordinate defensive lines" (README) — this is
+		# what MOBILE_SUPPLY_DUMP's underlying mechanic already does:
+		# FogOfWarManager reads LogisticsNetwork's ZoC coverage as vision too
+		# (its own doc comment: "Zone of Control coverage doubles as
+		# vision"), so a unit projecting that aura on the move genuinely
+		# does illuminate ground as it travels — no new system needed.
+		# Reassigned here from the old Armoured Command Car, whose real
+		# description is a fast dispatch car, not a support vehicle (see
+		# Tier 5 below). Low damage_multiplier — it carries no weapon in its
+		# own description; its value is entirely the aura.
+		_unit(GameEnums.UnitType.SEARCHLIGHT_TENDER, "Searchlight Tender", 4, GameEnums.UnitRole.SPECIAL, false, GameEnums.UnitAbility.MOBILE_SUPPLY_DUMP, 1.0, 0.5, 1.0),
 		# --- Tier 5 (unit_tier_5) — same "no retro-futuristic steampunk tropes" rule as Tier 4. ---
-		_unit(GameEnums.UnitType.STEAM_MACHINE_LEG, "Steam Machine-Leg", 5, GameEnums.UnitRole.MELEE),
-		_unit(GameEnums.UnitType.RAILWAY_SIEGE_HOWITZER, "Railway Siege Howitzer", 5, GameEnums.UnitRole.RANGED, true),
-		# War Machine Armored Car: a mobile ammo supply dump (user request) —
-		# projects its own small Military ZoC/resupply aura wherever it
-		# currently stands (LogisticsNetwork.recompute(), radius 0 vs. a
-		# Forward Ammo Dump building's radius 1 — "much reduced" per the
-		# request). 1.3x HP keeps it "a decent chunk of health like the
-		# others," explicitly not the fragile pure-support framing its old
-		# flavor text implied.
-		_unit(GameEnums.UnitType.WAR_MACHINE_ARMORED_CAR, "War Machine Armored Car", 5, GameEnums.UnitRole.SPECIAL, false, GameEnums.UnitAbility.MOBILE_SUPPLY_DUMP, 1.3, 1.0, 1.0),
+		# Holt Breaker: "unarmed with turrets, it relies entirely on tracked
+		# traction and brute engine power to bulldoze through dense crowds
+		# and barricades" (README) — the Tier 5 upgrade of Traction Ram's
+		# same "crush the horde by weight" identity, not a different
+		# mechanic: same TRAMPLE_KNOCKBACK, the heaviest HP pool and lowest
+		# move speed in the roster, and damage de-emphasized since its own
+		# description explicitly says it isn't armed.
+		_unit(GameEnums.UnitType.HOLT_BREAKER, "Holt Breaker", 5, GameEnums.UnitRole.MELEE, false, GameEnums.UnitAbility.TRAMPLE_KNOCKBACK, 2.6, 0.8, 0.75),
+		# Field Howitzer Gun Tractor: "a long recoil mechanism... completely
+		# different from an armored tank" (README) — the hardest-hitting
+		# unit in the roster (real siege artillery), paid for with the
+		# lowest HP and move speed of any Tier 5 unit: an unarmored, slow,
+		# two-part towed gun, not a tank.
+		_unit(GameEnums.UnitType.FIELD_HOWITZER_GUN_TRACTOR, "Field Howitzer Gun Tractor", 5, GameEnums.UnitRole.RANGED, true, GameEnums.UnitAbility.NONE, 0.7, 1.8, 0.7),
+		# Armoured Command Car: "sleek, lower to the ground, and noticeably
+		# faster-looking than the bulky agricultural tractors... rear
+		# open-top deck for radio/pigeon dispatch boxes... a small rotating
+		# machine gun cupola" (README) — a fast, lightly-armed mobile
+		# reserve, not a support vehicle (that's Searchlight Tender now) and
+		# not a damage dealer (that's the Howitzer): real armor and a
+		# working gun back its speed, but its value is arriving at a
+		# threatened hex quickly, not out-damaging a dedicated combat unit.
+		_unit(GameEnums.UnitType.ARMOURED_COMMAND_CAR, "Armoured Command Car", 5, GameEnums.UnitRole.SPECIAL, false, GameEnums.UnitAbility.RAPID_RESPONSE, 1.1, 1.1, 1.4),
 	]
 
 ## Shared placeholder balancing curve — one formula for training cost/
@@ -116,16 +149,17 @@ static func _build_definitions() -> Array[UnitDefinition]:
 ## uncraftable rather than merely expensive.
 ##
 ## `ability`/`hp_multiplier`/`damage_multiplier`/`move_speed_multiplier`
-## (user request, this pass — "each special unit type should do something
-## special") apply ON TOP of the shared curve/role multiplier below, not
-## instead of it — every SPECIAL unit still starts from the same tier
-## baseline every other unit does, these four just let six specific units
-## (see their own call sites' comments) diverge from what used to be an
-## identical, undifferentiated SPECIAL-role baseline. Every MELEE/RANGED
-## unit and any not-yet-differentiated SPECIAL unit passes none of these,
-## leaving all four at their neutral default (NONE/1.0/1.0/1.0) — this
-## helper's signature grew, but every pre-existing call site above still
-## reads exactly as it did before this pass.
+## apply ON TOP of the shared curve/role multiplier below, not instead of
+## it. Originally SPECIAL-exclusive (user request — "each special unit type
+## should do something special"), but Tier 4-5's Melee/Ranged units now use
+## them too (user request, art/description-driven redesign — see each call
+## site's own comment): a Traction Ram or Field Howitzer Gun Tractor has as
+## concrete a described identity as any Special unit, so restricting these
+## fields to one role stopped making sense once Tier 4-5 got real art and
+## flavor text to design against. `ability` specifically stays reserved for
+## a unit whose identity includes a genuine mechanic, not just a stat
+## lean — most MELEE/RANGED units below still pass none of these, leaving
+## all four at their neutral default (NONE/1.0/1.0/1.0).
 static func _unit(type: GameEnums.UnitType, display_name: String, tier: int, role: GameEnums.UnitRole, requires_gunpowder: bool = false, ability: GameEnums.UnitAbility = GameEnums.UnitAbility.NONE, hp_multiplier: float = 1.0, damage_multiplier: float = 1.0, move_speed_multiplier: float = 1.0) -> UnitDefinition:
 	var d := UnitDefinition.new(type, display_name, tier, role)
 	d.requires_gunpowder = requires_gunpowder

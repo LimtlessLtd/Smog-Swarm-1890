@@ -45,11 +45,19 @@ signal repair_rejected(segment: WallSegment, reason: String)
 ## 4.1). Unset means every segment reads as "outer" (today's pre-4.1-decision
 ## look), same "gracefully skip it" convention as tech_manager_path above.
 @export var logistics_network_path: NodePath
+## Optional — start-of-game pass (user request): seed_starting_defenses()
+## below needs to know where BuildingManager.seed_starting_buildings() put
+## the free Town Hall, so it can wall that hex in. Unset skips seeding
+## entirely (same "gracefully skip it" convention as every other optional
+## dependency here) — this class stays fully usable without it, same as
+## before this pass, for any test/scene that doesn't wire one up.
+@export var building_manager_path: NodePath
 
 var _hex_grid_map: HexGridMap
 var _resource_manager: ResourceManager
 var _tech_manager: TechManager
 var _logistics_network: LogisticsNetwork
+var _building_manager: BuildingManager
 var _segments: Array[WallSegment] = []
 var _next_id: int = 1
 
@@ -62,6 +70,9 @@ func _ready() -> void:
 		_tech_manager = get_node(tech_manager_path)
 	if logistics_network_path != NodePath():
 		_logistics_network = get_node(logistics_network_path)
+	if building_manager_path != NodePath():
+		_building_manager = get_node(building_manager_path)
+	seed_starting_defenses()
 
 func get_segments() -> Array[WallSegment]:
 	return _segments.duplicate()
@@ -154,13 +165,127 @@ func place_segment(hex_a: Vector2i, hex_b: Vector2i) -> WallSegment:
 		_resource_manager.spend(WallCatalog.get_build_cost(WallCatalog.WOODEN))
 	return _register_segment(hex_a, hex_b, WallCatalog.WOODEN, _next_id, -1.0, true)
 
-func _register_segment(hex_a: Vector2i, hex_b: Vector2i, tier: int, id: int, current_hp: float, advance_next_id: bool) -> WallSegment:
-	var segment := WallSegment.new(hex_a, hex_b, tier, id, current_hp)
+## Gate/start-of-game pass (user request): same placement rules and cost as
+## a plain place_segment() — get_placement_error() doesn't care about tier
+## or gate-ness at all, only the two hexes — the ONLY difference is
+## registering with is_gate=true, which WallSegment.get_max_hp() alone acts
+## on (WallCatalog.GATE_HP_FRACTION). Not cheaper to build; deliberately
+## weaker once built, same "a gate is a fortification's traditional weak
+## point" framing WallSegment.is_gate's own doc comment gives.
+func place_gate_segment(hex_a: Vector2i, hex_b: Vector2i) -> WallSegment:
+	var error := get_placement_error(hex_a, hex_b)
+	if not error.is_empty():
+		placement_rejected.emit(hex_a, hex_b, error)
+		return null
+	if _resource_manager:
+		_resource_manager.spend(WallCatalog.get_build_cost(WallCatalog.WOODEN))
+	return _register_segment(hex_a, hex_b, WallCatalog.WOODEN, _next_id, -1.0, true, true)
+
+func _register_segment(hex_a: Vector2i, hex_b: Vector2i, tier: int, id: int, current_hp: float, advance_next_id: bool, is_gate: bool = false) -> WallSegment:
+	var segment := WallSegment.new(hex_a, hex_b, tier, id, current_hp, is_gate)
 	if advance_next_id:
 		_next_id = id + 1
 	_segments.append(segment)
 	wall_segment_placed.emit(segment)
 	return segment
+
+## Start-of-game pass (user request: "start the game with an iron foundry
+## already inside a set of walls", extended a pass later to "extend the
+## starting walls so [the Farm is] within the perimeter too"). Walls the
+## OUTER boundary of BuildingManager.get_starting_settlement_hexes() — Town
+## Hall + Foundry's own hex, plus the Farm and its connecting corridor when
+## one was found — with a free Wooden segment on every edge that crosses
+## from a core hex to a non-core, passable one. An edge BETWEEN two core
+## hexes is deliberately skipped (it's interior ground once both sides are
+## "inside", not a boundary to defend) — get_segment_between() is the dedup
+## guard for the genuinely rare case where two core hexes share a common
+## outside neighbor and would otherwise both try to wall the same edge.
+## Free the same way every other piece of this opening move is (bypasses
+## get_placement_error()'s cost check entirely, registered directly) — this
+## is the game's own starting state, not a player purchase.
+##
+## A subset of those boundary edges are Gates instead of solid wall (see
+## WallSegment.is_gate) rather than left as bare unwalled gaps: the whole
+## ring would only ever block a HORDE anyway (walls never block the
+## player's own units/logistics — see HexPathfinder's own doc comment), so
+## a plain gap wouldn't be "protecting an opening", it would just be a hole
+## a horde walks through uncontested. A Gate still sieges like any other
+## segment, just at a fraction of the HP — a deliberately weaker point, not
+## an undefended one. `- 1` below reserves at least one solid (non-gate)
+## segment whenever there's more than one boundary edge at all — found by
+## actually booting the game and inspecting a real seeded result: Manchester
+## alone only ever has 2 walled edges (4 of its 6 neighbors are impassable
+## Chat Moss peat bog), and a fixed gate count with no such reservation
+## silently turned both into Gates, leaving ~0 real defensive value.
+##
+## Guarded the same way BuildingManager.seed_starting_buildings() guards
+## itself: a no-op if segments already exist (a loaded save already has its
+## own, real wall state) or if the dependencies this needs aren't wired.
+## Runs from _ready(), which fires after BuildingManager's own _ready() as
+## long as this node stays a LATER Main.tscn sibling (already true — see
+## DiscontentManager's own doc comment for the same ordering requirement).
+const _STARTING_WALL_GATE_COUNT: int = 2
+
+func seed_starting_defenses() -> void:
+	if not _segments.is_empty() or not _hex_grid_map or not _building_manager:
+		return
+	var core_hexes := _building_manager.get_starting_settlement_hexes()
+	if core_hexes.is_empty():
+		return
+	var core_set: Dictionary = {}  # Vector2i -> true, for O(1) "is this hex inside the perimeter" checks
+	for coord in core_hexes:
+		core_set[coord] = true
+
+	var boundary_edges: Array[Vector2i] = []  # outside-hex half of each (core_hex, outside_hex) pair, paired 1:1 with boundary_sources below
+	var boundary_sources: Array[Vector2i] = []
+	var seen_edges: Dictionary = {}  # String (canonical "q,r-q,r" key) -> true — dedup WITHIN this pass; get_segment_between() can't help here since nothing is actually registered until the loop below runs.
+	for core_coord in core_hexes:
+		for neighbor in HexCoord.neighbors(core_coord):
+			if core_set.has(neighbor):
+				continue  ## Interior edge between two core hexes — not a boundary.
+			var cell := _hex_grid_map.get_cell(neighbor)
+			if not cell or not cell.is_passable():
+				continue
+			# Two DIFFERENT core hexes can share the same outside neighbor
+			# (common in a hex grid) — canonicalize by sorting the pair so
+			# both directions hash to the same key.
+			var a := core_coord
+			var b := neighbor
+			if b.x < a.x or (b.x == a.x and b.y < a.y):
+				var tmp := a
+				a = b
+				b = tmp
+			var key := "%d,%d-%d,%d" % [a.x, a.y, b.x, b.y]
+			if seen_edges.has(key):
+				continue
+			seen_edges[key] = true
+			boundary_sources.append(core_coord)
+			boundary_edges.append(neighbor)
+
+	# Reserve each DISTINCT source hex's own first boundary edge as solid —
+	# not just one global reservation across the whole perimeter — so the
+	# disclosed "farm unreachable, two separate compounds" fallback above
+	# can't repeat the exact bug the single-hex version of this method
+	# already hit once: a global "- 1" only guarantees ONE solid wall
+	# total, which silently left an entire disconnected ring (Town Hall's
+	# own 2-edge one) at 100% Gates when the Farm's own 4-edge ring
+	# consumed the whole shared reservation instead.
+	var gate_eligible_indices: Array[int] = []
+	var reserved_source: Dictionary = {}  # Vector2i -> true, one reservation per distinct source hex
+	for i in boundary_edges.size():
+		var source := boundary_sources[i]
+		if not reserved_source.has(source):
+			reserved_source[source] = true
+			continue
+		gate_eligible_indices.append(i)
+
+	var gate_count := mini(_STARTING_WALL_GATE_COUNT, gate_eligible_indices.size())
+	var gate_indices: Dictionary = {}
+	for i in range(gate_count):
+		gate_indices[gate_eligible_indices[i]] = true
+
+	for i in boundary_edges.size():
+		_register_segment(boundary_sources[i], boundary_edges[i], WallCatalog.WOODEN, _next_id, -1.0, true, gate_indices.has(i))
 
 func get_upgrade_error(segment: WallSegment) -> String:
 	if not segment:

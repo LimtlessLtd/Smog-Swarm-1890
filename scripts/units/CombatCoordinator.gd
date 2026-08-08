@@ -154,7 +154,7 @@ const DAY_DAMAGE_MULTIPLIER: float = 1.1
 
 ## Design doc, user request: a Dragoon's charge stuns whatever it hits for
 ## "a second" — a literal number from the request, not a derived one. The
-## Steam-Tractor Landship's TRAMPLE_KNOCKBACK deliberately does NOT use
+## Traction Ram/Holt Breaker's TRAMPLE_KNOCKBACK deliberately does NOT use
 ## this — see _apply_special_ability_effects()'s own doc comment for why.
 const CHARGE_STUN_SECONDS: float = 1.0
 
@@ -298,14 +298,15 @@ func _siege_buildings(horde: Horde, coord: Vector2i) -> void:
 ## special." Called only once `_engage()` already knows `horde` survived
 ## this round (a destroyed horde has nothing left to knock back or stun).
 ## CHARGE_KNOCKBACK (Dragoon) gets both a knockback AND a stun; TRAMPLE_
-## KNOCKBACK (Steam-Tractor Landship) gets the same knockback with NO
-## stun — deliberately: the Landship is a slow damage sponge that shoves
-## zombies aside as it grinds forward, not a shock unit that needs to
-## freeze its target the way a fast charging Dragoon does. Every other
-## ability value (including plain NONE) does nothing here — Outrider's
-## unarmed-ness, Chasseur/Grenadier's damage bonuses, and the Armored Car's
-## mobile ZoC aura are all expressed elsewhere (UnitCatalog's stat curve,
-## LogisticsNetwork.recompute() respectively), not in this method.
+## KNOCKBACK (Traction Ram, Holt Breaker) gets the same knockback with NO
+## stun — deliberately: both are slow damage sponges that shove zombies
+## aside as they grind forward, not shock units that need to freeze their
+## target the way a fast charging Dragoon does. Every other ability value
+## (including plain NONE) does nothing here — Outrider's unarmed-ness,
+## Chasseur/Grenadier/Armoured Command Car's stat leans, and Searchlight
+## Tender's mobile ZoC/vision aura are all expressed elsewhere (UnitCatalog's
+## stat curve, LogisticsNetwork.recompute() respectively), not in this
+## method.
 func _apply_special_ability_effects(instance: UnitInstance, horde: Horde, movement_from: Vector2i, movement_to: Vector2i) -> void:
 	match instance.definition.ability:
 		GameEnums.UnitAbility.CHARGE_KNOCKBACK:

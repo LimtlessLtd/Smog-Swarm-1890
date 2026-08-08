@@ -74,6 +74,8 @@ static func _texture_key(building_type: GameEnums.BuildingType) -> String:
 			return "town_hall"
 		GameEnums.BuildingType.GARRISON:
 			return "garrison"
+		GameEnums.BuildingType.TIMBER_CAMP:
+			return "timber_camp"
 		GameEnums.BuildingType.CLAY_BRICKWORKS:
 			return "clay_brickworks"
 		GameEnums.BuildingType.CHARCOAL_KILN:

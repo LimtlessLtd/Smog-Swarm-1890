@@ -628,7 +628,7 @@ func _apply_wall_segment_look(marker: Node2D, segment: WallSegment) -> void:
 	var texture := WallVisuals.tier_texture(segment.tier) if not breached else null
 	body.texture = texture
 	body.texture_mode = Line2D.LINE_TEXTURE_TILE
-	body.default_color = Color.WHITE if texture else (WallVisuals.breached_color() if breached else WallVisuals.tier_color(segment.tier))
+	body.default_color = Color.WHITE if texture else (WallVisuals.breached_color() if breached else (WallVisuals.gate_color() if segment.is_gate else WallVisuals.tier_color(segment.tier)))
 	body.width = WallVisuals.line_width(segment.tier, breached)
 	var is_legacy := _wall_manager != null and _wall_manager.is_legacy_segment(segment)
 	marker.modulate = WallVisuals.legacy_modulate() if is_legacy else WallVisuals.outer_modulate()
