@@ -38,23 +38,33 @@ extends RefCounted
 ## hex map (just England's Manchester-Midlands-London corridor) spanned
 ## roughly 48,000x21,500 world units at its extremes, comfortably under the
 ## ~100,000 unit range where single-precision float jitter typically starts
-## to show. **That's no longer true.** The map now spans the whole UK and
-## Ireland (design doc, user request — see BritishGeographyData's own doc
-## comment for the full expansion), and its real landmass alone (not even
-## counting the padded ocean margin around it) now reaches roughly 140,000
-## world units on its long (east-west) axis — past the threshold this exact
-## comment already flagged as the trigger for "revisit with a real
-## floating-origin camera rebase instead of pushing this constant further."
-## **Deliberately NOT done here** — a floating-origin rebase is a genuinely
-## separate architecture change (every system that reads a world position
-## would need to rebase against a moving reference point, not just this one
-## constant), and its actual necessity can't be confirmed without seeing
-## real rendered jitter at the map's far extremes, which this headless
-## environment can't do (same "can't screenshot to verify" limitation
-## already flagged throughout this project's own history for terrain art,
-## building art, and continuous movement). Flagged honestly as a real,
-## disclosed follow-up risk rather than silently left for someone to
-## rediscover — see todo.md's own note under the map-expansion entry.
+## to show. **That's no longer true, and got LARGER across two follow-up
+## corrections, not smaller.** The map now spans the whole UK and Ireland
+## (design doc, user request — see BritishGeographyData's own doc comment
+## for the full history: hand-authored approximation, then a re-bake from
+## real Natural Earth coastline data, then a second correction once the
+## first re-bake turned out not to honor the game's own "~25 sq mi/hex"
+## scale constant). At the CURRENT correct scale, `MAP_BOUNDS` itself (154x179
+## hexes, padded ocean margin included — what actually matters for float
+## jitter, since the camera can pan into that margin) spans roughly
+## 214,600x136,700 world units — well past the ~100,000 unit range this
+## exact comment already flagged as the trigger for "revisit with a real
+## floating-origin camera rebase instead of pushing this constant further,"
+## and larger than either of the two prior (now-superseded) figures this
+## comment used to cite. **Deliberately NOT done here** — a floating-origin
+## rebase is a genuinely separate architecture change (every system that
+## reads a world position would need to rebase against a moving reference
+## point, not just this one constant), and its actual necessity can't be
+## confirmed without seeing real rendered jitter at the map's far extremes.
+## A live screenshot pass (user request, an earlier round of this same
+## overall map-scale work) DID confirm the map renders/scrolls correctly at
+## every zoom level tested, including panning well out toward the ocean
+## margin, with no visible jitter — but that was against a smaller
+## landmass than the current one, and hasn't been repeated since this
+## latest scale correction grew the grid further. Flagged honestly as a
+## real, disclosed follow-up risk that keeps growing rather than shrinking,
+## not silently left for someone to rediscover — see todo.md's own note
+## under the map-expansion entry.
 const HEX_SIZE: float = 512.0
 
 const NEIGHBOR_DIRECTIONS: Array[Vector2i] = [
