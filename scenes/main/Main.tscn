@@ -66,6 +66,7 @@ resource_manager_path = NodePath("../ResourceManager")
 hex_grid_map_path = NodePath("../WorldRoot/HexGridMap")
 resource_manager_path = NodePath("../ResourceManager")
 tech_manager_path = NodePath("../TechManager")
+logistics_network_path = NodePath("../LogisticsNetwork")
 
 [node name="ReclamationManager" parent="." instance=ExtResource("15")]
 hex_grid_map_path = NodePath("../WorldRoot/HexGridMap")
@@ -145,6 +146,7 @@ fog_of_war_manager_path = NodePath("../../FogOfWarManager")
 camera_path = NodePath("../../CameraController")
 event_manager_path = NodePath("../../EventManager")
 wall_manager_path = NodePath("../../WallManager")
+logistics_network_path = NodePath("../../LogisticsNetwork")
 
 [node name="BuildPlacementController" parent="WorldRoot" instance=ExtResource("10")]
 hex_grid_map_path = NodePath("../HexGridMap")

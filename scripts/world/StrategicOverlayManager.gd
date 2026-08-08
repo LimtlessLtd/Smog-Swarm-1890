@@ -86,6 +86,7 @@ const ATTACK_ALERT_SECONDS: float = 8.0
 @export var camera_path: NodePath
 @export var event_manager_path: NodePath  ## Optional — without it, COMBAT events simply don't pulse a marker (Phase 6.2's EventManager is the source; see _on_event_raised()).
 @export var wall_manager_path: NodePath  ## Optional — without it, wall segments simply have no Strategic marker (Phase 2.7.3).
+@export var logistics_network_path: NodePath  ## Optional — without it, every wall marker just reads as "outer" forever (Phase 4.1's is_legacy_segment() distinction never refreshes).
 
 var _hex_grid_map: HexGridMap
 var _building_manager: BuildingManager
@@ -94,6 +95,7 @@ var _horde_manager: HordeManager
 var _fog_of_war_manager: FogOfWarManager
 var _camera: CameraController
 var _wall_manager: WallManager
+var _logistics_network: LogisticsNetwork
 
 var _building_icons: Dictionary = {}    # int (BuildingInstance.id) -> Node2D
 var _unit_icons: Dictionary = {}        # int (UnitInstance.id) -> Node2D
@@ -155,6 +157,9 @@ func _ready() -> void:
 		_wall_manager.defense_work_added.connect(_on_wall_defense_work_added)
 		for segment in _wall_manager.get_segments():
 			_on_wall_segment_placed(segment)
+	if logistics_network_path != NodePath():
+		_logistics_network = get_node(logistics_network_path)
+		_logistics_network.network_recomputed.connect(_on_logistics_network_recomputed)
 	_refresh_frontier_markers()
 
 func _on_tactical_mode_changed(is_tactical: bool) -> void:
@@ -475,6 +480,15 @@ func _start_attack_ring_pulse(ring: Line2D) -> void:
 ## `wall_segment_removed` signal exists because walls are never removed once
 ## placed (only breached/repaired/upgraded in place), so there's no removal
 ## handler to write.
+##
+## Phase 4.1's outer/legacy-inner distinction, once decided: a legacy
+## segment (WallManager.is_legacy_segment()) renders dimmed via the whole
+## marker's `modulate`, an outer one at full brightness — see
+## WallVisuals.legacy_modulate()'s own doc comment for why a dimmer, not a
+## fourth color. 2.7.3 itself never needed this (a segment's marker only
+## ever depended on its own tier/breached/defense-work state, all
+## per-segment) — this is a real addition on top of that, not a correction
+## to it, now that Phase 4.1 actually has an outer/inner concept to show.
 
 func _on_wall_segment_placed(segment: WallSegment) -> void:
 	var marker := _build_wall_marker(segment)
@@ -518,6 +532,24 @@ func _apply_wall_segment_look(marker: Node2D, segment: WallSegment) -> void:
 	var breached := segment.is_breached()
 	body.default_color = WallVisuals.breached_color() if breached else WallVisuals.tier_color(segment.tier)
 	body.width = WallVisuals.line_width(segment.tier, breached)
+	var is_legacy := _wall_manager != null and _wall_manager.is_legacy_segment(segment)
+	marker.modulate = WallVisuals.legacy_modulate() if is_legacy else WallVisuals.outer_modulate()
+
+## Design doc Phase 4.1: territory shifting (a hex gaining/losing ZoC
+## coverage) can flip a segment's outer/legacy classification without the
+## segment itself changing at all (no placed/upgraded/breached/repaired
+## signal fires) — so this listens to LogisticsNetwork's own recompute
+## signal directly, the same trigger FogOfWarManager/DiscontentManager
+## already key their own ZoC-dependent recomputes off, rather than trying to
+## infer it from wall-specific signals that wouldn't cover every case.
+func _on_logistics_network_recomputed() -> void:
+	_refresh_wall_marker_looks()
+
+func _refresh_wall_marker_looks() -> void:
+	if not _wall_manager:
+		return
+	for segment in _wall_manager.get_segments():
+		_on_wall_segment_state_changed(segment)
 
 ## Ditch/Oil Pit (Phase 4.1) stack alongside a segment rather than replacing
 ## it — a small square at the segment's own midpoint, on top of the line,
