@@ -35,6 +35,9 @@ signal defense_work_added(segment: WallSegment, work_type: GameEnums.BuildingTyp
 signal placement_rejected(hex_a: Vector2i, hex_b: Vector2i, reason: String)
 signal upgrade_rejected(segment: WallSegment, reason: String)
 signal repair_rejected(segment: WallSegment, reason: String)
+## User report ("repairing... should take some amount of time") —
+## wall_segment_repaired (above) now only fires once a queued job finishes.
+signal repair_started(segment: WallSegment, days: int)
 
 @export var hex_grid_map_path: NodePath
 @export var resource_manager_path: NodePath
@@ -60,6 +63,10 @@ var _logistics_network: LogisticsNetwork
 var _building_manager: BuildingManager
 var _segments: Array[WallSegment] = []
 var _next_id: int = 1
+## Paid-for repairs not yet finished — {segment, days_remaining}. Same known
+## save/load gap as BuildingManager's/UnitManager's own equivalent queues
+## (flagged on theirs, not repeated per-file).
+var _pending_repair: Array[Dictionary] = []
 
 func _ready() -> void:
 	if hex_grid_map_path != NodePath():
@@ -73,6 +80,22 @@ func _ready() -> void:
 	if building_manager_path != NodePath():
 		_building_manager = get_node(building_manager_path)
 	seed_starting_defenses()
+	TickManager.day_completed.connect(_on_day_completed)
+
+## Ticks every queued repair down by one day, applying the actual HP
+## restoration and firing wall_segment_repaired once it reaches zero —
+## mirrors BuildingManager._process_pending_repair()'s own shape.
+func _on_day_completed(_day_number: int) -> void:
+	var still_pending: Array[Dictionary] = []
+	for job in _pending_repair:
+		job["days_remaining"] -= 1
+		var segment: WallSegment = job["segment"]
+		if job["days_remaining"] <= 0:
+			segment.current_hp = segment.get_max_hp()
+			wall_segment_repaired.emit(segment)
+		else:
+			still_pending.append(job)
+	_pending_repair = still_pending
 
 func get_segments() -> Array[WallSegment]:
 	return _segments.duplicate()
@@ -391,6 +414,11 @@ func get_repair_error(segment: WallSegment) -> String:
 func can_repair_segment(segment: WallSegment) -> bool:
 	return get_repair_error(segment).is_empty()
 
+## Same "pay upfront, finish later" shape BuildingManager.repair_building()
+## now uses — see that function's own doc comment. The segment stays
+## breached (still-red, still passable to a horde) until
+## _on_day_completed() above applies the actual restoration `days` days
+## from now.
 func repair_segment(segment: WallSegment) -> bool:
 	var error := get_repair_error(segment)
 	if not error.is_empty():
@@ -398,8 +426,9 @@ func repair_segment(segment: WallSegment) -> bool:
 		return false
 	if _resource_manager:
 		_resource_manager.spend(WallCatalog.get_repair_cost(segment.tier))
-	segment.current_hp = segment.get_max_hp()
-	wall_segment_repaired.emit(segment)
+	var days := segment.tier + 1
+	_pending_repair.append({"segment": segment, "days_remaining": days})
+	repair_started.emit(segment, days)
 	return true
 
 ## Exposed for SaveLoadManager (Phase 2.8) — WallSegment saves directly

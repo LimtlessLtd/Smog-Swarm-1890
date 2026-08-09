@@ -80,3 +80,39 @@ static func make_panel_stylebox() -> StyleBoxFlat:
 
 static func style_panel(control: Control) -> void:
 	control.add_theme_stylebox_override("panel", make_panel_stylebox())
+
+## BuildMenuView's tab bar (Phase 6.1 rework, user request) — Godot's
+## default TabContainer theme is a blue/grey out of place against this
+## project's brown/gold Victorian palette everywhere else, the same reason
+## style_button()/style_panel() exist rather than leaving controls at
+## engine-default theme.
+static func style_tab_container(tabs: TabContainer) -> void:
+	var selected := StyleBoxFlat.new()
+	selected.bg_color = BUTTON_HOVER
+	selected.border_color = ACCENT_COLOR
+	selected.border_width_bottom = 2
+	selected.content_margin_left = 10.0
+	selected.content_margin_right = 10.0
+	selected.content_margin_top = 5.0
+	selected.content_margin_bottom = 5.0
+
+	var unselected := selected.duplicate() as StyleBoxFlat
+	unselected.bg_color = BUTTON_NORMAL
+	unselected.border_color = PANEL_BORDER
+	unselected.border_width_bottom = 1
+
+	var panel := make_panel_stylebox()
+	panel.bg_color = Color(PANEL_COLOR, 0.0)  # The tab content area sits directly on this panel's own already-styled background — no second layer needed, just enough of a stylebox to carry content_margin.
+	panel.border_width_left = 0
+	panel.border_width_top = 0
+	panel.border_width_right = 0
+	panel.border_width_bottom = 0
+
+	tabs.add_theme_stylebox_override("tab_selected", selected)
+	tabs.add_theme_stylebox_override("tab_unselected", unselected)
+	tabs.add_theme_stylebox_override("tab_hovered", unselected)
+	tabs.add_theme_stylebox_override("panel", panel)
+	tabs.add_theme_color_override("font_selected_color", Color("#fff2cb"))
+	tabs.add_theme_color_override("font_unselected_color", MUTED_COLOR)
+	tabs.add_theme_color_override("font_hovered_color", TEXT_COLOR)
+	tabs.add_theme_font_size_override("font_size", 13)

@@ -36,31 +36,32 @@ var _campaign_edit: LineEdit
 var _campaign_list: VBoxContainer
 var _slot_edit: LineEdit
 var _slot_list: VBoxContainer
+var _layout: VBoxContainer
 
 func _ready() -> void:
 	visible = false
 	HUDStyles.style_panel(self)
 
-	var layout := VBoxContainer.new()
-	layout.add_theme_constant_override("separation", 6)
-	layout.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT, Control.PRESET_MODE_MINSIZE, 8)
-	add_child(layout)
+	_layout = VBoxContainer.new()
+	_layout.add_theme_constant_override("separation", 6)
+	_layout.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT, Control.PRESET_MODE_MINSIZE, 8)
+	add_child(_layout)
 
 	var title := Label.new()
 	title.text = "Save / Load"
 	HUDStyles.style_label(title, true)
-	layout.add_child(title)
+	_layout.add_child(title)
 
-	_campaign_edit = _build_labeled_edit(layout, "Campaign:", "Campaign name")
+	_campaign_edit = _build_labeled_edit(_layout, "Campaign:", "Campaign name")
 	_campaign_edit.text_changed.connect(_on_campaign_text_changed)
-	_campaign_list = _build_list(layout)
+	_campaign_list = _build_list(_layout)
 
-	_slot_edit = _build_labeled_edit(layout, "Slot:", "Slot name")
-	_slot_list = _build_list(layout)
+	_slot_edit = _build_labeled_edit(_layout, "Slot:", "Slot name")
+	_slot_list = _build_list(_layout)
 
 	var buttons := HBoxContainer.new()
 	buttons.add_theme_constant_override("separation", 6)
-	layout.add_child(buttons)
+	_layout.add_child(buttons)
 
 	var save_button := Button.new()
 	save_button.text = "Save"
@@ -79,6 +80,13 @@ func _ready() -> void:
 	close_button.pressed.connect(close)
 	HUDStyles.style_button(close_button)
 	buttons.add_child(close_button)
+
+## MainHUD's own `_place_center()` reads this to size the panel to its real
+## content instead of trusting a hand-picked constant — see
+## DisplayOptionsView.get_content_min_size()'s own doc comment for why
+## (same reasoning, same pattern, third panel to follow it).
+func get_content_min_size() -> Vector2:
+	return _layout.get_combined_minimum_size()
 
 func setup(save_load_manager: SaveLoadManager) -> void:
 	_save_load_manager = save_load_manager
@@ -110,12 +118,22 @@ func _build_labeled_edit(parent: VBoxContainer, label_text: String, placeholder:
 	var edit := LineEdit.new()
 	edit.placeholder_text = placeholder
 	edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	# Godot's LineEdit doesn't factor its own placeholder text into its
+	# minimum size — found after MainHUD's own auto-sizing fix (see
+	# get_content_min_size()'s doc comment) made this panel shrink to fit
+	# its now-accurately-measured content, which left the field only as
+	# wide as LineEdit's tiny engine default and clipped "Campaign name"/
+	# "Slot name" down to "Campaig"/"Slot nam". An explicit floor here is
+	# what the old hand-picked SAVE_LOAD_VIEW_SIZE constant used to give it
+	# by accident, made deliberate now that nothing else provides it.
+	edit.custom_minimum_size = Vector2(160, 0)
 	row.add_child(edit)
 	return edit
 
 func _build_list(parent: VBoxContainer) -> VBoxContainer:
 	var scroll := ScrollContainer.new()
 	scroll.custom_minimum_size = Vector2(0, LIST_HEIGHT)
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED  ## No dialog should ever need a horizontal scrollbar — see TechTreeView's own note on this.
 	parent.add_child(scroll)
 	var list := VBoxContainer.new()
 	list.size_flags_horizontal = Control.SIZE_EXPAND_FILL

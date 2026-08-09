@@ -23,6 +23,8 @@ extends Panel
 
 signal closed
 
+var _layout: VBoxContainer
+
 ## (Display label, DisplaySettings property name) pairs — declaration
 ## order is display order. Grouped by surface (world view, then minimap)
 ## rather than DisplaySettings' own declaration order for readability here;
@@ -44,24 +46,33 @@ func _ready() -> void:
 	visible = false
 	HUDStyles.style_panel(self)
 
-	var layout := VBoxContainer.new()
-	layout.add_theme_constant_override("separation", 6)
-	layout.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT, Control.PRESET_MODE_MINSIZE, 8)
-	add_child(layout)
+	_layout = VBoxContainer.new()
+	_layout.add_theme_constant_override("separation", 6)
+	_layout.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT, Control.PRESET_MODE_MINSIZE, 8)
+	add_child(_layout)
 
 	var title := Label.new()
 	title.text = "Display"
 	HUDStyles.style_label(title, true)
-	layout.add_child(title)
+	_layout.add_child(title)
 
 	for option in OPTIONS:
-		layout.add_child(_build_row(option[0], option[1]))
+		_layout.add_child(_build_row(option[0], option[1]))
 
 	var close_button := Button.new()
 	close_button.text = "Close"
 	close_button.pressed.connect(close)
 	HUDStyles.style_button(close_button)
-	layout.add_child(close_button)
+	_layout.add_child(close_button)
+
+## MainHUD's own `_place_center()` reads this to size the panel to its real
+## content instead of trusting a hand-picked constant — see that function's
+## own doc comment. `_layout` (a VBoxContainer, a real Container subtype)
+## correctly reports its own combined minimum size from its children's
+## layout needs regardless of whatever rect it currently occupies, unlike
+## this Panel itself (Panel doesn't auto-size to children at all).
+func get_content_min_size() -> Vector2:
+	return _layout.get_combined_minimum_size()
 
 func open() -> void:
 	visible = true

@@ -47,6 +47,13 @@ extends Node
 signal building_placed(instance: BuildingInstance)
 signal building_removed(instance: BuildingInstance)
 signal placement_rejected(building_type: GameEnums.BuildingType, coord: Vector2i, reason: String)
+## User report ("building things... should take some amount of time"):
+## fires the moment a validated, paid-for placement is queued —
+## building_placed (above) now only fires once construction actually
+## finishes, `days` days later. See _construction_days() for how long.
+signal construction_started(building_type: GameEnums.BuildingType, coord: Vector2i, days: int)
+signal construction_progressed(coord: Vector2i, days_remaining: int)
+signal repair_started(instance: BuildingInstance, days: int)
 
 ## Design doc Phase 5.12. Fires on every damage_building() call, whether or
 ## not it actually ruins the building this time — mirrors
@@ -94,6 +101,18 @@ const SURPLUS_PRODUCTION_BONUS_MAX: float = 0.1   ## Cap on 2.10.4's production 
 const SURPLUS_PRODUCTION_BONUS_SLOPE: float = 0.2 ## Bonus grows this much per 1.0 of ratio above FOOD_SURPLUS_RATIO, capped at SURPLUS_PRODUCTION_BONUS_MAX.
 const POPULATION_REGROWTH_PER_DAY: int = 1        ## Flat per-instance regrowth toward population_provided while in surplus (2.10.4) — deliberately small and gradual, not an instant restock.
 
+## User report ("building things... should take some amount of time") —
+## construction/repair duration derived from total resource cost, same
+## "a placeholder number, not an architecture decision" framing every other
+## balancing constant in this project uses. Deliberately NOT stored per
+## BuildingDefinition (would mean hand-tuning 25+ individual entries for a
+## first pass); a cost-derived formula gives every building a reasonable,
+## consistent duration today and is trivial to override per-type later if a
+## specific one ever needs its own hand-picked value.
+const _DAYS_PER_COST_UNIT: float = 1.0 / 50.0
+const _MIN_CONSTRUCTION_DAYS: int = 1
+const _MAX_CONSTRUCTION_DAYS: int = 4
+
 @export var hex_grid_map_path: NodePath
 @export var resource_manager_path: NodePath
 ## Optional — Phase 2.11's DiscontentManager. Unset gracefully skips the
@@ -112,6 +131,19 @@ var _territory_controller: TerritoryController
 var _instances: Array[BuildingInstance] = []
 var _instances_by_hex: Dictionary = {}  # Vector2i -> Array[BuildingInstance]
 var _next_id: int = 1
+## Paid-for placements/repairs not yet finished — see place_building()/
+## repair_building() for how an entry is added and _process_pending_*()
+## below for how it's ticked down and completed. Each entry:
+## construction: {building_type, coord, local_position, days_remaining}
+## repair: {instance, days_remaining}
+## Known gap (documented, not silently shipped): NOT included in
+## SaveLoadManager's save/load round trip yet — a save/load mid-construction
+## currently loses the in-progress job entirely (the spent resources are
+## already gone; the building or repair just never completes). Flagged for
+## a follow-up pass rather than blocking this one on also touching
+## SaveGameData/SaveLoadManager.
+var _pending_construction: Array[Dictionary] = []
+var _pending_repair: Array[Dictionary] = []
 ## Exposed via get_starting_settlement_hexes() for WallManager.seed_starting_defenses()
 ## — the hex(es) making up the game's own free opening compound (Town Hall +
 ## Foundry, and the Farm + connecting corridor if one was found), so it
@@ -240,32 +272,23 @@ func seed_starting_buildings() -> void:
 	var foundry := BuildingCatalog.get_definition(GameEnums.BuildingType.CAST_IRON_FOUNDRY)
 	_register_instance(foundry, target.coord, _next_id, _STARTING_FOUNDRY_OFFSET, true)
 
+	# **Deliberately just the one core hex** (user report: "the game starts
+	# in this weird state where Manchester has many walls jutting out from
+	# everywhere... I just want a local area where the player has his few
+	# starting buildings to be walled off"). This used to extend to a whole
+	# HexPathfinder corridor out to the starting Farm so WallManager.
+	# seed_starting_defenses() would fence that too — technically correct
+	# (one connected perimeter around everything reachable) but produced a
+	# long, sprawling wall several hexes out from the actual settlement,
+	# with enough total segment length that hordes found and breached parts
+	# of it constantly. A compact single-hex perimeter around Town Hall is
+	# what "a local area... walled off" actually asked for; the Farm sits
+	# outside it, undefended, same as any other frontier resource building.
 	_starting_settlement_hexes = [target.coord]
 	var farm_hex := _find_starting_farm_hex(target.coord)
 	if farm_hex != _NO_FARM_HEX:
 		var farm := BuildingCatalog.get_definition(GameEnums.BuildingType.TENANT_FARM)
 		_register_instance(farm, farm_hex, _next_id, Vector2.ZERO, true)
-		# WallManager.seed_starting_defenses() walls the OUTER boundary of
-		# whatever this array holds, so the Farm needs to be reachable by an
-		# unbroken chain of passable hexes from Town Hall for that perimeter
-		# to actually be one connected loop rather than two separate rings.
-		# HexPathfinder.find_path() (Phase 5.5's shared strategic A*, real
-		# terrain-aware pathfinding, not a geometric guess) already
-		# guarantees every hex on the route is passable — a straight
-		# HexCoord.hex_line() was tried first and rejected: it's a pure
-		# geometric line with no awareness of the actual terrain, so it
-		# happily crossed genuinely impassable ground (Chat Moss again)
-		# and produced two disconnected rings instead of one perimeter.
-		# find_path() returns [] only if the farm is truly unreachable by
-		# any passable route at all, in which case the two endpoints alone
-		# still get fenced as two separate compounds — the same disclosed
-		# fallback as before, just now the actual last resort instead of
-		# the common case.
-		var corridor := HexPathfinder.find_path(_hex_grid_map, target.coord, farm_hex)
-		if not corridor.is_empty():
-			_starting_settlement_hexes = corridor
-		else:
-			_starting_settlement_hexes.append(farm_hex)
 
 func get_starting_settlement_hexes() -> Array[Vector2i]:
 	return _starting_settlement_hexes.duplicate()
@@ -324,11 +347,22 @@ func can_place_building(building_type: GameEnums.BuildingType, coord: Vector2i) 
 ## `local_position` is an offset from the hex's own center (Phase 2.5 Tactical
 ## view placement); leave it ZERO for hex-granularity placement (defaults to
 ## hex center — fine until a caller cares about exact positioning).
-func place_building(building_type: GameEnums.BuildingType, coord: Vector2i, local_position: Vector2 = Vector2.ZERO) -> BuildingInstance:
+##
+## Returns `true` once the placement is validated, paid for, and queued —
+## NOT once it's actually standing. Construction now takes real time (user
+## report): resources/storage/Energy are spent immediately (same "pay
+## upfront" convention as before — a player shouldn't be able to cancel out
+## of a started project for a refund), but the real BuildingInstance isn't
+## created — and building_placed doesn't fire — until
+## _process_pending_construction() below finishes counting down
+## _construction_days(). Returns `bool` rather than the (not-yet-existing)
+## BuildingInstance for exactly that reason; the one real caller
+## (BuildPlacementController) only ever checked this for truthiness anyway.
+func place_building(building_type: GameEnums.BuildingType, coord: Vector2i, local_position: Vector2 = Vector2.ZERO) -> bool:
 	var error := get_placement_error(building_type, coord)
 	if not error.is_empty():
 		placement_rejected.emit(building_type, coord, error)
-		return null
+		return false
 
 	var definition := BuildingCatalog.get_definition(building_type)
 	if _resource_manager:
@@ -337,7 +371,25 @@ func place_building(building_type: GameEnums.BuildingType, coord: Vector2i, loca
 			_resource_manager.add_storage_cap(resource_type, float(definition.storage_bonus[resource_type]))
 		_apply_construction_energy(definition)
 
-	return _register_instance(definition, coord, _next_id, local_position, true)
+	var days := _construction_days(definition)
+	_pending_construction.append({
+		"building_type": building_type,
+		"coord": coord,
+		"local_position": local_position,
+		"days_remaining": days,
+	})
+	construction_started.emit(building_type, coord, days)
+	return true
+
+## Total resource cost (all types summed 1:1, a rough-but-consistent proxy
+## for "how big a project is this") mapped to a whole number of days — see
+## _DAYS_PER_COST_UNIT's own doc comment for why this is derived rather
+## than hand-authored per building.
+func _construction_days(definition: BuildingDefinition) -> int:
+	var total := 0.0
+	for resource_type in definition.construction_cost:
+		total += float(definition.construction_cost[resource_type])
+	return clampi(ceili(total * _DAYS_PER_COST_UNIT), _MIN_CONSTRUCTION_DAYS, _MAX_CONSTRUCTION_DAYS)
 
 ## Shared instance-bookkeeping between a fresh place_building() (which has
 ## already validated placement and spent resources above) and
@@ -366,10 +418,10 @@ func _register_instance(definition: BuildingDefinition, coord: Vector2i, id: int
 ## point a future click-to-place UI (or the Tactical view) calls instead of
 ## working out hex coordinates itself. No UI calls this yet (Phase 6+); it
 ## exists now so precise placement has a home as soon as one does.
-func place_building_at_world(building_type: GameEnums.BuildingType, world_pos: Vector2) -> BuildingInstance:
+func place_building_at_world(building_type: GameEnums.BuildingType, world_pos: Vector2) -> bool:
 	if not _hex_grid_map:
 		placement_rejected.emit(building_type, Vector2i.ZERO, "No hex grid map wired to BuildingManager.")
-		return null
+		return false
 	var coord := _hex_grid_map.world_to_coord(world_pos)
 	var local_position := world_pos - HexCoord.axial_to_world(coord)
 	return place_building(building_type, coord, local_position)
@@ -488,6 +540,11 @@ func get_repair_error(instance: BuildingInstance) -> String:
 func can_repair_building(instance: BuildingInstance) -> bool:
 	return get_repair_error(instance).is_empty()
 
+## Same "pay upfront, finish later" shape place_building() now uses — see
+## that function's own doc comment. The ruin stays a ruin (rendering-wise,
+## same code-drawn silhouette as before) until
+## _process_pending_repair() below applies the actual restoration and
+## fires building_repaired, `days` days from now.
 func repair_building(instance: BuildingInstance) -> bool:
 	var error := get_repair_error(instance)
 	if not error.is_empty():
@@ -496,10 +553,9 @@ func repair_building(instance: BuildingInstance) -> bool:
 	if _resource_manager:
 		_resource_manager.spend(_repair_cost(instance.definition))
 		_apply_construction_energy(instance.definition)
-	instance.current_hp = instance.definition.get_max_hp()
-	instance.is_ruined = false
-	instance.current_population = instance.definition.population_provided
-	building_repaired.emit(instance)
+	var days := _construction_days(instance.definition)
+	_pending_repair.append({"instance": instance, "days_remaining": days})
+	repair_started.emit(instance, days)
 	return true
 
 func _repair_cost(definition: BuildingDefinition) -> Dictionary:
@@ -555,7 +611,40 @@ func load_save_entries(entries: Array[BuildingSaveEntry], next_id: int) -> void:
 		_register_instance(definition, entry.hex_coord, entry.id, entry.local_position, false, entry.current_population, entry.current_hp, entry.is_ruined)
 	_next_id = next_id
 
+## Ticks every queued construction/repair down by one day, completing (and
+## removing from the queue) anything that reaches zero. Runs before this
+## same day's upkeep/output tally below so a building finishing TODAY
+## already counts toward it — same "same-day" precedent damage/starvation
+## handling elsewhere in this method doesn't fight.
+func _process_pending_construction() -> void:
+	var still_pending: Array[Dictionary] = []
+	for job in _pending_construction:
+		job["days_remaining"] -= 1
+		if job["days_remaining"] <= 0:
+			var definition := BuildingCatalog.get_definition(job["building_type"])
+			_register_instance(definition, job["coord"], _next_id, job["local_position"], true)
+		else:
+			construction_progressed.emit(job["coord"], job["days_remaining"])
+			still_pending.append(job)
+	_pending_construction = still_pending
+
+func _process_pending_repair() -> void:
+	var still_pending: Array[Dictionary] = []
+	for job in _pending_repair:
+		job["days_remaining"] -= 1
+		var instance: BuildingInstance = job["instance"]
+		if job["days_remaining"] <= 0:
+			instance.current_hp = instance.definition.get_max_hp()
+			instance.is_ruined = false
+			instance.current_population = instance.definition.population_provided
+			building_repaired.emit(instance)
+		else:
+			still_pending.append(job)
+	_pending_repair = still_pending
+
 func _on_day_completed(_day_number: int) -> void:
+	_process_pending_construction()
+	_process_pending_repair()
 	if not _resource_manager:
 		return
 

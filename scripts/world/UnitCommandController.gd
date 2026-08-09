@@ -11,8 +11,8 @@ extends Node2D
 ##
 ## Left-click selects whatever's on a hex: a friendly unit first (mirrors
 ## the design doc's "click a unit to command it" RTS convention), else a
-## building projecting Military Zone of Control (in practice a Garrison —
-## see UnitManager's own doc comment) so it can be trained at. Right-click
+## building that can actually train units (BuildingDefinition.can_train_units
+## — a Garrison today) so it can be trained at. Right-click
 ## issues a Move order to the currently selected unit — standard RTS
 ## shorthand, and the natural counterpart to left-click-to-select. Escape
 ## deselects (and cancels an in-progress patrol recording first, same
@@ -141,16 +141,21 @@ func _select_at(coord: Vector2i) -> void:
 			_selection_ring.visible = true
 			unit_selected.emit(_selected_unit)
 			return
-	if _building_manager and _has_military_zoc_building(coord):
+	if _building_manager and _has_training_building(coord):
 		_selected_unit = null
 		_selection_ring.visible = false
 		building_selected.emit(coord)
 		return
 	clear_selection()
 
-func _has_military_zoc_building(coord: Vector2i) -> bool:
+## User report: the training panel was popping up for ANY Military-ZoC
+## building (Church Steeple Watchtower, Forward Ammo Dump, Searchlight
+## Tower all project it too, for lookout/logistics/illumination reasons
+## unrelated to training) — gated on BuildingDefinition.can_train_units
+## instead, see that flag's own doc comment.
+func _has_training_building(coord: Vector2i) -> bool:
 	for instance in _building_manager.get_buildings_at(coord):
-		if instance.definition.zoc_roles.has(GameEnums.ZoneOfControlType.MILITARY):
+		if instance.definition.can_train_units:
 			return true
 	return false
 

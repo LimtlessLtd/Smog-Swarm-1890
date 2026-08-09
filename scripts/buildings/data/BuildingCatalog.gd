@@ -152,6 +152,7 @@ static func _garrison() -> BuildingDefinition:
 	d.allowed_biomes = [GameEnums.BiomeType.URBAN]
 	d.requires_settlement = true
 	d.zoc_roles = [GameEnums.ZoneOfControlType.MILITARY]
+	d.can_train_units = true
 	return d
 
 # --- Industry & Extraction --------------------------------------------------

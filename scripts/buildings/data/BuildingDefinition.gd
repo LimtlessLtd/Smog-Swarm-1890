@@ -45,6 +45,16 @@ extends Resource
 
 @export var zoc_roles: Array[GameEnums.ZoneOfControlType] = []  ## Which Zone(s) of Control (Phase 2.3) this building projects, if any.
 
+## Whether UnitCommandController should open UnitPanelView's training panel
+## on a click. **Deliberately its own flag, not "does this project Military
+## ZoC"** — found during a real playtest that Church Steeple Watchtower,
+## Forward Ammo Dump, and Searchlight Tower all project Military ZoC too
+## (lookout/logistics/illumination roles, not training), so the training
+## panel was popping up for all four when only the Garrison actually trains
+## anyone. True only on Garrison today; a future dedicated Barracks-style
+## building would set it too.
+@export var can_train_units: bool = false
+
 ## Fog of War (Phase 2.6): hex-disk radius this building projects VISIBLE
 ## coverage over, centered on its own hex — 0 (the default) still means "at
 ## least its own hex is visible", not "no vision at all". Independent of
