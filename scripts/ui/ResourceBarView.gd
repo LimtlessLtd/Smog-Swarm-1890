@@ -34,6 +34,15 @@ func _ready() -> void:
 			var icon_rect := TextureRect.new()
 			icon_rect.texture = icon_texture
 			icon_rect.custom_minimum_size = Vector2(ICON_SIZE, ICON_SIZE)
+			# The AI-generated icons (assets/icons/README.md) are authored at
+			# 2048x2048. TextureRect's default expand_mode (EXPAND_KEEP_SIZE) makes
+			# get_minimum_size() return the *texture's* native size, which wins
+			# over custom_minimum_size above (the effective minimum is the max of
+			# the two) — without this, each icon forces its whole HBoxContainer,
+			# and the HUD around it, out to full source resolution.
+			# EXPAND_IGNORE_SIZE lets custom_minimum_size actually be the size,
+			# with STRETCH_KEEP_ASPECT_CENTERED scaling the texture down to fit it.
+			icon_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 			icon_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 			entry.add_child(icon_rect)
 		var label := Label.new()
