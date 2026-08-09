@@ -25,11 +25,15 @@ const PROP_RADIUS: Dictionary = {
 	GameEnums.PropType.REED: 10.0,  ## Reeds are sparse/thin — barely an obstacle, mostly a visual cue for wetland fringe.
 }
 
-## Bounding circle of `TacticalHexView`'s fixed 20x20 building footprint box
-## (half-extent 10.0 -> diagonal ~14.14), rounded up for clearance. One flat
-## radius for every building type — today's placement footprint doesn't
-## vary by category, so neither does this.
-const BUILDING_RADIUS: float = 16.0
+## Bounding circle of `TacticalHexView.BUILDING_HALF_SIZE`'s real-scale
+## building box (half-extent 5.128 -> center-to-corner half-diagonal
+## ~7.25), rounded up for clearance. **This constant had silently drifted
+## out of sync with the real box size across TWO prior building-box resizes
+## before this one (10 -> 35 -> 70, this comment still describing the
+## original 10) — re-synced now, not just for this pass's own resize.**
+## One flat radius for every building type — today's placement footprint
+## doesn't vary by category, so neither does this.
+const BUILDING_RADIUS: float = 8.0
 
 ## `.get(prop_type, ...)` with a sane fallback so a future GameEnums.PropType
 ## addition without a matching entry here degrades to "treated as an

@@ -678,7 +678,12 @@ func _update_defense_work_marker(marker: Node2D, segment: WallSegment) -> void:
 	# exists yet, unchanged from before this pass.
 	var texture := WallVisuals.defense_work_texture(segment.has_ditch, segment.has_oil_pit)
 	work.texture = texture
-	work.uv = PackedVector2Array([Vector2(0, 0), Vector2(1, 0), Vector2(1, 1), Vector2(0, 1)])
+	# Real bug fixed (see TacticalHexView.quad_uv()'s own doc comment):
+	# Polygon2D.uv is texture-PIXEL-space, not normalized 0..1 - this
+	# unit-square array only ever sampled a 1x1-pixel transparent
+	# corner, rendering this icon's fill invisible whenever a texture
+	# was set. Reuse the same shared fix.
+	work.uv = TacticalHexView.quad_uv(texture)
 	work.color = Color.WHITE if texture else WallVisuals.defense_work_color(segment.has_ditch, segment.has_oil_pit)
 
 ## --- Threat Meter (Phase 6.1) — world-view surface ---------------------
