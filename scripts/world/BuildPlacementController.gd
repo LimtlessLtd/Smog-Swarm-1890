@@ -119,8 +119,8 @@ func _attempt_placement(world_pos: Vector2) -> void:
 	if not _is_tactical_zoom():
 		_reject_player.play()  # 2.5.7: zoomed out — inert by design, no BuildingManager call at all.
 		return
-	var instance := _building_manager.place_building_at_world(_pending_type, world_pos)
-	if not instance:
+	var accepted := _building_manager.place_building_at_world(_pending_type, world_pos)
+	if not accepted:
 		return  # BuildingManager already emitted placement_rejected, which _on_placement_rejected plays the tone for.
 	# Shift-click stays in placement mode for rapid multi-placement of the
 	# same building type; a plain click places one and exits placement mode.

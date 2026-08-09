@@ -24,6 +24,7 @@ var _list: VBoxContainer
 
 func _ready() -> void:
 	custom_minimum_size = Vector2(260, 220)
+	horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED  ## No dialog should ever need a horizontal scrollbar — see TechTreeView's own note on this.
 	HUDStyles.style_panel(self)
 	_list = VBoxContainer.new()
 	_list.add_theme_constant_override("separation", 6)

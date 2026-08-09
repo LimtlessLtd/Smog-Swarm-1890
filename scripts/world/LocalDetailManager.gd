@@ -22,22 +22,37 @@ extends Node2D
 
 const DETAIL_RADIUS: int = 1  ## Hex disk radius hydrated around the camera; 1 = center + its 6 neighbors.
 
+## Tactical-scale multiplier over WallVisuals.line_width()'s own Strategic-
+## zoom values (3.0 + tier*2.0 world units — sized to read at Strategic's
+## zoomed-way-out scale). Same rescale reasoning as
+## TacticalHexView.BUILDING_HALF_SIZE's own doc comment: a Strategic-scale
+## line width against a 512-unit hex would be a hairline, not a wall.
+const WALL_TACTICAL_WIDTH_SCALE: float = 8.0
+
 @export var hex_grid_map_path: NodePath
 @export var building_manager_path: NodePath
 @export var logistics_network_path: NodePath
 @export var camera_path: NodePath
 @export var fog_of_war_path: NodePath
+## Optional — Tactical-zoom wall rendering (user report: "I can't see the
+## walls on the maps"). Unset means walls simply don't render up close,
+## same "gracefully skip it" convention as every other optional dependency
+## here; StrategicOverlayManager's own thin markers are unaffected either way.
+@export var wall_manager_path: NodePath
 
 var _hex_grid_map: HexGridMap
 var _building_manager: BuildingManager
 var _logistics_network: LogisticsNetwork
 var _camera: CameraController
 var _fog_of_war: FogOfWarManager
+var _wall_manager: WallManager
 
 var _is_tactical_mode: bool = false
 var _fidelity: GameEnums.TacticalFidelity = GameEnums.TacticalFidelity.HIGH  ## Phase 2.5.5 — pushed to every hydrated TacticalHexView; see _on_fidelity_changed().
 var _last_centered_coord: Vector2i = Vector2i.ZERO
 var _tactical_views: Dictionary = {}  # Vector2i -> TacticalHexView
+var _wall_layer: Node2D
+var _wall_markers: Dictionary = {}  # int (WallSegment.id) -> Line2D
 
 func _ready() -> void:
 	if hex_grid_map_path != NodePath():
@@ -59,6 +74,19 @@ func _ready() -> void:
 		_fog_of_war = get_node(fog_of_war_path)
 		_fog_of_war.fog_state_changed.connect(_on_fog_state_changed)
 
+	_wall_layer = Node2D.new()
+	_wall_layer.name = "TacticalWallLayer"
+	_wall_layer.visible = false  # Only ever shown while _is_tactical_mode — see _on_tactical_mode_changed().
+	add_child(_wall_layer)
+	if wall_manager_path != NodePath():
+		_wall_manager = get_node(wall_manager_path)
+		_wall_manager.wall_segment_placed.connect(_on_wall_segment_placed)
+		_wall_manager.wall_segment_upgraded.connect(_on_wall_segment_state_changed)
+		_wall_manager.wall_segment_breached.connect(_on_wall_segment_state_changed)
+		_wall_manager.wall_segment_repaired.connect(_on_wall_segment_state_changed)
+		for segment in _wall_manager.get_segments():
+			_on_wall_segment_placed(segment)
+
 func _process(_delta: float) -> void:
 	if not _is_tactical_mode or not _hex_grid_map or not _camera:
 		return
@@ -69,6 +97,7 @@ func _process(_delta: float) -> void:
 
 func _on_tactical_mode_changed(is_tactical: bool) -> void:
 	_is_tactical_mode = is_tactical
+	_wall_layer.visible = is_tactical  ## Strategic keeps its own thin StrategicOverlayManager markers; this thicker layer is Tactical-only, same hard-cut precedent CameraController's own zoom threshold already sets everywhere else.
 	if not is_tactical:
 		_dehydrate_all()
 		return
@@ -201,3 +230,43 @@ func _on_fog_state_changed(coord: Vector2i, state: GameEnums.FogState) -> void:
 		_tactical_views[coord].set_fog_state(state)
 	if _is_tactical_mode:
 		_refresh_hydrated_neighborhood(_last_centered_coord)
+
+## --- Tactical-zoom wall rendering (user report: walls were invisible) ------
+##
+## Mirrors StrategicOverlayManager's own wall-marker shape (a Line2D from
+## hex_a's world center to hex_b's, recolored in place on
+## placed/upgraded/breached/repaired) almost exactly — same geometry is
+## correct at any zoom, a wall really does run between two hex centers
+## through their shared edge. The only real difference is
+## WALL_TACTICAL_WIDTH_SCALE: WallVisuals.line_width() was tuned to read at
+## Strategic's zoomed-way-out scale, which is a hairline against a 512-unit
+## Tactical hex — see that constant's own doc comment. No fog-of-war/
+## hydration gating (matching StrategicOverlayManager's own precedent for
+## walls specifically — "a wall is always the player's own construction,
+## same as a building; there's nothing to spot about your own perimeter"):
+## _wall_layer's visibility alone (Tactical-mode-only) is enough gating.
+func _on_wall_segment_placed(segment: WallSegment) -> void:
+	var marker := _build_wall_marker(segment)
+	_wall_layer.add_child(marker)
+	_wall_markers[segment.id] = marker
+
+func _on_wall_segment_state_changed(segment: WallSegment) -> void:
+	var marker: Line2D = _wall_markers.get(segment.id)
+	if marker:
+		_apply_wall_segment_look(marker, segment)
+
+func _build_wall_marker(segment: WallSegment) -> Line2D:
+	var body := Line2D.new()
+	body.points = PackedVector2Array([HexCoord.axial_to_world(segment.hex_a), HexCoord.axial_to_world(segment.hex_b)])
+	_apply_wall_segment_look(body, segment)
+	return body
+
+func _apply_wall_segment_look(body: Line2D, segment: WallSegment) -> void:
+	var breached := segment.is_breached()
+	var texture := WallVisuals.tier_texture(segment.tier) if not breached else null
+	body.texture = texture
+	body.texture_mode = Line2D.LINE_TEXTURE_TILE
+	body.default_color = Color.WHITE if texture else (WallVisuals.breached_color() if breached else (WallVisuals.gate_color() if segment.is_gate else WallVisuals.tier_color(segment.tier)))
+	body.width = WallVisuals.line_width(segment.tier, breached) * WALL_TACTICAL_WIDTH_SCALE
+	var is_legacy := _wall_manager != null and _wall_manager.is_legacy_segment(segment)
+	body.modulate = WallVisuals.legacy_modulate() if is_legacy else WallVisuals.outer_modulate()

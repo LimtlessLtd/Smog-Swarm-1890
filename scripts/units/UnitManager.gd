@@ -23,13 +23,17 @@ extends Node
 ## project, applied here to keep "who exists" and "what happens when they
 ## fight" from becoming one tangled class.
 ##
-## Trained at any building projecting the MILITARY Zone-of-Control role — in
+## Trained at any building with BuildingDefinition.can_train_units — in
 ## practice just the Garrison today (the design doc's own "Barracks" is this
 ## same building; no separate BuildingType exists for it — see Phase 2.3's
 ## "Unlocks major wall fortifications and Barracks for unit recruitment").
-## Training is instant once paid, no queue/duration — matches
-## BuildingManager.place_building()'s own "no construction time" precedent;
-## a training duration is future balancing work, not an architecture gap.
+## **Training now takes real time** (user report, superseding this class's
+## earlier "instant once paid" decision): resources are spent immediately on
+## a validated request, but the unit itself isn't registered — and
+## unit_trained doesn't fire — until _process_pending_training() below
+## finishes counting down _training_days(), mirroring
+## BuildingManager.place_building()'s own queue exactly (see that function's
+## doc comment for the full reasoning, including the still-open save/load gap).
 ##
 ## Phase 5.6's Retrain order lives here too (a lifecycle operation — it
 ## swaps `UnitInstance.definition` and rescales HP, the same kind of thing
@@ -58,11 +62,26 @@ signal unit_removed(instance: UnitInstance)
 signal training_rejected(unit_type: GameEnums.UnitType, coord: Vector2i, reason: String)
 signal unit_retrained(instance: UnitInstance)
 signal retrain_rejected(instance: UnitInstance, new_type: GameEnums.UnitType, reason: String)
+## User report ("training units... should take some amount of time") —
+## unit_trained/unit_retrained (above) now only fire once a queued job
+## actually finishes; these fire the moment it's accepted and paid for.
+signal training_started(unit_type: GameEnums.UnitType, coord: Vector2i, days: int)
+signal retrain_started(instance: UnitInstance, new_type: GameEnums.UnitType, days: int)
 
 ## Design doc: "50% of that unit's normal training cost (exact % subject to
 ## balancing later)" — a placeholder number, not an architecture decision,
 ## same framing as every other balancing constant in this project.
 const RETRAIN_COST_FRACTION: float = 0.5
+
+## User report ("training units... should take some amount of time") —
+## tier-derived duration, same "placeholder balancing number" framing
+## RETRAIN_COST_FRACTION above already uses. Tier is already this project's
+## own proxy for "how advanced a unit is" (T0 Melee/Ranged/Special through
+## T5), so it doubles as a training-time proxy too rather than inventing a
+## second per-unit cost field just for this.
+const _TRAINING_DAYS_PER_TIER: int = 1
+const _MAX_TRAINING_DAYS: int = 4
+const _RETRAIN_DAYS_FRACTION: float = 0.5  ## Same halving RETRAIN_COST_FRACTION already applies to resource cost — retraining an existing veteran is faster than training a recruit from nothing, not just cheaper.
 
 @export var hex_grid_map_path: NodePath
 @export var building_manager_path: NodePath
@@ -81,6 +100,15 @@ var _resource_manager: ResourceManager
 var _tech_manager: TechManager
 var _instances: Array[UnitInstance] = []
 var _next_id: int = 1
+## Paid-for training/retraining not yet finished — see train_unit()/
+## retrain_unit() for how an entry is added, _process_pending_training()/
+## _process_pending_retrain() for how it's ticked down and completed.
+## training: {unit_type, coord, days_remaining}
+## retrain: {instance, new_type, days_remaining}
+## Same known gap as BuildingManager's own equivalent queues: not yet part
+## of the save/load round trip (flagged there, not repeated per-file).
+var _pending_training: Array[Dictionary] = []
+var _pending_retrain: Array[Dictionary] = []
 
 func _ready() -> void:
 	if hex_grid_map_path != NodePath():
@@ -121,8 +149,8 @@ func get_training_error(unit_type: GameEnums.UnitType, coord: Vector2i) -> Strin
 		return "No hex grid map wired to UnitManager."
 	if not _hex_grid_map.has_cell(coord):
 		return "%s is outside the map." % coord
-	if not _has_military_zoc_source(coord):
-		return "%s can only be trained at a building projecting Military Zone of Control (a Garrison)." % definition.display_name
+	if not _get_training_building(coord):
+		return "%s can only be trained at a building that trains units (a Garrison)." % definition.display_name
 	if _resource_manager and not _resource_manager.can_afford(definition.training_cost):
 		return "Not enough resources to train %s." % definition.display_name
 	return ""
@@ -130,17 +158,45 @@ func get_training_error(unit_type: GameEnums.UnitType, coord: Vector2i) -> Strin
 func can_train_unit(unit_type: GameEnums.UnitType, coord: Vector2i) -> bool:
 	return get_training_error(unit_type, coord).is_empty()
 
-func train_unit(unit_type: GameEnums.UnitType, coord: Vector2i) -> UnitInstance:
+## Returns `true` once the request is validated, paid for, and queued — NOT
+## once the unit actually exists. See this class's own doc comment on why
+## training now takes real time; the one real caller
+## (UnitCommandController.train_at_selected_building()) never read the
+## returned UnitInstance anyway, so `bool` (accepted or not) is all this
+## needs to report now.
+func train_unit(unit_type: GameEnums.UnitType, coord: Vector2i) -> bool:
 	var error := get_training_error(unit_type, coord)
 	if not error.is_empty():
 		training_rejected.emit(unit_type, coord, error)
-		return null
+		return false
 
 	var definition := UnitCatalog.get_definition(unit_type)
 	if _resource_manager:
 		_resource_manager.spend(definition.training_cost)
 
-	var instance := _register_instance(definition, coord, _next_id, true)
+	var days := mini(definition.tier * _TRAINING_DAYS_PER_TIER + _TRAINING_DAYS_PER_TIER, _MAX_TRAINING_DAYS)
+	_pending_training.append({"unit_type": unit_type, "coord": coord, "days_remaining": days})
+	training_started.emit(unit_type, coord, days)
+	return true
+
+## Ticks every queued job down by one day, completing (spawning the real
+## unit / applying the retrain) anything that reaches zero — mirrors
+## BuildingManager._process_pending_construction()'s own shape exactly.
+func _process_pending_training() -> void:
+	var still_pending: Array[Dictionary] = []
+	for job in _pending_training:
+		job["days_remaining"] -= 1
+		if job["days_remaining"] <= 0:
+			_complete_training(job["unit_type"], job["coord"])
+		else:
+			still_pending.append(job)
+	_pending_training = still_pending
+
+func _complete_training(unit_type: GameEnums.UnitType, coord: Vector2i) -> void:
+	var definition := UnitCatalog.get_definition(unit_type)
+	var training_building := _get_training_building(coord)
+	var spawn_position := _spawn_local_position(coord, training_building.local_position if training_building else Vector2.ZERO)
+	var instance := _register_instance(definition, coord, _next_id, true, -1.0, GameEnums.UnitOrderType.HOLD, Vector2i.ZERO, [], 0, spawn_position)
 	# Design doc 5.6: "rally point on newly-trained units" — a fresh unit
 	# with no rally point registered for its training building just stays
 	# put (order defaults to HOLD, see UnitInstance). UnitOrderController's
@@ -149,7 +205,29 @@ func train_unit(unit_type: GameEnums.UnitType, coord: Vector2i) -> UnitInstance:
 	if _rally_points.has(coord):
 		instance.order = GameEnums.UnitOrderType.MOVE
 		instance.move_target = _rally_points[coord]
-	return instance
+
+## Spawn clearance outside a training building's own footprint (user
+## report: newly-trained units were rendering stacked exactly on top of the
+## Garrison) — just past TacticalHexView.BUILDING_HALF_SIZE's own value so a
+## fresh unit doesn't visually overlap the building it just came from.
+## Deliberately NOT full pathfinding-aware "nearest walkable point" (this
+## project's Phase 5.5 shared pathfinder is a real, larger, still-unbuilt
+## system) — a deterministic ring around the training building is a
+## reasonable, self-contained approximation for where an "outside the front
+## door" spawn should land, same scope as _resolved_building_position()'s
+## own ring fallback in TacticalHexView for stacked buildings.
+const _SPAWN_CLEARANCE: float = 60.0
+const _SPAWN_RING_STEP: float = 24.0  ## Extra radius per already-occupied spawn slot, so several units trained in a row fan out around the building instead of stacking on each other.
+const _SPAWN_RING_SLOTS: int = 6
+
+func _spawn_local_position(coord: Vector2i, training_building_position: Vector2) -> Vector2:
+	var already_near := 0
+	for instance in _instances:
+		if instance.hex_coord == coord and instance.local_position.distance_to(training_building_position) < _SPAWN_CLEARANCE + _SPAWN_RING_STEP * 6.0:
+			already_near += 1
+	var angle := TAU * float(already_near % _SPAWN_RING_SLOTS) / float(_SPAWN_RING_SLOTS)
+	var radius := _SPAWN_CLEARANCE + _SPAWN_RING_STEP * float(already_near / _SPAWN_RING_SLOTS)
+	return training_building_position + Vector2(cos(angle), sin(angle)) * radius
 
 func remove_unit(instance: UnitInstance) -> void:
 	_instances.erase(instance)
@@ -197,6 +275,11 @@ func get_retrain_error(instance: UnitInstance, new_type: GameEnums.UnitType) -> 
 func can_retrain_unit(instance: UnitInstance, new_type: GameEnums.UnitType) -> bool:
 	return get_retrain_error(instance, new_type).is_empty()
 
+## Same "pay upfront, finish later" shape train_unit() now uses. The unit
+## keeps fighting/holding/whatever its current order is while retraining is
+## in progress (there's no "unavailable" state to model — it just isn't yet
+## the new type); unit_retrained fires, and the definition/HP actually
+## swap, once _process_pending_retrain() below finishes counting down.
 func retrain_unit(instance: UnitInstance, new_type: GameEnums.UnitType) -> bool:
 	var error := get_retrain_error(instance, new_type)
 	if not error.is_empty():
@@ -207,15 +290,32 @@ func retrain_unit(instance: UnitInstance, new_type: GameEnums.UnitType) -> bool:
 	if _resource_manager:
 		_resource_manager.spend(_retrain_cost(new_definition))
 
+	var days := maxi(1, ceili(float(mini(new_definition.tier * _TRAINING_DAYS_PER_TIER + _TRAINING_DAYS_PER_TIER, _MAX_TRAINING_DAYS)) * _RETRAIN_DAYS_FRACTION))
+	_pending_retrain.append({"instance": instance, "new_type": new_type, "days_remaining": days})
+	retrain_started.emit(instance, new_type, days)
+	return true
+
+func _process_pending_retrain() -> void:
+	var still_pending: Array[Dictionary] = []
+	for job in _pending_retrain:
+		job["days_remaining"] -= 1
+		if job["days_remaining"] <= 0:
+			_complete_retrain(job["instance"], job["new_type"])
+		else:
+			still_pending.append(job)
+	_pending_retrain = still_pending
+
+func _complete_retrain(instance: UnitInstance, new_type: GameEnums.UnitType) -> void:
+	if not _instances.has(instance):
+		return  ## The unit was lost in combat while retraining was in progress — nothing left to complete.
+	var new_definition := UnitCatalog.get_definition(new_type)
 	# Carries over relative damage state rather than a free full heal on
 	# retrain — a unit at half health before retraining is at half health
 	# (of its NEW, larger max_hp) after, not topped up for free.
 	var hp_fraction := instance.current_hp / instance.definition.max_hp if instance.definition.max_hp > 0.0 else 1.0
 	instance.definition = new_definition
 	instance.current_hp = new_definition.max_hp * hp_fraction
-
 	unit_retrained.emit(instance)
-	return true
 
 func _retrain_cost(new_definition: UnitDefinition) -> Dictionary:
 	var cost: Dictionary = {}
@@ -240,13 +340,24 @@ func _register_instance(definition: UnitDefinition, coord: Vector2i, id: int, ad
 	unit_trained.emit(instance)
 	return instance
 
-func _has_military_zoc_source(coord: Vector2i) -> bool:
+## Found alongside a user report that UnitPanelView's training panel was
+## popping up for buildings that can't actually train anyone: this
+## VALIDATION check had the exact same bug (any Military-ZoC building —
+## Watchtower, Ammo Dump, Searchlight Tower too, not just Garrison — used
+## to pass here for lookout/logistics/illumination reasons unrelated to
+## training) it was just never caught because the only training-capable
+## building anyone had actually placed in testing was a Garrison. Gated on
+## BuildingDefinition.can_train_units now, same flag/fix as
+## UnitCommandController._has_training_building(). Returns the instance
+## (not just a bool) so train_unit() can also read its local_position for
+## _spawn_local_position() below, rather than a second near-identical query.
+func _get_training_building(coord: Vector2i) -> BuildingInstance:
 	if not _building_manager:
-		return false
+		return null
 	for instance in _building_manager.get_buildings_at(coord):
-		if instance.definition.zoc_roles.has(GameEnums.ZoneOfControlType.MILITARY):
-			return true
-	return false
+		if instance.definition.can_train_units:
+			return instance
+	return null
 
 ## Daily Gunpowder upkeep tally (UnitDefinition.daily_upkeep, only nonzero
 ## for requires_gunpowder units) — ResourceManager.apply_daily_flow() with
@@ -258,6 +369,8 @@ func _has_military_zoc_source(coord: Vector2i) -> bool:
 ## reading the stockpile fresh rather than caching a "shortfall happened"
 ## flag from today's tally.
 func _on_day_completed(_day_number: int) -> void:
+	_process_pending_training()
+	_process_pending_retrain()
 	if not _resource_manager or _instances.is_empty():
 		return
 	var consumed: Dictionary = {}

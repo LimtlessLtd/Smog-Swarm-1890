@@ -63,7 +63,7 @@ const TIME_CONTROLS_WIDTH := 520.0  ## Widened for Phase 5.1's date + phase coun
 const SAVE_LOAD_WIDTH := 220.0
 const TECH_BAR_WIDTH := 150.0
 const DISPLAY_BAR_WIDTH := 150.0
-const BUILD_MENU_SIZE := Vector2(260.0, 260.0)
+const BUILD_MENU_SIZE := Vector2(320.0, 300.0)  ## Matches BuildMenuView's own custom_minimum_size (Phase 6.1 tab rework) — wide enough for its 4 category tabs, tall enough that a short category's list doesn't feel cramped.
 const MINIMAP_SIZE := Vector2(220.0, 160.0)
 const UNIT_PANEL_SIZE := Vector2(260.0, 260.0)
 const SAVE_LOAD_VIEW_SIZE := Vector2(320.0, 320.0)
@@ -93,6 +93,12 @@ func _ready() -> void:
 	if building_manager_path != NodePath():
 		_building_manager = get_node(building_manager_path)
 		_building_manager.placement_rejected.connect(_on_placement_rejected)
+		# User report: building/repair now take real time (BuildingManager's
+		# own doc comment) — without a toast at the moment a click is
+		# accepted, spending resources with nothing else visibly happening
+		# would read as broken, not "in progress."
+		_building_manager.construction_started.connect(_on_construction_started)
+		_building_manager.repair_started.connect(_on_building_repair_started)
 	if save_load_manager_path != NodePath():
 		_save_load_manager = get_node(save_load_manager_path)
 		_save_load_manager.game_saved.connect(_on_game_saved)
@@ -110,6 +116,8 @@ func _ready() -> void:
 	var unit_manager: UnitManager = null
 	if unit_manager_path != NodePath():
 		unit_manager = get_node(unit_manager_path)
+		unit_manager.training_started.connect(_on_training_started)
+		unit_manager.retrain_started.connect(_on_retrain_started)
 
 	var hex_grid_map: HexGridMap = null
 	if hex_grid_map_path != NodePath():
@@ -411,16 +419,51 @@ func _place_bottom_wide(control: Control) -> void:
 	control.offset_bottom = -MARGIN
 	control.offset_top = -MARGIN - ROW_HEIGHT
 
-## Fixed-`width` strip pinned to the top-right corner, `row` rows down.
-func _place_top_right(control: Control, width: float, row: int) -> void:
+## Strip pinned to the top-right corner, `row` rows down — self-sizes to its
+## own content's real width rather than trusting a hand-picked constant.
+## `fallback_width` only matters for the single frame before that
+## measurement lands (children don't exist to measure yet at the moment
+## this is called from _build_*()); immediately after, a one-shot deferred
+## pass re-measures get_combined_minimum_size() and re-anchors to it. This
+## is the actual fix for the family of "TimeControlsView's speed buttons /
+## SaveLoadBar's Browse Saves button ran off the right edge of a 1920px
+## screen" bugs a real playtest caught — TIME_CONTROLS_WIDTH/SAVE_LOAD_WIDTH
+## were both hand-picked guesses that fell behind the first time a button
+## got added or re-labelled; auto-sizing can't go stale the same way.
+##
+## Deferred via `get_tree().process_frame` (a full frame later), not
+## `call_deferred` alone — `call_deferred` still fires within the SAME
+## frame's deferred-call flush, which is exactly the timing this class's own
+## header comment already documents as too early for
+## get_combined_minimum_size() to be valid right after `add_child()`.
+func _place_top_right(control: Control, fallback_width: float, row: int) -> void:
 	control.anchor_left = 1.0
 	control.anchor_right = 1.0
 	control.anchor_top = 0.0
 	control.anchor_bottom = 0.0
 	control.offset_right = -MARGIN
-	control.offset_left = -MARGIN - width
+	control.offset_left = -MARGIN - fallback_width
 	control.offset_top = MARGIN + row * (ROW_HEIGHT + MARGIN)
 	control.offset_bottom = control.offset_top + ROW_HEIGHT
+	# A fresh lambda per call, NOT `_resize_top_right.bind(control)` on a
+	# shared named method: four separate rows (TimeControls/SaveLoadBar/
+	# TechBar/DisplayBar) all resolving through the same method+signal
+	# within the same _ready() frame first threw "already connected"
+	# (Godot's connect() dedupes by (object, method), ignoring the bound
+	# argument), and even with CONNECT_REFERENCE_COUNTED added to silence
+	# that, only the FIRST of the four ever actually fired — confirmed by
+	# an actual windowed screenshot (1000x button fixed, Browse Saves
+	# still clipped) after a --headless run alone reported zero errors,
+	# not by reasoning about it. Each `func():` literal below is its own
+	# distinct Callable even though the source is identical, so none of
+	# this dedup logic ever engages in the first place.
+	get_tree().process_frame.connect(func() -> void:
+		if not is_instance_valid(control):
+			return
+		var real_width := control.get_combined_minimum_size().x
+		if real_width > 0.0:
+			control.offset_left = control.offset_right - real_width
+	, CONNECT_ONE_SHOT)
 
 ## Fixed-`size` rect pinned to the top-left corner, below the top-wide
 ## resource bar/mode label strip (2 rows tall) — UnitPanelView's own spot,
@@ -458,18 +501,50 @@ func _place_bottom_right(control: Control, size: Vector2) -> void:
 	control.offset_bottom = -MARGIN
 	control.offset_top = -MARGIN - size.y
 
-## Fixed-`size` rect centered on screen — SaveLoadView's own spot, the
-## first HUD element here that isn't pinned to a corner/edge (it's a
-## toggleable dialog, not an always-visible panel like everything above).
-func _place_center(control: Control, size: Vector2) -> void:
+## Rect centered on screen — SaveLoadView's own spot, the first HUD element
+## here that isn't pinned to a corner/edge (it's a toggleable dialog, not an
+## always-visible panel like everything above). Self-sizes to real content
+## the same way _place_top_right() does (see that function's own doc
+## comment) whenever `control` exposes get_content_min_size()
+## (DisplayOptionsView/SaveLoadView/TechTreeView all do) — this is what
+## actually fixes "Close renders past the bottom of the panel" for the
+## first two: DISPLAY_OPTIONS_VIEW_SIZE/SAVE_LOAD_VIEW_SIZE were both
+## hand-picked guesses that fell behind the real content (an extra
+## checkbox, a taller list); auto-sizing can't go stale the same way.
+## `fallback_size` only matters for the single frame before that
+## measurement lands.
+func _place_center(control: Control, fallback_size: Vector2) -> void:
 	control.anchor_left = 0.5
 	control.anchor_right = 0.5
 	control.anchor_top = 0.5
 	control.anchor_bottom = 0.5
-	control.offset_left = -size.x / 2.0
-	control.offset_right = size.x / 2.0
-	control.offset_top = -size.y / 2.0
-	control.offset_bottom = size.y / 2.0
+	control.offset_left = -fallback_size.x / 2.0
+	control.offset_right = fallback_size.x / 2.0
+	control.offset_top = -fallback_size.y / 2.0
+	control.offset_bottom = fallback_size.y / 2.0
+	if control.has_method("get_content_min_size"):
+		# A fresh lambda per call, not a shared bound method — see
+		# _place_top_right()'s own note on why (three panels here —
+		# SaveLoadView/TechTreeView/DisplayOptionsView — resolving through
+		# one shared method+signal hit the exact same "only the first one
+		# actually fires" problem).
+		get_tree().process_frame.connect(func() -> void:
+			if not is_instance_valid(control):
+				return
+			var content: Vector2 = control.get_content_min_size()
+			if content.x <= 0.0 or content.y <= 0.0:
+				return
+			# HUDStyles.make_panel_stylebox()'s own content_margin_* (10
+			# left/right, 8 top/bottom) — the panel background needs to
+			# extend that far past the inner layout on every side, or
+			# content would render flush against (or outside) the panel's
+			# own border.
+			var size := content + Vector2(20.0, 16.0)
+			control.offset_left = -size.x / 2.0
+			control.offset_right = size.x / 2.0
+			control.offset_top = -size.y / 2.0
+			control.offset_bottom = size.y / 2.0
+		, CONNECT_ONE_SHOT)
 
 func _on_building_selected(building_type: GameEnums.BuildingType) -> void:
 	if _build_placement_controller:
@@ -485,6 +560,25 @@ func _on_placement_ended() -> void:
 
 func _on_placement_rejected(_building_type: GameEnums.BuildingType, _coord: Vector2i, reason: String) -> void:
 	_show_toast(reason)
+
+func _on_construction_started(building_type: GameEnums.BuildingType, _coord: Vector2i, days: int) -> void:
+	var definition := BuildingCatalog.get_definition(building_type)
+	var display_name := definition.display_name if definition else "Building"
+	_show_toast("%s under construction — ready in %d day%s." % [display_name, days, "" if days == 1 else "s"])
+
+func _on_building_repair_started(instance: BuildingInstance, days: int) -> void:
+	var display_name := instance.definition.display_name if instance and instance.definition else "Building"
+	_show_toast("Repairing %s — ready in %d day%s." % [display_name, days, "" if days == 1 else "s"])
+
+func _on_training_started(unit_type: GameEnums.UnitType, _coord: Vector2i, days: int) -> void:
+	var definition := UnitCatalog.get_definition(unit_type)
+	var display_name := definition.display_name if definition else "Unit"
+	_show_toast("Training %s — ready in %d day%s." % [display_name, days, "" if days == 1 else "s"])
+
+func _on_retrain_started(_instance: UnitInstance, new_type: GameEnums.UnitType, days: int) -> void:
+	var definition := UnitCatalog.get_definition(new_type)
+	var display_name := definition.display_name if definition else "unit"
+	_show_toast("Retraining into %s — ready in %d day%s." % [display_name, days, "" if days == 1 else "s"])
 
 func _on_quick_save_pressed() -> void:
 	if _save_load_manager:

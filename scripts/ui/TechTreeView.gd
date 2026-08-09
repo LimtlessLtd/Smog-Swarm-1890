@@ -39,34 +39,50 @@ const DISPLAY_ORDER: Array[StringName] = [
 
 var _tech_manager: TechManager
 var _list: VBoxContainer
+var _layout: VBoxContainer
+var _scroll: ScrollContainer
 
 func _ready() -> void:
 	visible = false
 	HUDStyles.style_panel(self)
 
-	var layout := VBoxContainer.new()
-	layout.add_theme_constant_override("separation", 6)
-	layout.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT, Control.PRESET_MODE_MINSIZE, 8)
-	add_child(layout)
+	_layout = VBoxContainer.new()
+	_layout.add_theme_constant_override("separation", 6)
+	_layout.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT, Control.PRESET_MODE_MINSIZE, 8)
+	add_child(_layout)
 
 	var title := Label.new()
 	title.text = "Technology"
 	HUDStyles.style_label(title, true)
-	layout.add_child(title)
+	_layout.add_child(title)
 
-	var scroll := ScrollContainer.new()
-	scroll.custom_minimum_size = Vector2(0, LIST_HEIGHT)
-	layout.add_child(scroll)
+	_scroll = ScrollContainer.new()
+	_scroll.custom_minimum_size = Vector2(0, LIST_HEIGHT)
+	_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED  ## User report: description text was running off the right edge into a horizontal scrollbar instead of wrapping — disabling horizontal scroll forces children to actually respect this container's width, which is what makes autowrap_mode below work at all.
+	_layout.add_child(_scroll)
 	_list = VBoxContainer.new()
 	_list.add_theme_constant_override("separation", 8)
 	_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	scroll.add_child(_list)
+	_scroll.add_child(_list)
 
 	var close_button := Button.new()
 	close_button.text = "Close"
 	close_button.pressed.connect(close)
 	HUDStyles.style_button(close_button)
-	layout.add_child(close_button)
+	_layout.add_child(close_button)
+
+## MainHUD's own `_place_center()` reads this to size the panel to its real
+## content instead of trusting a hand-picked constant — see
+## DisplayOptionsView.get_content_min_size()'s own doc comment for why
+## (same reasoning, same pattern). Unlike that panel, `_scroll`'s own
+## LIST_HEIGHT is intentionally fixed (the tech list can outgrow the panel
+## by design — that's what the internal scrollbar is for), so this reports
+## _layout's minimum size AS IF _scroll only needed LIST_HEIGHT, not its
+## potentially-much-taller full content — get_combined_minimum_size()
+## already does exactly that for a ScrollContainer with a custom_minimum_size
+## set, so no special-casing is needed here beyond just asking _layout.
+func get_content_min_size() -> Vector2:
+	return _layout.get_combined_minimum_size()
 
 func setup(tech_manager: TechManager) -> void:
 	_tech_manager = tech_manager

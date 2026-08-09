@@ -149,6 +149,7 @@ building_manager_path = NodePath("../../BuildingManager")
 logistics_network_path = NodePath("../../LogisticsNetwork")
 camera_path = NodePath("../../CameraController")
 fog_of_war_path = NodePath("../../FogOfWarManager")
+wall_manager_path = NodePath("../../WallManager")
 
 [node name="StrategicOverlayManager" parent="WorldRoot" instance=ExtResource("7")]
 hex_grid_map_path = NodePath("../HexGridMap")
