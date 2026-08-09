@@ -10,14 +10,31 @@ extends Node2D
 ## 6+"). This is that Phase 6 piece.
 ##
 ## Left-click selects whatever's on a hex: a friendly unit first (mirrors
-## the design doc's "click a unit to command it" RTS convention), else a
-## building that can actually train units (BuildingDefinition.can_train_units
-## — a Garrison today) so it can be trained at. Right-click
-## issues a Move order to the currently selected unit — standard RTS
-## shorthand, and the natural counterpart to left-click-to-select. Escape
-## deselects (and cancels an in-progress patrol recording first, same
-## "cancel the more specific mode first" precedent BuildPlacementController
-## already sets for Shift-click chaining vs. a plain click).
+## the design doc's "click a unit to command it" RTS convention), else the
+## nearest wall segment if the click landed close to one, else the nearest
+## building on that hex (any type, not just training ones — see below).
+## Right-click issues a Move order to the currently selected unit —
+## standard RTS shorthand, and the natural counterpart to left-click-to-
+## select. Escape deselects (and cancels an in-progress patrol recording
+## first, same "cancel the more specific mode first" precedent
+## BuildPlacementController already sets for Shift-click chaining vs. a
+## plain click).
+##
+## **Real bug fixed (player report: "How do I select a wall to repair it?
+## Same goes for all the buildings.") — selection used to be building-
+## specific and training-only.** `_select_at()` only ever emitted
+## `building_selected(coord)` for a hex holding a Garrison (or any other
+## `can_train_units` building), so every non-training building (Town Hall,
+## Foundry, a damaged/ruined Workhouse, ...) was completely unselectable —
+## and walls had no hit-testing at all, anywhere, ever. Now: ANY building
+## on the clicked hex is selectable (picked by proximity to the exact click
+## position when several share a hex via `local_position`, same
+## disambiguation `TacticalHexView._resolved_building_position()` already
+## has to solve for rendering), and a click within `_WALL_CLICK_TOLERANCE`
+## world units of a wall segment's own line (`hex_a` center to `hex_b`
+## center — the same geometry `LocalDetailManager`'s Tactical wall layer
+## already renders) selects that segment instead. `UnitPanelView` reads
+## `get_selected_building()`/`get_selected_wall()` to show a Repair button.
 ##
 ## UnitPanelView (Phase 6.1's HUD) is the only thing that reads this
 ## controller's selection/patrol-recording state and calls its order
@@ -32,31 +49,44 @@ extends Node2D
 ## hex-from-click math doesn't need to special-case either view mode.
 
 signal unit_selected(instance: UnitInstance)
-signal building_selected(coord: Vector2i)
+signal building_instance_selected(instance: BuildingInstance)
+signal wall_segment_selected(segment: WallSegment)
 signal selection_cleared
 signal patrol_recording_changed(is_recording: bool, waypoint_count: int)
 
 const _SELECTION_RING_RADIUS := 16.0
 const _SELECTION_RING_COLOR := Color(1.0, 0.9, 0.2, 0.9)
 const _PATROL_PREVIEW_COLOR := Color(0.9, 0.85, 0.2, 0.9)
+const _WALL_HIGHLIGHT_COLOR := Color(1.0, 0.9, 0.2, 0.9)  ## Same gold as _SELECTION_RING_COLOR — one shared "this is selected" language regardless of what kind of thing it is.
+## Max distance (world units) from a wall segment's own line (hex_a center
+## to hex_b center) a click is still considered "on" that segment. Loose
+## enough to forgive an imprecise click at Tactical zoom without being so
+## loose it steals clicks clearly meant for a nearby building instead —
+## small relative to HexCoord.HEX_SIZE (512).
+const _WALL_CLICK_TOLERANCE := 24.0
 
 @export var hex_grid_map_path: NodePath
 @export var unit_manager_path: NodePath
 @export var unit_order_controller_path: NodePath
 @export var building_manager_path: NodePath
+@export var wall_manager_path: NodePath
 @export var build_placement_controller_path: NodePath  ## Optional — while build placement mode is active, this controller yields input to it entirely rather than fighting over the same click (one input mode at a time).
 
 var _hex_grid_map: HexGridMap
 var _unit_manager: UnitManager
 var _unit_order_controller: UnitOrderController
 var _building_manager: BuildingManager
+var _wall_manager: WallManager
 var _build_placement_controller: BuildPlacementController
 
 var _selected_unit: UnitInstance
+var _selected_building: BuildingInstance
+var _selected_wall: WallSegment
 var _is_recording_patrol: bool = false
 var _patrol_waypoints: Array[Vector2i] = []
 
 var _selection_ring: Line2D
+var _wall_highlight: Line2D
 var _patrol_preview: Line2D
 
 func _ready() -> void:
@@ -70,6 +100,9 @@ func _ready() -> void:
 		_unit_order_controller.unit_moved.connect(_on_unit_moved)
 	if building_manager_path != NodePath():
 		_building_manager = get_node(building_manager_path)
+		_building_manager.building_removed.connect(_on_building_removed)
+	if wall_manager_path != NodePath():
+		_wall_manager = get_node(wall_manager_path)
 	if build_placement_controller_path != NodePath():
 		_build_placement_controller = get_node(build_placement_controller_path)
 
@@ -80,6 +113,16 @@ func _ready() -> void:
 	_selection_ring.points = _ring_points(_SELECTION_RING_RADIUS)
 	_selection_ring.visible = false
 	add_child(_selection_ring)
+
+	## Two-point line rather than a ring — a wall segment IS a line
+	## (hex_a center to hex_b center), so its selection highlight traces
+	## that same shape instead of reusing the unit/building ring, which
+	## would misleadingly imply a single point rather than a whole span.
+	_wall_highlight = Line2D.new()
+	_wall_highlight.width = 10.0
+	_wall_highlight.default_color = _WALL_HIGHLIGHT_COLOR
+	_wall_highlight.visible = false
+	add_child(_wall_highlight)
 
 	_patrol_preview = Line2D.new()
 	_patrol_preview.width = 4.0
@@ -120,7 +163,7 @@ func _on_left_click(world_pos: Vector2) -> void:
 		_update_patrol_preview()
 		patrol_recording_changed.emit(true, _patrol_waypoints.size())
 		return
-	_select_at(coord)
+	_select_at(coord, world_pos)
 
 func _on_right_click(world_pos: Vector2) -> void:
 	if not _hex_grid_map:
@@ -132,36 +175,130 @@ func _on_right_click(world_pos: Vector2) -> void:
 	if _selected_unit and _unit_order_controller:
 		_unit_order_controller.issue_move_order(_selected_unit, coord)
 
-func _select_at(coord: Vector2i) -> void:
+func _select_at(coord: Vector2i, world_pos: Vector2) -> void:
 	if _unit_manager:
 		var units := _unit_manager.get_units_at(coord)
 		if not units.is_empty():
-			_selected_unit = units[0]
-			_selection_ring.position = HexCoord.axial_to_world(coord)
-			_selection_ring.visible = true
-			unit_selected.emit(_selected_unit)
+			_select_unit(units[0], coord)
 			return
-	if _building_manager and _has_training_building(coord):
-		_selected_unit = null
-		_selection_ring.visible = false
-		building_selected.emit(coord)
-		return
+	if _wall_manager:
+		var wall := _closest_wall_within_tolerance(world_pos)
+		if wall:
+			_select_wall(wall)
+			return
+	if _building_manager:
+		var buildings := _building_manager.get_buildings_at(coord)
+		if not buildings.is_empty():
+			_select_building(_closest_building(buildings, world_pos))
+			return
 	clear_selection()
 
-## User report: the training panel was popping up for ANY Military-ZoC
-## building (Church Steeple Watchtower, Forward Ammo Dump, Searchlight
-## Tower all project it too, for lookout/logistics/illumination reasons
-## unrelated to training) — gated on BuildingDefinition.can_train_units
-## instead, see that flag's own doc comment.
-func _has_training_building(coord: Vector2i) -> bool:
-	for instance in _building_manager.get_buildings_at(coord):
-		if instance.definition.can_train_units:
-			return true
+func _select_unit(instance: UnitInstance, coord: Vector2i) -> void:
+	_selected_unit = instance
+	_selected_building = null
+	_selected_wall = null
+	_selection_ring.position = HexCoord.axial_to_world(coord)
+	_selection_ring.visible = true
+	_wall_highlight.visible = false
+	unit_selected.emit(_selected_unit)
+
+func _select_building(instance: BuildingInstance) -> void:
+	_selected_unit = null
+	_selected_building = instance
+	_selected_wall = null
+	_selection_ring.position = HexCoord.axial_to_world(instance.hex_coord) + instance.local_position
+	_selection_ring.visible = true
+	_wall_highlight.visible = false
+	building_instance_selected.emit(instance)
+
+func _select_wall(segment: WallSegment) -> void:
+	_selected_unit = null
+	_selected_building = null
+	_selected_wall = segment
+	_selection_ring.visible = false
+	_wall_highlight.points = PackedVector2Array([HexCoord.axial_to_world(segment.hex_a), HexCoord.axial_to_world(segment.hex_b)])
+	_wall_highlight.visible = true
+	wall_segment_selected.emit(segment)
+
+## Closest of possibly-several buildings sharing one hex (real sub-hex
+## `local_position`, e.g. the starting Town Hall + Cast Iron Foundry) to
+## where the player actually clicked — the same disambiguation
+## `TacticalHexView._resolved_building_position()` already has to solve for
+## rendering, applied here to picking rather than drawing.
+func _closest_building(buildings: Array[BuildingInstance], world_pos: Vector2) -> BuildingInstance:
+	var closest: BuildingInstance = buildings[0]
+	var closest_dist: float = (HexCoord.axial_to_world(closest.hex_coord) + closest.local_position).distance_squared_to(world_pos)
+	for i in range(1, buildings.size()):
+		var instance: BuildingInstance = buildings[i]
+		var dist: float = (HexCoord.axial_to_world(instance.hex_coord) + instance.local_position).distance_squared_to(world_pos)
+		if dist < closest_dist:
+			closest = instance
+			closest_dist = dist
+	return closest
+
+## Nearest wall segment whose own line (hex_a center to hex_b center, the
+## same geometry it actually renders as) the click landed within
+## _WALL_CLICK_TOLERANCE of — null if nothing is close enough. A flat scan
+## over every segment rather than a spatial index: this project's wall
+## counts are small (individually-placed defensive chokepoints, not a
+## per-tile grid), same "small enough to just scan" reasoning
+## StrategicOverlayManager's own marker refresh already relies on.
+func _closest_wall_within_tolerance(world_pos: Vector2) -> WallSegment:
+	var closest: WallSegment = null
+	var closest_dist: float = _WALL_CLICK_TOLERANCE
+	for segment in _wall_manager.get_segments():
+		var dist: float = _distance_to_segment(world_pos, HexCoord.axial_to_world(segment.hex_a), HexCoord.axial_to_world(segment.hex_b))
+		if dist <= closest_dist:
+			closest = segment
+			closest_dist = dist
+	return closest
+
+## Standard point-to-line-segment distance (clamped projection) — plain
+## geometry, no physics engine needed for a handful of line checks.
+func _distance_to_segment(point: Vector2, a: Vector2, b: Vector2) -> float:
+	var ab := b - a
+	var length_squared := ab.length_squared()
+	if length_squared <= 0.0001:
+		return point.distance_to(a)
+	var t := clampf((point - a).dot(ab) / length_squared, 0.0, 1.0)
+	return point.distance_to(a + ab * t)
+
+func get_selected_building() -> BuildingInstance:
+	return _selected_building
+
+func get_selected_wall() -> WallSegment:
+	return _selected_wall
+
+## Thin query wrappers so UnitPanelView (which never calls BuildingManager/
+## WallManager directly, same "dumb display, controller owns the actual
+## call" split every other UnitPanelView method already keeps) can gate
+## and label its own Repair button without a manager reference of its own.
+func get_selected_building_repair_error() -> String:
+	if _selected_building and _building_manager:
+		return _building_manager.get_repair_error(_selected_building)
+	return "Nothing selected."
+
+func get_selected_wall_repair_error() -> String:
+	if _selected_wall and _wall_manager:
+		return _wall_manager.get_repair_error(_selected_wall)
+	return "Nothing selected."
+
+func repair_selected_building() -> bool:
+	if _selected_building and _building_manager:
+		return _building_manager.repair_building(_selected_building)
+	return false
+
+func repair_selected_wall() -> bool:
+	if _selected_wall and _wall_manager:
+		return _wall_manager.repair_segment(_selected_wall)
 	return false
 
 func clear_selection() -> void:
 	_selected_unit = null
+	_selected_building = null
+	_selected_wall = null
 	_selection_ring.visible = false
+	_wall_highlight.visible = false
 	selection_cleared.emit()
 
 ## --- Order commands, called by UnitPanelView's buttons ---------------------
@@ -209,6 +346,14 @@ func train_at_selected_building(coord: Vector2i, unit_type: GameEnums.UnitType) 
 
 func _on_unit_removed(instance: UnitInstance) -> void:
 	if _selected_unit == instance:
+		clear_selection()
+
+## Buildings don't disappear on ruin (BuildingInstance.is_ruined, still
+## selectable so its Repair button reaches it) — only a genuine
+## destroy_ruin() removal invalidates the instance out from under a stale
+## selection, matching _on_unit_removed's own reasoning above.
+func _on_building_removed(instance: BuildingInstance) -> void:
+	if _selected_building == instance:
 		clear_selection()
 
 func _on_unit_moved(instance: UnitInstance, _from_coord: Vector2i, to_coord: Vector2i) -> void:

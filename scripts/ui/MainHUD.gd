@@ -51,6 +51,7 @@ extends CanvasLayer
 @export var tech_manager_path: NodePath   ## Optional — Phase 2.9.3's Tech Tree screen; unset means the panel/button simply do nothing.
 @export var horde_manager_path: NodePath  ## Optional — Phase 5.3's Reconnaissance countdown; unset means that HUD row stays permanently empty.
 @export var noise_manager_path: NodePath  ## Optional — Phase 6.1's Threat Meter (drawn on the minimap); unset means no threat markers, everything else about the minimap is unaffected.
+@export var wall_manager_path: NodePath   ## Optional — feeds UnitPanelView's wall-repair toast/live-refresh; unset means a selected wall's Repair button still works (UnitCommandController owns the actual call) but the panel won't live-refresh mid-repair and no toast fires.
 
 const DEFAULT_CAMPAIGN := "Default"
 const DEFAULT_SLOT := "QuickSave"
@@ -85,6 +86,7 @@ var _mode_label: Label
 var _recon_label: Label
 var _toast_label: Label
 var _toast_timer: Timer
+var _wall_manager: WallManager
 
 func _ready() -> void:
 	var resource_manager: ResourceManager = null
@@ -99,6 +101,9 @@ func _ready() -> void:
 		# would read as broken, not "in progress."
 		_building_manager.construction_started.connect(_on_construction_started)
 		_building_manager.repair_started.connect(_on_building_repair_started)
+	if wall_manager_path != NodePath():
+		_wall_manager = get_node(wall_manager_path)
+		_wall_manager.repair_started.connect(_on_wall_repair_started)
 	if save_load_manager_path != NodePath():
 		_save_load_manager = get_node(save_load_manager_path)
 		_save_load_manager.game_saved.connect(_on_game_saved)
@@ -149,7 +154,7 @@ func _ready() -> void:
 	_build_mode_label()
 	_build_recon_label()
 	_build_build_menu()
-	_build_unit_panel(unit_manager)
+	_build_unit_panel(unit_manager, _wall_manager)
 	_build_toast()
 
 func _build_resource_bar(resource_manager: ResourceManager) -> void:
@@ -362,13 +367,13 @@ func _build_build_menu() -> void:
 ## toast). Gracefully empty if unit_command_controller_path wasn't wired,
 ## same "unset gracefully skips it" convention every other optional MainHUD
 ## dependency already follows.
-func _build_unit_panel(unit_manager: UnitManager) -> void:
+func _build_unit_panel(unit_manager: UnitManager, wall_manager: WallManager) -> void:
 	var unit_panel := UnitPanelView.new()
 	unit_panel.name = "UnitPanel"
 	add_child(unit_panel)
 	_place_top_left(unit_panel, UNIT_PANEL_SIZE)
 	if _unit_command_controller:
-		unit_panel.setup(_unit_command_controller, unit_manager)
+		unit_panel.setup(_unit_command_controller, unit_manager, _building_manager, wall_manager)
 
 func _build_toast() -> void:
 	_toast_label = Label.new()
@@ -569,6 +574,9 @@ func _on_construction_started(building_type: GameEnums.BuildingType, _coord: Vec
 func _on_building_repair_started(instance: BuildingInstance, days: int) -> void:
 	var display_name := instance.definition.display_name if instance and instance.definition else "Building"
 	_show_toast("Repairing %s — ready in %d day%s." % [display_name, days, "" if days == 1 else "s"])
+
+func _on_wall_repair_started(_segment: WallSegment, days: int) -> void:
+	_show_toast("Repairing wall segment — ready in %d day%s." % [days, "" if days == 1 else "s"])
 
 func _on_training_started(unit_type: GameEnums.UnitType, _coord: Vector2i, days: int) -> void:
 	var definition := UnitCatalog.get_definition(unit_type)

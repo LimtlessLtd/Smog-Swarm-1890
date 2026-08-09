@@ -178,6 +178,7 @@ hex_grid_map_path = NodePath("../HexGridMap")
 unit_manager_path = NodePath("../../UnitManager")
 unit_order_controller_path = NodePath("../../UnitOrderController")
 building_manager_path = NodePath("../../BuildingManager")
+wall_manager_path = NodePath("../../WallManager")
 build_placement_controller_path = NodePath("../BuildPlacementController")
 
 [node name="TacticalEntityLayer" parent="WorldRoot" instance=ExtResource("21")]
@@ -189,6 +190,7 @@ camera_path = NodePath("../../CameraController")
 [node name="MainHUD" parent="." instance=ExtResource("11")]
 resource_manager_path = NodePath("../ResourceManager")
 building_manager_path = NodePath("../BuildingManager")
+wall_manager_path = NodePath("../WallManager")
 save_load_manager_path = NodePath("../SaveLoadManager")
 build_placement_controller_path = NodePath("../WorldRoot/BuildPlacementController")
 unit_command_controller_path = NodePath("../WorldRoot/UnitCommandController")
