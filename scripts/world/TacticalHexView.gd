@@ -254,6 +254,16 @@ static func _box_uv() -> PackedVector2Array:
 ## HIGH tactical fidelity — sub-pixel, not just "small," confirmed empirically
 ## (placed two different building types, zoomed to within one step of
 ## max_zoom, neither ever became visible).
+## **Raised a second time (35 -> 70)** after a first pass at this fix (still
+## not enough per a follow-up user report) — a headless diagnostic proved
+## the render data itself was already correct at 35 (right polygon, right
+## position, right texture, all visible=true), so the actual problem that
+## pass was CameraController's own starting position being several hexes
+## off Manchester (see Main.gd, fixed separately) rather than pure size —
+## but a building that's still easy to overlook at a glance even when
+## you're looking straight at the right hex isn't fully fixed either;
+## doubling it removes that ambiguity rather than requiring pixel-perfect
+## camera alignment to ever spot one.
 ## Sized instead off this project's own established "tactical figure" scale
 ## rather than a hex-fraction ratio (real building footprints are a
 ## meaningless fraction of a true ~5-mile hex; legibility is what matters,
@@ -261,25 +271,45 @@ static func _box_uv() -> PackedVector2Array:
 ## a squad's scatter footprint (FIGURE_SPREAD 20 => ~40 diameter) and bigger
 ## than a Tier 4/5 vehicle (VEHICLE_RADIUS 16 => 32 diameter) — a building
 ## should read as the most prominent thing in a hex besides terrain itself.
-const BUILDING_HALF_SIZE: float = 35.0
+const BUILDING_HALF_SIZE: float = 70.0
 ## Ring radius _resolved_building_position() spreads stacked buildings over
 ## (see that function) — rescaled alongside BUILDING_HALF_SIZE so multiple
 ## buildings sharing a hex (Shift-click placement) don't visually overlap;
-## must clear BUILDING_HALF_SIZE's own corner-to-corner diagonal (~49.5).
-const BUILDING_RING_RADIUS: float = 90.0
+## must clear BUILDING_HALF_SIZE's own corner-to-corner diagonal (~99).
+const BUILDING_RING_RADIUS: float = 170.0
+
+## A dark outline traced around every building box — user report ("I still
+## can't see any buildings I place"), the second cause found alongside
+## Main.gd's camera-recenter fix: the box itself was already rendering at
+## the right size/position/texture (confirmed with a headless dump of the
+## actual Polygon2D), it just wasn't READING as a building against this
+## hex's own grey/brown cobblestone texture — real building art (a muted
+## brown/tan illustration, same family of colors as the terrain under it)
+## and the flat category_color() fallback both blend into the ground at a
+## glance rather than popping the way FIGURE_RADIUS's bright unit circles
+## or the props' saturated greens already do. An outline is color-agnostic
+## — it makes the shape itself legible regardless of how close the fill
+## color happens to land to whatever terrain is underneath, without
+## needing to fight every individual building texture's own palette.
+const _OUTLINE_COLOR := Color(0.05, 0.05, 0.05, 0.85)
+const _OUTLINE_WIDTH := 3.0
 
 func _build_building_node(building: BuildingInstance, index: int) -> Node2D:
+	var container := Node2D.new()
 	var box := Polygon2D.new()
+	var outline_points: PackedVector2Array
 	if building.is_ruined:
 		# Phase 5.12: a jagged rubble silhouette, deliberately distinct from
 		# every intact building's clean square — "a visible scar", not just
 		# a recolored box. Ruins stay code-drawn regardless of whether the
 		# intact building has real art — a collapsed building has no sprite.
 		box.color = BuildingVisuals.ruin_color()
-		box.polygon = _scaled_polygon(_ruin_polygon(), BUILDING_HALF_SIZE / 10.0)  # _ruin_polygon()'s own points were hand-authored at the old half=10 scale — resize with it rather than redrawing it by hand.
+		outline_points = _scaled_polygon(_ruin_polygon(), BUILDING_HALF_SIZE / 10.0)  # _ruin_polygon()'s own points were hand-authored at the old half=10 scale — resize with it rather than redrawing it by hand.
+		box.polygon = outline_points
 	else:
 		var half := BUILDING_HALF_SIZE
-		box.polygon = PackedVector2Array([Vector2(-half, -half), Vector2(half, -half), Vector2(half, half), Vector2(-half, half)])
+		outline_points = PackedVector2Array([Vector2(-half, -half), Vector2(half, -half), Vector2(half, half), Vector2(-half, half)])
+		box.polygon = outline_points
 		var texture := BuildingVisuals.building_texture(building.definition.building_type)
 		if texture:
 			box.texture = texture
@@ -288,8 +318,17 @@ func _build_building_node(building: BuildingInstance, index: int) -> Node2D:
 			box.color = Color.WHITE  # let the sprite's own colors show — category_color() was only ever a stand-in for this.
 		else:
 			box.color = BuildingVisuals.category_color(building.definition.category)
-	box.position = _resolved_building_position(building, index)
-	return box
+	container.add_child(box)
+
+	var outline := Line2D.new()
+	outline.closed = true
+	outline.width = _OUTLINE_WIDTH
+	outline.default_color = _OUTLINE_COLOR
+	outline.points = outline_points
+	container.add_child(outline)
+
+	container.position = _resolved_building_position(building, index)
+	return container
 
 func _ruin_polygon() -> PackedVector2Array:
 	return PackedVector2Array([Vector2(-10, -6), Vector2(-4, -10), Vector2(3, -7), Vector2(10, -9), Vector2(9, 2), Vector2(4, 10), Vector2(-6, 8), Vector2(-9, 3)])

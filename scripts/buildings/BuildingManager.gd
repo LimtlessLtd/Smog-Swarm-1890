@@ -272,32 +272,23 @@ func seed_starting_buildings() -> void:
 	var foundry := BuildingCatalog.get_definition(GameEnums.BuildingType.CAST_IRON_FOUNDRY)
 	_register_instance(foundry, target.coord, _next_id, _STARTING_FOUNDRY_OFFSET, true)
 
+	# **Deliberately just the one core hex** (user report: "the game starts
+	# in this weird state where Manchester has many walls jutting out from
+	# everywhere... I just want a local area where the player has his few
+	# starting buildings to be walled off"). This used to extend to a whole
+	# HexPathfinder corridor out to the starting Farm so WallManager.
+	# seed_starting_defenses() would fence that too — technically correct
+	# (one connected perimeter around everything reachable) but produced a
+	# long, sprawling wall several hexes out from the actual settlement,
+	# with enough total segment length that hordes found and breached parts
+	# of it constantly. A compact single-hex perimeter around Town Hall is
+	# what "a local area... walled off" actually asked for; the Farm sits
+	# outside it, undefended, same as any other frontier resource building.
 	_starting_settlement_hexes = [target.coord]
 	var farm_hex := _find_starting_farm_hex(target.coord)
 	if farm_hex != _NO_FARM_HEX:
 		var farm := BuildingCatalog.get_definition(GameEnums.BuildingType.TENANT_FARM)
 		_register_instance(farm, farm_hex, _next_id, Vector2.ZERO, true)
-		# WallManager.seed_starting_defenses() walls the OUTER boundary of
-		# whatever this array holds, so the Farm needs to be reachable by an
-		# unbroken chain of passable hexes from Town Hall for that perimeter
-		# to actually be one connected loop rather than two separate rings.
-		# HexPathfinder.find_path() (Phase 5.5's shared strategic A*, real
-		# terrain-aware pathfinding, not a geometric guess) already
-		# guarantees every hex on the route is passable — a straight
-		# HexCoord.hex_line() was tried first and rejected: it's a pure
-		# geometric line with no awareness of the actual terrain, so it
-		# happily crossed genuinely impassable ground (Chat Moss again)
-		# and produced two disconnected rings instead of one perimeter.
-		# find_path() returns [] only if the farm is truly unreachable by
-		# any passable route at all, in which case the two endpoints alone
-		# still get fenced as two separate compounds — the same disclosed
-		# fallback as before, just now the actual last resort instead of
-		# the common case.
-		var corridor := HexPathfinder.find_path(_hex_grid_map, target.coord, farm_hex)
-		if not corridor.is_empty():
-			_starting_settlement_hexes = corridor
-		else:
-			_starting_settlement_hexes.append(farm_hex)
 
 func get_starting_settlement_hexes() -> Array[Vector2i]:
 	return _starting_settlement_hexes.duplicate()

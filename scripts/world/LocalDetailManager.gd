@@ -261,12 +261,23 @@ func _build_wall_marker(segment: WallSegment) -> Line2D:
 	_apply_wall_segment_look(body, segment)
 	return body
 
+## Deliberately flat-colored, no `WallVisuals.tier_texture()` — user report
+## ("issues with the walls not repeating properly across the entire length
+## of the wall"). That texture's own tile size was authored for
+## StrategicOverlayManager's much-shorter, zoomed-way-out marker line;
+## Tactical's own segments span a full hex-center-to-hex-center distance at
+## real world scale (hundreds of units) and WALL_TACTICAL_WIDTH_SCALE's own
+## 8x width on top of that, so the same texture tiled far more times than
+## it was ever designed to and read as noise rather than a wall. A flat
+## tier color (StrategicOverlayManager's own pre-art fallback, still
+## perfectly legible for tier/breach/gate state) avoids the mismatch
+## entirely rather than trying to re-tune tile scale to fit two very
+## differently-scaled consumers — real Tactical-specific wall art is a
+## future add, not a same-pass fix.
 func _apply_wall_segment_look(body: Line2D, segment: WallSegment) -> void:
 	var breached := segment.is_breached()
-	var texture := WallVisuals.tier_texture(segment.tier) if not breached else null
-	body.texture = texture
-	body.texture_mode = Line2D.LINE_TEXTURE_TILE
-	body.default_color = Color.WHITE if texture else (WallVisuals.breached_color() if breached else (WallVisuals.gate_color() if segment.is_gate else WallVisuals.tier_color(segment.tier)))
+	body.texture = null
+	body.default_color = WallVisuals.breached_color() if breached else (WallVisuals.gate_color() if segment.is_gate else WallVisuals.tier_color(segment.tier))
 	body.width = WallVisuals.line_width(segment.tier, breached) * WALL_TACTICAL_WIDTH_SCALE
 	var is_legacy := _wall_manager != null and _wall_manager.is_legacy_segment(segment)
 	body.modulate = WallVisuals.legacy_modulate() if is_legacy else WallVisuals.outer_modulate()
