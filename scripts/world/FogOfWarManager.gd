@@ -34,6 +34,43 @@ extends Node
 ## with (applied after) the night-vision math above. The three-state
 ## UNSEEN/EXPLORED/VISIBLE machine this class owns is itself untouched by
 ## this — only the radius fed into it shrinks.
+##
+## Phase 2.6.2 (this pass): units are now a vision source too, read from
+## UnitManager the identical way buildings are read from BuildingManager —
+## same night-vision-contraction and terrain-penalty math applies to both,
+## generic over "a vision source at a hex_coord with a vision_radius," not
+## special-cased per source type. Closes the design doc's own long-standing
+## disclosed gap ("Units still don't feed Fog of War — UnitInstance has no
+## vision_radius field yet; FogOfWarManager only iterates buildings") and,
+## as a direct consequence, Phase 2.12's matching unit-specific vision-
+## reduction gap (it was blocked on this exact field not existing). Units
+## have no `lit_at_night` concept (nothing in their own art/description
+## frames any unit as a light source the way a Gas Streetlamp or Searchlight
+## Tower is) — every unit gets the plain NIGHT_VISION_PENALTY contraction,
+## no lit exemption branch.
+##
+## Recomputes on unit train/remove (building parity) AND on every
+## `UnitOrderController.unit_moved` hex-boundary crossing — the same
+## granularity vision already operates at (hex_coord, not sub-hex
+## local_position), so a moving unit's fog contribution genuinely does
+## change at that cadence, not more finely. recompute() rebuilds the ENTIRE
+## visible set from scratch (see its own doc comment — "cheap enough...
+## dozens of buildings"); wiring it to every unit's hex crossing multiplies
+## how often that full rebuild fires, and at this project's higher
+## TickManager speeds (up to 1000x) several units can each cross a boundary
+## within the same engine frame — **adversarial review finding, fixed
+## 2026-08-10:** those same-frame crossings were each triggering their own
+## full rebuild even though nothing changes between them. The two unit-
+## triggered handlers below (`_on_units_changed`/`_on_unit_moved`) now mark
+## `_unit_recompute_pending` instead of calling `recompute()` directly, and
+## `_process()` drains it at most once per frame — a real one-frame-max
+## latency on units' fog contribution becoming visible (buildings/ZoC/day-
+## night triggers are unaffected, left exactly as synchronous as before;
+## this project's own established grace-period mechanism already tolerates
+## several SECONDS of similar lag on the opposite transition, so a single
+## frame here is a non-issue). A dirty-region incremental recompute — doing
+## less work per call, rather than calling it less often — would be the
+## real fix if per-frame coalescing ever stops being enough.
 
 signal fog_state_changed(coord: Vector2i, state: GameEnums.FogState)
 
@@ -49,13 +86,23 @@ const NIGHT_LIT_BONUS: int = 1       ## Lit sources (BuildingDefinition.lit_at_n
 @export var hex_grid_map_path: NodePath
 @export var building_manager_path: NodePath
 @export var logistics_network_path: NodePath
+@export var unit_manager_path: NodePath  ## Optional — without it, units simply aren't a vision source (buildings/ZoC still work as before). See this class's own Phase 2.6.2 doc comment above.
+@export var unit_order_controller_path: NodePath  ## Optional — without it, unit vision still computes correctly on train/remove/day-night, it just won't refresh live as a unit walks between hexes (unit_moved never fires here). Same "optional, degrades to static-only" contract StrategicOverlayManager's own copy of this path documents.
 
 var _hex_grid_map: HexGridMap
 var _building_manager: BuildingManager
 var _logistics_network: LogisticsNetwork
+var _unit_manager: UnitManager
+var _unit_order_controller: UnitOrderController
 
 var _fog_state: Dictionary = {}        # Vector2i -> GameEnums.FogState
 var _grace_remaining: Dictionary = {}  # Vector2i -> float; hexes counting down VISIBLE -> EXPLORED
+
+## Coalesces same-frame unit-triggered recompute() calls (Phase 2.6.2's own
+## doc comment above explains why) — set by _on_units_changed()/
+## _on_unit_moved() instead of calling recompute() directly, drained by
+## _process() at most once per frame.
+var _unit_recompute_pending: bool = false
 
 func _ready() -> void:
 	if hex_grid_map_path != NodePath():
@@ -67,6 +114,13 @@ func _ready() -> void:
 	if logistics_network_path != NodePath():
 		_logistics_network = get_node(logistics_network_path)
 		_logistics_network.network_recomputed.connect(_on_network_recomputed)
+	if unit_manager_path != NodePath():
+		_unit_manager = get_node(unit_manager_path)
+		_unit_manager.unit_trained.connect(_on_units_changed)
+		_unit_manager.unit_removed.connect(_on_units_changed)
+	if unit_order_controller_path != NodePath():
+		_unit_order_controller = get_node(unit_order_controller_path)
+		_unit_order_controller.unit_moved.connect(_on_unit_moved)
 	TimeCycleManager.phase_changed.connect(_on_phase_changed)
 
 	# Every generated hex starts UNSEEN and needs its view pushed to match —
@@ -79,6 +133,9 @@ func _ready() -> void:
 	recompute()
 
 func _process(delta: float) -> void:
+	if _unit_recompute_pending:
+		_unit_recompute_pending = false
+		recompute()
 	if _grace_remaining.is_empty():
 		return
 	for coord in _grace_remaining.keys():
@@ -133,8 +190,8 @@ func recompute() -> void:
 
 func _compute_visible_set() -> Dictionary:
 	var result: Dictionary = {}  # Vector2i -> true
+	var is_night := TimeCycleManager.is_night()
 	if _building_manager:
-		var is_night := TimeCycleManager.is_night()
 		for instance in _building_manager.get_all_buildings():
 			var radius := instance.definition.vision_radius
 			if is_night:
@@ -144,15 +201,20 @@ func _compute_visible_set() -> Dictionary:
 					radius = maxi(0, radius - NIGHT_VISION_PENALTY)
 			# Phase 2.12.2: dense local terrain right around the vision source
 			# itself shrinks its effective radius — reduces, never blocks
-			# (design doc, decided; no stealth mechanic). Scoped to building
-			# vision sources since that's the only vision_radius concept that
-			# exists today — a UnitInstance-based version stays blocked on
-			# Phase 2.6.2's own already-flagged gap ("Units still don't feed
-			# this — UnitInstance has no vision_radius field").
-			if _hex_grid_map:
-				var source_cell := _hex_grid_map.get_cell(instance.hex_coord)
-				if source_cell:
-					radius = maxi(0, radius - source_cell.get_vision_penalty())
+			# (design doc, decided; no stealth mechanic).
+			radius = _apply_terrain_penalty(radius, instance.hex_coord)
+			for coord in HexCoord.hex_disk(instance.hex_coord, radius):
+				if not _hex_grid_map or _hex_grid_map.has_cell(coord):
+					result[coord] = true
+	if _unit_manager:
+		# Phase 2.6.2: units are a vision source too, same radius/night/
+		# terrain contract as buildings above — see this class's own doc
+		# comment for why there's no lit_at_night branch here.
+		for instance in _unit_manager.get_all_units():
+			var radius := instance.definition.vision_radius
+			if is_night:
+				radius = maxi(0, radius - NIGHT_VISION_PENALTY)
+			radius = _apply_terrain_penalty(radius, instance.hex_coord)
 			for coord in HexCoord.hex_disk(instance.hex_coord, radius):
 				if not _hex_grid_map or _hex_grid_map.has_cell(coord):
 					result[coord] = true
@@ -160,6 +222,17 @@ func _compute_visible_set() -> Dictionary:
 		for coord in _logistics_network.get_covered_hexes():
 			result[coord] = true
 	return result
+
+## Shared by both vision-source loops above (Phase 2.12.2) — dense local
+## terrain right around the source itself shrinks its effective radius,
+## "reduces, never blocks" (design doc, decided; no stealth mechanic).
+func _apply_terrain_penalty(radius: int, coord: Vector2i) -> int:
+	if not _hex_grid_map:
+		return radius
+	var source_cell := _hex_grid_map.get_cell(coord)
+	if not source_cell:
+		return radius
+	return maxi(0, radius - source_cell.get_vision_penalty())
 
 func _set_state(coord: Vector2i, state: GameEnums.FogState) -> void:
 	if _fog_state.get(coord, GameEnums.FogState.UNSEEN) == state:
@@ -177,6 +250,12 @@ func _push_view_state(coord: Vector2i, state: GameEnums.FogState) -> void:
 
 func _on_buildings_changed(_instance: BuildingInstance) -> void:
 	recompute()
+
+func _on_units_changed(_instance: UnitInstance) -> void:
+	_unit_recompute_pending = true
+
+func _on_unit_moved(_instance: UnitInstance, _from_coord: Vector2i, _to_coord: Vector2i) -> void:
+	_unit_recompute_pending = true
 
 func _on_network_recomputed() -> void:
 	recompute()

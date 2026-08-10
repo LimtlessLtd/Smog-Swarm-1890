@@ -8,13 +8,13 @@ extends Resource
 ## stats. Deliberately mirrors BuildingDefinition's shape and role — same
 ## "pure data, no logic beyond simple derived queries" convention.
 ##
-## No movement-speed/vision-radius/local-position-style fields yet: nothing
-## in this codebase reads them (Phase 5.5's tactical-scale movement and
-## Phase 5.6's unit orders are still unbuilt), and this project's own
-## practice is not adding a field ahead of an actual reader — see every
-## other Definition/Catalog pair's own restraint on this. Add them when
-## whichever phase needs them actually lands, same as BuildingDefinition's
-## own vision_radius arrived with Phase 2.6, not before.
+## Stale-comment fix (this pass): this used to say "no movement-speed/
+## vision-radius fields yet, added only once an actual reader lands" — both
+## have since landed for real readers (move_speed_multiplier with Phase 5.5,
+## vision_radius with Phase 2.6.2 below) and this note was never updated
+## when they did. The underlying practice it describes still holds — no
+## field gets added ahead of an actual reader — it just no longer describes
+## these two specifically.
 
 @export var unit_type: GameEnums.UnitType = GameEnums.UnitType.TRUNCHEONEER
 @export var display_name: String = ""
@@ -61,6 +61,19 @@ extends Resource
 ## under its own weight (Traction Ram, Holt Breaker, Field Howitzer Gun
 ## Tractor).
 @export var move_speed_multiplier: float = 1.0
+
+## Fog of War (Phase 2.6.2): hex-disk radius this unit projects VISIBLE
+## coverage over, centered on its own hex — same "0 still means own hex is
+## visible" contract as BuildingDefinition.vision_radius (that field's own
+## doc comment), and read by FogOfWarManager the identical way once a unit
+## exists there too. Default 0 for most of the roster — a unit becoming a
+## real vision source at all (previously it wasn't one whatsoever, per this
+## field's own former "not adding a field ahead of an actual reader" note
+## above) is the actual gap this closes, not "every soldier should see far."
+## Outrider is the one deliberate exception: UnitAbility.UNARMED_SCOUT's own
+## doc comment already frames it as "fast mounted vision/recon only" — see
+## UnitCatalog's own comment on that unit for the value.
+@export var vision_radius: int = 0
 
 func _init(p_type: GameEnums.UnitType = GameEnums.UnitType.TRUNCHEONEER, p_display_name: String = "", p_tier: int = 0, p_role: GameEnums.UnitRole = GameEnums.UnitRole.MELEE) -> void:
 	unit_type = p_type

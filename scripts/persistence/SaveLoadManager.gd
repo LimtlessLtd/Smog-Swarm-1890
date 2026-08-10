@@ -228,11 +228,23 @@ func _build_save_data(campaign_name: String, slot_name: String) -> SaveGameData:
 ## building set), then DiscontentManager (its region
 ## flood-fill, Phase 2.11, needs LogisticsNetwork's ZoC coverage already
 ## recomputed against the restored buildings/supply lines above), then
-## WallManager (no dependency on the others, just grouped here), and
-## FogOfWarManager LAST — its saved fog_state is authoritative and
-## deliberately overrides whatever transient VISIBLE-only recomputes ran
-## during the steps before it (see FogOfWarManager.load_save_state()'s own
-## doc comment).
+## WallManager (no dependency on the others, just grouped here), **then units
+## (Phase 2.6.2, moved here from after FogOfWarManager — adversarial review
+## finding, fixed 2026-08-10: units are a fog vision source now too, so
+## load_save_entries()'s per-unit unit_trained emit needs to land BEFORE the
+## authoritative fog load for the exact same reason buildings already do,
+## not after it)**, and FogOfWarManager LAST — its saved fog_state is
+## authoritative and deliberately overrides whatever transient VISIBLE-only
+## recomputes ran during the steps before it (see
+## FogOfWarManager.load_save_state()'s own doc comment). Sequencing units
+## before fog also sidesteps a second, independent hazard the same review
+## caught: TickManager.load_save_state() (below, restores the saved day/
+## night clock) still runs even later, so ANY recompute triggered during
+## this function reads whatever day/night phase was live before the load,
+## not the save's own — harmless for a step whose transient recompute gets
+## overridden by fog's authoritative load right after it, but would have
+## been a real (if narrow, self-healing) bug for units specifically had they
+## stayed sequenced after fog.
 func _apply_save_data(data: SaveGameData) -> void:
 	if _resource_manager:
 		_resource_manager.load_state(data.resource_stockpile, data.resource_storage_caps)
@@ -248,6 +260,9 @@ func _apply_save_data(data: SaveGameData) -> void:
 		_discontent_manager.load_save_state({"discontent_by_hex": data.discontent_by_hex})
 	if _wall_manager:
 		_wall_manager.load_save_state(data.wall_segments, data.next_wall_id)
+	if _unit_manager:
+		_unit_manager.load_save_entries(data.units, data.next_unit_id)
+		_unit_manager.load_rally_points_save_state(data.unit_rally_points)
 	if _fog_of_war_manager:
 		_fog_of_war_manager.load_save_state(data.fog_state)
 	if _tech_manager:
@@ -258,9 +273,6 @@ func _apply_save_data(data: SaveGameData) -> void:
 		})
 	if _horde_manager:
 		_horde_manager.load_save_state(data.hordes, data.next_horde_id)
-	if _unit_manager:
-		_unit_manager.load_save_entries(data.units, data.next_unit_id)
-		_unit_manager.load_rally_points_save_state(data.unit_rally_points)
 
 	TickManager.load_save_state({
 		"current_day": data.current_day,
