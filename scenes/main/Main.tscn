@@ -70,6 +70,8 @@ resource_manager_path = NodePath("../ResourceManager")
 hex_grid_map_path = NodePath("../WorldRoot/HexGridMap")
 building_manager_path = NodePath("../BuildingManager")
 logistics_network_path = NodePath("../LogisticsNetwork")
+unit_manager_path = NodePath("../UnitManager")
+unit_order_controller_path = NodePath("../UnitOrderController")
 
 [node name="NoiseManager" parent="." instance=ExtResource("25")]
 hex_grid_map_path = NodePath("../WorldRoot/HexGridMap")

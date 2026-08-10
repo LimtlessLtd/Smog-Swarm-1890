@@ -47,8 +47,12 @@ static func _build_definitions() -> Array[UnitDefinition]:
 		# curve underneath, not a small residual number; it genuinely cannot
 		# fight. move_speed_multiplier 1.6 is the payoff — fast reconnaissance,
 		# not combat, same "does something special" framing every SPECIAL unit
-		# below gets.
-		_unit(GameEnums.UnitType.OUTRIDER, "Outrider", 0, GameEnums.UnitRole.SPECIAL, false, GameEnums.UnitAbility.UNARMED_SCOUT, 1.0, 0.0, 1.6),
+		# below gets. vision_radius 2 (Phase 2.6.2) is the other half of that
+		# same payoff now that units are vision sources at all — matches
+		# Church Steeple Watchtower's own "proper lookout" radius
+		# (BuildingCatalog), the closest existing precedent for "sees
+		# further than its surroundings," rather than inventing a new number.
+		_unit(GameEnums.UnitType.OUTRIDER, "Outrider", 0, GameEnums.UnitRole.SPECIAL, false, GameEnums.UnitAbility.UNARMED_SCOUT, 1.0, 0.0, 1.6, 2),
 		# --- Tier 1 (unit_tier_1) ---
 		_unit(GameEnums.UnitType.NAVVY, "Navvy", 1, GameEnums.UnitRole.MELEE),
 		_unit(GameEnums.UnitType.YEOMAN_MARKSMAN, "Yeoman Marksman", 1, GameEnums.UnitRole.RANGED, true),  # First firearm-era ranged unit — Gunpowder depletion penalty starts here.
@@ -160,7 +164,12 @@ static func _build_definitions() -> Array[UnitDefinition]:
 ## a unit whose identity includes a genuine mechanic, not just a stat
 ## lean — most MELEE/RANGED units below still pass none of these, leaving
 ## all four at their neutral default (NONE/1.0/1.0/1.0).
-static func _unit(type: GameEnums.UnitType, display_name: String, tier: int, role: GameEnums.UnitRole, requires_gunpowder: bool = false, ability: GameEnums.UnitAbility = GameEnums.UnitAbility.NONE, hp_multiplier: float = 1.0, damage_multiplier: float = 1.0, move_speed_multiplier: float = 1.0) -> UnitDefinition:
+## `vision_radius` (Phase 2.6.2, added this pass) follows the same
+## "reserved for a unit whose identity calls for it" restraint — 0 (own hex
+## only, same contract as BuildingDefinition.vision_radius) for every unit
+## below except Outrider, whose own call site explains the one deliberate
+## exception.
+static func _unit(type: GameEnums.UnitType, display_name: String, tier: int, role: GameEnums.UnitRole, requires_gunpowder: bool = false, ability: GameEnums.UnitAbility = GameEnums.UnitAbility.NONE, hp_multiplier: float = 1.0, damage_multiplier: float = 1.0, move_speed_multiplier: float = 1.0, vision_radius: int = 0) -> UnitDefinition:
 	var d := UnitDefinition.new(type, display_name, tier, role)
 	d.requires_gunpowder = requires_gunpowder
 	if requires_gunpowder:
@@ -183,6 +192,7 @@ static func _unit(type: GameEnums.UnitType, display_name: String, tier: int, rol
 
 	d.ability = ability
 	d.move_speed_multiplier = move_speed_multiplier
+	d.vision_radius = vision_radius
 	d.max_hp *= hp_multiplier
 	d.attack_damage *= damage_multiplier
 	return d

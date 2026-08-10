@@ -216,6 +216,20 @@ func _complete_training(unit_type: GameEnums.UnitType, coord: Vector2i) -> void:
 ## reasonable, self-contained approximation for where an "outside the front
 ## door" spawn should land, same scope as _resolved_building_position()'s
 ## own ring fallback in TacticalHexView for stacked buildings.
+##
+## **Drift risk, re-checked this pass (was flagged as a real but not-yet-
+## verified risk in prior session notes, not an active bug):** this is a
+## hand-copied literal, not a real reference into
+## `TacticalHexView.BUILDING_HALF_SIZE` — the same "can silently drift out
+## of sync across a future building-box resize" shape `ObstacleRadii.
+## BUILDING_RADIUS`'s own doc comment already disclaims (that constant hand-
+## copies the same source of truth for the same reason: this project avoids
+## const-referencing across class_name scripts). Verified numerically
+## against the CURRENT value (`BUILDING_HALF_SIZE` = 20.512, half-diagonal
+## ≈ 29.0 post-4x-bump) — 60.0 still clears with a healthy ~2x margin, so
+## there is no live bug today. Still hand-copied, so it can drift again the
+## next time `BUILDING_HALF_SIZE` is resized — re-check this constant
+## whenever that one changes, same as `ObstacleRadii.BUILDING_RADIUS`.
 const _SPAWN_CLEARANCE: float = 60.0
 const _SPAWN_RING_STEP: float = 24.0  ## Extra radius per already-occupied spawn slot, so several units trained in a row fan out around the building instead of stacking on each other.
 const _SPAWN_RING_SLOTS: int = 6
