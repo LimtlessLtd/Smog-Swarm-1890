@@ -38,7 +38,7 @@ extends Node
 ## trigger) never needs to know about ruination itself — building_ruined
 ## carries the population lost at that instant for HordeManager to convert
 ## to a casualty (Phase 5.9), same "manager emits, HordeManager listens"
-## precedent civilians_starved already set. repair_building()/destroy_ruin()
+## precedent civilians_starved already set. repair_building()/demolish_building()
 ## are the other half — gated on the optional TerritoryController reference
 ## ("Ruins are inert until the district is recaptured", design doc), same
 ## "queryable without side effects" get_*_error() pattern every other
@@ -115,6 +115,31 @@ const SURPLUS_PRODUCTION_BONUS_MAX: float = 0.1   ## Cap on 2.10.4's production 
 const SURPLUS_PRODUCTION_BONUS_SLOPE: float = 0.2 ## Bonus grows this much per 1.0 of ratio above FOOD_SURPLUS_RATIO, capped at SURPLUS_PRODUCTION_BONUS_MAX.
 const POPULATION_REGROWTH_PER_DAY: int = 1        ## Flat per-instance regrowth toward population_provided while in surplus (2.10.4) — deliberately small and gradual, not an instant restock.
 
+## Design doc Phase 5.1's Day Phase bullet: "Construction/gather +20% by day"
+## (Night is unchanged, +0%). TimeCycleManager._phase_for_progress() splits
+## the 40-minute in-game day into an EXACT 50/50 Day/Night division
+## (`progress < 0.5` is Day) — given that fixed 50/50 weighting, a true
+## continuous/per-phase implementation averages out, over a full day, to
+## exactly 0.5 * 1.2 (Day half, +20%) + 0.5 * 1.0 (Night half, +0%) = 1.1.
+## Since that average is mathematically IDENTICAL in observable outcome to a
+## flat +10% applied once at the existing once-daily tally, this is
+## implemented as that flat multiplier rather than as literal Day/Night
+## phase-triggered ticks.
+##
+## Why not literal sub-day ticks: TickManager's day_completed signal fires
+## from inside a "while elapsed_in_day >= DAY_LENGTH_SECONDS" loop that can
+## fire MULTIPLE times in a single _process() frame during a large-delta
+## catch-up (documented and empirically tested elsewhere in this codebase —
+## see e.g. MovementStepper/HordeManager's own "multi-hex catch-up burst"
+## handling). TimeCycleManager's own phase-change detection only runs once
+## per _process() frame, so during such a burst it would silently miss
+## intermediate Day/Night transitions — a signal-driven (day_phase_started/
+## night_phase_started) production accumulator would then double-count or
+## under-count that day's output. This flat multiplier sidesteps that whole
+## risk class entirely while being observably identical to the "true"
+## per-phase version under this game's own fixed 50/50 Day/Night split.
+const DAY_NIGHT_AVERAGE_PRODUCTION_MULTIPLIER: float = 1.1
+
 ## User report ("building things... should take some amount of time") —
 ## construction/repair duration derived from total resource cost, same
 ## "a placeholder number, not an architecture decision" framing every other
@@ -134,8 +159,8 @@ const _MAX_CONSTRUCTION_DAYS: int = 4
 ## same as every other optional manager reference in this class.
 @export var discontent_manager_path: NodePath
 ## Optional — Phase 5.8/5.12's ruin-repair gate. Unset means repair_building()/
-## destroy_ruin() never check territory state at all (same "gracefully skip
-## it" convention as every other optional dependency here).
+## demolish_building() never check territory state at all (same "gracefully
+## skip it" convention as every other optional dependency here).
 @export var territory_controller_path: NodePath
 
 var _hex_grid_map: HexGridMap
@@ -449,9 +474,9 @@ func remove_building(instance: BuildingInstance) -> void:
 	# queued") — without this, _process_pending_repair() would keep ticking
 	# down a job pointing at an instance nothing else references anymore,
 	# eventually firing building_repaired for a building that's already
-	# gone. Shared here (not just in demolish_building()) so destroy_ruin()
-	# gets the same correctness for free — it has the exact same
-	# is_ruined-only gate and could hit the identical gap.
+	# gone. Shared here (in remove_building() itself, not duplicated in
+	# demolish_building()) so any other future caller of remove_building()
+	# gets the same correctness for free rather than needing to remember it.
 	_pending_repair = _pending_repair.filter(func(job: Dictionary) -> bool: return job["instance"] != instance)
 	building_removed.emit(instance)
 
@@ -587,35 +612,14 @@ func _repair_cost(definition: BuildingDefinition) -> Dictionary:
 		cost[resource_type] = float(definition.construction_cost[resource_type]) * REPAIR_COST_FRACTION
 	return cost
 
-## The other Phase 5.12 recapture option: clear a ruin's rubble outright
-## rather than rebuild it — same territory-recaptured gate as repair, no
-## resource cost either way (demolition, not construction). Reuses
-## remove_building() directly; no dedicated rejection signal since
-## building_removed already gives a caller everything it needs to know a
-## ruin is gone.
-func get_destroy_ruin_error(instance: BuildingInstance) -> String:
-	if not instance or not instance.is_ruined:
-		return "This building isn't ruined."
-	if _territory_controller and _territory_controller.is_lost(instance.hex_coord):
-		return "%s's district must be recaptured before its ruin can be cleared." % instance.definition.display_name
-	return ""
-
-func can_destroy_ruin(instance: BuildingInstance) -> bool:
-	return get_destroy_ruin_error(instance).is_empty()
-
-func destroy_ruin(instance: BuildingInstance) -> bool:
-	if not get_destroy_ruin_error(instance).is_empty():
-		return false
-	remove_building(instance)
-	return true
-
 ## --- Demolish (user request: "there should also be a demolish button on
 ## every building (and wall) where you get 50% of the resources used to
 ## build it back EXCEPT energy where you always get 100% of the energy
 ## used to build a building back") ------------------------------------------
 ##
-## Unlike destroy_ruin() above (ruin-only, no refund — clearing rubble that
-## already lost everything to a zombie attack), demolish_building() works
+## The sole "clear a ruin" mechanism (superseded destroy_ruin(), a
+## ruin-only/no-refund function this same pass removed as dead code — zero
+## call sites anywhere in the codebase). demolish_building() works
 ## on ANY building the player still owns, ruined or not, and is always a
 ## refund, never a further loss: HALF of construction_cost — reusing
 ## REPAIR_COST_FRACTION's own existing 50% rather than inventing a second
@@ -632,10 +636,10 @@ func destroy_ruin(instance: BuildingInstance) -> bool:
 signal building_demolished(instance: BuildingInstance)
 
 ## A ruin still needs its district recaptured before the player can
-## interact with it at all — same gate get_destroy_ruin_error() already
-## enforces, reusing its exact message. An intact building has no such
-## restriction (it's the player's own working structure, not contested
-## rubble sitting in enemy-held ground).
+## interact with it at all — same "Ruins are inert until the district is
+## recaptured" gate get_repair_error() already enforces. An intact building
+## has no such restriction (it's the player's own working structure, not
+## contested rubble sitting in enemy-held ground).
 func get_demolish_error(instance: BuildingInstance) -> String:
 	if not instance:
 		return "No such building."
@@ -760,7 +764,9 @@ func _on_day_completed(_day_number: int) -> void:
 					output[resource_type] = float(output[resource_type]) * discontent_multiplier
 
 		for resource_type in output:
-			produced[resource_type] = produced.get(resource_type, 0.0) + float(output[resource_type])
+			# Phase 5.1's Day/Night average — see
+			# DAY_NIGHT_AVERAGE_PRODUCTION_MULTIPLIER's own doc comment.
+			produced[resource_type] = produced.get(resource_type, 0.0) + float(output[resource_type]) * DAY_NIGHT_AVERAGE_PRODUCTION_MULTIPLIER
 
 	# Design doc 2.10.2: food_demand is specifically the population-based
 	# upkeep computed just above (not the broader `consumed[FOOD]` total,

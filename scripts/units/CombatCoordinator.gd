@@ -219,8 +219,12 @@ func _engage(instance: UnitInstance, horde: Horde, movement_from: Vector2i, move
 	if TimeCycleManager.is_day():
 		damage_multiplier *= DAY_DAMAGE_MULTIPLIER
 	var incoming_damage_multiplier := _garrison_incoming_multiplier(instance)
+	# Night's mirror of the DAY_DAMAGE_MULTIPLIER bump above, on the horde's
+	# side instead of the unit's — see HordeManager.get_night_aggression_multiplier()'s
+	# own doc comment.
+	var horde_damage := horde.get_combat_damage() * HordeManager.get_night_aggression_multiplier()
 	var headcount_before := instance.get_squad_headcount()
-	var result := CombatEngine.resolve_engagement(instance, gunpowder_available, horde.get_combat_hp(), horde.get_combat_damage(), damage_multiplier, incoming_damage_multiplier)
+	var result := CombatEngine.resolve_engagement(instance, gunpowder_available, horde.get_combat_hp(), horde_damage, damage_multiplier, incoming_damage_multiplier)
 	horde.apply_remaining_hp(result.defender_hp_remaining)
 	engagement_resolved.emit(instance, horde, result)
 
@@ -291,7 +295,7 @@ func _siege_buildings(horde: Horde, coord: Vector2i) -> void:
 	for instance in _building_manager.get_buildings_at(coord):
 		if instance.is_ruined:
 			continue
-		_building_manager.damage_building(instance, horde.get_combat_damage())
+		_building_manager.damage_building(instance, horde.get_combat_damage() * HordeManager.get_night_aggression_multiplier())
 		return  # One building per contact event — see this method's own doc comment.
 
 ## Design doc, user request: "each special unit type should do something

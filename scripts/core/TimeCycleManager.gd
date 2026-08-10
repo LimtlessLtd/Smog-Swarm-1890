@@ -32,17 +32,29 @@ extends Node
 ##     phase_changed is what FogOfWarManager listens to and recomputes
 ##     against; the actual radius math lives there, not here.
 ##
-## Deliberately NOT wired here yet — each blocked on a system that doesn't
-## exist, same "not implemented, deliberately" convention as every other
-## deferral already in todo.md:
-##   - +20% Day construction/resource-gather speed and Night's 2x sewer
-##     eruption rate: both need a sub-day production tick.
-##     BuildingManager/ResourceManager only tally output once per full day
-##     (TickManager.day_completed), not per Day/Night phase within it, and
-##     Phase 3's sewer system doesn't exist yet either.
-##   - Zombie move-speed/aggression/noise-attraction deltas and military
-##     unit move-speed/damage deltas: no zombie (Phase 5.2/5.4) or unit
-##     (Phase 5.4) exists yet to apply a modifier to.
+## Deliberately NOT wired here yet — blocked on a system that doesn't exist,
+## same "not implemented, deliberately" convention as every other deferral
+## already in todo.md:
+##   - Night's 2x sewer eruption rate: Phase 3's sewer system doesn't exist
+##     yet.
+##
+## Everything else this comment used to list as blocked here is real now,
+## just not wired through THIS class — each lives in the manager that owns
+## the thing it modifies (managers own their own balancing constants, the
+## same pattern every Day/Night multiplier in this project already follows;
+## this class only owns deriving the phase itself, not applying it):
+##   - "+20% Day construction/resource-gather speed" — BuildingManager.
+##     DAY_NIGHT_AVERAGE_PRODUCTION_MULTIPLIER (a flat +10% once-daily
+##     average, mathematically identical to a true +20%-Day/+0%-Night split
+##     given this class's own exact 50/50 Day/Night division — see that
+##     constant's own doc comment for the derivation, and for why it isn't
+##     built as literal phase-triggered sub-day ticks).
+##   - Zombie move-speed — HordeManager.DAY_MOVE_SPEED_MULTIPLIER/
+##     NIGHT_MOVE_SPEED_MULTIPLIER. Aggression +100% — HordeManager.
+##     NIGHT_AGGRESSION_MULTIPLIER. Double noise-attraction — NoiseManager.
+##     NIGHT_NOISE_MULTIPLIER. Military unit move-speed/damage —
+##     UnitOrderController.DAY_MOVE_SPEED_MULTIPLIER / CombatCoordinator.
+##     DAY_DAMAGE_MULTIPLIER.
 
 signal phase_changed(phase: GameEnums.DayPhase)
 signal day_phase_started
