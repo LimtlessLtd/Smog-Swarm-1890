@@ -204,7 +204,7 @@ func _update_unit_group(instance: UnitInstance) -> void:
 		_:  # HIGH — unchanged from before 2.5.5, now UnitVisuals-aware (Phase 6.3.1).
 			if instance.is_squad_rendered():
 				for i in range(headcount):
-					group.add_child(_build_unit_figure(instance, FIGURE_RADIUS, _scatter_offset(i, headcount), FIGURE_COLOR))
+					group.add_child(_build_unit_figure(instance, FIGURE_RADIUS, _scatter_offset(i, headcount, instance.id), FIGURE_COLOR))
 			else:
 				group.add_child(_build_unit_figure(instance, VEHICLE_RADIUS, Vector2.ZERO, VEHICLE_COLOR))
 
@@ -326,7 +326,7 @@ func _update_horde_group(horde: Horde) -> void:
 		group.add_child(_build_diamond(ZOMBIE_COLOR, LOW_ZOMBIE_RADIUS))
 	else:
 		for i in range(display_count):
-			group.add_child(_build_zombie_figure(horde.id, i, _scatter_offset(i, display_count)))
+			group.add_child(_build_zombie_figure(horde.id, i, _scatter_offset(i, display_count, horde.id)))
 
 ## How many individual zombie figures to actually draw for a horde of
 ## `size` — LOW collapses to a single blob (display_count itself doesn't
@@ -347,16 +347,38 @@ func _horde_display_count(size: int) -> int:
 
 ## --- Shared figure drawing --------------------------------------------------
 
-## Deterministic (index-seeded, not random) so the same figure count always
-## scatters into the same shape — a ring around the group's own
-## local_position, same "spread stacked entries out for legibility" idea
-## TacticalHexView._resolved_building_position() already uses for multiple
-## buildings sharing one hex.
-func _scatter_offset(index: int, total: int) -> Vector2:
+## Deterministic (index+group-seeded, not truly random — same figure count
+## for the same entity always scatters into the same shape, no per-frame
+## jitter) — but no longer a perfect geometric ring. **Real bug fixed
+## (player report: zombies/units "move to the center of a hex tile and
+## then rotate around it in a very programmatic way" — a perfectly
+## evenly-spaced ring, `TAU * index/total`, reads as synthetic regardless
+## of how organically the group itself moves, and EVERY squad/horde on the
+## map shared the exact same shape).** Both angle and radius now vary per
+## figure via a cheap deterministic hash (`_hash01()`) rather than a clean
+## division of the circle, and `group_seed` (caller passes the owning
+## Horde/UnitInstance's own `.id`) means different groups scatter
+## differently from each other too, not just look non-circular each.
+## Still spreads figures out for legibility — same underlying purpose
+## `TacticalHexView._resolved_building_position()` already serves for
+## multiple buildings sharing one hex — just organically now instead of
+## geometrically.
+func _scatter_offset(index: int, total: int, group_seed: int = 0) -> Vector2:
 	if total <= 1:
 		return Vector2.ZERO
-	var angle := TAU * float(index) / float(total)
-	return Vector2(cos(angle), sin(angle)) * FIGURE_SPREAD
+	var base_angle := TAU * float(index) / float(total)
+	var angle_jitter := (_hash01(index * 2 + group_seed * 7) - 0.5) * (TAU / float(total)) * 0.8  ## Up to ~80% of one slot's own angular width either way — enough to break the perfect evenness without figures swapping places/overlapping.
+	var radius_jitter := 0.6 + _hash01(index * 2 + 1 + group_seed * 7) * 0.7  ## 0.6x-1.3x FIGURE_SPREAD — an organic scatter has near/far figures, not every one sitting on the exact same circle.
+	var angle := base_angle + angle_jitter
+	return Vector2(cos(angle), sin(angle)) * FIGURE_SPREAD * radius_jitter
+
+## Cheap deterministic 0..1 pseudo-random value from an int seed — no
+## RandomNumberGenerator instance needed for a single scalar, same
+## "small enough to just hash" reasoning LocalDetailGenerator's own
+## coordinate-seeding (_hex_seed()) already applies elsewhere.
+func _hash01(seed_value: int) -> float:
+	var h := (seed_value * 2654435761) & 0x7FFFFFFF  ## Knuth's multiplicative hash constant, masked positive.
+	return float(h % 10000) / 10000.0
 
 func _build_figure(color: Color, radius: float, offset: Vector2) -> Node2D:
 	var shape := Polygon2D.new()

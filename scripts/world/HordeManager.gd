@@ -517,7 +517,7 @@ func _advance_horde(horde: Horde, delta: float) -> void:
 		var from_coord := horde.hex_coord  ## Captured BEFORE the call below overwrites it.
 		var speed := _movement_speed(from_coord, next_coord)
 		var obstacles := _gather_obstacles(from_coord, next_coord)
-		var result := MovementStepper.advance_toward_hex(from_coord, horde.local_position, next_coord, remaining, speed, obstacles, ENTITY_RADIUS)
+		var result := MovementStepper.advance_toward_hex(from_coord, horde.local_position, next_coord, remaining, speed, obstacles, ENTITY_RADIUS, float(horde.id))
 		horde.hex_coord = result["hex_coord"]
 		horde.local_position = result["local_position"]
 		remaining -= float(result["seconds_used"])
