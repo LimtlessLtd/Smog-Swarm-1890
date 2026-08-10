@@ -105,6 +105,7 @@ func _ready() -> void:
 		_building_manager.building_removed.connect(_on_building_removed)
 	if wall_manager_path != NodePath():
 		_wall_manager = get_node(wall_manager_path)
+		_wall_manager.wall_segment_removed.connect(_on_wall_segment_removed)
 	if build_placement_controller_path != NodePath():
 		_build_placement_controller = get_node(build_placement_controller_path)
 	if wall_placement_controller_path != NodePath():
@@ -203,6 +204,11 @@ func _select_unit(instance: UnitInstance, coord: Vector2i) -> void:
 	_selected_unit = instance
 	_selected_building = null
 	_selected_wall = null
+	# Adversarial-review fix: reset back to the unit-scoped radius in case
+	# the previous selection was a (much bigger) building — see
+	# _select_building()'s own comment on why that one uses a different
+	# radius from this shared ring.
+	_selection_ring.points = _ring_points(_SELECTION_RING_RADIUS)
 	_selection_ring.position = HexCoord.axial_to_world(coord)
 	_selection_ring.visible = true
 	_wall_highlight.visible = false
@@ -212,6 +218,14 @@ func _select_building(instance: BuildingInstance) -> void:
 	_selected_unit = null
 	_selected_building = instance
 	_selected_wall = null
+	# Adversarial-review fix (this pass's own verification step): a flat
+	# _SELECTION_RING_RADIUS was sized for a unit's own token circle and
+	# never rescaled alongside TacticalHexView.BUILDING_HALF_SIZE's 4x bump
+	# — it now renders inside a building's box instead of around it.
+	# TacticalHexView.BUILDING_SELECTION_RING_RADIUS is derived from that
+	# same box size, so this stays in sync automatically the next time
+	# BUILDING_HALF_SIZE changes rather than needing a second manual fix.
+	_selection_ring.points = _ring_points(TacticalHexView.BUILDING_SELECTION_RING_RADIUS)
 	_selection_ring.position = HexCoord.axial_to_world(instance.hex_coord) + instance.local_position
 	_selection_ring.visible = true
 	_wall_highlight.visible = false
@@ -299,6 +313,28 @@ func repair_selected_wall() -> bool:
 		return _wall_manager.repair_segment(_selected_wall)
 	return false
 
+## Demolish (user request) — same "thin query wrapper" shape as the repair
+## pair above, one for each of the two demolishable selection kinds.
+func get_selected_building_demolish_error() -> String:
+	if _selected_building and _building_manager:
+		return _building_manager.get_demolish_error(_selected_building)
+	return "Nothing selected."
+
+func demolish_selected_building() -> bool:
+	if _selected_building and _building_manager:
+		return _building_manager.demolish_building(_selected_building)
+	return false
+
+func get_selected_wall_demolish_error() -> String:
+	if _selected_wall and _wall_manager:
+		return _wall_manager.get_demolish_error(_selected_wall)
+	return "Nothing selected."
+
+func demolish_selected_wall() -> bool:
+	if _selected_wall and _wall_manager:
+		return _wall_manager.demolish_segment(_selected_wall)
+	return false
+
 func clear_selection() -> void:
 	_selected_unit = null
 	_selected_building = null
@@ -360,6 +396,13 @@ func _on_unit_removed(instance: UnitInstance) -> void:
 ## selection, matching _on_unit_removed's own reasoning above.
 func _on_building_removed(instance: BuildingInstance) -> void:
 	if _selected_building == instance:
+		clear_selection()
+
+## Demolish (user request) — walls are now removable for the first time;
+## mirrors _on_building_removed()'s own "don't leave a selection pointing
+## at something that no longer exists" guard exactly.
+func _on_wall_segment_removed(segment: WallSegment) -> void:
+	if _selected_wall == segment:
 		clear_selection()
 
 func _on_unit_moved(instance: UnitInstance, _from_coord: Vector2i, to_coord: Vector2i) -> void:

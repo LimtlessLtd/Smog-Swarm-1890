@@ -65,9 +65,19 @@ func setup(unit_command_controller: UnitCommandController, unit_manager: UnitMan
 		_unit_manager.unit_removed.connect(_on_roster_changed)
 		_unit_manager.unit_retrained.connect(_on_roster_changed)
 	if _building_manager:
-		_building_manager.repair_started.connect(_on_building_repair_changed)
-		_building_manager.building_repaired.connect(_on_building_repair_changed)
-		_building_manager.building_ruined.connect(_on_building_repair_changed)
+		_building_manager.repair_started.connect(_on_building_stats_changed)
+		_building_manager.building_repaired.connect(_on_building_stats_changed)
+		_building_manager.building_ruined.connect(_on_building_stats_changed)
+		# Adversarial code-review finding (this pass's own verification
+		# step): HP/Population/"if overrun"/Upkeep were only ever computed
+		# once at render time — combat damage and starvation/regrowth both
+		# silently mutate the live BuildingInstance without either of the
+		# three signals above firing, so a panel left open across either
+		# event kept showing stale numbers. Reuses the same handler (its
+		# body already just checks "is the affected instance the one
+		# currently selected" — that check doesn't care WHY it changed).
+		_building_manager.building_damaged.connect(_on_building_stats_changed)
+		_building_manager.building_population_changed.connect(_on_building_stats_changed)
 	if _wall_manager:
 		_wall_manager.repair_started.connect(_on_wall_repair_changed)
 		_wall_manager.wall_segment_repaired.connect(_on_wall_repair_changed)
@@ -95,11 +105,16 @@ func _on_patrol_recording_changed(_is_recording: bool, _waypoint_count: int) -> 
 func _on_roster_changed(_instance: UnitInstance) -> void:
 	_refresh_current_selection()
 
-## A repair starting/finishing (or a fresh ruin) should immediately update
-## the Repair button's enabled state/label rather than leaving a stale
-## "Repair" button clickable on a building that's already mid-repair —
-## same live-refresh reasoning _on_roster_changed already covers for units.
-func _on_building_repair_changed(instance: BuildingInstance, _extra: Variant = null) -> void:
+## Broadened past its original "repair state changed" scope (adversarial
+## code-review finding, this pass's own verification step) — a repair
+## starting/finishing, a fresh ruin, combat damage, or a starvation/
+## regrowth population change should all immediately refresh whatever
+## stats this panel is showing rather than leaving them stale until the
+## player deselects and reselects. `_extra` absorbs whatever payload each
+## of the four source signals happens to carry (an HP delta, a population
+## count, or nothing) — this handler only ever cares WHICH instance
+## changed, never why.
+func _on_building_stats_changed(instance: BuildingInstance, _extra: Variant = null) -> void:
 	if _unit_command_controller and _unit_command_controller.get_selected_building() == instance:
 		_refresh_current_selection()
 
@@ -151,11 +166,16 @@ func _render_building_panel(instance: BuildingInstance) -> void:
 		stats.text = "HP %d/%d" % [int(instance.current_hp), int(definition.get_max_hp())]
 		HUDStyles.style_label(stats)
 		_list.add_child(stats)
+		_add_building_economy_stats(instance)
 
 	_add_repair_button(
 		instance.is_ruined,
 		func() -> String: return _unit_command_controller.get_selected_building_repair_error(),
 		_unit_command_controller.repair_selected_building
+	)
+	_add_demolish_button(
+		func() -> String: return _unit_command_controller.get_selected_building_demolish_error(),
+		_unit_command_controller.demolish_selected_building
 	)
 
 	if definition.can_train_units:
@@ -175,6 +195,115 @@ func _render_building_panel(instance: BuildingInstance) -> void:
 				HUDStyles.style_button(button)
 				_list.add_child(button)
 
+## User request ("when selecting a building, we should see various
+## statistics... how much upkeep it costs, how many population it has
+## inside and if it were to fall to zombie attacks how many zombies it
+## would produce (its the same number)", later "please include energy in
+## the building stats panel") — under an intact building's HP:
+## current/capacity population, the exact casualty count
+## BuildingManager.damage_building() would actually convert to a horde if
+## this building fell right now (building_ruined's own `lost_population`
+## payload IS `instance.current_population` at the moment it ruins — see
+## that signal's doc comment — so this is read straight off the same
+## field, not a separate estimate that could drift from the real
+## mechanic), recurring daily upkeep, and Energy. Population/zombie lines
+## are skipped entirely for a building with no housing capacity at all
+## (population_provided == 0 — industry/agriculture/defense buildings),
+## same "don't show a stat that's always trivially zero" restraint
+## `can_train_units` already gets below.
+func _add_building_economy_stats(instance: BuildingInstance) -> void:
+	var definition := instance.definition
+	if definition.population_provided > 0:
+		var population_stats := Label.new()
+		population_stats.text = "Population: %d / %d" % [instance.current_population, definition.population_provided]
+		HUDStyles.style_label(population_stats)
+		_list.add_child(population_stats)
+
+		var zombie_stats := Label.new()
+		zombie_stats.text = "If overrun: %d zombies" % instance.current_population
+		HUDStyles.style_label(zombie_stats, false, true)  # Muted — a warning to read, not the headline stat.
+		_list.add_child(zombie_stats)
+
+	var upkeep_text := _recurring_upkeep_display(instance)
+	if not upkeep_text.is_empty():
+		var upkeep_stats := Label.new()
+		upkeep_stats.text = "Upkeep: %s / day" % upkeep_text
+		HUDStyles.style_label(upkeep_stats, false, true)
+		_list.add_child(upkeep_stats)
+
+	_add_energy_stat(definition)
+
+## Adversarial code-review finding, HIGH severity (this pass's own
+## verification step): a plain `definition.daily_upkeep` read left the
+## Upkeep line silently missing for Terraced Tenement/Workhouse — this
+## tree's only two housing types — because their real recurring cost
+## (Food, proportional to population) is never written into daily_upkeep
+## at all; BuildingManager._on_day_completed() instead computes it as a
+## COLONY-WIDE aggregate (`total_population * FOOD_PER_POPULATION`, see
+## that method's own `food_demand` line) entirely separately from the
+## per-instance daily_upkeep loop. Folding that same formula in here
+## (using `current_population`, what's ACTUALLY being paid for today, not
+## `population_provided`'s baseline capacity — matching the "live state,
+## not baseline" framing the Population/zombie lines above already use)
+## is what actually makes "how much upkeep it costs" true for a housing
+## building instead of silently implying it's free to run. Excludes
+## ResourceType.ENERGY from `daily_upkeep` itself — see _add_energy_stat()
+## for why that's shown as its own separate, distinctly-labeled line
+## rather than folded in here as if it were a recurring cost.
+func _recurring_upkeep_display(instance: BuildingInstance) -> String:
+	var upkeep: Dictionary = {}
+	for resource_type in instance.definition.daily_upkeep:
+		if resource_type == GameEnums.ResourceType.ENERGY:
+			continue
+		upkeep[resource_type] = upkeep.get(resource_type, 0.0) + float(instance.definition.daily_upkeep[resource_type])
+	if instance.current_population > 0:
+		var food := GameEnums.ResourceType.FOOD
+		upkeep[food] = upkeep.get(food, 0.0) + instance.current_population * BuildingManager.FOOD_PER_POPULATION
+	return _format_upkeep(upkeep)
+
+## User request ("please include energy in the building stats panel") — a
+## deliberately separate line from "Upkeep: ... / day" above, not folded
+## into it: BuildingDefinition.daily_upkeep/daily_output's own doc
+## comments are explicit that an ENERGY entry in either dict is a ONE-TIME
+## grid draw/contribution settled once at construction/repair
+## (BuildingManager._apply_construction_energy()), never a recurring daily
+## flow — labeling it "/ day" alongside genuine recurring costs would
+## misstate what it actually does, the exact mistake _recurring_upkeep_display()
+## above is careful to avoid. Shows whichever side actually applies (a
+## consumer's draw or a producer's contribution — no building both draws
+## and contributes today, but nothing here assumes that stays true).
+func _add_energy_stat(definition: BuildingDefinition) -> void:
+	var energy := GameEnums.ResourceType.ENERGY
+	var draw := float(definition.daily_upkeep.get(energy, 0.0))
+	var output := float(definition.daily_output.get(energy, 0.0))
+	if draw <= 0.0 and output <= 0.0:
+		return
+	var energy_stats := Label.new()
+	if output > 0.0:
+		energy_stats.text = "Energy: +%s (one-time grid contribution)" % String.num(output, 1)
+	else:
+		energy_stats.text = "Energy: -%s (one-time grid draw)" % String.num(draw, 1)
+	HUDStyles.style_label(energy_stats, false, true)
+	_list.add_child(energy_stats)
+
+## Dedicated formatter for the Upkeep line — _format_cost() below (shared
+## with training/retrain cost display, where every value is a whole
+## number by design) truncates via int(), which would silently understate
+## e.g. a Terraced Tenement's real 1.2 Food/day (12 population *
+## BuildingManager.FOOD_PER_POPULATION) as "1 Food". One decimal place is
+## exactly enough precision for every value this project's upkeep numbers
+## ever take — a flat per-building constant, or population times the
+## single FOOD_PER_POPULATION constant — without the noise of a full float.
+func _format_upkeep(upkeep: Dictionary) -> String:
+	var text := ""
+	var first := true
+	for resource_type in upkeep:
+		if not first:
+			text += ", "
+		text += "%s %s" % [String.num(float(upkeep[resource_type]), 1), ResourceVisuals.display_name(resource_type)]
+		first = false
+	return text
+
 func _render_wall_panel(segment: WallSegment) -> void:
 	_clear_list()
 	var header := Label.new()
@@ -193,6 +322,10 @@ func _render_wall_panel(segment: WallSegment) -> void:
 		func() -> String: return _unit_command_controller.get_selected_wall_repair_error(),
 		_unit_command_controller.repair_selected_wall
 	)
+	_add_demolish_button(
+		func() -> String: return _unit_command_controller.get_selected_wall_demolish_error(),
+		_unit_command_controller.demolish_selected_wall
+	)
 
 ## Shared by both panels above — a Repair button only even APPEARS once the
 ## thing is actually damaged enough to repair (`is_ruined`/`is_breached()`,
@@ -209,6 +342,29 @@ func _add_repair_button(is_damaged: bool, error_getter: Callable, repair_action:
 	button.disabled = not error.is_empty()
 	button.tooltip_text = error if not error.is_empty() else "Repair this."
 	button.pressed.connect(func() -> void: repair_action.call())
+	HUDStyles.style_button(button)
+	_list.add_child(button)
+
+## User request ("there should also be a demolish button on every building
+## (and wall) where you get 50% of the resources used to build it back
+## except energy where you always get 100%..."). Unlike Repair (only even
+## appears once something is actually damaged), Demolish is always shown —
+## "every building (and wall)", not just damaged ones — disabled with the
+## real rejection reason as a tooltip when it doesn't apply right now
+## (today, only a ruin sitting in still-contested territory), same
+## queryable-rejection convention _add_repair_button() above already
+## follows. No confirmation dialog — this project has no such UI pattern
+## anywhere else to reuse, and the action is framed as a refund, not a
+## pure loss.
+func _add_demolish_button(error_getter: Callable, demolish_action: Callable) -> void:
+	if not _unit_command_controller:
+		return
+	var button := Button.new()
+	button.text = "Demolish"
+	var error: String = error_getter.call()
+	button.disabled = not error.is_empty()
+	button.tooltip_text = error if not error.is_empty() else "Demolish this for a partial refund."
+	button.pressed.connect(func() -> void: demolish_action.call())
 	HUDStyles.style_button(button)
 	_list.add_child(button)
 

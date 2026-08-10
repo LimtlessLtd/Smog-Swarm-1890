@@ -38,6 +38,15 @@ signal repair_rejected(segment: WallSegment, reason: String)
 ## User report ("repairing... should take some amount of time") —
 ## wall_segment_repaired (above) now only fires once a queued job finishes.
 signal repair_started(segment: WallSegment, days: int)
+## User request ("there should also be a demolish button on every building
+## (and wall)") — the first-ever removal path a WallSegment has. Every
+## other consumer of this class's placement signals (StrategicOverlayManager,
+## LocalDetailManager, UnitCommandController) previously documented "walls
+## are never removed once placed" as the reason they had no removal
+## handler; demolish_segment() below makes that no longer true, so each of
+## those now has one too.
+signal wall_segment_removed(segment: WallSegment)
+signal demolish_rejected(segment: WallSegment, reason: String)
 
 @export var hex_grid_map_path: NodePath
 @export var resource_manager_path: NodePath
@@ -557,6 +566,52 @@ func repair_segment(segment: WallSegment) -> bool:
 	_pending_repair.append({"segment": segment, "days_remaining": days})
 	repair_started.emit(segment, days)
 	return true
+
+## --- Demolish (user request: same "Demolish" feature as
+## BuildingManager.demolish_building(), see that method's own doc comment
+## for the full "50%, except Energy at 100%" rule) ---------------------------
+##
+## Refunds HALF of what this exact piece would cost to build fresh at its
+## own current tier/length (_cost_for_length() — the same derived-not-stored
+## cost every other wall action here already recomputes on demand rather
+## than tracking cumulative historical spend across tier upgrades), except
+## any ENERGY entry specifically, refunded in FULL. Generalized as a
+## per-resource-type check (unlike BuildingManager's building version,
+## which refunds Energy as a wholly separate top-up) because a wall's own
+## build-cost dict has no structural guarantee against holding an ENERGY
+## entry the way a building's construction_cost does — see
+## BuildingDefinition.daily_upkeep's own doc comment for that guarantee.
+## No WallCatalog tier actually prices ENERGY today, so this is a no-op in
+## practice, but it doesn't hardcode that assumption.
+func get_demolish_error(segment: WallSegment) -> String:
+	if not segment:
+		return "No such wall segment."
+	return ""
+
+func can_demolish_segment(segment: WallSegment) -> bool:
+	return get_demolish_error(segment).is_empty()
+
+func demolish_segment(segment: WallSegment) -> bool:
+	var error := get_demolish_error(segment)
+	if not error.is_empty():
+		demolish_rejected.emit(segment, error)
+		return false
+	if _resource_manager:
+		var cost := _cost_for_length(segment.tier, _segment_length(segment))
+		for resource_type in cost:
+			var fraction := 1.0 if resource_type == GameEnums.ResourceType.ENERGY else 0.5
+			_resource_manager.add(resource_type, float(cost[resource_type]) * fraction)
+	_remove_segment(segment)
+	return true
+
+## Shared erase-and-notify — also purges any queued _pending_repair job for
+## this segment, same "don't leave a dangling job pointing at a piece
+## nothing else tracks anymore" fix BuildingManager.remove_building() just
+## got for the exact same reason.
+func _remove_segment(segment: WallSegment) -> void:
+	_segments.erase(segment)
+	_pending_repair = _pending_repair.filter(func(job: Dictionary) -> bool: return job["segment"] != segment)
+	wall_segment_removed.emit(segment)
 
 ## Exposed for SaveLoadManager (Phase 2.8) — WallSegment saves directly
 ## (see its own class doc comment for why it needs no separate save-entry

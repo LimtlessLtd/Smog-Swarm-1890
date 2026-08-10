@@ -72,11 +72,31 @@ var _sunset_chime_armed: bool = true
 var _sunrise_chime_armed: bool = true
 var _last_chime_real_ms: int = -CHIME_MIN_REAL_INTERVAL_MS  ## Negative headroom so the very first chime of a session is never suppressed by the cooldown.
 
+## User request ("remove all the sounds for now") — every AudioStreamPlayer
+## in this project (this class's own `_tone_player`, plus
+## BuildPlacementController's and WallPlacementController's own
+## `_reject_player`) plays on the default "Master" bus; none of the three
+## ever set `.bus` to anything else. Muting that one bus here, once, at
+## boot silences all of them centrally without deleting AlertTones' own
+## tone-synthesis code or touching those two other files at all — every
+## `_play()`/`.play()` call site keeps running exactly as before, it just
+## produces no audible sound. Deliberately NOT deleting the code (the
+## report's own "for now" framing) — flip this back off and every existing
+## call site works again unchanged. See BackgroundExecutionManager's own
+## doc comment for why bus-muting as a concept already has precedent in
+## this project (it explicitly does NOT do this while unfocused, for a
+## different reason — simulation/audio staying "live" in the background —
+## this is an unconditional, always-on mute instead, not tied to focus).
+const _MUTE_ALL_SOUND: bool = true
+
 func _ready() -> void:
 	# Same reasoning as TickManager/TimeCycleManager: keep watching for
 	# phase-warning chimes even across a future SceneTree pause — this is
 	# background-alerting infrastructure, not gameplay that should freeze.
 	process_mode = Node.PROCESS_MODE_ALWAYS
+
+	if _MUTE_ALL_SOUND:
+		AudioServer.set_bus_mute(AudioServer.get_bus_index("Master"), true)
 
 	_tone_player = AudioStreamPlayer.new()
 	add_child(_tone_player)

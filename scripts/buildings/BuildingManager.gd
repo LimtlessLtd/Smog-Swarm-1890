@@ -85,6 +85,20 @@ signal food_satisfaction_changed(ratio: float)
 ## retrofitted once that phase begins.
 signal civilians_starved(hex_coord: Vector2i, count: int)
 
+## Adversarial code-review finding (this pass's own verification step):
+## UnitPanelView's building-selection panel shows current_population, but
+## nothing ever told it that value had changed after the panel first
+## rendered — civilians_starved (above) carries a COUNT for HordeManager's
+## own casualty conversion, not a "this building" reference a UI panel can
+## match against its current selection, and _apply_population_regrowth()
+## below fired no signal at all. One general "this building's
+## current_population just changed, for any reason (starvation,
+## regrowth, a future repair restocking a ruin)" event, fired alongside
+## the more specific ones above rather than replacing them — same
+## "multiple independent listeners, each hearing what they actually need"
+## precedent every other signal in this class already follows.
+signal building_population_changed(instance: BuildingInstance)
+
 ## Daily Food drained per unit of population — see design doc 2.2 "Food
 ## (population drain)". Multiplied against each instance's current_population
 ## (Phase 2.10.1's real, mutable per-instance count), not the static
@@ -430,6 +444,15 @@ func remove_building(instance: BuildingInstance) -> void:
 	_instances.erase(instance)
 	if _instances_by_hex.has(instance.hex_coord):
 		_instances_by_hex[instance.hex_coord].erase(instance)
+	# demolish_building() (below) can remove a ruin that's mid-repair
+	# (get_repair_error() only ever gates on is_ruined, never on "already
+	# queued") — without this, _process_pending_repair() would keep ticking
+	# down a job pointing at an instance nothing else references anymore,
+	# eventually firing building_repaired for a building that's already
+	# gone. Shared here (not just in demolish_building()) so destroy_ruin()
+	# gets the same correctness for free — it has the exact same
+	# is_ruined-only gate and could hit the identical gap.
+	_pending_repair = _pending_repair.filter(func(job: Dictionary) -> bool: return job["instance"] != instance)
 	building_removed.emit(instance)
 
 ## Design doc Phase 5.12: reduces `instance.current_hp`, and at zero flips
@@ -584,6 +607,60 @@ func destroy_ruin(instance: BuildingInstance) -> bool:
 	if not get_destroy_ruin_error(instance).is_empty():
 		return false
 	remove_building(instance)
+	return true
+
+## --- Demolish (user request: "there should also be a demolish button on
+## every building (and wall) where you get 50% of the resources used to
+## build it back EXCEPT energy where you always get 100% of the energy
+## used to build a building back") ------------------------------------------
+##
+## Unlike destroy_ruin() above (ruin-only, no refund — clearing rubble that
+## already lost everything to a zombie attack), demolish_building() works
+## on ANY building the player still owns, ruined or not, and is always a
+## refund, never a further loss: HALF of construction_cost — reusing
+## REPAIR_COST_FRACTION's own existing 50% rather than inventing a second
+## fraction constant for the same number — plus, only for a still-intact
+## building, the FULL one-time ENERGY grid draw (_construction_energy_cost()).
+## A ruined building does NOT get that Energy portion refunded again: the
+## instant it ruined, damage_building() already called
+## _refund_construction_energy() and gave it back once — refunding it a
+## second time here would manufacture Energy from nothing. Energy is
+## handled as this separate top-up (not folded into the construction_cost
+## loop) because it structurally never lives in construction_cost to begin
+## with — see BuildingDefinition.daily_upkeep's own doc comment for why
+## Energy is tracked as a one-time draw there instead.
+signal building_demolished(instance: BuildingInstance)
+
+## A ruin still needs its district recaptured before the player can
+## interact with it at all — same gate get_destroy_ruin_error() already
+## enforces, reusing its exact message. An intact building has no such
+## restriction (it's the player's own working structure, not contested
+## rubble sitting in enemy-held ground).
+func get_demolish_error(instance: BuildingInstance) -> String:
+	if not instance:
+		return "No such building."
+	if instance.is_ruined and _territory_controller and _territory_controller.is_lost(instance.hex_coord):
+		return "%s's district must be recaptured before its ruin can be cleared." % instance.definition.display_name
+	return ""
+
+func can_demolish_building(instance: BuildingInstance) -> bool:
+	return get_demolish_error(instance).is_empty()
+
+func demolish_building(instance: BuildingInstance) -> bool:
+	if not get_demolish_error(instance).is_empty():
+		return false
+	if _resource_manager:
+		var refund: Dictionary = {}
+		for resource_type in instance.definition.construction_cost:
+			refund[resource_type] = float(instance.definition.construction_cost[resource_type]) * REPAIR_COST_FRACTION
+		if not instance.is_ruined:
+			var energy_refund := _construction_energy_cost(instance.definition)
+			for resource_type in energy_refund:
+				refund[resource_type] = refund.get(resource_type, 0.0) + energy_refund[resource_type]
+		for resource_type in refund:
+			_resource_manager.add(resource_type, refund[resource_type])
+	remove_building(instance)
+	building_demolished.emit(instance)
 	return true
 
 ## Every placed instance reduced to its saveable footprint (Phase 2.8.1) —
@@ -762,6 +839,7 @@ func _apply_starvation_deaths(ratio: float) -> void:
 			continue
 		instance.current_population -= deaths
 		civilians_starved.emit(instance.hex_coord, deaths)
+		building_population_changed.emit(instance)
 
 ## Design doc 2.10.4: gradual recovery back toward population_provided during
 ## a genuine surplus — deliberately small and flat rather than proportional
@@ -773,3 +851,4 @@ func _apply_population_regrowth() -> void:
 		if definition.population_provided <= 0 or instance.current_population >= definition.population_provided:
 			continue
 		instance.current_population = mini(instance.current_population + POPULATION_REGROWTH_PER_DAY, definition.population_provided)
+		building_population_changed.emit(instance)

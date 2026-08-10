@@ -39,6 +39,12 @@ const WALL_TACTICAL_WIDTH_SCALE: float = 8.0
 ## same "gracefully skip it" convention as every other optional dependency
 ## here; StrategicOverlayManager's own thin markers are unaffected either way.
 @export var wall_manager_path: NodePath
+## Optional — selection-highlight sync (user report: "make a nicer selection
+## highlight on the building itself... change the image colour to blue").
+## Unset means TacticalHexView's per-building tint just never lights up,
+## same "gracefully skip it" convention as every other optional dependency
+## here.
+@export var unit_command_controller_path: NodePath
 
 var _hex_grid_map: HexGridMap
 var _building_manager: BuildingManager
@@ -46,6 +52,11 @@ var _logistics_network: LogisticsNetwork
 var _camera: CameraController
 var _fog_of_war: FogOfWarManager
 var _wall_manager: WallManager
+var _unit_command_controller: UnitCommandController
+## Cached copy of `_unit_command_controller.get_selected_building()` as of
+## the last _process() poll — see _process()'s own doc comment for why this
+## is polled rather than signal-driven.
+var _selected_building: BuildingInstance
 
 var _is_tactical_mode: bool = false
 var _fidelity: GameEnums.TacticalFidelity = GameEnums.TacticalFidelity.HIGH  ## Phase 2.5.5 — pushed to every hydrated TacticalHexView; see _on_fidelity_changed().
@@ -73,6 +84,8 @@ func _ready() -> void:
 	if fog_of_war_path != NodePath():
 		_fog_of_war = get_node(fog_of_war_path)
 		_fog_of_war.fog_state_changed.connect(_on_fog_state_changed)
+	if unit_command_controller_path != NodePath():
+		_unit_command_controller = get_node(unit_command_controller_path)
 
 	_wall_layer = Node2D.new()
 	_wall_layer.name = "TacticalWallLayer"
@@ -84,16 +97,54 @@ func _ready() -> void:
 		_wall_manager.wall_segment_upgraded.connect(_on_wall_segment_state_changed)
 		_wall_manager.wall_segment_breached.connect(_on_wall_segment_state_changed)
 		_wall_manager.wall_segment_repaired.connect(_on_wall_segment_state_changed)
+		_wall_manager.wall_segment_removed.connect(_on_wall_segment_removed)
 		for segment in _wall_manager.get_segments():
 			_on_wall_segment_placed(segment)
 
+## Selection-highlight sync is polled here rather than signal-driven:
+## UnitCommandController only emits `building_instance_selected` when a
+## building becomes selected and `selection_cleared` when nothing is
+## selected — selecting a UNIT or a WALL instead also silently clears
+## `_selected_building` internally (see UnitCommandController._select_unit()/
+## _select_wall()) without emitting either of those two signals. Comparing
+## `get_selected_building()` against the last-known value here catches all
+## three cases uniformly with one check instead of wiring up
+## unit_selected/wall_segment_selected/building_instance_selected/
+## selection_cleared just to detect "a building WAS selected, now isn't".
+## Runs every frame regardless of tactical mode (unlike the hydration
+## refresh below) so `_selected_building` stays correct even while zoomed
+## out — see _apply_selected_building_change()'s own doc comment for why
+## that matters.
 func _process(_delta: float) -> void:
+	if _unit_command_controller:
+		var selected := _unit_command_controller.get_selected_building()
+		if selected != _selected_building:
+			_apply_selected_building_change(_selected_building, selected)
+			_selected_building = selected
+
 	if not _is_tactical_mode or not _hex_grid_map or not _camera:
 		return
 	var centered_coord := _hex_grid_map.world_to_coord(_camera.global_position)
 	if centered_coord != _last_centered_coord:
 		_last_centered_coord = centered_coord
 		_refresh_hydrated_neighborhood(centered_coord)
+
+## Pushes the tint change to whichever hydrated TacticalHexView actually
+## owns each building — a no-op for a hex that isn't currently hydrated
+## (selecting a building necessarily means its hex WAS hydrated at click
+## time, but nothing stops the camera panning away, dehydrating it, while
+## the selection itself persists; `_selected_building` above stays correct
+## regardless so the highlight reappears correctly if that hex rehydrates,
+## see _hydrate_hex()'s own setup() call).
+func _apply_selected_building_change(previous: BuildingInstance, current: BuildingInstance) -> void:
+	if previous:
+		var previous_view: TacticalHexView = _tactical_views.get(previous.hex_coord)
+		if previous_view:
+			previous_view.set_building_selected(previous, false)
+	if current:
+		var current_view: TacticalHexView = _tactical_views.get(current.hex_coord)
+		if current_view:
+			current_view.set_building_selected(current, true)
 
 func _on_tactical_mode_changed(is_tactical: bool) -> void:
 	_is_tactical_mode = is_tactical
@@ -165,7 +216,7 @@ func _hydrate_hex(coord: Vector2i) -> void:
 	if _logistics_network:
 		zoc_state = _logistics_network.get_zoc_state(coord)
 	var view := TacticalHexView.new()
-	view.setup(cell, LocalDetailGenerator.generate(cell), buildings, fog_state, _fidelity, zoc_state)
+	view.setup(cell, LocalDetailGenerator.generate(cell), buildings, fog_state, _fidelity, zoc_state, _selected_building)
 	add_child(view)
 	_tactical_views[coord] = view
 
@@ -254,6 +305,15 @@ func _on_wall_segment_state_changed(segment: WallSegment) -> void:
 	var marker: Line2D = _wall_markers.get(segment.id)
 	if marker:
 		_apply_wall_segment_look(marker, segment)
+
+## User request (Demolish) — the first time a Tactical-zoom wall marker has
+## ever needed to disappear rather than just recolor in place; mirrors
+## _dehydrate_hex()'s own "queue_free() + erase from the map" shape.
+func _on_wall_segment_removed(segment: WallSegment) -> void:
+	var marker: Line2D = _wall_markers.get(segment.id)
+	if marker:
+		marker.queue_free()
+	_wall_markers.erase(segment.id)
 
 func _build_wall_marker(segment: WallSegment) -> Line2D:
 	var body := Line2D.new()

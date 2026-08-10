@@ -33,7 +33,14 @@ const PROP_RADIUS: Dictionary = {
 ## original 10) — re-synced now, not just for this pass's own resize.**
 ## One flat radius for every building type — today's placement footprint
 ## doesn't vary by category, so neither does this.
-const BUILDING_RADIUS: float = 8.0
+##
+## **Re-synced again (user report: "increase the size of the buildings by
+## 4x")** — TacticalHexView.BUILDING_SIZE_MULTIPLIER scaled the box itself
+## 4x (half-extent 5.128 -> 20.512, half-diagonal ~7.25 -> ~29.0); this
+## constant is the exact same "rounded up for clearance" relationship
+## re-applied at the new size, not a fresh guess, so it doesn't repeat the
+## drift this doc comment already warns about.
+const BUILDING_RADIUS: float = 30.0
 
 ## `.get(prop_type, ...)` with a sane fallback so a future GameEnums.PropType
 ## addition without a matching entry here degrades to "treated as an
