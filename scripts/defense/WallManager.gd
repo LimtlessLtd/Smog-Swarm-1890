@@ -100,11 +100,18 @@ func _on_day_completed(_day_number: int) -> void:
 func get_segments() -> Array[WallSegment]:
 	return _segments.duplicate()
 
-func get_segment_between(hex_a: Vector2i, hex_b: Vector2i) -> WallSegment:
-	for segment in _segments:
-		if (segment.hex_a == hex_a and segment.hex_b == hex_b) or (segment.hex_a == hex_b and segment.hex_b == hex_a):
-			return segment
-	return null
+## **Removed (freehand wall rework): `get_segment_between(hex_a, hex_b)`.**
+## "The wall between these two hexes" stopped being a meaningful question
+## once a wall became a chain of independent <=100m pieces along a
+## player-drawn line rather than one piece per hex edge — a single edge
+## can now hold anywhere from zero to dozens of pieces, or none at all if
+## the drawn line only clips a corner of it. `get_blocking_segment()` below
+## is the real replacement for HordeManager's siege lookup (the one actual
+## caller this had); `get_placement_error_for_points()` no longer has an
+## "already defends this edge" dedup check at all — see that function's own
+## doc comment for why overlap-prevention was deliberately dropped rather
+## than ported forward as a wrong, edge-shaped approximation of a
+## genuinely 2D "do these two line segments overlap" problem.
 
 func get_segments_at(coord: Vector2i) -> Array[WallSegment]:
 	var result: Array[WallSegment] = []
@@ -112,6 +119,32 @@ func get_segments_at(coord: Vector2i) -> Array[WallSegment]:
 		if segment.connects(coord):
 			result.append(segment)
 	return result
+
+## Real replacement for the old get_segment_between()-based siege lookup —
+## HordeManager._advance_horde()'s "peek before crossing" (see its own doc
+## comment) now needs "does ANY unbreached piece actually cross this
+## horde's real travel line," not "is there THE piece between these two
+## hexes," since several independent pieces can now sit along or near one
+## hex boundary. Returns the first unbreached piece whose own line
+## (point_a-point_b) genuinely intersects the travel segment
+## (from_world -> to_world), via Godot's own Geometry2D.segment_intersects_segment()
+## rather than hand-rolled line math. Restricted to pieces registered
+## under `from_hex`/`to_hex` (WallSegment.connects(), same as
+## get_segments_at() above) for efficiency — a piece can only ever block a
+## crossing near the specific hex(es) its own endpoints actually fall in,
+## the same spatial-index role hex_a/hex_b already played before this
+## rework, just geometry-checked now instead of assumed from the hex pair
+## alone.
+func get_blocking_segment(from_hex: Vector2i, to_hex: Vector2i, from_world: Vector2, to_world: Vector2) -> WallSegment:
+	var candidates := get_segments_at(from_hex)
+	if to_hex != from_hex:
+		for segment in get_segments_at(to_hex):
+			if not candidates.has(segment):
+				candidates.append(segment)
+	for segment in candidates:
+		if not segment.is_breached() and Geometry2D.segment_intersects_segment(from_world, to_world, segment.point_a, segment.point_b) != null:
+			return segment
+	return null
 
 ## Exposed for SaveLoadManager (Phase 2.8) — mirrors BuildingManager.get_next_id().
 func get_next_id() -> int:
@@ -145,69 +178,153 @@ func get_next_id() -> int:
 ## No LogisticsNetwork wired means no distinction is knowable — every
 ## segment reads as "outer", the same "gracefully skip it" fallback every
 ## other optional dependency here already uses.
+## **Freehand rework note:** a short (<=100m) piece's own two endpoints
+## often land in the SAME hex (hexes are ~5000m across) rather than two
+## different adjacent ones the way a whole-edge segment always used to —
+## `hex_a == hex_b` in that case just means "both ends of this piece are
+## inside one hex," and the legacy check collapses to that single hex's
+## own coverage rather than requiring two.
 func is_legacy_segment(segment: WallSegment) -> bool:
 	if not _logistics_network or not segment:
 		return false
 	var covered := _logistics_network.get_covered_hexes()
+	if segment.hex_a == segment.hex_b:
+		return covered.has(segment.hex_a)
 	return covered.has(segment.hex_a) and covered.has(segment.hex_b)
 
-## Returns "" if a fresh Wooden segment can legally be placed between
-## `hex_a`/`hex_b` right now, or a human-readable rejection reason otherwise
-## — mirrors BuildingManager.get_placement_error()'s "queryable without side
-## effects" pattern.
-func get_placement_error(hex_a: Vector2i, hex_b: Vector2i) -> String:
+## Returns "" if a single wall PIECE can legally be placed with its own
+## endpoints at `point_a`/`point_b` right now, or a human-readable
+## rejection reason otherwise — mirrors BuildingManager.get_placement_error()'s
+## "queryable without side effects" pattern. Called once per chopped piece
+## by place_wall_line() below, not once per whole drawn line.
+##
+## **Deliberately no "already defends this edge" duplicate check anymore**
+## (the old hex-pair version had one, via the now-removed
+## get_segment_between()). Preventing two freehand pieces from overlapping
+## is a genuinely different, harder 2D "do these line segments cross or
+## run parallel within some tolerance" problem, not a hex-pair lookup —
+## and *They Are Billions* itself doesn't strictly prevent overlapping/
+## adjacent wall placement either (its own "no more than two rows deep"
+## rule is a different, depth-limiting constraint, not an anti-overlap
+## one). Out of scope for this pass: overlapping pieces are wasteful but
+## harmless, not a correctness bug.
+func get_placement_error_for_points(point_a: Vector2, point_b: Vector2, tier: int = WallCatalog.WOODEN) -> String:
 	if not _hex_grid_map:
 		return "No hex grid map wired to WallManager."
-	if hex_a == hex_b:
-		return "A wall segment needs two different hexes."
-	if not HexCoord.neighbors(hex_a).has(hex_b):
-		return "%s and %s aren't adjacent." % [hex_a, hex_b]
-	var cell_a := _hex_grid_map.get_cell(hex_a)
-	var cell_b := _hex_grid_map.get_cell(hex_b)
+	if point_a.distance_to(point_b) <= 0.01:
+		return "A wall piece needs two different points."
+	var cell_a := _hex_grid_map.get_cell(_hex_grid_map.world_to_coord(point_a))
+	var cell_b := _hex_grid_map.get_cell(_hex_grid_map.world_to_coord(point_b))
 	if not cell_a or not cell_b:
-		return "Wall segment is outside the map."
+		return "Wall piece is outside the map."
 	if not cell_a.is_passable() or not cell_b.is_passable():
 		return "Cannot wall off marsh or peat bog until it is drained."
-	if get_segment_between(hex_a, hex_b):
-		return "A wall segment already defends this edge."
-	if _resource_manager and not _resource_manager.can_afford(WallCatalog.get_build_cost(WallCatalog.WOODEN)):
-		return "Not enough resources to build a wall segment."
+	if _resource_manager and not _resource_manager.can_afford(_cost_for_length(tier, point_a.distance_to(point_b))):
+		return "Not enough resources to build this wall piece."
 	return ""
 
-func can_place_segment(hex_a: Vector2i, hex_b: Vector2i) -> bool:
-	return get_placement_error(hex_a, hex_b).is_empty()
+func can_place_wall_piece(point_a: Vector2, point_b: Vector2, tier: int = WallCatalog.WOODEN) -> bool:
+	return get_placement_error_for_points(point_a, point_b, tier).is_empty()
 
-## Every fresh segment starts at Wooden tier (design doc: "Wooden -> Brick ->
-## Concrete") — upgrade_segment() is the only way to advance it from there.
-func place_segment(hex_a: Vector2i, hex_b: Vector2i) -> WallSegment:
-	var error := get_placement_error(hex_a, hex_b)
-	if not error.is_empty():
-		placement_rejected.emit(hex_a, hex_b, error)
-		return null
-	if _resource_manager:
-		_resource_manager.spend(WallCatalog.get_build_cost(WallCatalog.WOODEN))
-	return _register_segment(hex_a, hex_b, WallCatalog.WOODEN, _next_id, -1.0, true)
+## Cost scales with a piece's own real length now that a "segment" is a
+## short player-drawn chunk (player spec: <=100m) rather than a fixed
+## whole-hex-edge span — the OLD flat WallCatalog.get_build_cost(tier)/
+## get_repair_cost(tier)/get_upgrade_cost(tier) prices were implicitly
+## "per one hex edge" (HexCoord.HEX_SIZE world units long, the single
+## piece a whole edge used to be). Dividing by that gives a stable
+## cost-per-world-unit rate, so a full-length drawn wall costs about what
+## the old one-piece-per-edge wall used to in total — spread across many
+## small, individually cheap pieces — instead of every ~10-unit piece
+## independently costing the OLD whole-edge price (which would have
+## inflated a full drawn perimeter's total cost by ~50x for no reason
+## connected to the actual bug being fixed). **Max HP is deliberately NOT
+## scaled the same way** — WallSegment.get_max_hp() still returns the
+## tier's full value per piece, matching *They Are Billions*' own real
+## model (confirmed via research): each small placed piece is fully as
+## tough as its tier implies, not a fraction of it: cheap-but-tough small
+## pieces, where a long drawn wall's TOTAL toughness genuinely scales up
+## with how much of it you build, not just its cost.
+static func _cost_for_length(tier: int, length: float) -> Dictionary:
+	return _scaled_by_length(WallCatalog.get_build_cost(tier), length)
 
-## Gate/start-of-game pass (user request): same placement rules and cost as
-## a plain place_segment() — get_placement_error() doesn't care about tier
-## or gate-ness at all, only the two hexes — the ONLY difference is
-## registering with is_gate=true, which WallSegment.get_max_hp() alone acts
-## on (WallCatalog.GATE_HP_FRACTION). Not cheaper to build; deliberately
-## weaker once built, same "a gate is a fortification's traditional weak
-## point" framing WallSegment.is_gate's own doc comment gives.
-func place_gate_segment(hex_a: Vector2i, hex_b: Vector2i) -> WallSegment:
-	var error := get_placement_error(hex_a, hex_b)
-	if not error.is_empty():
-		placement_rejected.emit(hex_a, hex_b, error)
-		return null
-	if _resource_manager:
-		_resource_manager.spend(WallCatalog.get_build_cost(WallCatalog.WOODEN))
-	return _register_segment(hex_a, hex_b, WallCatalog.WOODEN, _next_id, -1.0, true, true)
+## Shared by build/repair/upgrade costs alike — see _cost_for_length()'s
+## own doc comment for the full "why length-scale cost but not HP"
+## reasoning; this is just the generic form so get_repair_error()/
+## upgrade_segment() below can apply the exact same scaling to THEIR own
+## flat per-tier WallCatalog costs against a specific segment's own length,
+## not just fresh-build cost.
+static func _scaled_by_length(cost: Dictionary, length: float) -> Dictionary:
+	var fraction := length / HexCoord.HEX_SIZE
+	var scaled: Dictionary = {}
+	for resource_type in cost:
+		scaled[resource_type] = float(cost[resource_type]) * fraction
+	return scaled
 
-func _register_segment(hex_a: Vector2i, hex_b: Vector2i, tier: int, id: int, current_hp: float, advance_next_id: bool, is_gate: bool = false) -> WallSegment:
-	var segment := WallSegment.new(hex_a, hex_b, tier, id, current_hp, is_gate)
-	if advance_next_id:
-		_next_id = id + 1
+## A segment's own real length — point_a/point_b are its actual placement
+## geometry now (freehand rework), so this is a plain distance, not
+## anything hex-derived.
+static func _segment_length(segment: WallSegment) -> float:
+	return segment.point_a.distance_to(segment.point_b)
+
+## **The real placement entry point (player report: walls should be "free
+## hand to place/draw," matching *They Are Billions*' own click-drag
+## model, plus "no longer than 100 meters MAXIMUM... split up into
+## multiple segments" beyond that).** Chops the straight line from
+## `world_a` to `world_b` (wherever the player actually dragged) into
+## independently-placed, independently-HP'd pieces no longer than
+## `WallCatalog.MAX_SEGMENT_LENGTH_WORLD_UNITS` each, validating and
+## paying for every piece individually — a piece that fails validation
+## (dips into impassable terrain, say) is simply skipped rather than
+## aborting the whole drawn line, so one bad stretch doesn't waste an
+## otherwise-good drag. Returns every piece actually placed (empty if
+## none were, e.g. the whole line was invalid or unaffordable).
+func place_wall_line(world_a: Vector2, world_b: Vector2, tier: int = WallCatalog.WOODEN, is_gate: bool = false) -> Array[WallSegment]:
+	var placed: Array[WallSegment] = []
+	if not _hex_grid_map:
+		return placed
+	var total_length := world_a.distance_to(world_b)
+	if total_length <= 0.01:
+		return placed
+	var piece_count := maxi(1, ceili(total_length / WallCatalog.MAX_SEGMENT_LENGTH_WORLD_UNITS))
+	for i in range(piece_count):
+		var point_a := world_a.lerp(world_b, float(i) / float(piece_count))
+		var point_b := world_a.lerp(world_b, float(i + 1) / float(piece_count))
+		var error := get_placement_error_for_points(point_a, point_b, tier)
+		if not error.is_empty():
+			placement_rejected.emit(_hex_grid_map.world_to_coord(point_a), _hex_grid_map.world_to_coord(point_b), error)
+			continue
+		if _resource_manager:
+			_resource_manager.spend(_cost_for_length(tier, point_a.distance_to(point_b)))
+		placed.append(_register_freehand_segment(point_a, point_b, tier, is_gate))
+	return placed
+
+## Free/seeded placement (seed_starting_defenses() below) — same chopping
+## as place_wall_line() but bypasses get_placement_error_for_points()'s
+## cost check entirely and never spends resources, same "this is the
+## game's own starting state, not a player purchase" framing
+## seed_starting_defenses() itself already documents. Terrain/map-bounds
+## validity is still worth checking (a malformed core-hex boundary
+## shouldn't silently place pieces off the map), so this reuses the same
+## per-piece error check, just ignores an affordability-only rejection.
+func _seed_wall_line(world_a: Vector2, world_b: Vector2, tier: int, is_gate: bool) -> void:
+	var total_length := world_a.distance_to(world_b)
+	if total_length <= 0.01:
+		return
+	var piece_count := maxi(1, ceili(total_length / WallCatalog.MAX_SEGMENT_LENGTH_WORLD_UNITS))
+	for i in range(piece_count):
+		var point_a := world_a.lerp(world_b, float(i) / float(piece_count))
+		var point_b := world_a.lerp(world_b, float(i + 1) / float(piece_count))
+		var cell_a := _hex_grid_map.get_cell(_hex_grid_map.world_to_coord(point_a))
+		var cell_b := _hex_grid_map.get_cell(_hex_grid_map.world_to_coord(point_b))
+		if not cell_a or not cell_b or not cell_a.is_passable() or not cell_b.is_passable():
+			continue
+		_register_freehand_segment(point_a, point_b, tier, is_gate)
+
+func _register_freehand_segment(point_a: Vector2, point_b: Vector2, tier: int, is_gate: bool = false) -> WallSegment:
+	var hex_a := _hex_grid_map.world_to_coord(point_a)
+	var hex_b := _hex_grid_map.world_to_coord(point_b)
+	var segment := WallSegment.new(hex_a, hex_b, point_a, point_b, tier, _next_id, -1.0, is_gate)
+	_next_id += 1
 	_segments.append(segment)
 	wall_segment_placed.emit(segment)
 	return segment
@@ -308,7 +425,17 @@ func seed_starting_defenses() -> void:
 		gate_indices[gate_eligible_indices[i]] = true
 
 	for i in boundary_edges.size():
-		_register_segment(boundary_sources[i], boundary_edges[i], WallCatalog.WOODEN, _next_id, -1.0, true, gate_indices.has(i))
+		# Freehand rework: each boundary EDGE now seeds as a chain of
+		# <=100m pieces (via _seed_wall_line(), hex-center to hex-center —
+		# the same line the old single whole-edge segment used to run
+		# along) rather than one giant piece, same as any player-drawn
+		# wall now would. gate_indices is still keyed per EDGE, not per
+		# piece — every piece along a "gate" edge seeds as a Gate, which
+		# reads as one long weak stretch rather than a single-tile weak
+		# point; a deliberate simplification, not a bug, since the
+		# starting perimeter's own gate count/spacing was already a
+		# placeholder balancing choice before this rework.
+		_seed_wall_line(HexCoord.axial_to_world(boundary_sources[i]), HexCoord.axial_to_world(boundary_edges[i]), WallCatalog.WOODEN, gate_indices.has(i))
 
 func get_upgrade_error(segment: WallSegment) -> String:
 	if not segment:
@@ -320,7 +447,7 @@ func get_upgrade_error(segment: WallSegment) -> String:
 	var next_tier := segment.tier + 1
 	if _tech_manager and not _tech_manager.is_wall_tier_unlocked(next_tier):
 		return "%s hasn't been researched yet." % WallCatalog.get_display_name(next_tier)
-	if _resource_manager and not _resource_manager.can_afford(WallCatalog.get_upgrade_cost(next_tier)):
+	if _resource_manager and not _resource_manager.can_afford(_scaled_by_length(WallCatalog.get_upgrade_cost(next_tier), _segment_length(segment))):
 		return "Not enough resources to upgrade to %s." % WallCatalog.get_display_name(next_tier)
 	return ""
 
@@ -339,7 +466,7 @@ func upgrade_segment(segment: WallSegment) -> bool:
 		return false
 	var next_tier := segment.tier + 1
 	if _resource_manager:
-		_resource_manager.spend(WallCatalog.get_upgrade_cost(next_tier))
+		_resource_manager.spend(_scaled_by_length(WallCatalog.get_upgrade_cost(next_tier), _segment_length(segment)))
 	segment.tier = next_tier
 	segment.current_hp = segment.get_max_hp()
 	wall_segment_upgraded.emit(segment)
@@ -407,7 +534,7 @@ func get_repair_error(segment: WallSegment) -> String:
 		return "No such wall segment."
 	if not segment.is_breached():
 		return "This wall segment isn't breached."
-	if _resource_manager and not _resource_manager.can_afford(WallCatalog.get_repair_cost(segment.tier)):
+	if _resource_manager and not _resource_manager.can_afford(_scaled_by_length(WallCatalog.get_repair_cost(segment.tier), _segment_length(segment))):
 		return "Not enough resources to repair this wall segment."
 	return ""
 
@@ -425,7 +552,7 @@ func repair_segment(segment: WallSegment) -> bool:
 		repair_rejected.emit(segment, error)
 		return false
 	if _resource_manager:
-		_resource_manager.spend(WallCatalog.get_repair_cost(segment.tier))
+		_resource_manager.spend(_scaled_by_length(WallCatalog.get_repair_cost(segment.tier), _segment_length(segment)))
 	var days := segment.tier + 1
 	_pending_repair.append({"segment": segment, "days_remaining": days})
 	repair_started.emit(segment, days)
@@ -437,7 +564,7 @@ func repair_segment(segment: WallSegment) -> bool:
 func get_save_state() -> Dictionary:
 	return {"segments": _segments.duplicate(), "next_id": _next_id}
 
-## Restoration bypasses _register_segment() (and so doesn't re-emit
+## Restoration bypasses _register_freehand_segment() (and so doesn't re-emit
 ## wall_segment_placed per segment) — nothing yet reacts to that signal for
 ## recompute purposes the way BuildingManager's placement signals drive ZoC/
 ## Fog of War, so a plain state replace is enough. Revisit if a future

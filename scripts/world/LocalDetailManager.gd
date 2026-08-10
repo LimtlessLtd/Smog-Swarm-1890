@@ -257,7 +257,9 @@ func _on_wall_segment_state_changed(segment: WallSegment) -> void:
 
 func _build_wall_marker(segment: WallSegment) -> Line2D:
 	var body := Line2D.new()
-	body.points = PackedVector2Array([HexCoord.axial_to_world(segment.hex_a), HexCoord.axial_to_world(segment.hex_b)])
+	# Freehand wall rework: point_a/point_b are the piece's own real
+	# placement geometry now, not always a whole hex edge.
+	body.points = PackedVector2Array([segment.point_a, segment.point_b])
 	_apply_wall_segment_look(body, segment)
 	return body
 

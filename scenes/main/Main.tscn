@@ -1,4 +1,4 @@
-[gd_scene load_steps=21 format=3]
+[gd_scene load_steps=22 format=3]
 
 [ext_resource type="PackedScene" path="res://scenes/world/HexGridMap.tscn" id="1"]
 [ext_resource type="PackedScene" path="res://scenes/camera/CameraController.tscn" id="2"]
@@ -27,6 +27,7 @@
 [ext_resource type="PackedScene" path="res://scenes/world/NoiseManager.tscn" id="25"]
 [ext_resource type="PackedScene" path="res://scenes/world/CoastlineOutlineView.tscn" id="26"]
 [ext_resource type="Script" path="res://scripts/main/Main.gd" id="27"]
+[ext_resource type="PackedScene" path="res://scenes/world/WallPlacementController.tscn" id="28"]
 
 [node name="Main" type="Node2D"]
 script = ExtResource("27")
@@ -173,6 +174,11 @@ hex_grid_map_path = NodePath("../HexGridMap")
 building_manager_path = NodePath("../../BuildingManager")
 camera_path = NodePath("../../CameraController")
 
+[node name="WallPlacementController" parent="WorldRoot" instance=ExtResource("28")]
+hex_grid_map_path = NodePath("../HexGridMap")
+wall_manager_path = NodePath("../../WallManager")
+camera_path = NodePath("../../CameraController")
+
 [node name="UnitCommandController" parent="WorldRoot" instance=ExtResource("20")]
 hex_grid_map_path = NodePath("../HexGridMap")
 unit_manager_path = NodePath("../../UnitManager")
@@ -180,6 +186,7 @@ unit_order_controller_path = NodePath("../../UnitOrderController")
 building_manager_path = NodePath("../../BuildingManager")
 wall_manager_path = NodePath("../../WallManager")
 build_placement_controller_path = NodePath("../BuildPlacementController")
+wall_placement_controller_path = NodePath("../WallPlacementController")
 
 [node name="TacticalEntityLayer" parent="WorldRoot" instance=ExtResource("21")]
 unit_manager_path = NodePath("../../UnitManager")
@@ -193,6 +200,7 @@ building_manager_path = NodePath("../BuildingManager")
 wall_manager_path = NodePath("../WallManager")
 save_load_manager_path = NodePath("../SaveLoadManager")
 build_placement_controller_path = NodePath("../WorldRoot/BuildPlacementController")
+wall_placement_controller_path = NodePath("../WorldRoot/WallPlacementController")
 unit_command_controller_path = NodePath("../WorldRoot/UnitCommandController")
 unit_manager_path = NodePath("../UnitManager")
 hex_grid_map_path = NodePath("../WorldRoot/HexGridMap")

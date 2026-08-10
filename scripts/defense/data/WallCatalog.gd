@@ -23,6 +23,21 @@ const MAX_TIER: int = CONCRETE
 ## architecture decision, same framing as every other constant table here.
 const GATE_HP_FRACTION: float = 0.4
 
+## Player-specced hard cap (bug report: "each wall segment should be no
+## longer than 100 meters MAXIMUM, if it goes beyond 100 meters it should
+## be split up into multiple segments... when a zombie comes into contact
+## with the wall and destroys it, the ENTIRE 5 mile full length of wall is
+## destroyed. That's pretty ridiculous") — matches *They Are Billions*'
+## own real model (confirmed via direct research, not assumed): a wall is
+## a chain of small discrete pieces, each with independent HP, destroyed
+## one piece at a time with zero cascade to neighboring pieces, not one
+## continuous structure per placement action. `WallManager.place_wall_line()`
+## is what actually enforces this — chopping any placed line (freehand
+## drag or the free starting perimeter alike) into pieces no longer than
+## this. See `HexCoord.WORLD_UNITS_PER_REAL_METER`'s own doc comment for
+## the real-world/world-unit conversion this is built from.
+const MAX_SEGMENT_LENGTH_WORLD_UNITS: float = 100.0 * HexCoord.WORLD_UNITS_PER_REAL_METER
+
 static func get_display_name(tier: int) -> String:
 	match tier:
 		WOODEN:

@@ -303,21 +303,14 @@ static func quad_uv(texture: Texture2D) -> PackedVector2Array:
 ## explicitly disclaiming any connection to the hex's own real scale — the
 ## user has now overridden that call directly, so this is derived from
 ## `HexCoord.HEX_SIZE` instead:
-## - `HexCoord.HEX_SIZE` (512 world units) is a hex's real circumradius,
-##   itself standing in for that class's own documented ~25 sq mi hex area.
-##   Solving a pointy-top hex's area formula (`area = 3*sqrt(3)/2 * r^2`)
-##   for `r` gives a real circumradius of ~3.102 miles (~4992 real meters)
-##   — so 1 world unit = ~9.75 real meters (512 / 4992).
+## - `HexCoord.WORLD_UNITS_PER_REAL_METER` is the shared real-world/world-unit
+##   ratio (see that constant's own doc comment for the full derivation).
 ## - A REPRESENTATIVE building footprint of 100m x 100m (50m half-width —
 ##   sized for a large Victorian civic/industrial complex, since one
 ##   uniform box has to stand in for every building type this project has,
 ##   from a Gas Streetlamp up to a Town Hall) converts to ~5.13 world units
-##   half-size at that ratio (`50 / 9.75`).
-## sqrt(3) can't be called in a GDScript `const` initializer (same
-## constraint `MovementStepper.BASE_MOVE_SPEED`'s own doc comment already
-## documents) — the derived value is hardcoded here instead of computed
-## live, with the derivation spelled out above rather than left opaque.
-const BUILDING_HALF_SIZE: float = 5.128
+##   half-size at that ratio.
+const BUILDING_HALF_SIZE: float = HexCoord.WORLD_UNITS_PER_REAL_METER * 50.0
 ## Ring radius _resolved_building_position() spreads stacked buildings over
 ## (see that function) — rescaled alongside BUILDING_HALF_SIZE so multiple
 ## buildings sharing a hex (Shift-click placement) don't visually overlap;

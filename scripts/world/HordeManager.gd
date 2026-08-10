@@ -500,7 +500,16 @@ func _advance_horde(horde: Horde, delta: float) -> void:
 		var next_coord: Vector2i = horde.path[0]
 		var segment: WallSegment = null
 		if _wall_manager:
-			segment = _wall_manager.get_segment_between(horde.hex_coord, next_coord)
+			# Freehand wall rework: "the wall between these two hexes" isn't
+			# a single lookup anymore (a real drawn line can cross a hex
+			# boundary anywhere along it, in several independent <=100m
+			# pieces) — get_blocking_segment() checks the horde's actual
+			# straight-line travel this step against every nearby piece's
+			# own real geometry instead. See that function's own doc
+			# comment for the full reasoning.
+			var from_world := HexCoord.axial_to_world(horde.hex_coord) + horde.local_position
+			var to_world := HexCoord.axial_to_world(next_coord)
+			segment = _wall_manager.get_blocking_segment(horde.hex_coord, next_coord, from_world, to_world)
 		if segment and not segment.is_breached():
 			_siege_wall(horde, segment, remaining)
 			return  # Blocked for the rest of this frame — no movement past this edge.

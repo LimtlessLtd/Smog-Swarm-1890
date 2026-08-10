@@ -71,6 +71,7 @@ const _WALL_CLICK_TOLERANCE := 24.0
 @export var building_manager_path: NodePath
 @export var wall_manager_path: NodePath
 @export var build_placement_controller_path: NodePath  ## Optional — while build placement mode is active, this controller yields input to it entirely rather than fighting over the same click (one input mode at a time).
+@export var wall_placement_controller_path: NodePath  ## Optional — same yield-input reasoning as build_placement_controller_path above, for WallPlacementController's own click-drag mode.
 
 var _hex_grid_map: HexGridMap
 var _unit_manager: UnitManager
@@ -78,6 +79,7 @@ var _unit_order_controller: UnitOrderController
 var _building_manager: BuildingManager
 var _wall_manager: WallManager
 var _build_placement_controller: BuildPlacementController
+var _wall_placement_controller: WallPlacementController
 
 var _selected_unit: UnitInstance
 var _selected_building: BuildingInstance
@@ -105,6 +107,8 @@ func _ready() -> void:
 		_wall_manager = get_node(wall_manager_path)
 	if build_placement_controller_path != NodePath():
 		_build_placement_controller = get_node(build_placement_controller_path)
+	if wall_placement_controller_path != NodePath():
+		_wall_placement_controller = get_node(wall_placement_controller_path)
 
 	_selection_ring = Line2D.new()
 	_selection_ring.closed = true
@@ -115,7 +119,7 @@ func _ready() -> void:
 	add_child(_selection_ring)
 
 	## Two-point line rather than a ring — a wall segment IS a line
-	## (hex_a center to hex_b center), so its selection highlight traces
+	## (its own point_a to point_b), so its selection highlight traces
 	## that same shape instead of reusing the unit/building ring, which
 	## would misleadingly imply a single point rather than a whole span.
 	_wall_highlight = Line2D.new()
@@ -140,6 +144,8 @@ func get_patrol_waypoint_count() -> int:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if _build_placement_controller and _build_placement_controller.is_placing():
+		return
+	if _wall_placement_controller and _wall_placement_controller.is_placing():
 		return
 	if event is InputEventMouseButton and event.pressed:
 		if event.button_index == MOUSE_BUTTON_LEFT:
@@ -216,7 +222,7 @@ func _select_wall(segment: WallSegment) -> void:
 	_selected_building = null
 	_selected_wall = segment
 	_selection_ring.visible = false
-	_wall_highlight.points = PackedVector2Array([HexCoord.axial_to_world(segment.hex_a), HexCoord.axial_to_world(segment.hex_b)])
+	_wall_highlight.points = PackedVector2Array([segment.point_a, segment.point_b])
 	_wall_highlight.visible = true
 	wall_segment_selected.emit(segment)
 
@@ -247,7 +253,7 @@ func _closest_wall_within_tolerance(world_pos: Vector2) -> WallSegment:
 	var closest: WallSegment = null
 	var closest_dist: float = _WALL_CLICK_TOLERANCE
 	for segment in _wall_manager.get_segments():
-		var dist: float = _distance_to_segment(world_pos, HexCoord.axial_to_world(segment.hex_a), HexCoord.axial_to_world(segment.hex_b))
+		var dist: float = _distance_to_segment(world_pos, segment.point_a, segment.point_b)
 		if dist <= closest_dist:
 			closest = segment
 			closest_dist = dist
