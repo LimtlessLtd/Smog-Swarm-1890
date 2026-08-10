@@ -188,11 +188,13 @@ const ENTITY_RADIUS: float = 20.0
 ## slow/sluggish" (Day) has no exact number in the design doc — a
 ## placeholder balancing multiplier, same disclaimer every other constant
 ## table in this project already carries. "Zombie move speed +50%" (Night)
-## IS an exact design-doc number, applied literally. Deliberately NOT
-## modeling "aggression +100%" or "double noise-attraction multiplier" here
-## — neither an aggression stat nor a noise-attraction system exists yet
-## (still blocked exactly as this phase's own note already says), so those
-## stay unbuilt; only the movement-speed half of the Night bullet is real.
+## IS an exact design-doc number, applied literally. The Night bullet's
+## other two clauses are ALSO real now, just not here: "aggression +100%" is
+## NIGHT_AGGRESSION_MULTIPLIER/get_night_aggression_multiplier() below,
+## applied to a horde's OUTGOING combat damage rather than movement (this
+## constant pair stays movement-only); "double noise-attraction multiplier"
+## is NoiseManager.NIGHT_NOISE_MULTIPLIER, already feeding this class's own
+## ATTRACTED state via _pick_attraction_target().
 const DAY_MOVE_SPEED_MULTIPLIER: float = 0.65
 const NIGHT_MOVE_SPEED_MULTIPLIER: float = 1.5
 
@@ -222,6 +224,26 @@ const SPLIT_MIN_SIZE: int = 20             ## A horde must be at least this big 
 ## against walls." Balancing numbers, not architecture, same framing as
 ## every other constant table here.
 const WALL_SIEGE_DAMAGE_MULTIPLIER: float = 2.0  ## A horde hits a wall harder than it'd hit a unit — the "siege bonus".
+
+## Design doc Phase 5.1's Night Phase bullet: "aggression +100%" — the
+## zombie-side mirror of CombatCoordinator.DAY_DAMAGE_MULTIPLIER, doubling a
+## horde's OUTGOING combat damage at night instead of boosting a unit's.
+## Applied everywhere Horde.get_combat_damage() feeds a real attack: this
+## class's own _siege_wall() (horde-vs-wall, below), plus
+## CombatCoordinator._engage() (unit-vs-horde) and
+## CombatCoordinator._siege_buildings() (horde-vs-building) — see those two
+## call sites for how each applies it. A placeholder-turned-literal design-
+## doc number ("+100%" = double), same framing as DAY_DAMAGE_MULTIPLIER.
+const NIGHT_AGGRESSION_MULTIPLIER: float = 2.0
+
+## A static func (not instance state) so CombatCoordinator can reach it via
+## the class name alone — HordeManager.get_night_aggression_multiplier() —
+## with no wired instance reference needed, the same way this class already
+## reads TimeCycleManager.is_day()/is_night() directly rather than caching a
+## day/night flag of its own. A pure function of TimeCycleManager's own
+## day/night state; nothing here is Horde-instance-specific.
+static func get_night_aggression_multiplier() -> float:
+	return NIGHT_AGGRESSION_MULTIPLIER if TimeCycleManager.is_night() else 1.0
 
 ## Design doc Phase 4.1: "Ditches and Oil Pits ... inflict damage on a
 ## besieging horde before/during a breach attempt" — flat headcount-worth
@@ -544,7 +566,7 @@ func _advance_horde(horde: Horde, delta: float) -> void:
 func _siege_wall(horde: Horde, segment: WallSegment, seconds: float) -> void:
 	horde.state = GameEnums.HordeState.ATTACKING
 	var tick_fraction := seconds / LOGIC_TICK_SECONDS
-	_wall_manager.damage_segment(segment, horde.get_combat_damage() * WALL_SIEGE_DAMAGE_MULTIPLIER * tick_fraction)
+	_wall_manager.damage_segment(segment, horde.get_combat_damage() * WALL_SIEGE_DAMAGE_MULTIPLIER * get_night_aggression_multiplier() * tick_fraction)
 
 	var counter_damage := 0.0
 	if segment.has_ditch:
