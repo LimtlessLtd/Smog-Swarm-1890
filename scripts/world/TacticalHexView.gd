@@ -40,6 +40,18 @@ var _props: Array[PropInstance] = []
 var _buildings: Array[BuildingInstance] = []
 var _fidelity: GameEnums.TacticalFidelity = GameEnums.TacticalFidelity.HIGH
 var _zoc_state: ZoneOfControlState
+## BuildingInstance.id -> the Node2D _build_building_node() returned for it,
+## rebuilt every _redraw() — lets set_building_selected() re-tint one
+## building in place without a full redraw, same "update in place" shape
+## set_fog_state()/set_fidelity() below already follow for their own state.
+var _building_containers: Dictionary = {}  # int -> Node2D
+## Whichever of THIS hex's own buildings (if any) is the game's current
+## single selection, threaded through setup() so a hex that dehydrates and
+## rehydrates while its own building stays selected (camera pans away and
+## back) redraws already knowing to highlight it — same reasoning
+## `_fidelity`/`_zoc_state` are threaded through setup() for their own live
+## state rather than always starting blank.
+var _selected_building: BuildingInstance
 
 func _ready() -> void:
 	position = HexCoord.axial_to_world(cell.coord)
@@ -56,12 +68,17 @@ func _ready() -> void:
 ## first time this pass — user request) defaults to null, meaning "no
 ## LogisticsNetwork wired" — same "gracefully skip it" convention every
 ## other optional dependency in this project follows.
-func setup(p_cell: HexCell, props: Array[PropInstance], buildings: Array[BuildingInstance], fog_state: GameEnums.FogState = GameEnums.FogState.VISIBLE, fidelity: GameEnums.TacticalFidelity = GameEnums.TacticalFidelity.HIGH, zoc_state: ZoneOfControlState = null) -> void:
+## `selected_building` (user request: real per-building selection highlight)
+## defaults to null, meaning "nothing of this hex's is currently selected" —
+## LocalDetailManager passes its live UnitCommandController-sourced value in
+## on every hydrate, same as it already does for `fidelity`/`zoc_state`.
+func setup(p_cell: HexCell, props: Array[PropInstance], buildings: Array[BuildingInstance], fog_state: GameEnums.FogState = GameEnums.FogState.VISIBLE, fidelity: GameEnums.TacticalFidelity = GameEnums.TacticalFidelity.HIGH, zoc_state: ZoneOfControlState = null, selected_building: BuildingInstance = null) -> void:
 	cell = p_cell
 	_props = props
 	_buildings = buildings
 	_fidelity = fidelity
 	_zoc_state = zoc_state
+	_selected_building = selected_building
 	set_fog_state(fog_state)
 	if is_inside_tree():
 		_redraw()
@@ -79,6 +96,24 @@ func set_zoc_state(zoc_state: ZoneOfControlState) -> void:
 ## if no ZoC applies here), just its visibility needs to follow the flag.
 func _on_display_settings_changed() -> void:
 	_update_zoc_overlay()
+
+## Selection-highlight sync (LocalDetailManager) — re-tints just the one
+## matching container in place, same "update in place, no full redraw"
+## shape set_fog_state()/set_fidelity() already follow. `instance` is
+## always one of THIS hex's own buildings in practice (LocalDetailManager
+## looks the owning hex up via BuildingInstance.hex_coord before ever
+## calling this); the `_building_containers` lookup is a no-op rather than
+## an error if that's ever not the case.
+func set_building_selected(instance: BuildingInstance, is_selected: bool) -> void:
+	if not instance:
+		return
+	if is_selected:
+		_selected_building = instance
+	elif _selected_building and _selected_building.id == instance.id:
+		_selected_building = null
+	var container: Node2D = _building_containers.get(instance.id)
+	if container:
+		container.modulate = _SELECTED_TINT if is_selected else Color.WHITE
 
 ## Fog of War (Phase 2.6): dims the whole hydrated hex (terrain, props and
 ## buildings together) rather than the inner ground HexCellView alone, so a
@@ -108,6 +143,7 @@ func set_fidelity(fidelity: GameEnums.TacticalFidelity) -> void:
 func _redraw() -> void:
 	for child in get_children():
 		child.queue_free()
+	_building_containers.clear()
 
 	var ground := HexCellView.new()
 	ground.setup(cell)
@@ -119,7 +155,12 @@ func _redraw() -> void:
 		add_child(_build_prop_node(prop))
 
 	for i in range(_buildings.size()):
-		add_child(_build_building_node(_buildings[i], i))
+		var building := _buildings[i]
+		var container := _build_building_node(building, i)
+		add_child(container)
+		_building_containers[building.id] = container
+		if _selected_building and building.id == _selected_building.id:
+			container.modulate = _SELECTED_TINT
 
 ## Zone of Control (Phase 2.3), Tactical surface — see
 ## `ZoneOfControlVisuals.gd`'s own doc comment for the outline-vs-fill shape
@@ -310,46 +351,94 @@ static func quad_uv(texture: Texture2D) -> PackedVector2Array:
 ##   uniform box has to stand in for every building type this project has,
 ##   from a Gas Streetlamp up to a Town Hall) converts to ~5.13 world units
 ##   half-size at that ratio.
-const BUILDING_HALF_SIZE: float = HexCoord.WORLD_UNITS_PER_REAL_METER * 50.0
+##
+## **Bumped 4x again (user report: "increase the size of the buildings by
+## 4x, they are too small at the moment").** The real-world derivation above
+## is still the right REPRESENTATIVE footprint — this isn't a second
+## real-scale recalculation, it's the same kind of deliberate legibility
+## override the two resizes before the real-scale pass already made once
+## (10 -> 35 -> 70, see that history above): true-to-scale reads as too
+## small to make out at a glance even with real sprite art on it, so
+## `BUILDING_SIZE_MULTIPLIER` sits on top of the real-scale figure as an
+## explicit, named fudge rather than silently inflating the "50.0" itself
+## and losing the derivation's own meaning.
+const BUILDING_SIZE_MULTIPLIER: float = 4.0
+const BUILDING_HALF_SIZE: float = HexCoord.WORLD_UNITS_PER_REAL_METER * 50.0 * BUILDING_SIZE_MULTIPLIER
 ## Ring radius _resolved_building_position() spreads stacked buildings over
 ## (see that function) — rescaled alongside BUILDING_HALF_SIZE so multiple
 ## buildings sharing a hex (Shift-click placement) don't visually overlap;
 ## must clear BUILDING_HALF_SIZE's own center-to-corner half-diagonal
-## (5.128 * sqrt(2) = ~7.25), same ~1.72x margin the old 70/170 pair used.
-const BUILDING_RING_RADIUS: float = 12.45
+## (5.128 * sqrt(2) = ~7.25), same ~1.72x margin the old 70/170 pair used —
+## scaled by the same BUILDING_SIZE_MULTIPLIER so that margin stays correct
+## at the new size instead of drifting out of sync with it.
+const BUILDING_RING_RADIUS: float = 12.45 * BUILDING_SIZE_MULTIPLIER
 
-## A dark outline traced around every building box — user report ("I still
-## can't see any buildings I place"), the second cause found alongside
-## Main.gd's camera-recenter fix: the box itself was already rendering at
-## the right size/position/texture (confirmed with a headless dump of the
-## actual Polygon2D), it just wasn't READING as a building against this
-## hex's own grey/brown cobblestone texture — real building art (a muted
-## brown/tan illustration, same family of colors as the terrain under it)
-## and the flat category_color() fallback both blend into the ground at a
-## glance rather than popping the way FIGURE_RADIUS's bright unit circles
-## or the props' saturated greens already do. An outline is color-agnostic
-## — it makes the shape itself legible regardless of how close the fill
-## color happens to land to whatever terrain is underneath, without
-## needing to fight every individual building texture's own palette.
-const _OUTLINE_COLOR := Color(0.05, 0.05, 0.05, 0.85)
-const _OUTLINE_WIDTH := 3.0
+## Adversarial code-review finding (this pass's own verification step):
+## UnitCommandController's shared gold `_selection_ring` used a flat,
+## unit-scoped radius (16.0) for building selection too, which predated
+## BUILDING_HALF_SIZE's 4x bump — 16 no longer clears the box's own
+## corner-to-corner half-diagonal (BUILDING_HALF_SIZE * sqrt(2), ~29.0), so
+## the ring rendered INSIDE the building instead of around it, clashing
+## with (and mostly hidden by) the new `_SELECTED_TINT` highlight. Exposed
+## here — not hardcoded in UnitCommandController — so it stays derived from
+## BUILDING_HALF_SIZE the same way BUILDING_RING_RADIUS/ObstacleRadii.BUILDING_RADIUS
+## already are, rather than becoming a fourth hand-copied number that can
+## drift out of sync the next time a building resize happens. ~1.6x margin
+## over the half-diagonal — comfortably outside every corner, not just
+## touching them.
+const BUILDING_SELECTION_RING_RADIUS: float = BUILDING_HALF_SIZE * 1.6
+
+## A dark outline used to be traced around EVERY building box, selected or
+## not — user report ("I still can't see any buildings I place"), the
+## second cause found alongside Main.gd's camera-recenter fix: the box
+## itself was already rendering at the right size/position/texture
+## (confirmed with a headless dump of the actual Polygon2D), it just wasn't
+## READING as a building against this hex's own grey/brown cobblestone
+## texture — real building art (a muted brown/tan illustration, same family
+## of colors as the terrain under it) and the flat category_color()
+## fallback both blend into the ground at a glance rather than popping the
+## way FIGURE_RADIUS's bright unit circles or the props' saturated greens
+## already do. An outline is color-agnostic — it makes the shape itself
+## legible regardless of how close the fill color happens to land to
+## whatever terrain is underneath, without needing to fight every
+## individual building texture's own palette.
+##
+## **Superseded (user report: "remove the thick black boxes around the
+## buildings and instead make a nicer selection highlight on the building
+## itself... change the image colour to blue").** A permanent outline on
+## EVERY building was never actually about selection — it was legibility
+## padding for buildings that used to render at a sub-pixel-adjacent size
+## (see BUILDING_HALF_SIZE's own doc history above). Now that buildings
+## render 4x bigger, the outline reads as exactly what the report calls it:
+## a heavy black box nobody asked for. Removed outright; the selection-only
+## `_SELECTED_TINT` below takes over as the "is this a building" /
+## "is this THE selected building" signal, with 4x the sprite/fill area
+## itself now doing the legibility work the outline used to.
+##
+## `modulate` on the whole per-building container (not `box.color` — that
+## field is either Color.WHITE, letting a real sprite's own colors show
+## through, or the flat category_color() fallback; tinting it directly
+## would fight one of those two rather than sit on top of either) so a
+## selected building visibly shifts color regardless of which of those two
+## cases it's currently in. Blue channel deliberately pushed above 1.0 —
+## Godot's modulate multiplies each channel against whatever's already
+## drawn, so this doesn't just recolor the building, it visibly brightens
+## it too, closer to "this building just lit up" than a flat color swap.
+const _SELECTED_TINT := Color(0.55, 0.75, 1.55)
 
 func _build_building_node(building: BuildingInstance, index: int) -> Node2D:
 	var container := Node2D.new()
 	var box := Polygon2D.new()
-	var outline_points: PackedVector2Array
 	if building.is_ruined:
 		# Phase 5.12: a jagged rubble silhouette, deliberately distinct from
 		# every intact building's clean square — "a visible scar", not just
 		# a recolored box. Ruins stay code-drawn regardless of whether the
 		# intact building has real art — a collapsed building has no sprite.
 		box.color = BuildingVisuals.ruin_color()
-		outline_points = _scaled_polygon(_ruin_polygon(), BUILDING_HALF_SIZE / 10.0)  # _ruin_polygon()'s own points were hand-authored at the old half=10 scale — resize with it rather than redrawing it by hand.
-		box.polygon = outline_points
+		box.polygon = _scaled_polygon(_ruin_polygon(), BUILDING_HALF_SIZE / 10.0)  # _ruin_polygon()'s own points were hand-authored at the old half=10 scale — resize with it rather than redrawing it by hand.
 	else:
 		var half := BUILDING_HALF_SIZE
-		outline_points = PackedVector2Array([Vector2(-half, -half), Vector2(half, -half), Vector2(half, half), Vector2(-half, half)])
-		box.polygon = outline_points
+		box.polygon = PackedVector2Array([Vector2(-half, -half), Vector2(half, -half), Vector2(half, half), Vector2(-half, half)])
 		var texture := BuildingVisuals.building_texture(building.definition.building_type)
 		if texture:
 			box.texture = texture
@@ -359,13 +448,6 @@ func _build_building_node(building: BuildingInstance, index: int) -> Node2D:
 		else:
 			box.color = BuildingVisuals.category_color(building.definition.category)
 	container.add_child(box)
-
-	var outline := Line2D.new()
-	outline.closed = true
-	outline.width = _OUTLINE_WIDTH
-	outline.default_color = _OUTLINE_COLOR
-	outline.points = outline_points
-	container.add_child(outline)
 
 	container.position = _resolved_building_position(building, index)
 	return container

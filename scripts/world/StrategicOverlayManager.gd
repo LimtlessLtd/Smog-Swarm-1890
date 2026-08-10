@@ -210,6 +210,7 @@ func _ready() -> void:
 		_wall_manager.wall_segment_upgraded.connect(_on_wall_segment_state_changed)
 		_wall_manager.wall_segment_breached.connect(_on_wall_segment_state_changed)
 		_wall_manager.wall_segment_repaired.connect(_on_wall_segment_state_changed)
+		_wall_manager.wall_segment_removed.connect(_on_wall_segment_removed)
 		_wall_manager.defense_work_added.connect(_on_wall_defense_work_added)
 		for segment in _wall_manager.get_segments():
 			_on_wall_segment_placed(segment)
@@ -560,10 +561,13 @@ func _start_attack_ring_pulse(ring: Line2D) -> void:
 ##
 ## No fog-of-war gating, matching building icons' own precedent (not spotted
 ## hordes' — a wall is always the player's own construction, same as a
-## building; there's nothing to "spot" about your own perimeter). No
-## `wall_segment_removed` signal exists because walls are never removed once
-## placed (only breached/repaired/upgraded in place), so there's no removal
-## handler to write.
+## building; there's nothing to "spot" about your own perimeter).
+##
+## **No longer true (user request: a Demolish action for walls, mirroring
+## buildings' own): a `wall_segment_removed` signal now exists** —
+## `_on_wall_segment_removed()` below frees this marker exactly the way
+## `_on_building_removed()` already does for building icons, the same
+## "queue_free() + erase from the id->marker map" shape.
 ##
 ## Phase 4.1's outer/legacy-inner distinction, once decided: a legacy
 ## segment (WallManager.is_legacy_segment()) renders dimmed via the whole
@@ -588,6 +592,16 @@ func _on_wall_segment_state_changed(segment: WallSegment) -> void:
 	if not marker:
 		return
 	_apply_wall_segment_look(marker, segment)
+
+## User request (Demolish): mirrors _on_building_removed()'s own
+## "queue_free() + erase from the id->marker map" shape exactly — the
+## first time a wall marker has ever needed to disappear rather than just
+## recolor in place.
+func _on_wall_segment_removed(segment: WallSegment) -> void:
+	var marker: Node2D = _wall_markers.get(segment.id)
+	if marker:
+		marker.queue_free()
+	_wall_markers.erase(segment.id)
 
 func _on_wall_defense_work_added(segment: WallSegment, _work_type: GameEnums.BuildingType) -> void:
 	var marker: Node2D = _wall_markers.get(segment.id)
