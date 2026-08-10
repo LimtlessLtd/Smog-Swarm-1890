@@ -599,7 +599,11 @@ func _build_wall_marker(segment: WallSegment) -> Node2D:
 
 	var body := Line2D.new()
 	body.name = "Body"
-	body.points = PackedVector2Array([HexCoord.axial_to_world(segment.hex_a), HexCoord.axial_to_world(segment.hex_b)])
+	# Freehand wall rework: point_a/point_b are the piece's own real
+	# placement geometry now, not always a whole hex edge — many small
+	# collinear pieces from the same drawn line still render as one
+	# continuous stroke, same as intended before this rework.
+	body.points = PackedVector2Array([segment.point_a, segment.point_b])
 	container.add_child(body)
 	_apply_wall_segment_look(container, segment)
 
@@ -663,7 +667,7 @@ func _update_defense_work_marker(marker: Node2D, segment: WallSegment) -> void:
 		work.visible = false
 		return
 	work.visible = true
-	var midpoint := (HexCoord.axial_to_world(segment.hex_a) + HexCoord.axial_to_world(segment.hex_b)) / 2.0
+	var midpoint := (segment.point_a + segment.point_b) / 2.0
 	var half := 5.0
 	work.polygon = PackedVector2Array([
 		midpoint + Vector2(-half, -half), midpoint + Vector2(half, -half),
@@ -678,7 +682,12 @@ func _update_defense_work_marker(marker: Node2D, segment: WallSegment) -> void:
 	# exists yet, unchanged from before this pass.
 	var texture := WallVisuals.defense_work_texture(segment.has_ditch, segment.has_oil_pit)
 	work.texture = texture
-	work.uv = PackedVector2Array([Vector2(0, 0), Vector2(1, 0), Vector2(1, 1), Vector2(0, 1)])
+	# Real bug fixed (see TacticalHexView.quad_uv()'s own doc comment):
+	# Polygon2D.uv is texture-PIXEL-space, not normalized 0..1 - this
+	# unit-square array only ever sampled a 1x1-pixel transparent
+	# corner, rendering this icon's fill invisible whenever a texture
+	# was set. Reuse the same shared fix.
+	work.uv = TacticalHexView.quad_uv(texture)
 	work.color = Color.WHITE if texture else WallVisuals.defense_work_color(segment.has_ditch, segment.has_oil_pit)
 
 ## --- Threat Meter (Phase 6.1) — world-view surface ---------------------

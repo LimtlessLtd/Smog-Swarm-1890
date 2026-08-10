@@ -229,7 +229,7 @@ func _advance_toward(instance: UnitInstance, destination: Vector2i, revert_to_ho
 		var from_coord := instance.hex_coord  ## Captured BEFORE the call below overwrites it — this is the hex actually being left this crossing.
 		var speed := _movement_speed(instance, from_coord, next_coord)
 		var obstacles := _gather_obstacles(from_coord, next_coord)
-		var result := MovementStepper.advance_toward_hex(from_coord, instance.local_position, next_coord, remaining, speed, obstacles, ENTITY_RADIUS)
+		var result := MovementStepper.advance_toward_hex(from_coord, instance.local_position, next_coord, remaining, speed, obstacles, ENTITY_RADIUS, float(instance.id))
 		instance.hex_coord = result["hex_coord"]
 		instance.local_position = result["local_position"]
 		remaining -= float(result["seconds_used"])

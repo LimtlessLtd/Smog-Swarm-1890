@@ -34,6 +34,21 @@ const _PROP_COUNT_BY_BIOME: Dictionary = {
 
 const _SCATTER_RADIUS: float = HexCoord.HEX_SIZE * 0.85  ## Stay inside the hex's own outline. Scales automatically with Phase 2.5.6's HEX_SIZE increase.
 
+## Real bug fixed (player report: terrain props "that have a right way up
+## (like trees)... are placed in a random rotation, meaning many trees are
+## upside down"). Every currently-authored prop texture (`PropVisuals`,
+## assets/props/*.png) is a real illustrated thing with a natural "up" — a
+## tree/bush/reed's canopy-over-roots growth direction, confirmed directly
+## against tree.png's own art (a canopy spreading from a trunk/root base) —
+## not a rotation-agnostic blob. Only a rock genuinely has no meaningful
+## up/down in nature. A full `0..TAU` spin used to apply uniformly to every
+## prop type regardless, so roughly half of every oriented prop rendered
+## visibly wrong. `_FREE_ROTATION_PROP_TYPES` names the type(s) still
+## allowed the full random spin; everything else gets a small natural-sway
+## jitter instead of an actual orientation change.
+const _FREE_ROTATION_PROP_TYPES: Array[GameEnums.PropType] = [GameEnums.PropType.ROCK]
+const _ORIENTED_PROP_JITTER_RAD: float = 0.349066  ## ~20 degrees either way — real trees/bushes/reeds don't grow perfectly vertical either, but this keeps every one of them reading as clearly upright rather than a true random orientation.
+
 static func generate(cell: HexCell) -> Array[PropInstance]:
 	var props: Array[PropInstance] = []
 	var count: int = _PROP_COUNT_BY_BIOME.get(cell.biome_type, 0)
@@ -48,7 +63,7 @@ static func generate(cell: HexCell) -> Array[PropInstance]:
 		var radius := rng.randf_range(0.0, _SCATTER_RADIUS)
 		var local_position := Vector2(cos(angle), sin(angle)) * radius
 		var prop := PropInstance.new(_prop_type_for_biome(cell.biome_type, rng), local_position)
-		prop.rotation = rng.randf_range(0.0, TAU)
+		prop.rotation = rng.randf_range(0.0, TAU) if _FREE_ROTATION_PROP_TYPES.has(prop.prop_type) else rng.randf_range(-_ORIENTED_PROP_JITTER_RAD, _ORIENTED_PROP_JITTER_RAD)
 		prop.scale = rng.randf_range(0.8, 1.3)
 		props.append(prop)
 

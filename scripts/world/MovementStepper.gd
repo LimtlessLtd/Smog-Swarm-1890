@@ -72,7 +72,18 @@ const STEERING_LOOKAHEAD: float = 140.0
 ## steering entirely: at extreme `TickManager` speeds a single frame can
 ## cover several hex-widths, and fine steering only matters for the
 ## last bit of motion a human is actually watching.
-static func advance_toward_hex(hex_coord: Vector2i, local_position: Vector2, target_hex: Vector2i, available_seconds: float, speed: float, obstacles: Array[Dictionary], entity_radius: float) -> Dictionary:
+##
+## `wobble_seed` (player report: zombies/units "move to the center of a
+## hex tile and then rotate around it in a very programmatic way... their
+## direction of travel... should not be programmatic but random like
+## living things") — a per-entity constant (caller passes each Horde/
+## UnitInstance's own `.id`, cast to float) that gives each entity a
+## distinct, STABLE wobble pattern rather than every entity on the map
+## sharing one identical wave (which would look just as mechanical as a
+## dead-straight line, only wavy instead). See `_wobbled_direction()`'s
+## own doc comment for why this is safe against the wall-crossing
+## invariant this class's own header doc comment describes.
+static func advance_toward_hex(hex_coord: Vector2i, local_position: Vector2, target_hex: Vector2i, available_seconds: float, speed: float, obstacles: Array[Dictionary], entity_radius: float, wobble_seed: float = 0.0) -> Dictionary:
 	if available_seconds <= 0.0:
 		return {"hex_coord": hex_coord, "local_position": local_position, "arrived": false, "seconds_used": 0.0}
 
@@ -86,14 +97,60 @@ static func advance_toward_hex(hex_coord: Vector2i, local_position: Vector2, tar
 
 	var safe_speed := maxf(speed, 0.01)  ## Guards the division below — a zero/negative speed multiplier should never happen in practice, but this avoids a hard crash if one ever does.
 	var time_to_arrive := distance / safe_speed
+	# A whole-leg commit (this call reaches target_hex outright, e.g. a
+	# multi-hex TickManager catch-up burst) ALWAYS beelines exactly to the
+	# real target — no wobble here, by design (see _wobbled_direction()'s
+	# own doc comment): only the bounded partial-step branch below ever
+	# wobbles, and it's re-evaluated fresh from the entity's real position
+	# every single call, same re-check cadence the wall-crossing safety
+	# property this class's header doc comment already relies on.
 	if time_to_arrive <= available_seconds:
 		return {"hex_coord": target_hex, "local_position": Vector2.ZERO, "arrived": true, "seconds_used": time_to_arrive}
 
 	var direction := to_target / distance
+	direction = _wobbled_direction(direction, world_pos, wobble_seed)
 	if not obstacles.is_empty():
 		direction = steer_around_obstacles(world_pos, direction, entity_radius, obstacles)
 	var new_world_pos := world_pos + direction * safe_speed * available_seconds
 	return {"hex_coord": hex_coord, "local_position": new_world_pos - HexCoord.axial_to_world(hex_coord), "arrived": false, "seconds_used": available_seconds}
+
+## How far a wobbled direction is allowed to swing from the true, direct
+## line to the target — an oscillating perpendicular deflection (a smooth
+## function of the entity's own CURRENT WORLD POSITION, so it naturally
+## advances as the entity actually moves — stateless, no per-entity memory
+## needed the way a phase accumulator would) rather than a random walk:
+## net progress toward the target every call is guaranteed (the deflection
+## rotates the direction vector, it never reverses it), it's just no
+## longer a ruler-straight line, the literal "traveling in random
+## directions from seemingly random stimuli" look real animals have
+## rather than a robot's. `wobble_seed` offsets each entity's own phase so
+## a whole horde doesn't all swing the same way in lockstep.
+##
+## **Why this stays safe against the "a horde's own per-edge peek... can't
+## glide through an un-breached wall" invariant** (see this class's own
+## header doc comment and HordeManager._advance_horde()'s): wobble ONLY
+## ever applies to the bounded PARTIAL-step branch above — a step whose
+## own distance-this-call is capped at `speed * available_seconds`,
+## already short by construction (a whole-leg commit takes the separate
+## no-wobble branch instead) — and every caller re-runs its own wall-
+## crossing check from the entity's real, current position before each
+## and every call into this function, wobbled position included. A small
+## bounded per-call swing changes WHERE within that already-short step the
+## entity ends up, not whether the next call's fresh check still runs.
+## ~13 degrees either way. **Empirically tuned, not just guessed**: a
+## temporary self-test walking one full hex-to-hex leg (~887 world units)
+## measured the actual resulting max perpendicular deviation from the
+## direct line at this value — comfortably visible (multiple wall-piece
+## lengths, WallCatalog.MAX_SEGMENT_LENGTH_WORLD_UNITS's own ~10.26 units)
+## without reading as an exaggerated snake-like weave; an earlier pass at
+## 0.45 rad (~26 degrees) produced a ~65-unit swing, over 7% of the whole
+## leg's own length — organic wander, not that.
+const _WOBBLE_MAX_ANGLE_RAD: float = 0.22
+const _WOBBLE_FREQUENCY: float = 0.015  ## Radians per world unit of position — tuned so the wave completes a full cycle roughly every ~420 world units (well under one hex width), reading as continuous drift rather than a slow, obviously-periodic sway.
+static func _wobbled_direction(direction: Vector2, world_pos: Vector2, wobble_seed: float) -> Vector2:
+	var phase := (world_pos.x + world_pos.y) * _WOBBLE_FREQUENCY + wobble_seed
+	var wobble_angle := sin(phase) * _WOBBLE_MAX_ANGLE_RAD
+	return direction.rotated(wobble_angle)
 
 ## Pure steering-behavior obstacle avoidance (a Reynolds-style "avoidance"
 ## force, not a search algorithm) — nudges `desired_direction` (already

@@ -191,7 +191,12 @@ func _update_ghost(world_pos: Vector2) -> void:
 	var texture := BuildingVisuals.building_texture(_pending_type)
 	if texture:
 		_ghost_building.texture = texture
-		_ghost_building.uv = PackedVector2Array([Vector2(0, 0), Vector2(1, 0), Vector2(1, 1), Vector2(0, 1)])
+		# Real bug fixed (see TacticalHexView.quad_uv()'s own doc comment):
+		# Polygon2D.uv is texture-PIXEL-space, not normalized 0..1 - this
+		# unit-square array only ever sampled a 1x1-pixel transparent
+		# corner, rendering the ghost preview invisible exactly like the
+		# real building box was. Reuse the same shared fix.
+		_ghost_building.uv = TacticalHexView.quad_uv(texture)
 		_ghost_building.texture_repeat = CanvasItem.TEXTURE_REPEAT_DISABLED
 	else:
 		_ghost_building.texture = null

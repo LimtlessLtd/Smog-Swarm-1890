@@ -51,6 +51,8 @@ extends CanvasLayer
 @export var tech_manager_path: NodePath   ## Optional — Phase 2.9.3's Tech Tree screen; unset means the panel/button simply do nothing.
 @export var horde_manager_path: NodePath  ## Optional — Phase 5.3's Reconnaissance countdown; unset means that HUD row stays permanently empty.
 @export var noise_manager_path: NodePath  ## Optional — Phase 6.1's Threat Meter (drawn on the minimap); unset means no threat markers, everything else about the minimap is unaffected.
+@export var wall_manager_path: NodePath   ## Optional — feeds UnitPanelView's wall-repair toast/live-refresh; unset means a selected wall's Repair button still works (UnitCommandController owns the actual call) but the panel won't live-refresh mid-repair and no toast fires.
+@export var wall_placement_controller_path: NodePath  ## Optional — arms WallPlacementController from BuildMenuView's new Walls tab; unset means that tab's buttons simply do nothing (same "gracefully skip it" convention as every other optional MainHUD dependency).
 
 const DEFAULT_CAMPAIGN := "Default"
 const DEFAULT_SLOT := "QuickSave"
@@ -85,6 +87,8 @@ var _mode_label: Label
 var _recon_label: Label
 var _toast_label: Label
 var _toast_timer: Timer
+var _wall_manager: WallManager
+var _wall_placement_controller: WallPlacementController
 
 func _ready() -> void:
 	var resource_manager: ResourceManager = null
@@ -99,6 +103,14 @@ func _ready() -> void:
 		# would read as broken, not "in progress."
 		_building_manager.construction_started.connect(_on_construction_started)
 		_building_manager.repair_started.connect(_on_building_repair_started)
+	if wall_manager_path != NodePath():
+		_wall_manager = get_node(wall_manager_path)
+		_wall_manager.repair_started.connect(_on_wall_repair_started)
+		_wall_manager.placement_rejected.connect(_on_wall_placement_rejected)
+	if wall_placement_controller_path != NodePath():
+		_wall_placement_controller = get_node(wall_placement_controller_path)
+		_wall_placement_controller.placement_started.connect(_on_wall_placement_started)
+		_wall_placement_controller.placement_ended.connect(_on_placement_ended)  ## Reused directly — it only ever clears _mode_label, doesn't care what was being placed, same as buildings.
 	if save_load_manager_path != NodePath():
 		_save_load_manager = get_node(save_load_manager_path)
 		_save_load_manager.game_saved.connect(_on_game_saved)
@@ -149,7 +161,7 @@ func _ready() -> void:
 	_build_mode_label()
 	_build_recon_label()
 	_build_build_menu()
-	_build_unit_panel(unit_manager)
+	_build_unit_panel(unit_manager, _wall_manager)
 	_build_toast()
 
 func _build_resource_bar(resource_manager: ResourceManager) -> void:
@@ -354,6 +366,7 @@ func _build_build_menu() -> void:
 	add_child(build_menu)
 	_place_bottom_left(build_menu, BUILD_MENU_SIZE)
 	build_menu.building_selected.connect(_on_building_selected)
+	build_menu.wall_placement_selected.connect(_on_wall_placement_selected)
 
 ## UnitPanelView (Phase 6.1's unit training/orders counterpart to the Build
 ## Menu) — top-left corner, the one spot nothing else in this HUD claims
@@ -362,13 +375,13 @@ func _build_build_menu() -> void:
 ## toast). Gracefully empty if unit_command_controller_path wasn't wired,
 ## same "unset gracefully skips it" convention every other optional MainHUD
 ## dependency already follows.
-func _build_unit_panel(unit_manager: UnitManager) -> void:
+func _build_unit_panel(unit_manager: UnitManager, wall_manager: WallManager) -> void:
 	var unit_panel := UnitPanelView.new()
 	unit_panel.name = "UnitPanel"
 	add_child(unit_panel)
 	_place_top_left(unit_panel, UNIT_PANEL_SIZE)
 	if _unit_command_controller:
-		unit_panel.setup(_unit_command_controller, unit_manager)
+		unit_panel.setup(_unit_command_controller, unit_manager, _building_manager, wall_manager)
 
 func _build_toast() -> void:
 	_toast_label = Label.new()
@@ -550,6 +563,10 @@ func _on_building_selected(building_type: GameEnums.BuildingType) -> void:
 	if _build_placement_controller:
 		_build_placement_controller.begin_placement(building_type)
 
+func _on_wall_placement_selected(is_gate: bool) -> void:
+	if _wall_placement_controller:
+		_wall_placement_controller.begin_placement(is_gate)
+
 func _on_placement_started(building_type: GameEnums.BuildingType) -> void:
 	var definition := BuildingCatalog.get_definition(building_type)
 	var display_name := definition.display_name if definition else "building"
@@ -561,6 +578,12 @@ func _on_placement_ended() -> void:
 func _on_placement_rejected(_building_type: GameEnums.BuildingType, _coord: Vector2i, reason: String) -> void:
 	_show_toast(reason)
 
+func _on_wall_placement_started(_tier: int) -> void:
+	_mode_label.text = "Placing wall — click and drag along the map (Shift-drag for more, Right-click/Esc to cancel)"
+
+func _on_wall_placement_rejected(_hex_a: Vector2i, _hex_b: Vector2i, reason: String) -> void:
+	_show_toast(reason)
+
 func _on_construction_started(building_type: GameEnums.BuildingType, _coord: Vector2i, days: int) -> void:
 	var definition := BuildingCatalog.get_definition(building_type)
 	var display_name := definition.display_name if definition else "Building"
@@ -569,6 +592,9 @@ func _on_construction_started(building_type: GameEnums.BuildingType, _coord: Vec
 func _on_building_repair_started(instance: BuildingInstance, days: int) -> void:
 	var display_name := instance.definition.display_name if instance and instance.definition else "Building"
 	_show_toast("Repairing %s — ready in %d day%s." % [display_name, days, "" if days == 1 else "s"])
+
+func _on_wall_repair_started(_segment: WallSegment, days: int) -> void:
+	_show_toast("Repairing wall segment — ready in %d day%s." % [days, "" if days == 1 else "s"])
 
 func _on_training_started(unit_type: GameEnums.UnitType, _coord: Vector2i, days: int) -> void:
 	var definition := UnitCatalog.get_definition(unit_type)

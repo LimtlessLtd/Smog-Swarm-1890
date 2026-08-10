@@ -29,6 +29,14 @@ extends Control
 ## placement path, not this menu.
 
 signal building_selected(building_type: GameEnums.BuildingType)
+## Real bug fixed (player report: walls "are not free hand to place/draw"
+## — a project-wide grep confirmed there was never ANY placement UI for
+## walls at all, not merely a hex-locked one; every wall a player has ever
+## seen was the free starting perimeter). A fourth tab, own signal rather
+## than reusing building_selected — arming WallPlacementController's
+## click-DRAG flow is a different shape from BuildPlacementController's
+## click-to-place one, not a building type.
+signal wall_placement_selected(is_gate: bool)
 
 const CATEGORY_ORDER: Array[GameEnums.BuildingCategory] = [
 	GameEnums.BuildingCategory.HOUSING_CIVIL,
@@ -62,6 +70,52 @@ func _ready() -> void:
 		if definitions.is_empty():
 			continue  # An empty tab (e.g. every entry filtered out) would just be a dead click target.
 		tabs.add_child(_build_tab(category, definitions))
+
+	tabs.add_child(_build_wall_tab())
+
+## Real placement UI for walls (see wall_placement_selected's own doc
+## comment) — deliberately just two buttons, not a per-tier list the way
+## buildings get one: WallManager.place_wall_line() only ever places fresh
+## Wooden segments (upgrade_segment(), reached by selecting an existing
+## wall, is still the only way to a Brick/Concrete tier — unchanged from
+## before this rework), so a tier picker here would offer choices that
+## don't actually exist yet. "Gate" is the same Wooden segment/cost, just
+## intrinsically weaker (WallSegment.is_gate's own doc comment) — a
+## deliberate weak point the player places on purpose, not a difference
+## the build menu needs to price separately.
+func _build_wall_tab() -> Control:
+	var container := Control.new()
+	container.name = "Walls"  # TabContainer reads a child's own `name` as its tab label.
+
+	var list := VBoxContainer.new()
+	list.add_theme_constant_override("separation", 6)
+	list.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE, Control.PRESET_MODE_MINSIZE, 8)
+	container.add_child(list)
+
+	var hint := Label.new()
+	hint.text = "Click and drag along the map to draw a wall — a long drag auto-splits into short, independently-defended pieces."
+	hint.autowrap_mode = TextServer.AUTOWRAP_WORD
+	HUDStyles.style_label(hint)
+	list.add_child(hint)
+
+	var wall_button := Button.new()
+	wall_button.text = "Wooden Wall"
+	wall_button.tooltip_text = _format_cost(WallCatalog.get_build_cost(WallCatalog.WOODEN)) + " (per hex-edge-length drawn)"
+	wall_button.pressed.connect(_on_wall_button_pressed.bind(false))
+	HUDStyles.style_button(wall_button)
+	list.add_child(wall_button)
+
+	var gate_button := Button.new()
+	gate_button.text = "Gate"
+	gate_button.tooltip_text = "Same cost as a Wooden Wall, deliberately weaker (a fortification's traditional weak point)."
+	gate_button.pressed.connect(_on_wall_button_pressed.bind(true))
+	HUDStyles.style_button(gate_button)
+	list.add_child(gate_button)
+
+	return container
+
+func _on_wall_button_pressed(is_gate: bool) -> void:
+	wall_placement_selected.emit(is_gate)
 
 func _build_tab(category: GameEnums.BuildingCategory, definitions: Array[BuildingDefinition]) -> Control:
 	var scroll := ScrollContainer.new()

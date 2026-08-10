@@ -233,16 +233,39 @@ func _prop_color(prop_type: GameEnums.PropType) -> Color:
 ## uv mapping onto a 4-vertex quad, unlike the hex-fan case HexCellView's own
 ## doc comment warns about: a rectangle-to-rectangle corner correspondence IS
 ## a single, exact affine map across the WHOLE quad (not just sampled at a
-## few points and interpolated), so this doesn't reproduce that bug. Falls
+## few points and interpolated), so this doesn't reproduce THAT bug. Falls
 ## back to the original flat box for any type with no SVG authored yet —
 ## exactly TerrainVisuals.terrain_texture()'s own "art lands incrementally,
 ## zero code changes elsewhere" contract.
-## (A PackedVector2Array literal built from Vector2() calls isn't a valid
-## GDScript `const` expression — Godot's static const evaluator rejects
-## nested constructor calls in an array literal — so this is a plain
-## function, computed fresh each call like `_ruin_polygon()` below.)
-static func _box_uv() -> PackedVector2Array:
-	return PackedVector2Array([Vector2(0, 0), Vector2(1, 0), Vector2(1, 1), Vector2(0, 1)])
+##
+## **Real bug found and fixed (player report, "buildings still not visible" —
+## the THIRD report of that symptom, after two same-day fixes that never
+## actually re-screenshotted the result): `Polygon2D.uv` is in the texture's
+## own PIXEL-space, not normalized 0..1, unlike virtually every other UV
+## convention in graphics — a well-documented Godot gotcha (see
+## godotengine/godot#21830 and community write-ups; Godot's own class docs
+## don't state this explicitly, which is exactly how it went unnoticed
+## here). A `(0,0)-(1,1)` "unit square" uv array — what this function, the
+## ghost-preview building in `BuildPlacementController`, and the Ditch/Oil
+## Pit defense-work icon in `StrategicOverlayManager` all independently
+## wrote — only ever samples a literal 1x1-PIXEL patch in the texture's own
+## top-left corner, stretched across the whole polygon. For this project's
+## AI-generated building art (2048x2048 canvases with real transparent
+## margin around the illustration), that 1x1 sample lands on fully
+## transparent background essentially every time — rendering as a
+## perfectly invisible fill, leaving only the (separately-drawn) outline
+## on screen. Every building in the game has been invisible for this
+## reason since Phase 6.3's real art landed, regardless of camera
+## position/box size/outline color — none of which were ever the actual
+## bug despite two prior fix attempts at exactly those things.
+## **Fix:** uv corners must be the texture's REAL pixel dimensions, not a
+## unit square — `quad_uv()` below is now public and shared by all three
+## call sites above rather than each hand-rolling the same wrong array.
+static func quad_uv(texture: Texture2D) -> PackedVector2Array:
+	if not texture:
+		return PackedVector2Array()
+	var size := texture.get_size()
+	return PackedVector2Array([Vector2(0, 0), Vector2(size.x, 0), Vector2(size.x, size.y), Vector2(0, size.y)])
 
 ## Half-width of an intact building's box, in world units. **Found while
 ## investigating a user report ("I can't see any buildings on the map") —
@@ -271,12 +294,29 @@ static func _box_uv() -> PackedVector2Array:
 ## a squad's scatter footprint (FIGURE_SPREAD 20 => ~40 diameter) and bigger
 ## than a Tier 4/5 vehicle (VEHICLE_RADIUS 16 => 32 diameter) — a building
 ## should read as the most prominent thing in a hex besides terrain itself.
-const BUILDING_HALF_SIZE: float = 70.0
+##
+## **Superseded (player report, "buildings should be scaled correctly,
+## based on the fact that hex tiles are 5 miles by 5 miles... work out how
+## big they need to be on the map based on the 5 mile by 5 mile hex
+## tiles").** The reasoning above (and the two prior resizes it documents,
+## 10 -> 35 -> 70) picked this purely by "does it read at a glance,"
+## explicitly disclaiming any connection to the hex's own real scale — the
+## user has now overridden that call directly, so this is derived from
+## `HexCoord.HEX_SIZE` instead:
+## - `HexCoord.WORLD_UNITS_PER_REAL_METER` is the shared real-world/world-unit
+##   ratio (see that constant's own doc comment for the full derivation).
+## - A REPRESENTATIVE building footprint of 100m x 100m (50m half-width —
+##   sized for a large Victorian civic/industrial complex, since one
+##   uniform box has to stand in for every building type this project has,
+##   from a Gas Streetlamp up to a Town Hall) converts to ~5.13 world units
+##   half-size at that ratio.
+const BUILDING_HALF_SIZE: float = HexCoord.WORLD_UNITS_PER_REAL_METER * 50.0
 ## Ring radius _resolved_building_position() spreads stacked buildings over
 ## (see that function) — rescaled alongside BUILDING_HALF_SIZE so multiple
 ## buildings sharing a hex (Shift-click placement) don't visually overlap;
-## must clear BUILDING_HALF_SIZE's own corner-to-corner diagonal (~99).
-const BUILDING_RING_RADIUS: float = 170.0
+## must clear BUILDING_HALF_SIZE's own center-to-corner half-diagonal
+## (5.128 * sqrt(2) = ~7.25), same ~1.72x margin the old 70/170 pair used.
+const BUILDING_RING_RADIUS: float = 12.45
 
 ## A dark outline traced around every building box — user report ("I still
 ## can't see any buildings I place"), the second cause found alongside
@@ -313,7 +353,7 @@ func _build_building_node(building: BuildingInstance, index: int) -> Node2D:
 		var texture := BuildingVisuals.building_texture(building.definition.building_type)
 		if texture:
 			box.texture = texture
-			box.uv = _box_uv()
+			box.uv = quad_uv(texture)
 			box.texture_repeat = CanvasItem.TEXTURE_REPEAT_DISABLED
 			box.color = Color.WHITE  # let the sprite's own colors show — category_color() was only ever a stand-in for this.
 		else:

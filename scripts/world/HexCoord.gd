@@ -67,6 +67,22 @@ extends RefCounted
 ## under the map-expansion entry.
 const HEX_SIZE: float = 512.0
 
+## Real-world scale conversion (design doc: each hex is ~25 sq mi/~5mi
+## across) — HEX_SIZE above IS a hex's real circumradius, so this is just
+## that ratio against the circumradius' real value in meters. Solving a
+## pointy-top hex's area formula (`area = 3*sqrt(3)/2 * r^2`) for `r` with
+## area=25 sq mi gives a real circumradius of ~3.1020161 mi (~4992.21 m,
+## 1609.34 m/mi). `sqrt(3)` can't be called in a GDScript `const`
+## initializer (same constraint `MovementStepper.BASE_MOVE_SPEED`'s own
+## doc comment documents), so the derived ratio is hardcoded here with the
+## derivation spelled out rather than computed live. **Shared here, not
+## re-derived per call site** — both `TacticalHexView.BUILDING_HALF_SIZE`
+## (real building footprint) and `WallCatalog.MAX_SEGMENT_LENGTH_WORLD_UNITS`
+## (the 100m-max wall-segment spec) need the exact same real-world/world-unit
+## conversion; a second hand-copied derivation would risk silently drifting
+## from this one the moment either constant is ever revisited.
+const WORLD_UNITS_PER_REAL_METER: float = 0.1025599
+
 const NEIGHBOR_DIRECTIONS: Array[Vector2i] = [
 	Vector2i(1, 0), Vector2i(1, -1), Vector2i(0, -1),
 	Vector2i(-1, 0), Vector2i(-1, 1), Vector2i(0, 1),
