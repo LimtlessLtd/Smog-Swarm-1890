@@ -53,6 +53,15 @@ signal placement_rejected(building_type: GameEnums.BuildingType, coord: Vector2i
 ## finishes, `days` days later. See _construction_days() for how long.
 signal construction_started(building_type: GameEnums.BuildingType, coord: Vector2i, days: int)
 signal construction_progressed(coord: Vector2i, days_remaining: int)
+## User report ("buildings should be visible while under construction") —
+## building_placed itself now fires the moment place_building() registers the
+## instance (see that function's own doc comment), not at completion, so
+## every OTHER building_placed listener (Fog of War, ZoC, HUD counts...)
+## still only reacts once a building is genuinely finished, this fires
+## instead, purely so renderers (LocalDetailManager/StrategicOverlayManager)
+## can drop their under-construction tint in place without re-triggering
+## anything that assumes building_placed means "brand new, wire it up".
+signal building_construction_completed(instance: BuildingInstance)
 signal repair_started(instance: BuildingInstance, days: int)
 
 ## Design doc Phase 5.12. Fires on every damage_building() call, whether or
@@ -173,14 +182,17 @@ var _next_id: int = 1
 ## Paid-for placements/repairs not yet finished — see place_building()/
 ## repair_building() for how an entry is added and _process_pending_*()
 ## below for how it's ticked down and completed. Each entry:
-## construction: {building_type, coord, local_position, days_remaining}
+## construction: {instance, days_remaining}
 ## repair: {instance, days_remaining}
-## Known gap (documented, not silently shipped): NOT included in
-## SaveLoadManager's save/load round trip yet — a save/load mid-construction
-## currently loses the in-progress job entirely (the spent resources are
-## already gone; the building or repair just never completes). Flagged for
-## a follow-up pass rather than blocking this one on also touching
-## SaveGameData/SaveLoadManager.
+## Bug fix: construction jobs now reference a real, already-registered
+## BuildingInstance (see place_building()'s own doc comment) instead of raw
+## building_type/coord/local_position — the instance needs to exist
+## immediately so it can render (tinted) and be selected/demolished mid-build.
+## Save/load round-trips this correctly (BuildingSaveEntry.is_under_construction/
+## construction_days_remaining, get_save_entries()/load_save_entries() below) —
+## no longer the documented gap it used to be, now that a mid-construction
+## instance is already a real, saved BuildingInstance and getting this wrong
+## would resurrect it as a finished building on load, not just lose a job.
 var _pending_construction: Array[Dictionary] = []
 var _pending_repair: Array[Dictionary] = []
 ## Exposed via get_starting_settlement_hexes() for WallManager.seed_starting_defenses()
@@ -388,15 +400,26 @@ func can_place_building(building_type: GameEnums.BuildingType, coord: Vector2i) 
 ## hex center — fine until a caller cares about exact positioning).
 ##
 ## Returns `true` once the placement is validated, paid for, and queued —
-## NOT once it's actually standing. Construction now takes real time (user
-## report): resources/storage/Energy are spent immediately (same "pay
+## NOT once it's actually standing/operational. Construction takes real time
+## (user report): resources/storage/Energy are spent immediately (same "pay
 ## upfront" convention as before — a player shouldn't be able to cancel out
-## of a started project for a refund), but the real BuildingInstance isn't
-## created — and building_placed doesn't fire — until
-## _process_pending_construction() below finishes counting down
-## _construction_days(). Returns `bool` rather than the (not-yet-existing)
-## BuildingInstance for exactly that reason; the one real caller
-## (BuildPlacementController) only ever checked this for truthiness anyway.
+## of a started project for a refund).
+##
+## Bug fix (user report: "buildings should be visible while under
+## construction... and demolishable while under construction"): the real
+## BuildingInstance is now created and registered HERE, immediately —
+## `is_under_construction = true` — rather than only at
+## _process_pending_construction()'s completion. It's a fully real,
+## selectable, demolishable instance from this moment on (see
+## demolish_building()'s own doc comment for the 100% construction-site
+## refund). `building_placed` still fires here (from _register_instance()) —
+## every OTHER listener that treats building_placed as "this building is now
+## operational" (Fog of War vision, ZoC, production tallies) additionally
+## checks is_under_construction and skips it until
+## building_construction_completed fires instead; see that signal's own doc
+## comment. Returns `bool` rather than the BuildingInstance since the one
+## real caller (BuildPlacementController) only ever checked this for
+## truthiness anyway.
 func place_building(building_type: GameEnums.BuildingType, coord: Vector2i, local_position: Vector2 = Vector2.ZERO) -> bool:
 	var error := get_placement_error(building_type, coord)
 	if not error.is_empty():
@@ -411,12 +434,8 @@ func place_building(building_type: GameEnums.BuildingType, coord: Vector2i, loca
 		_apply_construction_energy(definition)
 
 	var days := _construction_days(definition)
-	_pending_construction.append({
-		"building_type": building_type,
-		"coord": coord,
-		"local_position": local_position,
-		"days_remaining": days,
-	})
+	var instance := _register_instance(definition, coord, _next_id, local_position, true, -1, -1.0, false, true)
+	_pending_construction.append({"instance": instance, "days_remaining": days})
 	construction_started.emit(building_type, coord, days)
 	return true
 
@@ -441,8 +460,10 @@ func _construction_days(definition: BuildingDefinition) -> int:
 ## load_save_entries() passes the actual saved value instead, since Phase
 ## 2.10.1 makes population real mutable state that can differ from that
 ## baseline after starvation deaths/regrowth.
-func _register_instance(definition: BuildingDefinition, coord: Vector2i, id: int, local_position: Vector2, advance_next_id: bool, current_population: int = -1, current_hp: float = -1.0, is_ruined: bool = false) -> BuildingInstance:
-	var instance := BuildingInstance.new(definition, coord, id, local_position, current_population, current_hp, is_ruined)
+func _register_instance(definition: BuildingDefinition, coord: Vector2i, id: int, local_position: Vector2, advance_next_id: bool, current_population: int = -1, current_hp: float = -1.0, is_ruined: bool = false, is_under_construction: bool = false) -> BuildingInstance:
+	var instance := BuildingInstance.new(definition, coord, id, local_position, current_population, current_hp, is_ruined, is_under_construction)
+	if is_under_construction:
+		instance.current_population = 0  ## No free population/housing capacity until construction actually finishes.
 	if advance_next_id:
 		_next_id = id + 1
 	_instances.append(instance)
@@ -478,6 +499,12 @@ func remove_building(instance: BuildingInstance) -> void:
 	# demolish_building()) so any other future caller of remove_building()
 	# gets the same correctness for free rather than needing to remember it.
 	_pending_repair = _pending_repair.filter(func(job: Dictionary) -> bool: return job["instance"] != instance)
+	# Same reasoning, construction side: demolish_building() can now remove a
+	# building mid-construction (it's a real, selectable instance from the
+	# moment place_building() registers it — see that function's own doc
+	# comment) — without this, _process_pending_construction() would keep
+	# ticking down a job pointing at an instance nothing else references.
+	_pending_construction = _pending_construction.filter(func(job: Dictionary) -> bool: return job["instance"] != instance)
 	building_removed.emit(instance)
 
 ## Design doc Phase 5.12: reduces `instance.current_hp`, and at zero flips
@@ -650,13 +677,21 @@ func get_demolish_error(instance: BuildingInstance) -> String:
 func can_demolish_building(instance: BuildingInstance) -> bool:
 	return get_demolish_error(instance).is_empty()
 
+## User report ("you get 100% of your resources back if you manage to
+## demolish a building thats not yet built") — a construction site refunds
+## the FULL construction_cost, not REPAIR_COST_FRACTION's usual 50%: nothing
+## has actually been built yet, so there's no partial structure whose
+## materials were "used up" the way a completed building's would be. Energy
+## stays the existing 100% refund either way (not_ruined is always true for
+## an under-construction instance, so that branch already fires).
 func demolish_building(instance: BuildingInstance) -> bool:
 	if not get_demolish_error(instance).is_empty():
 		return false
 	if _resource_manager:
 		var refund: Dictionary = {}
+		var refund_fraction := 1.0 if instance.is_under_construction else REPAIR_COST_FRACTION
 		for resource_type in instance.definition.construction_cost:
-			refund[resource_type] = float(instance.definition.construction_cost[resource_type]) * REPAIR_COST_FRACTION
+			refund[resource_type] = float(instance.definition.construction_cost[resource_type]) * refund_fraction
 		if not instance.is_ruined:
 			var energy_refund := _construction_energy_cost(instance.definition)
 			for resource_type in energy_refund:
@@ -669,10 +704,20 @@ func demolish_building(instance: BuildingInstance) -> bool:
 
 ## Every placed instance reduced to its saveable footprint (Phase 2.8.1) —
 ## see BuildingSaveEntry for why the full BuildingDefinition isn't included.
+## Mid-construction instances round-trip too (bug fix — see
+## BuildingSaveEntry.is_under_construction's own doc comment): days_remaining
+## is read back out of _pending_construction, matching whichever job (if any)
+## currently references this instance.
 func get_save_entries() -> Array[BuildingSaveEntry]:
 	var result: Array[BuildingSaveEntry] = []
 	for instance in _instances:
-		result.append(BuildingSaveEntry.new(instance.definition.building_type, instance.hex_coord, instance.id, instance.local_position, instance.current_population, instance.current_hp, instance.is_ruined))
+		var days_remaining := 0
+		if instance.is_under_construction:
+			for job in _pending_construction:
+				if job["instance"] == instance:
+					days_remaining = job["days_remaining"]
+					break
+		result.append(BuildingSaveEntry.new(instance.definition.building_type, instance.hex_coord, instance.id, instance.local_position, instance.current_population, instance.current_hp, instance.is_ruined, instance.is_under_construction, days_remaining))
 	return result
 
 ## Restores placed instances from a save (Phase 2.8.2): clears whatever is
@@ -680,7 +725,11 @@ func get_save_entries() -> Array[BuildingSaveEntry]:
 ## directly — bypassing place_building()'s cost/validation, since these
 ## buildings already exist and were already paid for. `next_id` is applied
 ## once at the end rather than derived per-instance, matching whatever
-## BuildingManager's own counter was at save time.
+## BuildingManager's own counter was at save time. A mid-construction entry
+## also re-queues its own _pending_construction job (maxi(1, ...) guards
+## against a corrupt/hand-edited 0-or-negative save value stalling forever)
+## so it keeps counting down after load instead of silently resurrecting as
+## finished (see BuildingSaveEntry's own doc comment).
 func load_save_entries(entries: Array[BuildingSaveEntry], next_id: int) -> void:
 	for instance in _instances.duplicate():
 		remove_building(instance)
@@ -689,7 +738,9 @@ func load_save_entries(entries: Array[BuildingSaveEntry], next_id: int) -> void:
 		if not definition:
 			push_warning("BuildingManager: unknown building type %s in save data, skipping." % entry.building_type)
 			continue
-		_register_instance(definition, entry.hex_coord, entry.id, entry.local_position, false, entry.current_population, entry.current_hp, entry.is_ruined)
+		var instance := _register_instance(definition, entry.hex_coord, entry.id, entry.local_position, false, entry.current_population, entry.current_hp, entry.is_ruined, entry.is_under_construction)
+		if entry.is_under_construction:
+			_pending_construction.append({"instance": instance, "days_remaining": maxi(1, entry.construction_days_remaining)})
 	_next_id = next_id
 
 ## Ticks every queued construction/repair down by one day, completing (and
@@ -701,11 +752,13 @@ func _process_pending_construction() -> void:
 	var still_pending: Array[Dictionary] = []
 	for job in _pending_construction:
 		job["days_remaining"] -= 1
+		var instance: BuildingInstance = job["instance"]
 		if job["days_remaining"] <= 0:
-			var definition := BuildingCatalog.get_definition(job["building_type"])
-			_register_instance(definition, job["coord"], _next_id, job["local_position"], true)
+			instance.is_under_construction = false
+			instance.current_population = instance.definition.population_provided
+			building_construction_completed.emit(instance)
 		else:
-			construction_progressed.emit(job["coord"], job["days_remaining"])
+			construction_progressed.emit(instance.hex_coord, job["days_remaining"])
 			still_pending.append(job)
 	_pending_construction = still_pending
 
@@ -734,8 +787,8 @@ func _on_day_completed(_day_number: int) -> void:
 	var total_population := 0
 
 	for instance in _instances:
-		if instance.is_ruined:
-			continue  ## Phase 5.12: a ruin stops producing/consuming/housing entirely — current_population was already zeroed the moment it ruined (damage_building()).
+		if instance.is_ruined or instance.is_under_construction:
+			continue  ## Phase 5.12: a ruin stops producing/consuming/housing entirely — current_population was already zeroed the moment it ruined (damage_building()). A construction site the same way — nothing to produce/consume/house until it's actually finished (current_population is already 0 the whole time — see _register_instance()).
 		var definition := instance.definition
 		total_population += instance.current_population  ## Phase 2.10.1: real mutable population, not the static definition value.
 

@@ -157,7 +157,8 @@ func _render_building_panel(instance: BuildingInstance) -> void:
 	_clear_list()
 	var definition := instance.definition
 	var header := Label.new()
-	header.text = "%s%s" % [definition.display_name, " (RUINED)" if instance.is_ruined else ""]
+	var tag := " (RUINED)" if instance.is_ruined else (" (UNDER CONSTRUCTION)" if instance.is_under_construction else "")
+	header.text = "%s%s" % [definition.display_name, tag]
 	HUDStyles.style_label(header, true)
 	_list.add_child(header)
 
@@ -166,7 +167,11 @@ func _render_building_panel(instance: BuildingInstance) -> void:
 		stats.text = "HP %d/%d" % [int(instance.current_hp), int(definition.get_max_hp())]
 		HUDStyles.style_label(stats)
 		_list.add_child(stats)
-		_add_building_economy_stats(instance)
+		# Economy stats (daily output/upkeep) would misleadingly suggest a
+		# construction site is already producing — it isn't, see
+		# BuildingManager._on_day_completed()'s own is_under_construction skip.
+		if not instance.is_under_construction:
+			_add_building_economy_stats(instance)
 
 	_add_repair_button(
 		instance.is_ruined,
@@ -175,7 +180,8 @@ func _render_building_panel(instance: BuildingInstance) -> void:
 	)
 	_add_demolish_button(
 		func() -> String: return _unit_command_controller.get_selected_building_demolish_error(),
-		_unit_command_controller.demolish_selected_building
+		_unit_command_controller.demolish_selected_building,
+		instance.is_under_construction
 	)
 
 	if definition.can_train_units:
@@ -356,14 +362,23 @@ func _add_repair_button(is_damaged: bool, error_getter: Callable, repair_action:
 ## follows. No confirmation dialog — this project has no such UI pattern
 ## anywhere else to reuse, and the action is framed as a refund, not a
 ## pure loss.
-func _add_demolish_button(error_getter: Callable, demolish_action: Callable) -> void:
+## `full_refund` (user report: "you get 100% of your resources back if you
+## manage to demolish a building thats not yet built") — only ever true for
+## an under-construction building (see BuildingManager.demolish_building()'s
+## own doc comment); every other caller (a finished building, or a wall,
+## which has no construction-site concept at all) leaves it at the existing
+## partial-refund default.
+func _add_demolish_button(error_getter: Callable, demolish_action: Callable, full_refund: bool = false) -> void:
 	if not _unit_command_controller:
 		return
 	var button := Button.new()
 	button.text = "Demolish"
 	var error: String = error_getter.call()
 	button.disabled = not error.is_empty()
-	button.tooltip_text = error if not error.is_empty() else "Demolish this for a partial refund."
+	if not error.is_empty():
+		button.tooltip_text = error
+	else:
+		button.tooltip_text = "Demolish this for a full refund." if full_refund else "Demolish this for a partial refund."
 	button.pressed.connect(func() -> void: demolish_action.call())
 	HUDStyles.style_button(button)
 	_list.add_child(button)

@@ -118,7 +118,8 @@ func set_building_selected(instance: BuildingInstance, is_selected: bool) -> voi
 		_selected_building = null
 	var container: Node2D = _building_containers.get(instance.id)
 	if container:
-		container.modulate = _SELECTED_TINT if is_selected else Color.WHITE
+		var base := _building_base_modulate(instance)
+		container.modulate = _SELECTED_TINT * base if is_selected else base
 
 ## Fog of War (Phase 2.6): dims the whole hydrated hex (terrain, props and
 ## buildings together) rather than the inner ground HexCellView alone, so a
@@ -431,8 +432,19 @@ const BUILDING_SELECTION_RING_RADIUS: float = BUILDING_HALF_SIZE * 1.6
 ## it too, closer to "this building just lit up" than a flat color swap.
 const _SELECTED_TINT := Color(0.55, 0.75, 1.55)
 
+## Returns the container's own idle-state modulate — White for a normal
+## finished building, BuildingVisuals.construction_color() while it's still
+## a construction site (user report — see that function's own doc comment).
+## `set_building_selected()` below multiplies _SELECTED_TINT on top of this
+## rather than always overwriting to White, so a mid-construction building
+## that gets selected still visibly reads as "under construction" instead of
+## losing that tint the instant it's clicked.
+func _building_base_modulate(building: BuildingInstance) -> Color:
+	return BuildingVisuals.construction_color() if building.is_under_construction else Color.WHITE
+
 func _build_building_node(building: BuildingInstance, index: int) -> Node2D:
 	var container := Node2D.new()
+	container.modulate = _building_base_modulate(building)
 	var box := Polygon2D.new()
 	if building.is_ruined:
 		# Phase 5.12: a jagged rubble silhouette, deliberately distinct from

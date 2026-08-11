@@ -14,6 +14,9 @@ const PAN_RIGHT := "camera_pan_right"
 const PAN_UP := "camera_pan_up"
 const PAN_DOWN := "camera_pan_down"
 const TOGGLE_PERSPECTIVE := "toggle_camera_perspective"
+## User request ("the space bar should pause and unpause the game") — see
+## TickManager.toggle_pause().
+const TOGGLE_PAUSE := "toggle_pause"
 
 static func register_defaults() -> void:
 	_bind(PAN_LEFT, [KEY_A, KEY_LEFT])
@@ -21,6 +24,7 @@ static func register_defaults() -> void:
 	_bind(PAN_UP, [KEY_W, KEY_UP])
 	_bind(PAN_DOWN, [KEY_S, KEY_DOWN])
 	_bind(TOGGLE_PERSPECTIVE, [KEY_TAB])
+	_bind(TOGGLE_PAUSE, [KEY_SPACE])
 
 static func _bind(action: StringName, keycodes: Array) -> void:
 	if InputMap.has_action(action):

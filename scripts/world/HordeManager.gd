@@ -249,7 +249,18 @@ const ENTITY_RADIUS: float = 20.0
 ## constant pair stays movement-only); "double noise-attraction multiplier"
 ## is NoiseManager.NIGHT_NOISE_MULTIPLIER, already feeding this class's own
 ## ATTRACTED state via _pick_attraction_target().
-const DAY_MOVE_SPEED_MULTIPLIER: float = 0.65
+## Balance pass (playtest report: "zombies move way too fast during the
+## daytime") — the Day/Night SPLIT was already correctly oriented (Day was
+## always the slower multiplier, Night the faster one — confirmed by
+## re-reading this exact constant pair and _movement_speed()'s own
+## TimeCycleManager.is_night() branch, not assumed), but 0.65x still read as
+## a brisk walk rather than the "slow/sluggish" shamble the design doc calls
+## for, especially stacked with terrain/logistics speed multipliers that can
+## push it back up. Dropped to 0.35x — a much clearer day/night contrast
+## (was 1.5/0.65 ≈ 2.3x faster at night, now 1.5/0.35 ≈ 4.3x) — rather than
+## touching NIGHT_MOVE_SPEED_MULTIPLIER, which IS an exact design-doc number
+## ("+50%") and shouldn't move.
+const DAY_MOVE_SPEED_MULTIPLIER: float = 0.35
 const NIGHT_MOVE_SPEED_MULTIPLIER: float = 1.5
 
 ## Design doc Phase 5.2, decided (grilling session): "a 'lone zombie' isn't

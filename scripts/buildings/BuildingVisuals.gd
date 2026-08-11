@@ -38,6 +38,17 @@ static func category_color(category: GameEnums.BuildingCategory) -> Color:
 static func ruin_color() -> Color:
 	return Color(0.4, 0.37, 0.34)
 
+## User request ("buildings should be visible while under construction (tint
+## them black or gray while under construction)") — a flat dark grey,
+## deliberately distinct from ruin_color()'s warmer rubble tone so a
+## half-built structure never reads as an already-destroyed one. Shared
+## between TacticalHexView (multiplied into `modulate`, over whatever real
+## sprite/category color the finished building will use) and
+## StrategicOverlayManager (assigned directly to its flat icon `color`, same
+## split ruin_color() already has between the two call sites).
+static func construction_color() -> Color:
+	return Color(0.32, 0.32, 0.32)
+
 ## Lazily-loaded, cached (same "build once, cache" convention TerrainVisuals'
 ## own terrain_texture() and BuildingCatalog/UnitCatalog's _ensure_built()
 ## already use) — the real sprite for a building type, or null if no SVG has

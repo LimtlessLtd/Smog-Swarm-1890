@@ -29,7 +29,16 @@ extends Resource
 @export var current_hp: float = 0.0
 @export var is_ruined: bool = false
 
-func _init(p_definition: BuildingDefinition = null, p_hex_coord: Vector2i = Vector2i.ZERO, p_id: int = 0, p_local_position: Vector2 = Vector2.ZERO, p_current_population: int = -1, p_current_hp: float = -1.0, p_is_ruined: bool = false) -> void:
+## User report ("buildings should be visible while under construction...")
+## — true from the moment BuildingManager.place_building() registers the
+## instance (immediately, not at completion — see that function's own doc
+## comment) until _process_pending_construction() finishes counting down its
+## build time. A real, selectable, demolishable instance the whole time; this
+## flag is purely "is it still a construction site" for rendering/production
+## purposes, not a gate on whether the instance exists at all.
+@export var is_under_construction: bool = false
+
+func _init(p_definition: BuildingDefinition = null, p_hex_coord: Vector2i = Vector2i.ZERO, p_id: int = 0, p_local_position: Vector2 = Vector2.ZERO, p_current_population: int = -1, p_current_hp: float = -1.0, p_is_ruined: bool = false, p_is_under_construction: bool = false) -> void:
 	definition = p_definition
 	hex_coord = p_hex_coord
 	id = p_id
@@ -41,6 +50,7 @@ func _init(p_definition: BuildingDefinition = null, p_hex_coord: Vector2i = Vect
 	current_population = p_current_population if p_current_population >= 0 else (p_definition.population_provided if p_definition else 0)
 	current_hp = p_current_hp if p_current_hp >= 0.0 else (p_definition.get_max_hp() if p_definition else 0.0)
 	is_ruined = p_is_ruined
+	is_under_construction = p_is_under_construction
 
 func is_destroyed() -> bool:
 	return current_hp <= 0.0

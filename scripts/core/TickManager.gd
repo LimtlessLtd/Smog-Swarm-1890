@@ -36,11 +36,22 @@ const SPEED_MULTIPLIERS: Array[float] = [0.0, 5.0, 20.0, 50.0, 100.0, 1000.0]
 var current_day: int = 1
 var elapsed_in_day: float = 0.0
 var speed_index: int = 1
+## User request ("the space bar should pause and unpause the game. return
+## the user to the speed they last used") — updated centrally inside
+## set_speed_index() itself (not just from toggle_pause()) so it tracks
+## correctly no matter WHAT paused the game: the spacebar, or AlertManager's
+## own existing auto-pause-on-CRITICAL-alert (set_speed_index(0) directly) —
+## either way, whatever nonzero speed was actually running right before the
+## game went to 0 is what a later toggle_pause() restores. Defaults to
+## speed_index's own default (1 = 5x) so pausing before ever unpausing has a
+## sane fallback rather than restoring to a meaningless sentinel.
+var _last_nonzero_speed_index: int = 1
 
 func _ready() -> void:
 	# Keep ticking even if a future system pauses the SceneTree, same as
 	# BackgroundExecutionManager — this is background-simulation infrastructure.
 	process_mode = Node.PROCESS_MODE_ALWAYS
+	InputBindings.register_defaults()
 	set_speed_index(speed_index)
 
 func _process(delta: float) -> void:
@@ -50,10 +61,26 @@ func _process(delta: float) -> void:
 		current_day += 1
 		day_completed.emit(current_day)
 
+## Spacebar (InputBindings.TOGGLE_PAUSE) — _unhandled_input so a focused UI
+## Control's own keyboard handling (if any) still gets first refusal, same
+## convention every other input controller in this project already follows.
+func _unhandled_input(event: InputEvent) -> void:
+	if event.is_action_pressed(InputBindings.TOGGLE_PAUSE):
+		toggle_pause()
+		get_viewport().set_input_as_handled()
+
+## Pauses (speed_index -> 0) if currently running, or restores
+## _last_nonzero_speed_index if currently paused — see that var's own doc
+## comment for why it's tracked centrally rather than just here.
+func toggle_pause() -> void:
+	set_speed_index(_last_nonzero_speed_index if speed_index == 0 else 0)
+
 func get_day_progress() -> float:
 	return elapsed_in_day / DAY_LENGTH_SECONDS
 
 func set_speed_index(index: int) -> void:
+	if speed_index != 0:
+		_last_nonzero_speed_index = speed_index
 	speed_index = clampi(index, 0, SPEED_MULTIPLIERS.size() - 1)
 	Engine.time_scale = SPEED_MULTIPLIERS[speed_index]
 	speed_changed.emit(SPEED_MULTIPLIERS[speed_index])
