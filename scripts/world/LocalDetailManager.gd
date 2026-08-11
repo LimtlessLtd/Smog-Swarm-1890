@@ -22,13 +22,6 @@ extends Node2D
 
 const DETAIL_RADIUS: int = 1  ## Hex disk radius hydrated around the camera; 1 = center + its 6 neighbors.
 
-## Tactical-scale multiplier over WallVisuals.line_width()'s own Strategic-
-## zoom values (3.0 + tier*2.0 world units — sized to read at Strategic's
-## zoomed-way-out scale). Same rescale reasoning as
-## TacticalHexView.BUILDING_HALF_SIZE's own doc comment: a Strategic-scale
-## line width against a 512-unit hex would be a hairline, not a wall.
-const WALL_TACTICAL_WIDTH_SCALE: float = 8.0
-
 @export var hex_grid_map_path: NodePath
 @export var building_manager_path: NodePath
 @export var logistics_network_path: NodePath
@@ -73,6 +66,14 @@ func _ready() -> void:
 		_building_manager.building_placed.connect(_on_buildings_changed)
 		_building_manager.building_removed.connect(_on_buildings_changed)
 		_building_manager.building_ruined.connect(_on_building_ruined)
+		# Bug fix (user report: "buildings should be visible while under
+		# construction") — building_placed now fires the moment construction
+		# STARTS (see BuildingManager.place_building()'s own doc comment), so
+		# the hex already re-hydrates with the correct grey tint at that
+		# point; this is the matching hook for when it FINISHES, so the tint
+		# drops off without needing a second building_placed emission (which
+		# would double-fire every other building_placed listener too).
+		_building_manager.building_construction_completed.connect(_on_buildings_changed)
 	if logistics_network_path != NodePath():
 		_logistics_network = get_node(logistics_network_path)
 		_logistics_network.network_recomputed.connect(_on_network_recomputed)
@@ -357,9 +358,6 @@ func _on_wall_segment_removed(segment: WallSegment) -> void:
 
 func _build_wall_marker(segment: WallSegment) -> Line2D:
 	var body := Line2D.new()
-	# Freehand wall rework: point_a/point_b are the piece's own real
-	# placement geometry now, not always a whole hex edge.
-	body.points = PackedVector2Array([segment.point_a, segment.point_b])
 	_apply_wall_segment_look(body, segment)
 	return body
 
@@ -391,6 +389,13 @@ func _apply_wall_segment_look(body: Line2D, segment: WallSegment) -> void:
 	body.texture_mode = Line2D.LINE_TEXTURE_TILE
 	body.texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
 	body.default_color = Color.WHITE if texture else (WallVisuals.breached_color() if breached else (WallVisuals.gate_color() if segment.is_gate else WallVisuals.tier_color(segment.tier)))
-	body.width = WallVisuals.line_width(segment.tier, breached) * WALL_TACTICAL_WIDTH_SCALE
+	# Real root cause of "wall texture still isn't visible" (playtest report,
+	# after the texture_repeat fix already shipped) — see
+	# WallVisuals.UV_SCALE's own doc comment: the raw segment length is far
+	# too short in LOCAL-point terms for Line2D's own pixel-to-unit UV tiling
+	# to show more than a sliver of a 4128px-wide texture. This sets
+	# points/position/scale/width together so the fix and the segment's
+	# freehand placement geometry can't drift apart.
+	WallVisuals.apply_line_geometry(body, segment.point_a, segment.point_b, WallVisuals.line_width(segment.tier, breached) * WallVisuals.TACTICAL_WIDTH_SCALE)
 	var is_legacy := _wall_manager != null and _wall_manager.is_legacy_segment(segment)
 	body.modulate = WallVisuals.legacy_modulate() if is_legacy else WallVisuals.outer_modulate()

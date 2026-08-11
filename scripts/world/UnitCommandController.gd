@@ -64,6 +64,13 @@ const _WALL_HIGHLIGHT_COLOR := Color(1.0, 0.9, 0.2, 0.9)  ## Same gold as _SELEC
 ## loose it steals clicks clearly meant for a nearby building instead —
 ## small relative to HexCoord.HEX_SIZE (512).
 const _WALL_CLICK_TOLERANCE := 24.0
+## Max distance (world units) from a unit's own REAL rendered position (see
+## _closest_unit_within_tolerance()'s own doc comment for why this is a real
+## position, not a hex-bucket match) a click still counts as "on" that unit.
+## Loose enough to cover a whole squad's visual scatter cluster
+## (TacticalEntityLayer.FIGURE_SPREAD, 20.0, plus per-figure jitter) without
+## reaching so far it steals a click clearly meant for a nearby building.
+const _UNIT_CLICK_TOLERANCE := 40.0
 
 @export var hex_grid_map_path: NodePath
 @export var unit_manager_path: NodePath
@@ -184,9 +191,9 @@ func _on_right_click(world_pos: Vector2) -> void:
 
 func _select_at(coord: Vector2i, world_pos: Vector2) -> void:
 	if _unit_manager:
-		var units := _unit_manager.get_units_at(coord)
-		if not units.is_empty():
-			_select_unit(units[0], coord)
+		var unit := _closest_unit_within_tolerance(world_pos)
+		if unit:
+			_select_unit(unit)
 			return
 	if _wall_manager:
 		var wall := _closest_wall_within_tolerance(world_pos)
@@ -202,7 +209,7 @@ func _select_at(coord: Vector2i, world_pos: Vector2) -> void:
 				return
 	clear_selection()
 
-func _select_unit(instance: UnitInstance, coord: Vector2i) -> void:
+func _select_unit(instance: UnitInstance) -> void:
 	_selected_unit = instance
 	_selected_building = null
 	_selected_wall = null
@@ -211,7 +218,12 @@ func _select_unit(instance: UnitInstance, coord: Vector2i) -> void:
 	# _select_building()'s own comment on why that one uses a different
 	# radius from this shared ring.
 	_selection_ring.points = _ring_points(_SELECTION_RING_RADIUS)
-	_selection_ring.position = HexCoord.axial_to_world(coord)
+	# Bug fix: the ring used to snap to the unit's HEX CENTER (whichever
+	# coord the click happened to resolve to), not the unit's own real,
+	# continuously-moving position — same "use the real world position, not
+	# a hex-bucket proxy for it" fix _closest_unit_within_tolerance() applies
+	# to hit-testing itself, applied here to the ring's placement too.
+	_selection_ring.position = HexCoord.axial_to_world(instance.hex_coord) + instance.local_position
 	_selection_ring.visible = true
 	_wall_highlight.visible = false
 	unit_selected.emit(_selected_unit)
@@ -280,6 +292,37 @@ func _closest_building_within_bounds(buildings: Array[BuildingInstance], world_p
 ## counts are small (individually-placed defensive chokepoints, not a
 ## per-tile grid), same "small enough to just scan" reasoning
 ## StrategicOverlayManager's own marker refresh already relies on.
+## **Real bug fixed (player report: "I am unable to select my units and give
+## them orders")** — the old code called `_unit_manager.get_units_at(coord)`,
+## an exact hex-bucket match against `UnitInstance.hex_coord`. Since Phase
+## 5.5's continuous movement, `hex_coord` stays the unit's SOURCE hex for the
+## unit's entire crossing and only flips to the destination hex at the exact
+## moment it finishes arriving (MovementStepper.advance_toward_hex()'s own
+## doc comment: "when false they're still the original hex_coord" — never
+## updated early) — but the unit's actual RENDERED position moves smoothly
+## the whole time, and `world_to_coord()` (used to turn a click into `coord`
+## in the first place) rounds to whichever hex center is nearer, which
+## flips to the destination hex at the crossing's own MIDPOINT, well before
+## the unit itself "arrives" there. For the entire second half of any
+## crossing — which is also where the unit is visually closest to wherever
+## the player is actually clicking — `get_units_at(coord)` looked in the
+## wrong bucket entirely and silently found nothing. Fixed the same way
+## building/wall selection already are: match against each unit's own REAL
+## world position (`HexCoord.axial_to_world(hex_coord) + local_position`,
+## exactly what TacticalEntityLayer renders it at) within a flat click
+## tolerance, not a hex-bucket lookup at all — correct regardless of which
+## hex a mid-transit unit happens to be registered under.
+func _closest_unit_within_tolerance(world_pos: Vector2) -> UnitInstance:
+	var closest: UnitInstance = null
+	var closest_dist: float = _UNIT_CLICK_TOLERANCE * _UNIT_CLICK_TOLERANCE
+	for instance in _unit_manager.get_all_units():
+		var origin := HexCoord.axial_to_world(instance.hex_coord) + instance.local_position
+		var dist: float = world_pos.distance_squared_to(origin)
+		if dist <= closest_dist:
+			closest = instance
+			closest_dist = dist
+	return closest
+
 func _closest_wall_within_tolerance(world_pos: Vector2) -> WallSegment:
 	var closest: WallSegment = null
 	var closest_dist: float = _WALL_CLICK_TOLERANCE

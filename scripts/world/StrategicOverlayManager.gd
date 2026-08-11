@@ -172,6 +172,7 @@ func _ready() -> void:
 		_building_manager.building_placed.connect(_on_building_placed)
 		_building_manager.building_removed.connect(_on_building_removed)
 		_building_manager.building_ruined.connect(_on_building_ruined)
+		_building_manager.building_construction_completed.connect(_on_building_construction_completed)
 		for instance in _building_manager.get_all_buildings():
 			_on_building_placed(instance)
 	if unit_manager_path != NodePath():
@@ -273,9 +274,23 @@ func _on_building_ruined(instance: BuildingInstance, _lost_population: int) -> v
 	if icon:
 		icon.color = BuildingVisuals.ruin_color()
 
+## User report ("buildings should be visible while under construction") —
+## recolors the existing icon in place once BuildingManager finishes the
+## build, same "update live, don't tear down and rebuild" shape
+## _on_building_ruined() above already uses; _on_building_placed() itself
+## already added this icon (tinted) the moment construction started, so
+## re-running that would just duplicate it.
+func _on_building_construction_completed(instance: BuildingInstance) -> void:
+	var icon: Polygon2D = _building_icons.get(instance.id)
+	if icon:
+		icon.color = BuildingVisuals.ruin_color() if instance.is_ruined else BuildingVisuals.category_color(instance.definition.category)
+
 func _build_building_icon(instance: BuildingInstance) -> Node2D:
 	var icon := Polygon2D.new()
-	icon.color = BuildingVisuals.ruin_color() if instance.is_ruined else BuildingVisuals.category_color(instance.definition.category)
+	if instance.is_under_construction:
+		icon.color = BuildingVisuals.construction_color()
+	else:
+		icon.color = BuildingVisuals.ruin_color() if instance.is_ruined else BuildingVisuals.category_color(instance.definition.category)
 	var r := 16.0  # Bigger than TacticalHexView's building boxes — needs to read at zoomed-out scale.
 	icon.polygon = PackedVector2Array([Vector2(0, -r), Vector2(r, r * 0.6), Vector2(-r, r * 0.6)])
 	icon.position = HexCoord.axial_to_world(instance.hex_coord) + instance.local_position
@@ -616,8 +631,11 @@ func _build_wall_marker(segment: WallSegment) -> Node2D:
 	# Freehand wall rework: point_a/point_b are the piece's own real
 	# placement geometry now, not always a whole hex edge — many small
 	# collinear pieces from the same drawn line still render as one
-	# continuous stroke, same as intended before this rework.
-	body.points = PackedVector2Array([segment.point_a, segment.point_b])
+	# continuous stroke, same as intended before this rework. Geometry
+	# itself (points/position/scale) is set inside _apply_wall_segment_look()
+	# now, via WallVisuals.apply_line_geometry() — see that constant's own
+	# doc comment for why a plain `body.points = [point_a, point_b]` here
+	# isn't enough to make the texture actually show.
 	container.add_child(body)
 	_apply_wall_segment_look(container, segment)
 
@@ -654,7 +672,12 @@ func _apply_wall_segment_look(marker: Node2D, segment: WallSegment) -> void:
 	body.texture_mode = Line2D.LINE_TEXTURE_TILE
 	body.texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
 	body.default_color = Color.WHITE if texture else (WallVisuals.breached_color() if breached else (WallVisuals.gate_color() if segment.is_gate else WallVisuals.tier_color(segment.tier)))
-	body.width = WallVisuals.line_width(segment.tier, breached)
+	# Real root cause of "wall texture still isn't visible" (playtest report,
+	# after the texture_repeat fix above already shipped) — see
+	# WallVisuals.UV_SCALE's own doc comment: a placed segment is far too
+	# short in raw world/local units for Line2D's fixed pixel-to-unit UV
+	# tiling to show more than a sliver of the 4128px-wide art.
+	WallVisuals.apply_line_geometry(body, segment.point_a, segment.point_b, WallVisuals.line_width(segment.tier, breached))
 	var is_legacy := _wall_manager != null and _wall_manager.is_legacy_segment(segment)
 	marker.modulate = WallVisuals.legacy_modulate() if is_legacy else WallVisuals.outer_modulate()
 

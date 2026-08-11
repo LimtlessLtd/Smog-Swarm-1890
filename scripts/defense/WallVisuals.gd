@@ -36,6 +36,15 @@ static func breached_color() -> Color:
 static func gate_color() -> Color:
 	return Color(0.80, 0.64, 0.20)
 
+## Tactical-scale multiplier over line_width()'s own Strategic-zoom values
+## (3.0 + tier*2.0 world units — sized to read at Strategic's zoomed-way-out
+## scale). Same rescale reasoning as TacticalHexView.BUILDING_HALF_SIZE's own
+## doc comment: a Strategic-scale line width against a 512-unit hex would be
+## a hairline, not a wall. Shared (not LocalDetailManager-only) so
+## WallPlacementController's live preview (user request — see that class's
+## own doc comment) renders at the same width the real wall will.
+const TACTICAL_WIDTH_SCALE: float = 8.0
+
 ## Line thickness scales with tier — a Concrete wall should visibly read as
 ## sturdier than a Wooden one even before the player checks its HP. A
 ## breached segment renders at half its intact width (WallManager.gd's own
@@ -93,6 +102,60 @@ static func tier_texture(tier: int) -> Texture2D:
 	if not _texture_cache.has(tier):
 		_texture_cache[tier] = _load_texture(tier)
 	return _texture_cache[tier]
+
+## **Real root cause found (playtest report, AFTER the texture_repeat fix
+## already shipped: "the wall texture still isn't visible, walls are just
+## long textureless lines")**: Line2D's LINE_TEXTURE_TILE mode maps texture
+## PIXELS to world UNITS 1:1 for its UV tiling (u = cumulative local-point
+## distance / texture.get_width()) — completely independent of
+## texture_repeat (that only controls whether u wrapping past 1.0 repeats or
+## clamps, which was the OTHER real bug, already fixed). The wall art is
+## 4128px wide (`assets/walls/wall_*.png`), but a placed wall PIECE is at
+## most `WallCatalog.MAX_SEGMENT_LENGTH_WORLD_UNITS` (~10.26 world units,
+## freehand walls are chopped into short pieces — see that constant's own
+## doc comment) long. Fed straight in, a segment's own points only ever
+## span u ∈ [0, 10.26/4128] ≈ [0, 0.0025] of the texture — a sliver a few
+## pixels wide, stretched across the whole segment, reads as a near-flat
+## color exactly as reported. Not a tiling-density tuning issue; the
+## segment geometry itself was never long enough in LOCAL-point terms for
+## Line2D's own fixed pixel-to-unit convention to show more than a sliver,
+## regardless of texture_repeat.
+##
+## Fixed the same way a mismatched map-scale-vs-detail-scale problem always
+## is: render in a coordinate space where the numbers actually work, then
+## compensate with the node's own `scale` so final on-screen geometry is
+## unchanged. `apply_line_geometry()` below feeds Line2D inflated LOCAL
+## points (real segment vector * UV_SCALE) and sets the node's own
+## `scale = 1/UV_SCALE` to shrink it back to the segment's true world size —
+## Line2D bakes its UV from the pre-scale `points` array, so this changes
+## how many times the texture tiles across the segment WITHOUT changing
+## where either endpoint actually renders. `width` gets the same UV_SCALE
+## compensation for the same reason (Line2D width is also a local-space
+## value the node's scale later shrinks). 1000.0 chosen so a max-length
+## (~10.26 unit) piece shows ~2.5 tile repeats (10.26*1000/4128) — enough to
+## read as a genuine repeating material rather than either a sliver or a
+## single over-stretched copy; a shorter piece shows proportionally fewer,
+## still a real (if partial) slice of the art rather than a flat color.
+const UV_SCALE: float = 1000.0
+
+## Sets `body`'s points/position/scale/width so it renders as the true
+## `point_a` -> `point_b` segment on screen while giving Line2D's own
+## texture-tiling math a big enough LOCAL distance to actually show
+## repeating detail — see this constant's own doc comment (UV_SCALE) for
+## the full reasoning. `final_width` is the segment's real, on-screen line
+## thickness (whatever line_width()-derived value the caller would
+## otherwise have assigned to `body.width` directly) — this method does the
+## UV_SCALE compensation for it, callers should never multiply it in
+## themselves. Position/scale/points are the ONLY three properties this
+## touches; texture/texture_mode/texture_repeat/default_color/modulate stay
+## the call site's own responsibility (they don't interact with local-space
+## geometry at all).
+static func apply_line_geometry(body: Line2D, point_a: Vector2, point_b: Vector2, final_width: float) -> void:
+	body.position = point_a
+	body.rotation = 0.0
+	body.scale = Vector2.ONE / UV_SCALE
+	body.points = PackedVector2Array([Vector2.ZERO, (point_b - point_a) * UV_SCALE])
+	body.width = final_width * UV_SCALE
 
 static func _texture_key(tier: int) -> String:
 	match tier:
