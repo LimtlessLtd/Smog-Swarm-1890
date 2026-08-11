@@ -196,8 +196,10 @@ func _select_at(coord: Vector2i, world_pos: Vector2) -> void:
 	if _building_manager:
 		var buildings := _building_manager.get_buildings_at(coord)
 		if not buildings.is_empty():
-			_select_building(_closest_building(buildings, world_pos))
-			return
+			var building := _closest_building_within_bounds(buildings, world_pos)
+			if building:
+				_select_building(building)
+				return
 	clear_selection()
 
 func _select_unit(instance: UnitInstance, coord: Vector2i) -> void:
@@ -245,12 +247,27 @@ func _select_wall(segment: WallSegment) -> void:
 ## where the player actually clicked — the same disambiguation
 ## `TacticalHexView._resolved_building_position()` already has to solve for
 ## rendering, applied here to picking rather than drawing.
-func _closest_building(buildings: Array[BuildingInstance], world_pos: Vector2) -> BuildingInstance:
-	var closest: BuildingInstance = buildings[0]
-	var closest_dist: float = (HexCoord.axial_to_world(closest.hex_coord) + closest.local_position).distance_squared_to(world_pos)
-	for i in range(1, buildings.size()):
-		var instance: BuildingInstance = buildings[i]
-		var dist: float = (HexCoord.axial_to_world(instance.hex_coord) + instance.local_position).distance_squared_to(world_pos)
+##
+## **Bug fix (playtest report): clicking anywhere on a building's hex used
+## to select it, even nowhere near the actual sprite** — the old version of
+## this function had no rejection distance at all, only proximity-based
+## disambiguation between buildings that already shared a hex. Buildings
+## render as a real `TacticalHexView.BUILDING_HALF_SIZE`-sided box, so a
+## click whose offset from a building's own origin exceeds that box on
+## either axis is outside its sprite and no longer counts — same AABB
+## reasoning `_closest_wall_within_tolerance()` already applies via a
+## distance tolerance for walls. Returns null (not a fallback guess) when
+## nothing on the hex was actually clicked, matching wall selection's own
+## "null means try the next candidate, then clear_selection()" contract.
+func _closest_building_within_bounds(buildings: Array[BuildingInstance], world_pos: Vector2) -> BuildingInstance:
+	var closest: BuildingInstance = null
+	var closest_dist: float = INF
+	for instance in buildings:
+		var origin := HexCoord.axial_to_world(instance.hex_coord) + instance.local_position
+		var offset := world_pos - origin
+		if absf(offset.x) > TacticalHexView.BUILDING_HALF_SIZE or absf(offset.y) > TacticalHexView.BUILDING_HALF_SIZE:
+			continue
+		var dist: float = offset.length_squared()
 		if dist < closest_dist:
 			closest = instance
 			closest_dist = dist

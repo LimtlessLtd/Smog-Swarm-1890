@@ -88,7 +88,11 @@ func _ready() -> void:
 		_logistics_network = get_node(logistics_network_path)
 	if building_manager_path != NodePath():
 		_building_manager = get_node(building_manager_path)
-	seed_starting_defenses()
+	# Bug fix (user request): the game used to auto-fence the starting
+	# Manchester settlement with a free Wooden perimeter on every new game —
+	# no longer called. seed_starting_defenses() itself is left intact
+	# below (still reachable for a future "start with walls" option) so
+	# this is a one-line behavior change, not a removal of the mechanism.
 	TickManager.day_completed.connect(_on_day_completed)
 
 ## Ticks every queued repair down by one day, applying the actual HP

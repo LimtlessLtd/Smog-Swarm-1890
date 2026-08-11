@@ -363,23 +363,34 @@ func _build_wall_marker(segment: WallSegment) -> Line2D:
 	_apply_wall_segment_look(body, segment)
 	return body
 
-## Deliberately flat-colored, no `WallVisuals.tier_texture()` — user report
-## ("issues with the walls not repeating properly across the entire length
-## of the wall"). That texture's own tile size was authored for
-## StrategicOverlayManager's much-shorter, zoomed-way-out marker line;
-## Tactical's own segments span a full hex-center-to-hex-center distance at
-## real world scale (hundreds of units) and WALL_TACTICAL_WIDTH_SCALE's own
-## 8x width on top of that, so the same texture tiled far more times than
-## it was ever designed to and read as noise rather than a wall. A flat
-## tier color (StrategicOverlayManager's own pre-art fallback, still
-## perfectly legible for tier/breach/gate state) avoids the mismatch
-## entirely rather than trying to re-tune tile scale to fit two very
-## differently-scaled consumers — real Tactical-specific wall art is a
-## future add, not a same-pass fix.
+## **Real root cause found (playtest report: "wall textures are not applied
+## nor repeated across the length of the wall") — texture was previously
+## disabled entirely here (`body.texture = null`), on the theory that
+## `WallVisuals.tier_texture()`'s tile size was authored for
+## StrategicOverlayManager's much shorter marker line and would "tile far
+## more times than designed and read as noise" at Tactical's longer,
+## 8x-wider segments. That diagnosis predates the freehand wall rework:
+## Tactical segments are now short (<=WallCatalog.MAX_SEGMENT_LENGTH_WORLD_UNITS,
+## ~10 world units) chopped pieces, the same geometry Strategic's own
+## per-piece markers already use — not "a full hex-center-to-hex-center
+## distance at real world scale" the old comment assumed.
+## The actual cause: `Line2D.texture_mode = LINE_TEXTURE_TILE` only tiles
+## when the node's own `texture_repeat` is ENABLED or MIRROR (Godot's own
+## Line2D docs state this explicitly) — neither this function nor
+## StrategicOverlayManager's equivalent ever set it, so it sat at the
+## project's default (Disabled) the whole time. With repeat disabled, the
+## GPU sampler clamps to the texture's edge pixels instead of repeating,
+## which is what actually read as "not applied nor repeated" — texture
+## assigned but never actually tiling. Fixed here (and in
+## StrategicOverlayManager, same latent bug, not previously reported) by
+## setting texture_repeat explicitly rather than stripping the texture.
 func _apply_wall_segment_look(body: Line2D, segment: WallSegment) -> void:
 	var breached := segment.is_breached()
-	body.texture = null
-	body.default_color = WallVisuals.breached_color() if breached else (WallVisuals.gate_color() if segment.is_gate else WallVisuals.tier_color(segment.tier))
+	var texture := WallVisuals.tier_texture(segment.tier) if not breached else null
+	body.texture = texture
+	body.texture_mode = Line2D.LINE_TEXTURE_TILE
+	body.texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
+	body.default_color = Color.WHITE if texture else (WallVisuals.breached_color() if breached else (WallVisuals.gate_color() if segment.is_gate else WallVisuals.tier_color(segment.tier)))
 	body.width = WallVisuals.line_width(segment.tier, breached) * WALL_TACTICAL_WIDTH_SCALE
 	var is_legacy := _wall_manager != null and _wall_manager.is_legacy_segment(segment)
 	body.modulate = WallVisuals.legacy_modulate() if is_legacy else WallVisuals.outer_modulate()

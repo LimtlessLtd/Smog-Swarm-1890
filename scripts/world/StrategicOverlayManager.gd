@@ -640,12 +640,19 @@ func _build_wall_marker(segment: WallSegment) -> Node2D:
 ## at the tier color would tint real art an unintended hue — reset to plain
 ## white (no tint) whenever a real texture is in play, tier color only
 ## otherwise.
+## texture_repeat fix (same root cause as LocalDetailManager's own Tactical
+## wall marker — see that function's doc comment): LINE_TEXTURE_TILE only
+## actually tiles when texture_repeat is ENABLED/MIRROR, which this never
+## set, so it sat at the project default (Disabled) and clamped instead of
+## repeating. Not the player-reported bug (that was Tactical specifically),
+## but the same latent issue, fixed here too rather than left half-fixed.
 func _apply_wall_segment_look(marker: Node2D, segment: WallSegment) -> void:
 	var body := marker.get_node("Body") as Line2D
 	var breached := segment.is_breached()
 	var texture := WallVisuals.tier_texture(segment.tier) if not breached else null
 	body.texture = texture
 	body.texture_mode = Line2D.LINE_TEXTURE_TILE
+	body.texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
 	body.default_color = Color.WHITE if texture else (WallVisuals.breached_color() if breached else (WallVisuals.gate_color() if segment.is_gate else WallVisuals.tier_color(segment.tier)))
 	body.width = WallVisuals.line_width(segment.tier, breached)
 	var is_legacy := _wall_manager != null and _wall_manager.is_legacy_segment(segment)
