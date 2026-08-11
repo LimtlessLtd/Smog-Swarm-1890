@@ -67,6 +67,66 @@ var stun_seconds_remaining: float = 0.0
 const HP_PER_ZOMBIE: float = 2.0
 const DAMAGE_PER_ZOMBIE: float = 0.5
 
+## Real per-zombie identity (user request, 2026-08-11: "each individual
+## zombie should have a randomly generated value for how susceptible they
+## are to stimuli... and it defines how easily attracted a particular
+## zombie is to noises or light" — plus per-individual movement/speed
+## variance). Deterministic from (id, index) rather than a stored array —
+## O(1) regardless of horde size (a horde can be thousands strong; storing
+## a real per-zombie array would scale save-file size and merge/split
+## bookkeeping with it), and matches this project's own established
+## seeded-RNG convention (LocalDetailGenerator._hex_seed(),
+## TacticalEntityLayer._scatter_offset()'s own _hash01()). A zombie's own
+## values survive a save/load (id+index reproduce the exact same numbers)
+## but do NOT survive a horde merge/split (indices renumber) — a
+## disclosed, deliberate limitation: "which specific zombie used to be
+## susceptible" was never meaningful state on its own, only "this horde's
+## population skews jumpy or dull" is, and mean_susceptibility() below is
+## what actually gets read.
+const MIN_SUSCEPTIBILITY: float = 0.4  ## Dullest zombies — only reacts to a source roughly 2.5x louder than ATTRACTION_THRESHOLD.
+const MAX_SUSCEPTIBILITY: float = 1.6  ## Jumpiest zombies — reacts to a source well under ATTRACTION_THRESHOLD.
+const MIN_SPEED_VARIANCE: float = 0.85
+const MAX_SPEED_VARIANCE: float = 1.2
+
+func _individual_seed(index: int) -> int:
+	return id * 92821 ^ index * 15485863  ## Large primes, same style as LocalDetailGenerator._hex_seed().
+
+## How readily zombie #index reacts to noise/light — HordeManager reads
+## mean_susceptibility() (below) to modulate the flat ATTRACTION_THRESHOLD
+## per-horde, not this directly; exposed per-index so a future pass that
+## DOES want a specific figure's own value (e.g. a splinter/peel-off
+## mechanic) has it without redesigning the storage.
+func individual_susceptibility(index: int) -> float:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = _individual_seed(index)
+	return rng.randf_range(MIN_SUSCEPTIBILITY, MAX_SUSCEPTIBILITY)
+
+## A zombie's own gait-speed variance — read by TacticalEntityLayer to give
+## each rendered figure real, persistent (not just per-frame-random)
+## individual movement character, distinct from a duller/eager neighbor.
+## XORed against a different constant than individual_susceptibility()'s
+## own seed so a zombie's speed and susceptibility aren't perfectly
+## correlated (a jumpy zombie isn't necessarily also a fast one).
+func individual_speed_variance(index: int) -> float:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = _individual_seed(index) ^ 0x5bd1e995
+	return rng.randf_range(MIN_SPEED_VARIANCE, MAX_SPEED_VARIANCE)
+
+## Mean susceptibility across the horde's own population, sampled rather
+## than averaged over every zombie once size gets large — a Monte-Carlo
+## mean over _SUSCEPTIBILITY_SAMPLE_COUNT individuals converges close
+## enough for a threshold multiplier, and stays O(1) regardless of whether
+## the horde is 20 strong or 5,000.
+const _SUSCEPTIBILITY_SAMPLE_COUNT: int = 12
+func mean_susceptibility() -> float:
+	var n := mini(size, _SUSCEPTIBILITY_SAMPLE_COUNT)
+	if n <= 0:
+		return 1.0
+	var total := 0.0
+	for i in range(n):
+		total += individual_susceptibility(i)
+	return total / float(n)
+
 func _init(p_hex_coord: Vector2i = Vector2i.ZERO, p_size: int = 0, p_id: int = 0, p_state: GameEnums.HordeState = GameEnums.HordeState.WANDERING) -> void:
 	hex_coord = p_hex_coord
 	size = p_size

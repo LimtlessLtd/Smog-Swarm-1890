@@ -372,7 +372,8 @@ func _update_horde_group(horde: Horde) -> void:
 		group.add_child(_build_diamond(ZOMBIE_COLOR, LOW_ZOMBIE_RADIUS))
 	elif _fidelity == GameEnums.TacticalFidelity.MEDIUM:
 		for i in range(display_count):
-			group.add_child(_build_zombie_figure(horde.id, i, _scatter_offset(i, display_count, horde.id)))
+			var variance := horde.individual_speed_variance(i)
+			group.add_child(_build_zombie_figure(horde.id, i, _scatter_offset(i, display_count, horde.id, FIGURE_SPREAD, variance)))
 	# else HIGH: rendered through the shared MultiMesh batch layers instead
 	# of per-horde child nodes — see _rebuild_zombie_batches() (called once
 	# per frame from _refresh_hordes(), not per horde) and this class's own
@@ -577,7 +578,14 @@ func _rebuild_zombie_batches() -> void:
 		var spread := _crowd_spread_radius(display_count)
 		for i in range(display_count):
 			var variant := ((horde.id + i) % ZombieVisuals.VARIANT_COUNT + ZombieVisuals.VARIANT_COUNT) % ZombieVisuals.VARIANT_COUNT
-			var offset := _scatter_offset(i, display_count, horde.id, spread)
+			var variance := horde.individual_speed_variance(i)
+			var offset := _scatter_offset(i, display_count, horde.id, spread, variance)
+			# Transform2D(rotation, position) — rotation deliberately stays 0.0
+			# regardless of variance/offset (user request: zombies must stay
+			# upright and never rotate, confirmed already true elsewhere in
+			# this file before this pass; this batched path is the one place
+			# that could have silently violated it by deriving a rotation
+			# from movement/offset direction, so it's called out explicitly).
 			per_variant[variant].append(Transform2D(0.0, base_pos + offset))
 		total_rendered += display_count
 
@@ -625,14 +633,23 @@ func _crowd_spread_radius(display_count: int) -> float:
 ## that overrides it, via _crowd_spread_radius(), so a large batched horde
 ## visually fans out over a bigger area instead of packing hundreds of
 ## figures into the same small circle a 5-figure MEDIUM cluster uses.
-func _scatter_offset(index: int, total: int, group_seed: int = 0, spread_radius: float = FIGURE_SPREAD) -> Vector2:
+## `individual_variance` (default 1.0, every pre-existing call site's own
+## unchanged behavior) — real per-zombie identity (user request:
+## "individual zombies... rng based positioning, movement, speed"), read
+## from Horde.individual_speed_variance(index) at the zombie call sites
+## below rather than invented fresh here. A faster zombie (variance > 1.0)
+## drifts further out from the group's own center — reads as eager/
+## out-front — a slower one (variance < 1.0) lags closer in, a real
+## visible correlation between a specific figure's persistent stat and
+## where it's actually drawn, not just cosmetic noise on top of it.
+func _scatter_offset(index: int, total: int, group_seed: int = 0, spread_radius: float = FIGURE_SPREAD, individual_variance: float = 1.0) -> Vector2:
 	if total <= 1:
 		return Vector2.ZERO
 	var base_angle := TAU * float(index) / float(total)
 	var angle_jitter := (_hash01(index * 2 + group_seed * 7) - 0.5) * (TAU / float(total)) * 0.8  ## Up to ~80% of one slot's own angular width either way — enough to break the perfect evenness without figures swapping places/overlapping.
 	var radius_jitter := 0.6 + _hash01(index * 2 + 1 + group_seed * 7) * 0.7  ## 0.6x-1.3x spread_radius — an organic scatter has near/far figures, not every one sitting on the exact same circle.
 	var angle := base_angle + angle_jitter
-	return Vector2(cos(angle), sin(angle)) * spread_radius * radius_jitter
+	return Vector2(cos(angle), sin(angle)) * spread_radius * radius_jitter * individual_variance
 
 ## Cheap deterministic 0..1 pseudo-random value from an int seed — no
 ## RandomNumberGenerator instance needed for a single scalar, same
