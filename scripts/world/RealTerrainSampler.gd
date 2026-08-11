@@ -81,6 +81,14 @@ const _BIOME_BY_CODE: Array[GameEnums.BiomeType] = [
 	GameEnums.BiomeType.WETLAND,
 	GameEnums.BiomeType.WATERWAY,
 	GameEnums.BiomeType.HIGHLAND,
+	# Granularity pass (2026-08-11): appended at indices 7/8 to match
+	# bake_landcover.py's own append-only _BIOME_CODE dict exactly — a
+	# raster baked before this pass simply never contains these codes
+	# (falls back to MOORLAND/FARMLAND as it always did), a raster baked
+	# after it can use them. Either way this array must stay index-aligned
+	# with the Python dict, not with GameEnums.BiomeType's own ordinals.
+	GameEnums.BiomeType.WOODLAND,
+	GameEnums.BiomeType.HEATHLAND,
 ]
 const _FEATURE_BY_CODE: Array[GameEnums.TerrainFeature] = [
 	GameEnums.TerrainFeature.NONE,

@@ -52,5 +52,9 @@ func get_vision_penalty() -> int:
 	match biome_type:
 		GameEnums.BiomeType.MOORLAND, GameEnums.BiomeType.WETLAND:
 			return 1
+		GameEnums.BiomeType.WOODLAND:
+			return 2  ## Granularity pass — the tree-heaviest of LocalDetailGenerator's own biomes (110 props/hex, real forest canopy) should occlude more than Moorland's own lighter scatter, not the same flat 1.
+		GameEnums.BiomeType.HEATHLAND:
+			return 1  ## Low shrub cover — same order as Moorland, not the denser Woodland penalty.
 		_:
 			return 0

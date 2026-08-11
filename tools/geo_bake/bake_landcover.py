@@ -85,18 +85,31 @@ HIGHLAND_ELEVATION_THRESHOLD_M = 175.0
 _BIOME_CODE = {
     "MOORLAND": 0, "FARMLAND": 1, "URBAN": 2, "INDUSTRIAL": 3,
     "WETLAND": 4, "WATERWAY": 5, "HIGHLAND": 6,
+    # Granularity pass (2026-08-11): appended, not inserted — codes 0-6 are
+    # already baked into committed landcover.png bytes; renumbering would
+    # silently reclassify every existing pixel. Must match
+    # RealTerrainSampler.gd's _BIOME_BY_CODE array index-for-index (same
+    # "decoupled from GameEnums ordinals, append-only" contract this dict
+    # already documents above).
+    "WOODLAND": 7, "HEATHLAND": 8,
 }
 _FEATURE_CODE = {"NONE": 0, "RIVER": 1, "CANAL": 2, "MARSH": 3, "PEAT_BOG": 4, "ESCARPMENT": 5}
 
 _LANDUSE_MAP = {
-    "forest": "MOORLAND", "farmland": "FARMLAND", "orchard": "FARMLAND",
+    "forest": "WOODLAND", "farmland": "FARMLAND", "orchard": "FARMLAND",
     "meadow": "FARMLAND", "allotments": "FARMLAND", "farmyard": "FARMLAND",
     "residential": "URBAN", "commercial": "URBAN", "retail": "URBAN", "construction": "URBAN",
     "industrial": "INDUSTRIAL",
 }
 _NATURAL_MAP = {
-    "wood": "MOORLAND", "wetland": "WETLAND", "heath": "MOORLAND",
-    "water": "WATERWAY", "scrub": "MOORLAND",
+    # Granularity pass (2026-08-11): wood/heath/scrub used to all funnel
+    # into MOORLAND alongside genuine open grazing land — real, distinct
+    # UK landscape types (forest cover vs. heather/gorse scrubland vs. open
+    # moor) were being flattened into one catch-all despite the tags to
+    # tell them apart already being fetched from Overpass. No new query
+    # needed, just using data that was already being thrown away.
+    "wood": "WOODLAND", "wetland": "WETLAND", "heath": "HEATHLAND",
+    "water": "WATERWAY", "scrub": "HEATHLAND",
 }
 _WATERWAY_FEATURE = {"river": "RIVER", "canal": "CANAL", "stream": "RIVER"}
 
@@ -353,7 +366,15 @@ def bake(test_mode: bool = False):
     # Highland override applies UNDER explicit water/wetland classification
     # (a river running through a valley shouldn't become "highland" just
     # because the surrounding hillside is high) but OVER default MOORLAND.
-    override_mask = highland_mask & np.isin(biome_grid, [_BIOME_CODE["MOORLAND"], _BIOME_CODE["FARMLAND"]])
+    # WOODLAND/HEATHLAND included alongside MOORLAND/FARMLAND — before this
+    # pass, wood/heath/scrub pixels WERE classified MOORLAND and so WERE
+    # already eligible for this override; keeping them eligible now that
+    # they're distinct codes preserves that behavior rather than silently
+    # dropping it (real elevated forestry/heath moor both genuinely exist).
+    override_mask = highland_mask & np.isin(biome_grid, [
+        _BIOME_CODE["MOORLAND"], _BIOME_CODE["FARMLAND"],
+        _BIOME_CODE["WOODLAND"], _BIOME_CODE["HEATHLAND"],
+    ])
     biome_grid[override_mask] = _BIOME_CODE["HIGHLAND"]
     feature_grid[override_mask] = _FEATURE_CODE["ESCARPMENT"]
 

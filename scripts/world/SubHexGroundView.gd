@@ -37,6 +37,25 @@ extends Node2D
 const _GRID_N: int = 7  ## odd, so there's a true center sample aligned with the hex's own already-computed majority-vote biome_type — avoids a visible seam between Strategic's flat tile and this grid's own center.
 const _GRID_SPAN: float = HexCoord.HEX_SIZE * 1.6  ## matches RealTerrainSampler.sample_grid()'s own span so sub-cells tile edge to edge with zero gap/overlap ambiguity.
 
+## Real cross-hex/cross-biome blending (user request: "changes in terrain
+## and across hex borders should blend smoothly... some sort of gradient
+## when moving from one type of terrain to another"). Loaded once, shared
+## by every sub-cell's own ShaderMaterial instance (materials are cheap
+## per-instance wrappers around one shared Shader resource, same "load
+## once, cache" convention every *Visuals.gd lazy-loader already follows).
+static var _blend_shader: Shader = null
+static func _get_blend_shader() -> Shader:
+	if _blend_shader == null:
+		_blend_shader = load("res://assets/shaders/terrain_blend.gdshader") as Shader
+	return _blend_shader
+
+## Blend strength cap — a boundary cell always keeps at least this much of
+## its OWN biome's identity even surrounded entirely by a different one, so
+## a real transition zone reads as "this hex's edge fading into the next
+## biome," not "which biome is this even." 0.6 chosen so a fully-surrounded
+## boundary cell still visibly leans toward its own texture, not a 50/50 mush.
+const _MAX_BLEND_WEIGHT: float = 0.6
+
 func setup(cell: HexCell) -> void:
 	for child in get_children():
 		child.queue_free()
@@ -52,17 +71,38 @@ func setup(cell: HexCell) -> void:
 
 	var cell_size := _GRID_SPAN / float(_GRID_N)
 	var start := -_GRID_SPAN * 0.5 + cell_size * 0.5
+
+	# First pass: resolve every sub-cell's own biome/soil/texture up front,
+	# so the second pass can look up ANY of the 4-connected neighbors
+	# (including ones not yet visited in row-major order) for blending.
+	var biomes: Array = []       # GameEnums.BiomeType per index, or null if the sample was empty
+	var textures: Array = []     # Texture2D per index, or null
+	var soils: Array = []        # GameEnums.SoilFertility per index
+	for i in range(_GRID_N * _GRID_N):
+		var sample: Dictionary = samples[i]
+		if sample.is_empty():
+			biomes.append(null)
+			textures.append(null)
+			soils.append(GameEnums.SoilFertility.NOT_ARABLE)
+			continue
+		var biome: GameEnums.BiomeType = sample["biome_type"]
+		var soil := cell.soil_fertility if (biome == GameEnums.BiomeType.FARMLAND or biome == GameEnums.BiomeType.MOORLAND) else GameEnums.SoilFertility.NOT_ARABLE
+		biomes.append(biome)
+		soils.append(soil)
+		textures.append(TerrainVisuals.terrain_texture(biome, soil))
+
 	var distinct_textures: Dictionary = {}
 	for row in range(_GRID_N):
 		for col in range(_GRID_N):
-			var sample: Dictionary = samples[row * _GRID_N + col]
-			if sample.is_empty():
+			var i := row * _GRID_N + col
+			if biomes[i] == null:
 				continue
-			var biome: GameEnums.BiomeType = sample["biome_type"]
-			var soil := cell.soil_fertility if (biome == GameEnums.BiomeType.FARMLAND or biome == GameEnums.BiomeType.MOORLAND) else GameEnums.SoilFertility.NOT_ARABLE
-			var texture := TerrainVisuals.terrain_texture(biome, soil)
+			var biome: GameEnums.BiomeType = biomes[i]
+			var soil: GameEnums.SoilFertility = soils[i]
+			var texture: Texture2D = textures[i]
 			var sub_pos := Vector2(start + col * cell_size, start + row * cell_size)
-			add_child(_build_sub_cell(texture, biome, soil, sub_pos, cell_size))
+			var blend := _compute_blend(row, col, biomes, textures) if texture else {}
+			add_child(_build_sub_cell(texture, biome, soil, sub_pos, cell_size, blend))
 			if texture:
 				distinct_textures[texture] = true
 			else:
@@ -72,7 +112,67 @@ func setup(cell: HexCell) -> void:
 	# real data classified as uniformly one biome) is a perfectly valid
 	# outcome, not a bug — most hexes genuinely are one thing throughout.
 
-func _build_sub_cell(texture: Texture2D, biome: GameEnums.BiomeType, soil: GameEnums.SoilFertility, local_pos: Vector2, cell_size: float) -> Node2D:
+## Examines this sub-cell's 4-connected neighbors (up/down/left/right
+## within the same grid — cross-hex neighbors one grid-cell over aren't
+## sampled here, so a blend never reaches past this hex's own footprint)
+## and returns {} if none differ, or {secondary_texture, direction, weight}
+## for the DOMINANT differing biome among them (most of the up-to-4
+## neighbors sharing one biome wins; a tie keeps whichever was found
+## first in a fixed scan order — a real but inconsequential tie-break,
+## not a correctness question). direction is in the same local-space
+## convention _build_sub_cell()'s own Vector2(col,row) positioning already
+## uses (+X = right/higher col, +Y = down/higher row), matching the
+## shader's own UV-space dot-product exactly with no extra transform.
+func _compute_blend(row: int, col: int, biomes: Array, textures: Array) -> Dictionary:
+	var self_i := row * _GRID_N + col
+	var self_biome = biomes[self_i]
+	var offsets: Array[Vector2i] = [Vector2i(0, -1), Vector2i(0, 1), Vector2i(-1, 0), Vector2i(1, 0)]
+	var directions: Array[Vector2] = [Vector2(0, -1), Vector2(0, 1), Vector2(-1, 0), Vector2(1, 0)]
+	var biome_counts: Dictionary = {}       # biome -> count among differing neighbors
+	var biome_directions: Dictionary = {}   # biome -> Array[Vector2] of directions toward a neighbor with that biome
+	var biome_texture: Dictionary = {}      # biome -> Texture2D (first non-null seen for that biome)
+	for k in range(offsets.size()):
+		var nc: int = col + offsets[k].x
+		var nr: int = row + offsets[k].y
+		if nc < 0 or nc >= _GRID_N or nr < 0 or nr >= _GRID_N:
+			continue
+		var ni := nr * _GRID_N + nc
+		var n_biome = biomes[ni]
+		if n_biome == null or n_biome == self_biome:
+			continue
+		var n_texture: Texture2D = textures[ni]
+		if n_texture == null:
+			continue  ## Can't blend toward a biome with no real texture (e.g. unauthored/flat-color-only) — skip rather than blend against a null.
+		biome_counts[n_biome] = biome_counts.get(n_biome, 0) + 1
+		if not biome_directions.has(n_biome):
+			biome_directions[n_biome] = []
+		biome_directions[n_biome].append(directions[k])
+		if not biome_texture.has(n_biome):
+			biome_texture[n_biome] = n_texture
+
+	if biome_counts.is_empty():
+		return {}
+
+	var dominant_biome = null
+	var dominant_count := -1
+	for biome in biome_counts:
+		if biome_counts[biome] > dominant_count:
+			dominant_count = biome_counts[biome]
+			dominant_biome = biome
+
+	var avg_direction := Vector2.ZERO
+	for dir in biome_directions[dominant_biome]:
+		avg_direction += dir
+	if avg_direction.length_squared() > 0.0001:
+		avg_direction = avg_direction.normalized()
+
+	return {
+		"secondary_texture": biome_texture[dominant_biome],
+		"direction": avg_direction,
+		"weight": clampf(float(dominant_count) / 4.0, 0.0, 1.0) * _MAX_BLEND_WEIGHT,
+	}
+
+func _build_sub_cell(texture: Texture2D, biome: GameEnums.BiomeType, soil: GameEnums.SoilFertility, local_pos: Vector2, cell_size: float, blend: Dictionary = {}) -> Node2D:
 	if texture:
 		var sprite := Sprite2D.new()
 		sprite.texture = texture
@@ -82,6 +182,13 @@ func _build_sub_cell(texture: Texture2D, biome: GameEnums.BiomeType, soil: GameE
 		sprite.position = local_pos
 		var largest_dim := maxf(texture.get_width(), texture.get_height())
 		sprite.scale = Vector2.ONE * (cell_size / largest_dim)
+		if not blend.is_empty():
+			var material := ShaderMaterial.new()
+			material.shader = _get_blend_shader()
+			material.set_shader_parameter("secondary_texture", blend["secondary_texture"])
+			material.set_shader_parameter("blend_weight", blend["weight"])
+			material.set_shader_parameter("blend_direction", blend["direction"])
+			sprite.material = material
 		return sprite
 
 	# No art authored yet for this biome/soil combination (e.g. OCEAN,
