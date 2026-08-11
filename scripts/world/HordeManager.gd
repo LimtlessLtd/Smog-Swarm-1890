@@ -108,9 +108,32 @@ extends Node
 ##   - Horde-size/spawn-frequency ramp-up over time (Phase 7.1's Act pacing
 ##     / Phase 7.6's difficulty presets) — neither campaign system exists yet;
 ##     STARTING_HORDE_COUNT/SIZE below are a flat one-time seed, not a curve.
-##   - LOD-based cheap/expensive simulation switching (design doc's own
-##     "Performance" note under 5.10) — no consumer yet to profile against,
-##     premature at this scale (a handful of hordes total).
+##
+## **Phase 5.10 "Performance" note, closed this pass: LOD-based cheap/
+## expensive simulation switching.** The real per-horde expense was never
+## continuous movement itself (MovementStepper's per-frame math is a
+## handful of vector ops, and _gather_obstacles() is an O(1) hashed hex
+## lookup) — it's HexPathfinder.find_path()'s A* search, called from
+## _replan() every time a horde's drift path empties. That search's own
+## open-set is a plain Dictionary scanned linearly for the lowest f_score
+## (see that function's own doc comment — "not a binary heap"), and at
+## real horde-scale (hundreds-to-thousands of Horde instances, each
+## replanning independently, amplified further by however many hex legs a
+## single TickManager high-speed frame can complete) that adds up fast for
+## hordes nobody's anywhere near. FAR_SIMULATION_RADIUS/_is_far_from_player()/
+## _replan_cheap() below give a WANDERING horde outside that radius of
+## every placed building a trivial one-hex random-neighbor hop instead of a
+## real A* search — every bit as "no deliberate beeline anywhere" as the
+## real ring-target path used to be (WANDERING's whole design intent, see
+## this class's own header above), just without ever paying for the graph
+## search. ATTRACTED and ATTACKING hordes are deliberately EXEMPT
+## regardless of distance: an ATTRACTED horde's whole point is reaching a
+## real target efficiently, and ATTACKING only ever triggers by physically
+## reaching a wall — which, being player-built, is already going to read as
+## "near a building" under the same distance check in practice, so no
+## special-case exemption is even needed there beyond the state check
+## itself already gating _replan() out (an ATTACKING horde's `path` isn't
+## empty, it's blocked — _replan() never runs for it at all).
 
 signal horde_spawned(horde: Horde)
 signal horde_moved(horde: Horde, from_coord: Vector2i, to_coord: Vector2i)
@@ -169,6 +192,30 @@ const DRIFT_TARGET_RADIUS: int = 5
 ## of magnitude as DRIFT_TARGET_RADIUS above, not colony-wide — a horde on
 ## the far side of the map has no way to know a distant city is loud.
 const ATTRACTION_AWARENESS_RADIUS: int = 6
+
+## Design doc Phase 5.10 "Performance" note (see this class's own header
+## doc comment for the full reasoning): a WANDERING horde farther than this
+## many hexes from EVERY placed building skips real A* pathfinding
+## (_replan_cheap() below) in favor of a trivial random-neighbor hop.
+## Deliberately >= ATTRACTION_AWARENESS_RADIUS so a horde already close
+## enough to be within noise-attraction range of the player's own noisy
+## buildings never reads as "far" while it's actively relevant — the two
+## radii describing overlapping, not contradictory, notions of "close to
+## the player."
+##
+## **Disclosed, not solved this pass (adversarial review):** the far/near
+## classification is re-derived fresh on every replan, purely positional —
+## no hysteresis/debounce. A horde that lingers right around this radius
+## can genuinely alternate between a cheap one-hex hop and a real ~5-hex
+## path replan to replan (confirmed via simulation during review: real,
+## non-negligible at exactly this boundary, not a one-in-a-million edge
+## case). Harmless — no crash, no stuck state, both branches always leave
+## `path`/`state` consistent — just a purely cosmetic "bursty direction
+## changes near the boundary" movement signature nobody has reported
+## noticing, not worth a stateful debounce mechanism for a placeholder
+## balancing radius that's trivial to retune if it ever does look wrong
+## in practice.
+const FAR_SIMULATION_RADIUS: int = 10
 ## The noise level (NoiseManager.get_noise_at()) a hex must clear before a
 ## horde within range treats it as worth deliberately walking toward,
 ## rather than continuing its unbiased WANDERING drift. Placeholder
@@ -503,6 +550,32 @@ func _spawnable_coords() -> Array[Vector2i]:
 ## within this loop (not just once per old tick), so a multi-hex catch-up
 ## burst can't glide through an un-breached wall on an intermediate hex
 ## just because the loop's first iteration found the immediate edge clear.
+##
+## **Real bug found and fixed (adversarial review, Phase 5.10 pass): replan
+## now happens INSIDE this loop (at the top of every iteration), not once
+## before it.** The old shape called _replan() exactly once, then let the
+## loop drain whatever path that single call produced, exiting the instant
+## `path` emptied even with `remaining` budget left over — silently
+## discarding it rather than replanning fresh and continuing. That was
+## always a latent gap (a big enough lag-spike/catch-up `delta` could drain
+## even a real ~DRIFT_TARGET_RADIUS-hex A* path before `remaining` hit
+## zero), but FAR_SIMULATION_RADIUS's own _replan_cheap() made it acute:
+## a cheap replan's path is ALWAYS exactly one hex, so a far horde used to
+## hit that same wall roughly 5x more often per unit of `delta` than a near
+## horde's ~5-hex real path — at high TickManager speed, far hordes
+## measurably crawled slower than near ones, and slower than this SAME
+## horde moved before FAR_SIMULATION_RADIUS existed. Re-checking
+## `path.is_empty()` inside the loop instead closes both the new asymmetry
+## AND the pre-existing gap: a far horde now takes several cheap 1-hex
+## replans in the same frame budget a near horde spends on one real path,
+## restoring the exact "advances several hexes per frame at high speed"
+## behavior every horde already had before this optimization existed. No
+## new infinite-loop risk: `_replan_cheap()`'s candidates are always real
+## `HexCoord.neighbors()` (never the horde's own current hex, so distance
+## is always > 0 — MovementStepper.advance_toward_hex()'s zero-distance
+## instant-arrival branch can't fire), and a `_replan()` that finds no
+## valid target at all leaves `path` empty, hitting the same early
+## `return` below on the very next loop check rather than spinning.
 func _advance_horde(horde: Horde, delta: float) -> void:
 	# Design doc, user request: a Dragoon's charge stuns the horde it hits —
 	# see Horde.stun_seconds_remaining's own doc comment. A stunned horde
@@ -512,13 +585,14 @@ func _advance_horde(horde: Horde, delta: float) -> void:
 	if horde.stun_seconds_remaining > 0.0:
 		horde.stun_seconds_remaining = maxf(0.0, horde.stun_seconds_remaining - delta)
 		return
-	if horde.path.is_empty():
-		_replan(horde)
-	if horde.path.is_empty():
-		return  # No valid drift target found this cycle (e.g. boxed in) — try again next frame.
 
 	var remaining := delta
-	while remaining > 0.0 and not horde.path.is_empty():
+	while remaining > 0.0:
+		if horde.path.is_empty():
+			_replan(horde)
+		if horde.path.is_empty():
+			return  # No valid drift target found this cycle (e.g. boxed in) — try again next frame.
+
 		var next_coord: Vector2i = horde.path[0]
 		var segment: WallSegment = null
 		if _wall_manager:
@@ -594,6 +668,13 @@ func _siege_wall(horde: Horde, segment: WallSegment, seconds: float) -> void:
 func _replan(horde: Horde) -> void:
 	var attraction_target := _pick_attraction_target(horde.hex_coord)
 	var is_attracted := attraction_target != horde.hex_coord
+	# Performance-at-scale (Phase 5.10, see this class's own header doc
+	# comment): an ATTRACTED horde always gets the real path below — it has
+	# a specific target to actually reach. A plain WANDERING horde far from
+	# every building skips the expensive A* search entirely.
+	if not is_attracted and _is_far_from_player(horde.hex_coord):
+		_replan_cheap(horde)
+		return
 	var target := attraction_target if is_attracted else _pick_drift_target(horde.hex_coord)
 	if target == horde.hex_coord:
 		return
@@ -645,6 +726,62 @@ func _pick_drift_target(from_coord: Vector2i) -> Vector2i:
 		return from_coord
 	return candidates[_rng.randi_range(0, candidates.size() - 1)]
 
+## Performance-at-scale (Phase 5.10, see this class's own header doc
+## comment) — is `coord` farther than FAR_SIMULATION_RADIUS from EVERY
+## placed building? O(buildings) per call: genuinely cheap at this
+## project's real building-count scale (a colony's whole roster is
+## realistically dozens, not thousands — see HexPathfinder.find_path()'s
+## own doc comment for the same "not worth a spatial index yet" call at a
+## similar scale). No BuildingManager wired means there's no way to tell
+## "near" from "far" at all; defaults to "not far" (full fidelity) rather
+## than silently degrading every horde on the map the moment that optional
+## dependency is left unset.
+##
+## **Cadence, corrected (adversarial review):** this used to be described
+## as "once per horde per path completion, not every frame" as if that
+## were rare — for a FAR horde specifically it isn't: _replan_cheap()'s
+## path is always exactly one hex, so "per path completion" for a far
+## horde means once per hex crossed, same order of frequency as
+## MovementStepper's own per-frame math once _advance_horde()'s replan-
+## inside-the-loop fix (see that function's own doc comment) lets a fast
+## catch-up frame drain several cheap replans in a row. Still categorically
+## cheaper than what it replaced — a flat O(buildings) linear scan beats
+## HexPathfinder.find_path()'s O(explored²)-ish A* search (naive
+## linearly-scanned open set, see that function's own doc comment) even
+## called 5x as often — but "not every frame" specifically was an
+## inaccurate reassurance, not a real cadence guarantee, and has been
+## removed rather than left to mislead a future reader.
+func _is_far_from_player(coord: Vector2i) -> bool:
+	if not _building_manager:
+		return false
+	for building in _building_manager.get_all_buildings():
+		if HexCoord.distance(coord, building.hex_coord) <= FAR_SIMULATION_RADIUS:
+			return false
+	return true
+
+## The cheap half of the performance-at-scale split above — no
+## HexPathfinder.find_path() call at all, just an immediate one-hex hop to
+## a uniformly-random PASSABLE neighbor of the horde's own current hex.
+## Every bit as "no deliberate beeline anywhere" as the real
+## _pick_drift_target()'s own ring-pick (WANDERING's whole design intent,
+## see this class's own header doc comment) — a random walk one hex at a
+## time is qualitatively the same undirected wander a real A* path to a
+## random DRIFT_TARGET_RADIUS-ring hex already produced, just without ever
+## paying for the graph search that used to compute that route. Leaves
+## `horde.path` empty (tried again next frame) if every neighbor happens to
+## be impassable, same as _replan()'s own "no valid drift target" fallback
+## just above this function's own call site.
+func _replan_cheap(horde: Horde) -> void:
+	var candidates: Array[Vector2i] = []
+	for neighbor in HexCoord.neighbors(horde.hex_coord):
+		var cell := _hex_grid_map.get_cell(neighbor)
+		if cell and cell.is_passable():
+			candidates.append(neighbor)
+	if candidates.is_empty():
+		return
+	horde.path = [candidates[_rng.randi_range(0, candidates.size() - 1)]]
+	horde.state = GameEnums.HordeState.WANDERING
+
 ## Exposed for SaveLoadManager (Phase 2.8) — mirrors WallManager's own
 ## get_save_state()'s {segments, next_id} shape.
 func get_save_state() -> Dictionary:
@@ -654,6 +791,25 @@ func get_save_state() -> Dictionary:
 ## deliberately discarded (see Horde.path's own doc comment) — HordeManager
 ## replans fresh the next time it moves, same "cheap to re-derive, not worth
 ## saving" call Zone of Control coverage makes.
+##
+## **Disclosed limitation (adversarial review, Phase 5.10 pass), not solved
+## this pass:** a horde saved mid-ATTACKING (actively sieging a wall) keeps
+## its `state` (an @export field, genuinely restored) but always loses its
+## `path` here regardless of state — already true before FAR_SIMULATION_RADIUS
+## existed, since _replan() has never read `state` before picking a fresh
+## target either. What FAR_SIMULATION_RADIUS adds on top: if that wall
+## happens to sit farther than FAR_SIMULATION_RADIUS from every placed
+## building (a real, if unusual, "distant outpost perimeter" layout —
+## WallManager has no proximity dependency on BuildingManager), the
+## reloaded horde's fresh replan takes _replan_cheap()'s single undirected
+## random-neighbor hop instead of a real A* search — modestly less likely
+## to route back through the same wall edge than the old multi-hex search
+## was, though neither path is actually wall-aware (wall-crossing is only
+## ever checked per-step inside _advance_horde(), never inside pathfinding
+## itself), so this was always a matter of odds, not a guarantee, even
+## before this pass. A real fix would need saving which segment (if any) a
+## horde was actively sieging and re-deriving a route back to it on load —
+## a bigger, save-format-touching change than this pass's scope.
 func load_save_state(hordes: Array[Horde], next_id: int) -> void:
 	_hordes = hordes.duplicate()
 	for horde in _hordes:
