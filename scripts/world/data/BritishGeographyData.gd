@@ -67,6 +67,28 @@ extends RefCounted
 ## rounds of feedback fixed, in order: first the SOURCE (real coastline data
 ## instead of hand-placed anchors), then the SCALE (calibrated to the game's
 ## own stated miles-per-hex instead of fit to a leftover grid size).
+##
+## **2026-08-10 addendum: what's INSIDE this coastline is now real data too.**
+## The `_LAND_RLE`/`MAP_BOUNDS`/`_build_features()` data below is UNCHANGED
+## by this pass — this file's own lon/lat<->hex transform was never
+## committed as code (only this prose description survives, see step 2-3
+## above), so re-deriving it exactly isn't possible, and there was no need
+## to: every hex's *biome/soil/elevation* (previously "default MOORLAND
+## except 17 hand-placed named features") now comes from
+## `RealTerrainSampler` (`scripts/world/RealTerrainSampler.gd`), sampling
+## two whole-map-aligned rasters baked from OpenStreetMap land-cover/water
+## data + AWS/Mapzen SRTM-derived elevation — see
+## `tools/geo_bake/bake_landcover.py` (an actually-committed, reproducible
+## script this time, unlike the coastline bake above). That script fits its
+## OWN fresh affine transform, calibrated against this file's *existing*
+## named-anchor hex positions and their real-world coordinates — safe
+## because nothing outside this file hardcodes any anchor's literal
+## coordinate (`BuildingManager.gd`'s own doc comment already resolves
+## starting-settlement placement by `region_name`, not position, precisely
+## because Manchester's hex has shifted before without incident).
+## `HexMapGenerator._apply_real_terrain()` is where the two data sources
+## meet: real data first, this file's 17 named-feature stamps still applied
+## on top exactly as before.
 const MAP_BOUNDS := Rect2i(0, 0, 154, 179)
 
 ## Run-length-encoded per-row land data baked by the pipeline above:

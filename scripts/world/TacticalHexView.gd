@@ -1,17 +1,22 @@
 class_name TacticalHexView
 extends Node2D
 
-## Close-zoom detail for one hex (Phase 2.5 "Tactical view"). Composes the
-## same HexCellView already draws for Strategic — biome/soil stays a single
-## source of visual truth — with a scatter of placeholder props and every
-## BuildingInstance in this hex rendered at its own precise position,
-## instead of one flat tile standing in for the whole ~5x5 mile area.
-## Ground here is the same tiled-texture HexCellView Strategic's own
-## instances use too now (see that class's own doc comment for the real
-## rendering bug this used to differ over, and why it doesn't anymore).
-## Spawned/freed by LocalDetailManager as the camera crosses the tactical
-## zoom threshold and pans between hexes; only ever exists for a hex that
-## has qualified as settled/frontier (see LocalDetailManager).
+## Close-zoom detail for one hex (Phase 2.5 "Tactical view"). Composes a
+## scatter of placeholder props and every BuildingInstance in this hex
+## rendered at its own precise position, instead of one flat tile
+## standing in for the whole ~5x5 mile area.
+## Ground here is SubHexGroundView — real sub-hex land-cover/elevation/
+## water data (RealTerrainSampler, baked offline from OpenStreetMap +
+## AWS/Mapzen open data) composited from the same 11 terrain SVGs
+## Strategic's own HexCellView uses, instead of one uniform tile standing
+## in for the whole hex — see SubHexGroundView's own doc comment for the
+## full reasoning (including why it deliberately avoids the two
+## Polygon2D UV pitfalls this project has already been bitten by twice).
+## Falls back to the flat HexCellView tile if the terrain bake hasn't
+## been run/committed. Spawned/freed by LocalDetailManager as the camera
+## crosses the tactical zoom threshold and pans between hexes; only ever
+## exists for a hex that has qualified as settled/frontier (see
+## LocalDetailManager).
 ##
 ## Phase 2.5.5 (LOD): `fidelity` only affects PROPS — at LOW it collapses
 ## every per-species polygon (tree/bush/rock/reed) down to one uniform
@@ -145,7 +150,7 @@ func _redraw() -> void:
 		child.queue_free()
 	_building_containers.clear()
 
-	var ground := HexCellView.new()
+	var ground := SubHexGroundView.new()
 	ground.setup(cell)
 	add_child(ground)
 

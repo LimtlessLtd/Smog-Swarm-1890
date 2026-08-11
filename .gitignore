@@ -13,3 +13,14 @@ data_*/
 # System / editor files
 .DS_Store
 Thumbs.db
+
+# tools/geo_bake: offline terrain-data bake pipeline (tools/geo_bake/*.py
+# themselves ARE committed — reproducible, unlike the earlier ephemeral
+# coastline-bake script). Its downloaded OSM/elevation cache and run logs
+# are large (1.8GB+ for a full corridor bake), regenerable, and specific
+# to whoever last ran it — never commit them. The two actual OUTPUT
+# assets (assets/terrain_data/*.png) ARE committed, same as any other
+# baked game asset.
+tools/geo_bake/cache/
+tools/geo_bake/__pycache__/
+tools/geo_bake/*.log

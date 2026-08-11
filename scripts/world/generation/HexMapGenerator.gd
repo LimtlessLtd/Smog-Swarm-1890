@@ -5,13 +5,16 @@ extends RefCounted
 ##   1. Landmass     — every hex in bounds defaults to OCEAN; hexes inside
 ##                      BritishGeographyData's landmass silhouette (design
 ##                      doc, user request: "ensure our hex tile map is
-##                      representative of the entire UK and Ireland") flip
-##                      to open moorland instead. Previously this WAS the
-##                      base layer (no ocean existed at all — the whole map
-##                      was just England's Manchester-Midlands-London
-##                      corridor); this pass is what actually gives the map
-##                      real coastline shape rather than an arbitrary
-##                      rectangle.
+##                      representative of the entire UK and Ireland") get
+##                      a REAL biome/elevation instead, sampled from open
+##                      geographic data (RealTerrainSampler — OpenStreetMap
+##                      land-cover + AWS/Mapzen elevation, baked offline by
+##                      tools/geo_bake/bake_landcover.py) via
+##                      _apply_real_terrain(), not a flat default. Falls
+##                      back to the old flat MOORLAND/Perlin-noise default
+##                      if the bake hasn't been run/committed
+##                      (RealTerrainSampler.is_available() == false) so a
+##                      fresh clone without the baked assets still boots.
 ##   2. Feature stamp — named geography (settlements, ranges, waterways,
 ##                      wetlands, farmland) from BritishGeographyData
 ##                      overrides the land layer. Ocean hexes are never
@@ -24,6 +27,12 @@ extends RefCounted
 ##                      civic/industrial/wilderness sub-districts.
 ## Kept separate from HexGridMap so the *algorithm* that populates the grid
 ## is swappable/testable independently of the *runtime container* that owns it.
+##
+## Real-data note: a hex's own biome_type does NOT flip to WATERWAY from a
+## minority of real river/canal pixels sampled within it — deliberate,
+## disclosed limitation (see _apply_real_terrain()'s own doc comment).
+## That would re-introduce hex-tile-locking one layer down; real sub-hex
+## river geometry is SubHexGroundView's job (Tactical-zoom rendering).
 
 ## Stamping order, low to high priority — later entries win where features
 ## overlap a hex. Settlements are stamped last on purpose: real cities are
@@ -63,9 +72,7 @@ func generate() -> Dictionary:
 			var coord := Vector2i(q, r)
 			var cell := HexCell.new(coord)
 			if land.has(coord):
-				cell.biome_type = GameEnums.BiomeType.MOORLAND
-				cell.soil_fertility = GameEnums.SoilFertility.POOR
-				cell.elevation = _base_elevation(coord)
+				_apply_real_terrain(cell, coord)
 			else:
 				cell.biome_type = GameEnums.BiomeType.OCEAN
 				cell.soil_fertility = GameEnums.SoilFertility.NOT_ARABLE
@@ -89,6 +96,56 @@ func generate() -> Dictionary:
 func _base_elevation(coord: Vector2i) -> float:
 	var n := _elevation_noise.get_noise_2d(coord.x, coord.y)
 	return clampf((n + 1.0) * 0.5, 0.0, 1.0)
+
+## Real-data-driven default for every land hex, replacing the old flat
+## MOORLAND/POOR + Perlin-noise elevation default. Samples a 5x5 real-
+## world grid across the hex's own footprint (RealTerrainSampler,
+## OpenStreetMap land-cover + AWS/Mapzen elevation, baked offline by
+## tools/geo_bake/bake_landcover.py) and takes the plurality biome + mean
+## elevation. HIGHLAND classification (and its ESCARPMENT terrain_feature)
+## already comes baked into the source data itself — the Python bake
+## applies a real-elevation threshold directly when producing
+## landcover.png, so no separate elevation-threshold pass is needed here
+## (a simpler, single-source-of-truth design than originally sketched,
+## which imagined doing that check in GDScript instead).
+##
+## Falls back to the old flat MOORLAND/Perlin-noise default if the bake
+## hasn't been run/committed (RealTerrainSampler.is_available() == false)
+## — a fresh clone without the (large, binary) baked assets still boots
+## into a playable, if data-poor, map rather than erroring.
+##
+## Deliberate, disclosed limitation: does NOT let a minority of real
+## river/canal samples flip this hex's own biome_type to WATERWAY — see
+## this file's own class doc comment above for why.
+func _apply_real_terrain(cell: HexCell, coord: Vector2i) -> void:
+	var sample := RealTerrainSampler.majority_biome(coord) if RealTerrainSampler.is_available() else {}
+	if sample.is_empty():
+		cell.biome_type = GameEnums.BiomeType.MOORLAND
+		cell.soil_fertility = GameEnums.SoilFertility.POOR
+		cell.elevation = _base_elevation(coord)
+		return
+
+	cell.biome_type = sample["biome_type"]
+	cell.elevation = sample["elevation"]
+	match cell.biome_type:
+		GameEnums.BiomeType.URBAN:
+			cell.soil_fertility = GameEnums.SoilFertility.NOT_ARABLE
+		GameEnums.BiomeType.INDUSTRIAL:
+			cell.soil_fertility = GameEnums.SoilFertility.DESOLATE
+		GameEnums.BiomeType.HIGHLAND:
+			cell.terrain_feature = GameEnums.TerrainFeature.ESCARPMENT
+			cell.soil_fertility = GameEnums.SoilFertility.POOR
+		GameEnums.BiomeType.WETLAND:
+			cell.terrain_feature = GameEnums.TerrainFeature.MARSH
+			cell.soil_fertility = GameEnums.SoilFertility.DESOLATE
+		GameEnums.BiomeType.WATERWAY:
+			var water_feature: GameEnums.TerrainFeature = sample.get("water_feature_type", GameEnums.TerrainFeature.RIVER)
+			cell.terrain_feature = water_feature if water_feature != GameEnums.TerrainFeature.NONE else GameEnums.TerrainFeature.RIVER
+			cell.soil_fertility = GameEnums.SoilFertility.POOR
+		GameEnums.BiomeType.FARMLAND:
+			cell.soil_fertility = GameEnums.SoilFertility.LUSH  ## overwritten by _apply_soil_noise() below, matches its own existing convention
+		_:  # MOORLAND
+			cell.soil_fertility = GameEnums.SoilFertility.POOR  ## overwritten by _apply_soil_noise() below
 
 func _apply_feature(cells: Dictionary, feature: GeographyFeature) -> void:
 	for coord in feature.hex_coords:
