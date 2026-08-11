@@ -144,6 +144,8 @@ func _apply_real_terrain(cell: HexCell, coord: Vector2i) -> void:
 			cell.soil_fertility = GameEnums.SoilFertility.POOR
 		GameEnums.BiomeType.FARMLAND:
 			cell.soil_fertility = GameEnums.SoilFertility.LUSH  ## overwritten by _apply_soil_noise() below, matches its own existing convention
+		GameEnums.BiomeType.WOODLAND, GameEnums.BiomeType.HEATHLAND:
+			cell.soil_fertility = GameEnums.SoilFertility.NOT_ARABLE  ## Granularity pass: neither is tilled ground — same "not applicable" bucket as URBAN, not a low-quality farmland rating.
 		_:  # MOORLAND
 			cell.soil_fertility = GameEnums.SoilFertility.POOR  ## overwritten by _apply_soil_noise() below
 

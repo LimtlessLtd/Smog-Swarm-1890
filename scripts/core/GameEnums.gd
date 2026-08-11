@@ -14,6 +14,17 @@ enum BiomeType {
 	WATERWAY,     ## River or canal hex — fordable (Phase 2.12.1), unlike open OCEAN below.
 	WETLAND,      ## Marsh, fen or peat bog.
 	OCEAN,        ## Open sea (design doc, user request: "ensure our hex tile map is representative of the entire UK and Ireland") — impassable (HexCell.is_passable()) until Phase 7.5's Naval Logistics/ships exist; the map's own default base layer before BritishGeographyData's landmass stamp turns land hexes to MOORLAND.
+	## Real-data granularity pass (user request, 2026-08-11): carved out of
+	## what tools/geo_bake previously flattened into MOORLAND — OSM
+	## `landuse=forest`/`natural=wood` (WOODLAND) and `natural=heath`/
+	## `natural=scrub` (HEATHLAND) were already being fetched and discarded
+	## into the same catch-all bucket as open grazing land. Appended at the
+	## END of the enum, not inserted alphabetically/thematically near
+	## MOORLAND/WETLAND above — Godot enums serialize as raw int ordinals
+	## (HexCell.biome_type, SaveLoadManager) and inserting mid-list would
+	## silently shift OCEAN's ordinal and corrupt any existing save file.
+	WOODLAND,     ## Dense tree cover — OSM landuse=forest / natural=wood.
+	HEATHLAND,    ## Heather/gorse scrubland — OSM natural=heath / natural=scrub.
 }
 
 enum SoilFertility {

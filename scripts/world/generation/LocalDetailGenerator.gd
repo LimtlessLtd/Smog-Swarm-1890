@@ -30,6 +30,8 @@ const _PROP_COUNT_BY_BIOME: Dictionary = {
 	GameEnums.BiomeType.URBAN: 0,
 	GameEnums.BiomeType.INDUSTRIAL: 0,
 	GameEnums.BiomeType.WATERWAY: 0,
+	GameEnums.BiomeType.WOODLAND: 110,  ## Granularity pass — denser than open Moorland; this IS the biome that used to be Moorland's own tree-heavy end before the split.
+	GameEnums.BiomeType.HEATHLAND: 55,  ## Low shrub cover — denser than tilled Farmland, sparser than a full forest canopy.
 }
 
 const _SCATTER_RADIUS: float = HexCoord.HEX_SIZE * 0.85  ## Stay inside the hex's own outline. Scales automatically with Phase 2.5.6's HEX_SIZE increase.
@@ -80,5 +82,9 @@ static func _prop_type_for_biome(biome: GameEnums.BiomeType, rng: RandomNumberGe
 			return GameEnums.PropType.REED
 		GameEnums.BiomeType.HIGHLAND:
 			return GameEnums.PropType.ROCK
+		GameEnums.BiomeType.WOODLAND:
+			return GameEnums.PropType.TREE if rng.randf() < 0.9 else GameEnums.PropType.BUSH  ## Granularity pass — heavier tree bias than the general mix below; this is specifically forest cover.
+		GameEnums.BiomeType.HEATHLAND:
+			return GameEnums.PropType.BUSH if rng.randf() < 0.85 else GameEnums.PropType.TREE  ## Granularity pass — heather/gorse scrub reads as low bushes, not trees.
 		_:
 			return GameEnums.PropType.TREE if rng.randf() < 0.75 else GameEnums.PropType.BUSH
