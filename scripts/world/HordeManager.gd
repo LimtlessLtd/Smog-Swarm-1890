@@ -221,6 +221,13 @@ const FAR_SIMULATION_RADIUS: int = 10
 ## rather than continuing its unbiased WANDERING drift. Placeholder
 ## balancing number, not an architecture decision, same framing as every
 ## other constant table here.
+##
+## **Real per-zombie susceptibility (user request, 2026-08-11) modulates
+## this per-horde now** — see _pick_attraction_target() and
+## Horde.mean_susceptibility(). This constant is still the BASELINE (a
+## horde with exactly average susceptibility, mean == 1.0-ish midpoint,
+## reacts right at this value) — individual hordes now genuinely react
+## sooner or later than each other, not all identically.
 const ATTRACTION_THRESHOLD: float = 3.0
 
 ## Rough clearance radius a horde presents to
@@ -666,7 +673,7 @@ func _siege_wall(horde: Horde, segment: WallSegment, seconds: float) -> void:
 ## louder mid-walk; it'll pick that up on its NEXT replan instead, same as
 ## a WANDERING horde would.
 func _replan(horde: Horde) -> void:
-	var attraction_target := _pick_attraction_target(horde.hex_coord)
+	var attraction_target := _pick_attraction_target(horde.hex_coord, horde)
 	var is_attracted := attraction_target != horde.hex_coord
 	# Performance-at-scale (Phase 5.10, see this class's own header doc
 	# comment): an ATTRACTED horde always gets the real path below — it has
@@ -702,11 +709,19 @@ func _replan(horde: Horde) -> void:
 ## already uses) when no NoiseManager is wired, nothing in range clears
 ## ATTRACTION_THRESHOLD, or the loudest hex in range turns out to be the
 ## horde's own current hex (nothing to walk toward).
-func _pick_attraction_target(from_coord: Vector2i) -> Vector2i:
+func _pick_attraction_target(from_coord: Vector2i, horde: Horde) -> Vector2i:
 	if not _noise_manager:
 		return from_coord
 	var candidate := _noise_manager.get_loudest_hex_within(from_coord, ATTRACTION_AWARENESS_RADIUS)
-	if candidate == from_coord or _noise_manager.get_noise_at(candidate) < ATTRACTION_THRESHOLD:
+	if candidate == from_coord:
+		return from_coord
+	# Real per-zombie susceptibility (user request): a horde whose zombies
+	# skew jumpy (mean_susceptibility() > 1.0) reacts to fainter noise than
+	# ATTRACTION_THRESHOLD alone would allow; a duller horde needs a louder
+	# source to bother. Threshold scales INVERSELY with susceptibility so
+	# "more susceptible" genuinely means "reacts to less," not more.
+	var effective_threshold := ATTRACTION_THRESHOLD / maxf(0.01, horde.mean_susceptibility())
+	if _noise_manager.get_noise_at(candidate) < effective_threshold:
 		return from_coord
 	return candidate
 
