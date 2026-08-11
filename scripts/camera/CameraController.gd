@@ -97,6 +97,14 @@ extends Camera2D
 @export var medium_fidelity_threshold: float = 0.5
 @export var high_fidelity_threshold: float = 2.0
 
+## Feature request: pan the camera when the mouse sits at/near the screen
+## edge, RTS-convention style, on top of (not instead of) keyboard pan and
+## middle-mouse drag. Off by default distance is edge_pan_margin_px, not a
+## whole-screen "gravity toward the cursor" — only the outer strip actually
+## pans.
+@export var edge_pan_enabled: bool = true
+@export var edge_pan_margin_px: float = 10.0  ## Screen pixels from the viewport edge before edge-pan kicks in — matches the user's own "maybe 10 pixels" ask.
+
 @export var perspective_tween_duration: float = 0.6
 @export var isometric_y_scale: float = 0.577
 @export var isometric_rotation_degrees: float = 45.0
@@ -136,6 +144,7 @@ func _process(delta: float) -> void:
 	if Engine.time_scale != 0.0:
 		pan_delta = delta / Engine.time_scale
 	_handle_pan_input(pan_delta)
+	_handle_edge_pan_input(pan_delta)
 
 func _input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_MIDDLE:
@@ -197,6 +206,40 @@ func _handle_pan_input(delta: float) -> void:
 		# unit inspection needs. pan_speed itself was recalibrated (see its
 		# own doc comment) so this reads identically to the old formula at
 		# the default starting Strategic zoom.
+		position += direction.normalized() * (pan_speed / zoom.x) * delta
+
+## Feature request: pan toward whichever edge(s) the mouse is currently
+## within edge_pan_margin_px of. Uses the same screen-space-constant
+## pan_speed/zoom.x formula _handle_pan_input() already uses, so it feels
+## identical in speed to keyboard panning at any zoom level. Skipped
+## entirely while middle-mouse-dragging (that gesture already IS an
+## explicit "move the camera" input — edge-pan fighting it would feel
+## broken) or while the game window itself doesn't have focus (Godot keeps
+## reporting the last known mouse position after alt-tab/focus-loss, which
+## would otherwise silently keep panning the camera in the background).
+func _handle_edge_pan_input(delta: float) -> void:
+	if not edge_pan_enabled or _middle_dragging:
+		return
+	var window := get_window()
+	if window and not window.has_focus():
+		return
+	var viewport := get_viewport()
+	var mouse_pos := viewport.get_mouse_position()
+	var size := viewport.get_visible_rect().size
+	# Mouse has actually left the window (can happen mid-drag on some
+	# platforms) — don't treat that as "at the edge".
+	if mouse_pos.x < 0.0 or mouse_pos.y < 0.0 or mouse_pos.x > size.x or mouse_pos.y > size.y:
+		return
+	var direction := Vector2.ZERO
+	if mouse_pos.x <= edge_pan_margin_px:
+		direction.x -= 1.0
+	elif mouse_pos.x >= size.x - edge_pan_margin_px:
+		direction.x += 1.0
+	if mouse_pos.y <= edge_pan_margin_px:
+		direction.y -= 1.0
+	elif mouse_pos.y >= size.y - edge_pan_margin_px:
+		direction.y += 1.0
+	if direction != Vector2.ZERO:
 		position += direction.normalized() * (pan_speed / zoom.x) * delta
 
 func _handle_middle_mouse(event: InputEventMouseButton) -> void:
