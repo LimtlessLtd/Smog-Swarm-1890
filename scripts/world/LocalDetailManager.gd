@@ -90,6 +90,41 @@ func _ready() -> void:
 	_wall_layer = Node2D.new()
 	_wall_layer.name = "TacticalWallLayer"
 	_wall_layer.visible = false  # Only ever shown while _is_tactical_mode — see _on_tactical_mode_changed().
+	# Real bug found and fixed (user report: "I can't see walls rendering"):
+	# this layer is created here in _ready(), before any hex ever hydrates,
+	# which made it permanently the FIRST child of this node — every
+	# TacticalHexView _hydrate_hex() adds afterward becomes a LATER sibling,
+	# and Godot draws later siblings on top of earlier ones at equal
+	# z_index. TacticalHexView's own ground (SubHexGroundView, or its
+	# HexCellView fallback) is a fully opaque fill covering the whole hex,
+	# so it drew directly over every wall line sitting behind it — walls
+	# were rendered, just permanently hidden under the ground of any
+	# hydrated hex they crossed. This was already latent before today's
+	# real-sub-hex-terrain pass (same add-order problem existed against the
+	# old flat HexCellView ground too), but stayed mostly unnoticed because
+	# that ground was an exact hex-fan polygon with a thin anti-aliasing
+	# seam right at each hex's own edge, letting slivers of the
+	# (8x-Tactical-scaled) wall line peek through at hex boundaries.
+	# SubHexGroundView's sub-cell grid deliberately overlaps its neighbors
+	# (_GRID_SPAN = HEX_SIZE * 1.6, see that class's own doc comment)
+	# specifically to eliminate seams between adjacent hexes' sub-hex
+	# samples — which also sealed the one gap that used to let a wall show
+	# through at all, making the bug total instead of partial.
+	# **Fixed via re-parenting (_hydrate_hex()'s own move_child() call),
+	# deliberately NOT via a positive z_index.** z_index is a GLOBAL sort
+	# key across the whole 2D scene, not scoped to this node's own
+	# children — a positive z_index here would also out-rank
+	# TacticalEntityLayer/UnitCommandController's selection ring/
+	# BuildPlacementController's ghost preview, every one of them a
+	# *separate*, LATER sibling of LocalDetailManager under WorldRoot,
+	# specifically ordered that way (see this class's own header comment)
+	# so units/zombies/UI always draw on top of terrain. Bumping z_index
+	# would have fixed walls-vs-ground at the cost of quietly burying every
+	# unit/zombie that ever crosses a wall line underneath it instead —
+	# trading one invisibility bug for a subtler one. Re-parenting keeps
+	# this layer at the SAME z_index (0) as everything else, so it only
+	# ever wins the plain sibling-order tiebreak against its own
+	# TacticalHexView siblings, never against a different node entirely.
 	add_child(_wall_layer)
 	if wall_manager_path != NodePath():
 		_wall_manager = get_node(wall_manager_path)
@@ -218,6 +253,11 @@ func _hydrate_hex(coord: Vector2i) -> void:
 	var view := TacticalHexView.new()
 	view.setup(cell, LocalDetailGenerator.generate(cell), buildings, fog_state, _fidelity, zoc_state, _selected_building)
 	add_child(view)
+	# Keep _wall_layer as the LAST child of THIS node (see its own doc
+	# comment in _ready()) — add_child() above always appends, which would
+	# otherwise push _wall_layer back behind this freshly-hydrated hex's
+	# own ground/buildings again on every single hydration.
+	move_child(_wall_layer, get_child_count() - 1)
 	_tactical_views[coord] = view
 
 func _dehydrate_hex(coord: Vector2i) -> void:
