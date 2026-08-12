@@ -100,18 +100,26 @@ def bake_fine_tiles(center_q: int, center_r: int, radius: int):
         max_y = max(max_y, wy + half)
     print(f"  world extent: x[{min_x:.0f},{max_x:.0f}] y[{min_y:.0f},{max_y:.0f}]")
 
-    # Same "calibration points' own bbox, not the affine's amplified
-    # inverse" reasoning bake_landcover.py's real (non-test) bake already
-    # settled on -- but padded much tighter here (this demo area is a
-    # couple of km across, not the whole corridor), so just derive a
-    # small margin around the disk's own corners instead.
+    # Same "derive from real point data, don't amplify the affine's own
+    # error through a big inverted rectangle" reasoning
+    # bake_landcover.py's real (non-test) bake already settled on for
+    # its OWN, much bigger, corridor rectangle -- applies just as much
+    # here: each hex in the demo disk (HEX_SIZE ~512 world units
+    # circumradius, i.e. ~5km real -- a "radius 8" disk genuinely spans
+    # ~150km across, NOT "a couple of km", the mistake this comment used
+    # to make) is a real point worth converting directly, not a
+    # synthetic bounding-box corner that can land far from any
+    # calibration anchor and pick up amplified error. Every hex's own
+    # CENTER goes through world_to_lonlat individually and the min/max
+    # across those (plus a small margin) is the query bbox -- bounded to
+    # the same "a few hex-radii" imprecision every other single-point
+    # conversion in this pipeline already accepts, never amplified.
     from geo_projection import invert_affine
     inv_linear, offset = invert_affine(transform)
-    corners = [(min_x, min_y), (max_x, min_y), (min_x, max_y), (max_x, max_y)]
-    lonlats = [world_to_lonlat(inv_linear, offset, x, y) for x, y in corners]
+    lonlats = [world_to_lonlat(inv_linear, offset, *axial_to_world(q, r)) for q, r in coords]
     lons = [c[0] for c in lonlats]
     lats = [c[1] for c in lonlats]
-    margin = 0.02
+    margin = 0.05  # A couple of hex-radii's worth of slack, real degrees at this latitude.
     lat_lo, lat_hi = min(lats) - margin, max(lats) + margin
     lon_lo, lon_hi = min(lons) - margin, max(lons) + margin
     print(f"  real lon/lat bbox: lat[{lat_lo:.3f},{lat_hi:.3f}] lon[{lon_lo:.3f},{lon_hi:.3f}]")
@@ -136,9 +144,20 @@ def bake_fine_tiles(center_q: int, center_r: int, radius: int):
             f for f in features
             if _feature_might_touch(f, transform, tile_min_x, tile_min_y, FINE_TILE_WORLD_SIZE)
         ]
+        # core_buffer_fraction=0.35 (opt-in, unlike the coarse whole-
+        # corridor bake's own default-0.0 call) -- at this raster's much
+        # finer ~10.7 world units/pixel (~104 real metres), "a river
+        # genuinely crossing a city block should still show as water"
+        # is a proportionally small, legitimate nuance instead of the
+        # dominant source of over-marking it turned out to be at the
+        # coarse raster's ~90 world units/pixel (~878m) -- see
+        # bake_landcover.py's own rasterize_features_onto_grid() doc
+        # comment for the measured history of why the coarse bake
+        # dropped this same idea entirely.
         rasterize_features_onto_grid(
             relevant, transform, tile_min_x, tile_min_y, FINE_WORLD_UNITS_PER_PIXEL,
             FINE_TILE_PIXELS, FINE_TILE_PIXELS, biome_grid, feature_grid,
+            core_buffer_fraction=0.35,
         )
         rgb = np.zeros((FINE_TILE_PIXELS, FINE_TILE_PIXELS, 3), dtype=np.uint8)
         rgb[:, :, 0] = biome_grid
@@ -173,6 +192,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--center-q", type=int, default=DEFAULT_CENTER_Q)
     parser.add_argument("--center-r", type=int, default=DEFAULT_CENTER_R)
-    parser.add_argument("--radius", type=int, default=8, help="hex-disk radius around the center to bake fine tiles for")
+    parser.add_argument("--radius", type=int, default=3, help="hex-disk radius around the center to bake fine tiles for (each hex is ~5km real circumradius -- radius 3 already spans ~30km, plenty for a starting-area demo; keep this small, it's an Overpass query area, not a hex count)")
     args = parser.parse_args()
     bake_fine_tiles(args.center_q, args.center_r, args.radius)

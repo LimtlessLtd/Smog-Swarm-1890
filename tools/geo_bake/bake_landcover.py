@@ -182,7 +182,8 @@ def point_in_ring(px: float, py: float, ring: list[tuple[float, float]]) -> bool
 
 
 def rasterize_features_onto_grid(features, transform, grid_min_x, grid_min_y, px_size,
-                                  grid_w, grid_h, biome_grid, feature_grid):
+                                  grid_w, grid_h, biome_grid, feature_grid,
+                                  core_buffer_fraction=0.0):
     """For each OSM feature (way/relation ring in lon/lat), project its
     points to world-space, find its own pixel-space bbox, and only test
     pixels inside that bbox -- avoids an O(pixels x features) blowup.
@@ -191,44 +192,69 @@ def rasterize_features_onto_grid(features, transform, grid_min_x, grid_min_y, px
 
     **Real bug fix (playtest round 6, user report: "the water sub hex
     tiles... central Manchester seems to be covered in water for some
-    reason"):** two compounding problems, both fixed here.
+    reason"):** three compounding problems, all three fixed here. Two
+    earlier attempts THIS SAME ROUND at fixing this were tried, measured
+    directly against the pre-fix raster around Manchester, and found
+    still wrong before landing on this one -- keeping the history because
+    the wrong intuition ("water should still win somewhere, even over
+    real ground") is exactly what an unmeasured "looks reasonable" fix
+    would reach for again:
 
     1. AREA polygons (landuse/natural -- real, solid ground
        classifications) and WATERWAY lines used to be rasterized in
        whatever order Overpass happened to return them in (`features`'
        own iteration order, effectively random per bake run), each
-       unconditionally overwriting the other wherever they overlapped --
-       so a dense city centre criss-crossed by several named
-       watercourses (the Irwell/Irk/Medlock plus canal branches, all
-       within a couple of real kilometres of each other in central
-       Manchester) could have its own URBAN polygon classification
-       stomped by a LATER-processed river/stream buffer, or vice versa,
-       non-deterministically. Fixed by processing every AREA feature
-       FIRST (a real, explicit ground-truth polygon), THEN every
-       WATERWAY line -- see the two-pass split below.
+       unconditionally overwriting the other wherever they overlapped.
+       Fixed by processing every AREA feature FIRST (a real, explicit
+       ground-truth polygon), THEN every WATERWAY line -- see the
+       two-pass split below.
 
-    2. Even with that ordering fixed, the waterway buffer itself
-       (`GAP_FILL_BUFFER_FRACTION`, unconditional) is still generous
-       enough by design (see its own comment -- "guarantee no gaps
-       between pixels along the line's own path") that a pixel merely
-       NEAR a watercourse, not actually on it, still got flagged WATER --
-       fine out in open countryside (nothing else was competing for that
-       pixel anyway), wrong in a dense urban core where that same pixel
-       is very likely genuinely dry, real, buildable city ground. Split
-       into two tiers: a tight CORE buffer (this pixel basically IS the
-       channel -- always wins, even over URBAN/INDUSTRIAL, since a real
-       river running through a city centre SHOULD read as a visible
-       ribbon of water through the urban texture) and the wider GAP-FILL
-       buffer (this pixel is merely near a watercourse -- only wins if
-       nothing has already classified this exact pixel as URBAN or
-       INDUSTRIAL; still wins over the default MOORLAND/whatever-else so
-       thin rivers through open countryside don't develop gaps).
+    2. **First attempt**: kept the original single ~0.6-pixel-width
+       buffer (its only legitimate job is "guarantee no gaps between
+       pixels along the line's own path" -- a real river/stream, ~10-100m
+       wide, is sub-pixel at this raster's ~878m/pixel resolution
+       regardless) but excluded URBAN/INDUSTRIAL from it. WRONG: left
+       every OTHER real polygon classification (FARMLAND/WOODLAND/
+       WETLAND/HEATHLAND) just as overwritable as before, AND made water
+       win the old coin-flip DETERMINISTICALLY instead of only
+       sometimes. Measured result: water within ~10 hexes of Manchester
+       went UP, 22.9% to 33.5%.
+
+    3. **Second attempt**: split into a tight "CORE" buffer that always
+       wins even over a real polygon (the idea being "a river genuinely
+       running through a city centre should read as a visible ribbon of
+       water through the urban texture") plus a wider "GAP-FILL" buffer
+       restricted to still-unclassified (biome code 0 -- nothing in
+       `_LANDUSE_MAP`/`_NATURAL_MAP` maps anything TO code 0, so
+       `sub_biome == 0` is an exact, cheap "no real polygon ever touched
+       this pixel" test) ground only. WRONG AGAIN, and instrumented to
+       find out why: across the whole corridor the "always wins" core
+       buffer alone accounted for ~50k pixel-markings (vs. only ~13k from
+       the gap-fill buffer), nearly a THIRD of which were overwriting a
+       real non-water classification. At 878m/pixel, "the exact channel"
+       nuance the core buffer was trying to preserve isn't meaningful --
+       real England (especially the historic industrial Northwest) has
+       enough distinct nearby watercourse segments that a supposedly
+       "tight" per-segment buffer still adds up to widespread over-
+       marking once you sum every segment's own core zone. Measured
+       result at ~10 hexes: still 28.9%, still worse than the original
+       22.9% bug.
+
+    **What's actually implemented now**: no core buffer, by default
+    (`core_buffer_fraction=0.0` -- the coarse whole-corridor bake calls
+    this with the default). A waterway line NEVER overwrites any real
+    polygon-derived classification at this resolution, full stop -- it
+    only ever fills in still-unclassified (moorland-default) ground
+    within `GAP_FILL_BUFFER_FRACTION` of its own path. `core_buffer_fraction`
+    stays available as an opt-in parameter for `bake_fine_tiles.py`'s
+    OWN, much finer per-hex tiles (~104m/pixel, ~8.4x tighter than this
+    file's own raster) where "the exact channel visibly crossing a
+    block" is a proportionally much smaller, more legitimate nuance
+    rather than the dominant source of the whole bug.
     """
     from geo_projection import apply_affine
 
-    CORE_BUFFER_FRACTION = 0.35    ## "this pixel basically IS the channel" -- always wins.
-    GAP_FILL_BUFFER_FRACTION = 0.6  ## "merely near a watercourse" -- wins only over non-built-up ground; see this function's own doc comment, item 2.
-    _URBAN_LIKE_CODES = (_BIOME_CODE["URBAN"], _BIOME_CODE["INDUSTRIAL"])
+    GAP_FILL_BUFFER_FRACTION = 0.6  ## Wins ONLY over still-unclassified (biome code 0) ground -- see this function's own doc comment.
 
     n_polygons = n_lines = 0
 
@@ -298,11 +324,18 @@ def rasterize_features_onto_grid(features, transform, grid_min_x, grid_min_y, px
         # over-marked roughly half the pixels in a validation run as
         # WATERWAY. Fixed by deriving the buffer from pixel size
         # instead of hand-guessing a real-world distance -- see this
-        # function's own doc comment, item 2, for the two-tier split.
+        # function's own doc comment for the full history.
+        #
+        # `px_size` (the ACTUAL per-call pixel size), not the module-level
+        # WORLD_UNITS_PER_PIXEL constant -- this function is shared with
+        # bake_fine_tiles.py's own, much finer per-hex tiles; hard-coding
+        # the coarse constant here would size every buffer for 90-world-
+        # unit pixels even when actually rasterizing ~10.7-world-unit fine
+        # pixels, over-marking those by roughly 8x.
         biome = "WATERWAY"
         terrain_feature = _WATERWAY_FEATURE.get(waterway, "RIVER")
-        gap_fill_buffer = WORLD_UNITS_PER_PIXEL * GAP_FILL_BUFFER_FRACTION
-        core_buffer = WORLD_UNITS_PER_PIXEL * CORE_BUFFER_FRACTION
+        gap_fill_buffer = px_size * GAP_FILL_BUFFER_FRACTION
+        core_buffer = px_size * core_buffer_fraction
         xs = [p[0] for p in world_ring]
         ys = [p[1] for p in world_ring]
         min_px = max(0, int((min(xs) - gap_fill_buffer - grid_min_x) / px_size))
@@ -332,8 +365,12 @@ def rasterize_features_onto_grid(features, transform, grid_min_x, grid_min_y, px
             min_dist = np.minimum(min_dist, dist)
         sub_biome = biome_grid[min_py:min_py + sub_h, min_px:min_px + sub_w]
         sub_feat = feature_grid[min_py:min_py + sub_h, min_px:min_px + sub_w]
+        # core_buffer is 0 (core_buffer_fraction=0.0) for the coarse
+        # whole-corridor bake by default -- core_mask is then all-False
+        # and only gap_fill_mask (still-unclassified ground only) ever
+        # applies. See this function's own doc comment for why.
         core_mask = min_dist <= core_buffer
-        gap_fill_mask = (min_dist <= gap_fill_buffer) & ~np.isin(sub_biome, _URBAN_LIKE_CODES)
+        gap_fill_mask = (min_dist <= gap_fill_buffer) & (sub_biome == 0)  ## Only still-unclassified (default MOORLAND) ground -- see this function's own doc comment.
         mask = core_mask | gap_fill_mask
         sub_biome[mask] = _BIOME_CODE[biome]
         sub_feat[mask] = _FEATURE_CODE[terrain_feature]
