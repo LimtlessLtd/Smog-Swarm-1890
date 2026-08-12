@@ -49,11 +49,14 @@ signal building_selected(building_type: GameEnums.BuildingType)
 ## click-to-place one, not a building type.
 signal wall_placement_selected(is_gate: bool)
 
+## DEFENSE_WORKS deliberately excluded from this list — user request,
+## playtest round 5: "Defense Works & Walls should be combined into one
+## category" — it's folded into the dedicated `_build_defense_and_walls_column()`
+## below instead of getting its own generic column.
 const CATEGORY_ORDER: Array[GameEnums.BuildingCategory] = [
 	GameEnums.BuildingCategory.HOUSING_CIVIL,
 	GameEnums.BuildingCategory.INDUSTRY_EXTRACTION,
 	GameEnums.BuildingCategory.AGRICULTURE,
-	GameEnums.BuildingCategory.DEFENSE_WORKS,
 ]
 
 ## Ditch/Oil Pit are DEFENSE_WORKS BuildingCatalog entries but are placed
@@ -87,7 +90,7 @@ func _ready() -> void:
 			continue  # An empty column would just be dead space.
 		columns.add_child(_build_category_column(category, definitions))
 
-	columns.add_child(_build_wall_column())
+	columns.add_child(_build_defense_and_walls_column())
 
 func _build_category_column(category: GameEnums.BuildingCategory, definitions: Array[BuildingDefinition]) -> Control:
 	var column := VBoxContainer.new()
@@ -98,57 +101,69 @@ func _build_category_column(category: GameEnums.BuildingCategory, definitions: A
 	HUDStyles.style_label(header, true)
 	column.add_child(header)
 
+	var colors := HUDStyles.category_card_colors(_category_color_key(category))
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 8)
 	for definition in definitions:
-		row.add_child(_build_building_card(definition))
+		row.add_child(_build_building_card(definition, colors))
 	column.add_child(row)
 
 	return column
 
-## Real placement UI for walls (see wall_placement_selected's own doc
-## comment) — deliberately just two cards, not a per-tier list the way
-## buildings get one: WallManager.place_wall_line() only ever places fresh
-## Wooden segments (upgrade_segment(), reached by selecting an existing
-## wall, is still the only way to a Brick/Concrete tier — unchanged from
-## before this rework), so a tier picker here would offer choices that
-## don't actually exist yet. "Gate" is the same Wooden segment/cost, just
-## intrinsically weaker (WallSegment.is_gate's own doc comment) — a
-## deliberate weak point the player places on purpose, not a difference
-## the build menu needs to price separately.
-func _build_wall_column() -> Control:
+## Defense Works (BuildingCatalog's DEFENSE_WORKS category — Searchlight
+## Tower today) and Walls (a wholly separate placement flow, WallManager,
+## never a BuildingCatalog category at all) merged into ONE column (user
+## request, playtest round 5: "Defense Works & Walls should be combined
+## into one category... red and white") — same shared red/white
+## `category_card_colors("defense_walls")` regardless of which of the two
+## underlying systems a given card actually arms. Wall cards are
+## deliberately just two, not a per-tier list — see the wall_placement_selected
+## signal's own doc comment for why (WallManager.place_wall_line() only
+## ever places fresh Wooden segments; upgrade_segment(), reached by
+## selecting an existing wall, is still the only way to a Brick/Concrete
+## tier). "Gate" is the same Wooden segment/cost, just intrinsically weaker
+## (WallSegment.is_gate's own doc comment) — a deliberate weak point the
+## player places on purpose, not a difference the build menu needs to
+## price separately.
+func _build_defense_and_walls_column() -> Control:
 	var column := VBoxContainer.new()
 	column.add_theme_constant_override("separation", 6)
 
 	var header := Label.new()
-	header.text = "Walls"
+	header.text = "Defense Works & Walls"
 	HUDStyles.style_label(header, true)
 	column.add_child(header)
 
+	var colors := HUDStyles.category_card_colors("defense_walls")
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 8)
+	for definition in _visible_definitions(GameEnums.BuildingCategory.DEFENSE_WORKS):
+		row.add_child(_build_building_card(definition, colors))
 	row.add_child(HUDStyles.build_card(
 		"Wooden Wall",
 		WallVisuals.tier_texture(WallCatalog.WOODEN),
 		"Cost: %s\nClick+drag to draw — auto-splits into ≤100m pieces." % HUDStyles.format_resource_dict(WallCatalog.get_build_cost(WallCatalog.WOODEN)),
 		func() -> void: wall_placement_selected.emit(false),
+		true, 132.0, 44.0, colors,
 	))
 	row.add_child(HUDStyles.build_card(
 		"Gate",
 		WallVisuals.tier_texture(WallCatalog.WOODEN),
 		"Cost: %s\nSame as a Wooden Wall, deliberately weaker." % HUDStyles.format_resource_dict(WallCatalog.get_build_cost(WallCatalog.WOODEN)),
 		func() -> void: wall_placement_selected.emit(true),
+		true, 132.0, 44.0, colors,
 	))
 	column.add_child(row)
 
 	return column
 
-func _build_building_card(definition: BuildingDefinition) -> Control:
+func _build_building_card(definition: BuildingDefinition, colors: Dictionary = {}) -> Control:
 	return HUDStyles.build_card(
 		definition.display_name,
 		BuildingVisuals.building_texture(definition.building_type),
 		_describe_building(definition),
 		_on_building_button_pressed.bind(definition.building_type),
+		true, 132.0, 44.0, colors,
 	)
 
 ## "how much each building costs, the upkeep it requires, and what it
@@ -182,7 +197,7 @@ func _describe_effect(definition: BuildingDefinition) -> String:
 	if definition.population_provided > 0:
 		parts.append("Houses %d population" % definition.population_provided)
 	if definition.can_train_units:
-		parts.append("Trains units: %s" % _trainable_unit_names())
+		parts.append("Trains: %s" % _trainable_unit_roles())
 	if not parts.is_empty():
 		return "; ".join(parts)
 	if not definition.zoc_roles.is_empty():
@@ -191,18 +206,44 @@ func _describe_effect(definition: BuildingDefinition) -> String:
 		return "Extends vision"
 	return "Support structure"
 
-## "does it produce units and if so what kind" (user request) — every
-## `can_train_units` building trains off the SAME UnitCatalog roster today
-## (UnitManager.train_unit() takes no building-specific filter — see
-## UnitPanelView's own training-button loop, which iterates
-## UnitCatalog.get_all_definitions() the identical way), so this is genuinely
-## accurate for Garrison and any future can_train_units building alike, not
-## a Garrison-specific guess.
-func _trainable_unit_names() -> String:
-	var names: Array[String] = []
+## "does it produce units and if so what kind" (user request) — a compact
+## ROLE summary (Melee/Ranged/Special), not every individual unit's own
+## display name. **Real bug fix (playtest round 5: "the mini map no longer
+## appears anywhere"):** the original version joined ALL ~18
+## `UnitCatalog.get_all_definitions()` display names into one line — for
+## Garrison specifically (today's only `can_train_units` building) that
+## single wrapped Label came out ~580px tall (confirmed via a live debug
+## print), which forced the WHOLE bottom bar — build menu AND the minimap
+## sharing the same row — far past its intended `BOTTOM_BAR_HEIGHT`,
+## silently squeezing the minimap out of any renderable space (a Control's
+## `size` can never go below its own computed minimum). The full roster is
+## still genuinely visible, per-unit, with real art/cost/upkeep, the moment
+## a `can_train_units` building is actually selected (`UnitPanelView`'s own
+## training grid) — this card only needs to answer "what KIND", which a
+## short role list does without the runaway height. Every `can_train_units`
+## building trains off the SAME UnitCatalog roster today (UnitManager.
+## train_unit() takes no building-specific filter — see UnitPanelView's own
+## training-button loop, which iterates get_all_definitions() the identical
+## way), so this is genuinely accurate for Garrison and any future
+## can_train_units building alike, not a Garrison-specific guess.
+func _trainable_unit_roles() -> String:
+	var role_names: Array[String] = []
 	for unit_definition in UnitCatalog.get_all_definitions():
-		names.append(unit_definition.display_name)
-	return ", ".join(names)
+		var role_name := _role_display_name(unit_definition.role)
+		if not role_names.has(role_name):
+			role_names.append(role_name)
+	return ", ".join(role_names)
+
+func _role_display_name(role: GameEnums.UnitRole) -> String:
+	match role:
+		GameEnums.UnitRole.MELEE:
+			return "Melee"
+		GameEnums.UnitRole.RANGED:
+			return "Ranged"
+		GameEnums.UnitRole.SPECIAL:
+			return "Special"
+		_:
+			return "?"
 
 func _visible_definitions(category: GameEnums.BuildingCategory) -> Array[BuildingDefinition]:
 	var result: Array[BuildingDefinition] = []
@@ -213,6 +254,22 @@ func _visible_definitions(category: GameEnums.BuildingCategory) -> Array[Buildin
 
 func _on_building_button_pressed(building_type: GameEnums.BuildingType) -> void:
 	building_selected.emit(building_type)
+
+## Maps to the string keys HUDStyles.category_card_colors() actually
+## understands — kept as its own small function (not folded into
+## _category_name()) since the two mappings could diverge in principle
+## (a future category might want a display name but reuse another
+## category's color scheme) even though today they're 1:1.
+func _category_color_key(category: GameEnums.BuildingCategory) -> String:
+	match category:
+		GameEnums.BuildingCategory.HOUSING_CIVIL:
+			return "housing_civil"
+		GameEnums.BuildingCategory.INDUSTRY_EXTRACTION:
+			return "industry_extraction"
+		GameEnums.BuildingCategory.AGRICULTURE:
+			return "agriculture"
+		_:
+			return ""
 
 func _category_name(category: GameEnums.BuildingCategory) -> String:
 	match category:

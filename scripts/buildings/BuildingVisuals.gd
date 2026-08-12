@@ -73,8 +73,15 @@ static func _texture_key(building_type: GameEnums.BuildingType) -> String:
 			return "terraced_tenement"
 		GameEnums.BuildingType.WORKHOUSE:
 			return "workhouse"
+		# User request (playtest round 5): use the real "Watchtower.png" AI-art
+		# asset (assets/buildings/watchtower.png — a separate, newer file,
+		# NOT a same-named .png next to the original hand-authored
+		# church_steeple_watchtower.svg) instead of that old SVG placeholder.
+		# `_load_texture()`'s own .png-then-.svg fallback means this key
+		# change alone is enough — watchtower.png exists, watchtower.svg
+		# doesn't, so the PNG wins with no other code changes needed.
 		GameEnums.BuildingType.CHURCH_STEEPLE_WATCHTOWER:
-			return "church_steeple_watchtower"
+			return "watchtower"
 		GameEnums.BuildingType.GAS_STREETLAMP:
 			return "gas_streetlamp"
 		GameEnums.BuildingType.TELEGRAPH_RELAY_OFFICE:

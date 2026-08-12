@@ -21,11 +21,13 @@ extends Resource
 @export var current_hp: float = 0.0
 @export var order: GameEnums.UnitOrderType = GameEnums.UnitOrderType.HOLD
 @export var move_target: Vector2i = Vector2i.ZERO
+@export var move_target_local: Vector2 = Vector2.ZERO  ## Playtest round 5 — see UnitInstance's own field doc comment.
 @export var patrol_waypoints: Array[Vector2i] = []
+@export var patrol_waypoint_locals: Array[Vector2] = []  ## Playtest round 5 — index-aligned with patrol_waypoints, see UnitInstance's own field doc comment.
 @export var kill_count: int = 0
 @export var local_position: Vector2 = Vector2.ZERO  ## Phase 2.5.4.
 
-func _init(p_unit_type: GameEnums.UnitType = GameEnums.UnitType.TRUNCHEONEER, p_hex_coord: Vector2i = Vector2i.ZERO, p_id: int = 0, p_current_hp: float = 0.0, p_order: GameEnums.UnitOrderType = GameEnums.UnitOrderType.HOLD, p_move_target: Vector2i = Vector2i.ZERO, p_patrol_waypoints: Array[Vector2i] = [], p_kill_count: int = 0, p_local_position: Vector2 = Vector2.ZERO) -> void:
+func _init(p_unit_type: GameEnums.UnitType = GameEnums.UnitType.TRUNCHEONEER, p_hex_coord: Vector2i = Vector2i.ZERO, p_id: int = 0, p_current_hp: float = 0.0, p_order: GameEnums.UnitOrderType = GameEnums.UnitOrderType.HOLD, p_move_target: Vector2i = Vector2i.ZERO, p_patrol_waypoints: Array[Vector2i] = [], p_kill_count: int = 0, p_local_position: Vector2 = Vector2.ZERO, p_move_target_local: Vector2 = Vector2.ZERO, p_patrol_waypoint_locals: Array[Vector2] = []) -> void:
 	unit_type = p_unit_type
 	hex_coord = p_hex_coord
 	id = p_id
@@ -35,3 +37,5 @@ func _init(p_unit_type: GameEnums.UnitType = GameEnums.UnitType.TRUNCHEONEER, p_
 	patrol_waypoints = p_patrol_waypoints
 	kill_count = p_kill_count
 	local_position = p_local_position
+	move_target_local = p_move_target_local
+	patrol_waypoint_locals = p_patrol_waypoint_locals

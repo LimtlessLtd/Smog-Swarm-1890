@@ -392,6 +392,41 @@ func get_placement_error(building_type: GameEnums.BuildingType, coord: Vector2i)
 		return "Not enough Energy capacity to build %s." % definition.display_name
 	return ""
 
+## User request (playtest round 5): "if you click on a building you cannot
+## afford to build yet, it should display an error saying how much more
+## resources you need" — resource-only, deliberately NOT terrain/settlement
+## legality (that's get_placement_error()'s job, and it needs a `coord`
+## this doesn't have: BuildMenuView's card click fires BEFORE placement
+## mode is even armed, well before the player has picked a hex). Returns ""
+## when affordable (or no ResourceManager wired) so callers can treat an
+## empty string as "nothing to report" the same way every other
+## `get_*_error()` in this project already does.
+func get_affordability_error(building_type: GameEnums.BuildingType) -> String:
+	var definition := BuildingCatalog.get_definition(building_type)
+	if not definition or not _resource_manager:
+		return ""
+	var shortfalls := _resource_shortfalls(definition.construction_cost)
+	shortfalls.append_array(_resource_shortfalls(_construction_energy_cost(definition)))
+	if shortfalls.is_empty():
+		return ""
+	return "Need %s more to build %s." % [", ".join(shortfalls), definition.display_name]
+
+## Shared by get_affordability_error() for both the construction cost AND
+## the (separately-tracked, see _construction_energy_cost()'s own doc
+## comment) one-time Energy draw — one shortfall list per cost dictionary,
+## trimmed to only the resources actually short (an affordable resource in
+## the same cost dict isn't reported, same "only say what's actually
+## wrong" restraint every other error message here already keeps).
+func _resource_shortfalls(cost: Dictionary) -> Array[String]:
+	var shortfalls: Array[String] = []
+	for resource_type in cost:
+		var needed := float(cost[resource_type])
+		var have := _resource_manager.get_amount(resource_type)
+		if have < needed:
+			var missing := String.num(needed - have, 1).rstrip("0").rstrip(".")
+			shortfalls.append("%s %s" % [missing, ResourceVisuals.display_name(resource_type)])
+	return shortfalls
+
 func can_place_building(building_type: GameEnums.BuildingType, coord: Vector2i) -> bool:
 	return get_placement_error(building_type, coord).is_empty()
 

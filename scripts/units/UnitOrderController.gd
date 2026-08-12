@@ -151,14 +151,20 @@ func _process(delta: float) -> void:
 
 ## --- Order issuing (player-facing API — called by UnitCommandController, Phase 6.1) --
 
-func issue_move_order(instance: UnitInstance, destination: Vector2i) -> void:
+## `destination_local` (playtest round 5) — the exact offset within
+## `destination`'s hex to walk to, ZERO (the hex center) if the caller
+## doesn't have/want sub-hex precision. See UnitInstance.move_target_local's
+## own doc comment.
+func issue_move_order(instance: UnitInstance, destination: Vector2i, destination_local: Vector2 = Vector2.ZERO) -> void:
 	_set_order(instance, GameEnums.UnitOrderType.MOVE)
 	instance.move_target = destination
+	instance.move_target_local = destination_local
 	instance.path.clear()
 
-func issue_attack_move_order(instance: UnitInstance, destination: Vector2i) -> void:
+func issue_attack_move_order(instance: UnitInstance, destination: Vector2i, destination_local: Vector2 = Vector2.ZERO) -> void:
 	_set_order(instance, GameEnums.UnitOrderType.ATTACK_MOVE)
 	instance.move_target = destination
+	instance.move_target_local = destination_local
 	instance.path.clear()
 
 func issue_hold_order(instance: UnitInstance) -> void:
@@ -175,12 +181,16 @@ func issue_garrison_order(instance: UnitInstance) -> void:
 
 ## `waypoints` must be non-empty — a no-op (reported via return value) if
 ## it isn't, rather than silently accepting a PATROL order with nothing to
-## loop through.
-func issue_patrol_order(instance: UnitInstance, waypoints: Array[Vector2i]) -> bool:
+## loop through. `waypoint_locals` (playtest round 5) — index-aligned with
+## `waypoints`, the exact offset within each waypoint's hex to actually
+## visit; empty (the default) means "every leg targets its own hex center",
+## unchanged prior behavior.
+func issue_patrol_order(instance: UnitInstance, waypoints: Array[Vector2i], waypoint_locals: Array[Vector2] = []) -> bool:
 	if waypoints.is_empty():
 		return false
 	_set_order(instance, GameEnums.UnitOrderType.PATROL)
 	instance.patrol_waypoints = waypoints.duplicate()
+	instance.patrol_waypoint_locals = waypoint_locals.duplicate()
 	instance.patrol_target_index = 0
 	instance.path.clear()
 	return true
@@ -194,7 +204,7 @@ func _set_order(instance: UnitInstance, order: GameEnums.UnitOrderType) -> void:
 func _advance_unit(instance: UnitInstance, delta: float) -> void:
 	match instance.order:
 		GameEnums.UnitOrderType.MOVE, GameEnums.UnitOrderType.ATTACK_MOVE:
-			_advance_toward(instance, instance.move_target, true, delta)
+			_advance_toward(instance, instance.move_target, instance.move_target_local, true, delta)
 		GameEnums.UnitOrderType.PATROL:
 			_advance_patrol(instance, delta)
 		_:
@@ -205,6 +215,14 @@ func _advance_unit(instance: UnitInstance, delta: float) -> void:
 ## reverts to HOLD on arrival"), false for PATROL (arriving just advances to
 ## the next leg, handled by _advance_patrol() itself rather than here).
 ##
+## `destination_local` (playtest round 5: "a selected unit should
+## immediately move to where the user has right clicked") — the offset
+## within `destination`'s own hex the unit should actually end up at, ZERO
+## for "just the hex center" (unchanged default). Only ever applied on the
+## FINAL leg of the path (see the `next_coord == destination` check below)
+## — every hex merely passed through en route still routes through its own
+## plain center, same clean hex-to-hex pathing as before this field existed.
+##
 ## Walks `instance` continuously toward `destination`, consuming up to
 ## `delta` seconds of travel this call — MovementStepper.advance_toward_hex()
 ## handles one hex-segment at a time; this loop threads through however many
@@ -213,7 +231,7 @@ func _advance_unit(instance: UnitInstance, delta: float) -> void:
 ## crossed, in order — see this class's own doc comment on why that
 ## per-crossing signal contract matters to CombatCoordinator/
 ## StrategicOverlayManager/etc.
-func _advance_toward(instance: UnitInstance, destination: Vector2i, revert_to_hold_on_arrival: bool, delta: float) -> void:
+func _advance_toward(instance: UnitInstance, destination: Vector2i, destination_local: Vector2, revert_to_hold_on_arrival: bool, delta: float) -> void:
 	if instance.hex_coord == destination:
 		if revert_to_hold_on_arrival:
 			_set_order(instance, GameEnums.UnitOrderType.HOLD)
@@ -229,7 +247,8 @@ func _advance_toward(instance: UnitInstance, destination: Vector2i, revert_to_ho
 		var from_coord := instance.hex_coord  ## Captured BEFORE the call below overwrites it — this is the hex actually being left this crossing.
 		var speed := _movement_speed(instance, from_coord, next_coord)
 		var obstacles := _gather_obstacles(from_coord, next_coord)
-		var result := MovementStepper.advance_toward_hex(from_coord, instance.local_position, next_coord, remaining, speed, obstacles, ENTITY_RADIUS, float(instance.id))
+		var leg_local_offset := destination_local if next_coord == destination else Vector2.ZERO
+		var result := MovementStepper.advance_toward_hex(from_coord, instance.local_position, next_coord, remaining, speed, obstacles, ENTITY_RADIUS, float(instance.id), leg_local_offset)
 		instance.hex_coord = result["hex_coord"]
 		instance.local_position = result["local_position"]
 		remaining -= float(result["seconds_used"])
@@ -243,15 +262,42 @@ func _advance_toward(instance: UnitInstance, destination: Vector2i, revert_to_ho
 			if revert_to_hold_on_arrival:
 				_set_order(instance, GameEnums.UnitOrderType.HOLD)
 
+## Real bug fix (playtest round 5: "units do not follow waypoints when they
+## are placed") — the old version, on reaching a waypoint, only ever
+## advanced `patrol_target_index` and returned, leaving the unit sitting
+## idle for a full frame/tick before the NEXT call finally started it
+## walking toward the following leg; on a patrol with many close-together
+## waypoints (or a very short LOGIC_TICK at low TickManager speed) that
+## read as "stuck"/"not following the route". Now loops immediately to the
+## next waypoint within the SAME call whenever the unit is already standing
+## on the current one, so travel toward a genuinely unreached leg starts
+## this frame, not next. `guard` bounds the loop to patrol_waypoints.size()
+## iterations — a patrol can never legitimately need more "already
+## there, advance" steps than it has waypoints, so this can't spin forever
+## even in the degenerate case of every waypoint sharing one hex.
 func _advance_patrol(instance: UnitInstance, delta: float) -> void:
 	if not instance.has_patrol_waypoints():
 		return
-	instance.patrol_target_index = wrapi(instance.patrol_target_index, 0, instance.patrol_waypoints.size())
-	var target: Vector2i = instance.patrol_waypoints[instance.patrol_target_index]
-	if instance.hex_coord == target:
+	var guard := instance.patrol_waypoints.size()
+	while guard > 0:
+		instance.patrol_target_index = wrapi(instance.patrol_target_index, 0, instance.patrol_waypoints.size())
+		var target: Vector2i = instance.patrol_waypoints[instance.patrol_target_index]
+		if instance.hex_coord != target:
+			_advance_toward(instance, target, _patrol_waypoint_local(instance, instance.patrol_target_index), false, delta)
+			return
 		instance.patrol_target_index = wrapi(instance.patrol_target_index + 1, 0, instance.patrol_waypoints.size())
-		return
-	_advance_toward(instance, target, false, delta)
+		guard -= 1
+	# Every waypoint shares the unit's current hex (a degenerate all-in-one-
+	# hex patrol) — nothing left to actually walk toward this frame.
+
+## `patrol_waypoint_locals` is index-aligned with `patrol_waypoints` but
+## (same as `move_target_local`) defaults to empty for any unit/save
+## predating this field — out-of-range or missing falls back to ZERO (the
+## hex center), never a hard error.
+func _patrol_waypoint_local(instance: UnitInstance, index: int) -> Vector2:
+	if index < instance.patrol_waypoint_locals.size():
+		return instance.patrol_waypoint_locals[index]
+	return Vector2.ZERO
 
 func _replan(instance: UnitInstance, destination: Vector2i) -> void:
 	if not _hex_grid_map:

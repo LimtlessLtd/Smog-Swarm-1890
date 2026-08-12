@@ -61,7 +61,8 @@ const RECON_REFRESH_SECONDS := 1.0  ## Matches TimeControlsView's own "refreshed
 
 const MARGIN := 8.0
 const ROW_HEIGHT := 32.0
-const TIME_CONTROLS_WIDTH := 520.0  ## Widened for Phase 5.1's date + phase countdown text alongside the day counter/speed buttons; widened again for the 50x speed button.
+const TIME_CONTROLS_WIDTH := 420.0  ## Speed buttons only now (playtest round 5 — the date/phase countdown moved to DayPhaseView, bottom-right) — self-corrects to the real measured width regardless (see _place_top_right()'s own doc comment), this is just the single-frame fallback.
+const DAY_PHASE_VIEW_WIDTH := 260.0  ## Fallback width for the new bottom-right date/countdown strip — see DAY_PHASE_VIEW's own placement helper.
 const SAVE_LOAD_WIDTH := 220.0
 const TECH_BAR_WIDTH := 150.0
 const DISPLAY_BAR_WIDTH := 150.0
@@ -168,6 +169,7 @@ func _ready() -> void:
 	_build_mode_label()
 	_build_recon_label()
 	_build_bottom_bar(hex_grid_map, _fog_of_war_manager, camera, noise_manager)
+	_build_day_phase_view()
 	_build_unit_panel(unit_manager, _wall_manager)
 	_build_toast()
 
@@ -192,6 +194,19 @@ func _build_time_controls() -> void:
 	# original Phase 6.1 HUD layout bug. Row 1 (top-right) is clear of the
 	# full-width resource bar above it.
 	_place_top_right(time_controls, TIME_CONTROLS_WIDTH, 1)
+
+## User request, playtest round 5: "messages at the top of the screen
+## overlap on the date and day/night countdown... move the date and
+## day/night countdown to the bottom right please above where the minimap
+## is." Bottom-right corner, directly above the bottom bar (build menu +
+## minimap) — the one spot that reads as "above the minimap" and is clear
+## of every top-strip element (resource bar/mode label/recon label) that
+## used to crowd it.
+func _build_day_phase_view() -> void:
+	var day_phase_view := DayPhaseView.new()
+	day_phase_view.name = "DayPhaseView"
+	add_child(day_phase_view)
+	_place_above_bottom_bar_right(day_phase_view, DAY_PHASE_VIEW_WIDTH)
 
 func _build_save_load_bar() -> void:
 	var bar := HBoxContainer.new()
@@ -393,12 +408,36 @@ func _build_unit_panel(unit_manager: UnitManager, wall_manager: WallManager) -> 
 	if _unit_command_controller:
 		unit_panel.setup(_unit_command_controller, unit_manager, _building_manager, wall_manager)
 
+## **Real bug fix (found live testing playtest round 5's own Garrison
+## placement — a rejection toast never appeared to explain why a click
+## seemed to do nothing):** `_place_bottom_wide()` pins to the screen's
+## very bottom edge, which used to be empty space before #5's bottom-bar
+## merge — now it's exactly where the build menu + minimap sit. The toast
+## was still drawing on top (added last in `_ready()`, so it wins z-order),
+## but as bare, unstyled white text directly over a busy row of building
+## cards it was effectively invisible. Moved to its own full-width strip
+## just ABOVE the bottom bar (same spot `DayPhaseView` shares the right
+## portion of), wrapped in a real `PanelContainer` (a bare `Label`, same as
+## `ResourceBarView`/`BuildMenuView` before their own dark-background fixes,
+## never actually draws a `"panel"` theme stylebox) so a toast has a real
+## dark backing and reads as a toast again — hidden via the wrapper's own
+## `visible`, not just empty text, so it doesn't leave a dark empty box
+## floating over the map between messages.
+var _toast_panel: PanelContainer
 func _build_toast() -> void:
+	_toast_panel = PanelContainer.new()
+	_toast_panel.name = "ToastPanel"
+	add_child(_toast_panel)
+	_place_above_bottom_bar_wide(_toast_panel)
+	HUDStyles.style_panel(_toast_panel)
+	_toast_panel.visible = false
+
 	_toast_label = Label.new()
 	_toast_label.name = "ToastLabel"
-	add_child(_toast_label)
-	_place_bottom_wide(_toast_label)
+	_toast_panel.add_child(_toast_label)
+	HUDStyles.style_label(_toast_label, true)
 	_toast_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_toast_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 
 	_toast_timer = Timer.new()
 	_toast_timer.one_shot = true
@@ -488,6 +527,45 @@ func _place_top_right(control: Control, fallback_width: float, row: int) -> void
 			control.offset_left = control.offset_right - real_width
 	, CONNECT_ONE_SHOT)
 
+## Bottom-right corner, directly above the bottom bar (build menu + minimap)
+## — DayPhaseView's own spot (user request, playtest round 5). Same
+## self-measuring real-width correction _place_top_right() already uses
+## (see that function's own doc comment for why a fresh lambda per call,
+## not a shared bound method).
+func _place_above_bottom_bar_right(control: Control, fallback_width: float) -> void:
+	control.anchor_left = 1.0
+	control.anchor_right = 1.0
+	control.anchor_top = 1.0
+	control.anchor_bottom = 1.0
+	control.offset_right = -MARGIN
+	control.offset_left = -MARGIN - fallback_width
+	control.offset_bottom = -MARGIN - BOTTOM_BAR_HEIGHT - MARGIN
+	control.offset_top = control.offset_bottom - ROW_HEIGHT
+	get_tree().process_frame.connect(func() -> void:
+		if not is_instance_valid(control):
+			return
+		var real_width := control.get_combined_minimum_size().x
+		if real_width > 0.0:
+			control.offset_left = control.offset_right - real_width
+	, CONNECT_ONE_SHOT)
+
+## Full-width strip above the bottom bar — the toast's own spot (see
+## `_build_toast()`'s own doc comment for why it moved here). ONE ROW
+## higher than `_place_above_bottom_bar_right()`'s own row (DayPhaseView's
+## spot), not the same one — a full-width strip at that same row would sit
+## directly behind/in front of DayPhaseView's right-aligned panel every
+## time a toast is showing, needlessly covering the date/countdown for as
+## long as the toast is up.
+func _place_above_bottom_bar_wide(control: Control) -> void:
+	control.anchor_left = 0.0
+	control.anchor_right = 1.0
+	control.anchor_top = 1.0
+	control.anchor_bottom = 1.0
+	control.offset_left = MARGIN
+	control.offset_right = -MARGIN
+	control.offset_bottom = -MARGIN - BOTTOM_BAR_HEIGHT - MARGIN - ROW_HEIGHT - MARGIN
+	control.offset_top = control.offset_bottom - ROW_HEIGHT
+
 ## Fixed-`size` rect pinned to the top-left corner, below the top-wide
 ## resource bar/mode label strip (2 rows tall) — UnitPanelView's own spot,
 ## the one corner nothing else in this HUD claims.
@@ -576,7 +654,23 @@ func _place_center(control: Control, fallback_size: Vector2) -> void:
 			control.offset_bottom = size.y / 2.0 - CENTER_VERTICAL_BIAS
 		, CONNECT_ONE_SHOT)
 
+## User request (playtest round 5): "if you click on a building you cannot
+## afford to build yet, it should display an error saying how much more
+## resources you need before being able to build that building." Checked
+## HERE, not inside BuildMenuView itself — that view stays the same "dumb
+## selector with no idea what a hex/resource state is" its own class doc
+## comment already establishes (BuildPlacementController/BuildingManager
+## are MainHUD's job to consult, same split every other selection signal
+## here already keeps). An unaffordable building never arms placement mode
+## at all — clicking the map afterward with nothing armed is a clear no-op
+## rather than a placement attempt doomed to fail (and re-show basically
+## the same rejection) the moment a hex is clicked.
 func _on_building_selected(building_type: GameEnums.BuildingType) -> void:
+	if _building_manager:
+		var error := _building_manager.get_affordability_error(building_type)
+		if not error.is_empty():
+			_show_toast(error)
+			return
 	if _build_placement_controller:
 		_build_placement_controller.begin_placement(building_type)
 
@@ -691,7 +785,9 @@ func _on_event_raised(event: GameEvent) -> void:
 
 func _show_toast(text: String) -> void:
 	_toast_label.text = text
+	_toast_panel.visible = true
 	_toast_timer.start()
 
 func _on_toast_timeout() -> void:
 	_toast_label.text = ""
+	_toast_panel.visible = false

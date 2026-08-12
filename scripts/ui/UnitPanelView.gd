@@ -65,6 +65,14 @@ func setup(unit_command_controller: UnitCommandController, unit_manager: UnitMan
 		_unit_manager.unit_trained.connect(_on_roster_changed)
 		_unit_manager.unit_removed.connect(_on_roster_changed)
 		_unit_manager.unit_retrained.connect(_on_roster_changed)
+		# User request (playtest round 5, training queue): a freshly-queued
+		# job (training_started, fires the instant it's accepted/paid for —
+		# unit_trained itself doesn't fire until the queue actually finishes)
+		# should appear in the panel immediately, and its "ready in N days"
+		# countdown needs to tick down once per real day_completed, not just
+		# whenever the roster happens to change for an unrelated reason.
+		_unit_manager.training_started.connect(_on_training_started)
+		TickManager.day_completed.connect(_on_day_completed)
 	if _building_manager:
 		_building_manager.repair_started.connect(_on_building_stats_changed)
 		_building_manager.building_repaired.connect(_on_building_stats_changed)
@@ -104,6 +112,17 @@ func _on_patrol_recording_changed(_is_recording: bool, _waypoint_count: int) -> 
 	_refresh_current_selection()
 
 func _on_roster_changed(_instance: UnitInstance) -> void:
+	_refresh_current_selection()
+
+## Training queue (playtest round 5) — a fresh job appearing, or one day's
+## worth of countdown ticking off an existing one, both need the currently-
+## selected building's panel (if any) to redraw with the new numbers.
+## `_refresh_current_selection()` itself already no-ops harmlessly if
+## nothing/a non-training-building is selected right now.
+func _on_training_started(_unit_type: GameEnums.UnitType, _coord: Vector2i, _days: int) -> void:
+	_refresh_current_selection()
+
+func _on_day_completed(_day_number: int) -> void:
 	_refresh_current_selection()
 
 ## Broadened past its original "repair state changed" scope (adversarial
@@ -229,6 +248,42 @@ func _render_building_panel(instance: BuildingInstance) -> void:
 					enabled,
 					110.0, 36.0,
 				))
+			_add_training_queue(coord)
+
+## User request (playtest round 5): "there should be a visible unit
+## building queue so that we can see how long is remaining on units under
+## construction and how many units of what types we have under
+## construction" — every `UnitManager.get_pending_training()` entry queued
+## AT THIS building (matched by coord; a second Garrison elsewhere has its
+## own independent queue, not shown here), oldest-first, straight off the
+## same list `_process_pending_training()` itself ticks down — this can't
+## show a different number than what will actually finish. Skipped
+## entirely (not even an empty header) when nothing's queued, same "don't
+## show a section with nothing to say" restraint the Population/zombie
+## lines above already keep for a building with no housing capacity.
+func _add_training_queue(coord: Vector2i) -> void:
+	if not _unit_manager:
+		return
+	var jobs := []
+	for job in _unit_manager.get_pending_training():
+		if job["coord"] == coord:
+			jobs.append(job)
+	if jobs.is_empty():
+		return
+
+	var queue_header := Label.new()
+	queue_header.text = "Training Queue (%d)" % jobs.size()
+	HUDStyles.style_label(queue_header, true)
+	_list.add_child(queue_header)
+
+	for job in jobs:
+		var definition := UnitCatalog.get_definition(job["unit_type"])
+		var display_name := definition.display_name if definition else "Unit"
+		var days: int = job["days_remaining"]
+		var line := Label.new()
+		line.text = "%s — ready in %d day%s" % [display_name, days, "" if days == 1 else "s"]
+		HUDStyles.style_label(line, false, true)
+		_list.add_child(line)
 
 ## User request ("when selecting a building, we should see various
 ## statistics... how much upkeep it costs, how many population it has
@@ -432,6 +487,22 @@ func _render_unit_panel(instance: UnitInstance) -> void:
 	HUDStyles.style_label(stats)
 	_list.add_child(stats)
 
+	# User request (playtest round 5): "a selected unit should display any
+	# move commands it is currently obeying and any patrol waypoints it has
+	# set" — a dedicated line under the HP/order summary above, not just
+	# "Moving"/"Patrolling" with no destination. Refreshed live off
+	# UnitCommandController's own `unit_selected` re-emit whenever an order
+	# actually changes (see that controller's own `_on_unit_order_issued()`
+	# doc comment) — right-clicking a new destination updates this
+	# immediately, not just at the moment of selection.
+	var order_detail := _describe_current_order(instance)
+	if not order_detail.is_empty():
+		var order_label := Label.new()
+		order_label.text = order_detail
+		order_label.autowrap_mode = TextServer.AUTOWRAP_WORD
+		HUDStyles.style_label(order_label, false, true)
+		_list.add_child(order_label)
+
 	var hold_button := Button.new()
 	hold_button.text = "Hold"
 	hold_button.pressed.connect(_unit_command_controller.order_hold)
@@ -549,3 +620,27 @@ func _order_name(order: GameEnums.UnitOrderType) -> String:
 			return "Garrisoned"
 		_:
 			return "Holding"
+
+## "any move commands it is currently obeying and any patrol waypoints it
+## has set" (user request, playtest round 5) — MOVE/ATTACK_MOVE shows the
+## real destination hex; PATROL shows the FULL waypoint loop with the
+## currently-active leg marked, so the player can see the whole route, not
+## just where it's headed right now. Empty string for HOLD/GARRISON (no
+## destination to report — _render_unit_panel() skips the line entirely
+## rather than showing a blank one).
+func _describe_current_order(instance: UnitInstance) -> String:
+	match instance.order:
+		GameEnums.UnitOrderType.MOVE, GameEnums.UnitOrderType.ATTACK_MOVE:
+			return "Destination: %s" % instance.move_target
+		GameEnums.UnitOrderType.PATROL:
+			if not instance.has_patrol_waypoints():
+				return ""
+			var legs: Array[String] = []
+			for i in range(instance.patrol_waypoints.size()):
+				var text := "%s" % instance.patrol_waypoints[i]
+				if i == instance.patrol_target_index:
+					text = "[%s]" % text  ## The leg currently being walked toward.
+				legs.append(text)
+			return "Patrol route: %s" % " → ".join(legs)
+		_:
+			return ""
