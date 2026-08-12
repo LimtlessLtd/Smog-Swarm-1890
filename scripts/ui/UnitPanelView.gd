@@ -214,7 +214,14 @@ func _render_building_panel(instance: BuildingInstance) -> void:
 		instance.is_under_construction
 	)
 
-	if definition.can_train_units:
+	# User report (playtest round 6): "you shouldn't be able to build units
+	# from a garrison that is under construction... while under
+	# construction they shouldn't be able to do anything" — same
+	# is_under_construction/is_ruined gate _add_building_economy_stats()
+	# above already applies, extended to the training grid/queue too
+	# rather than showing a Train section for a building that would just
+	# reject every card with "must finish construction" anyway.
+	if definition.can_train_units and not instance.is_under_construction and not instance.is_ruined:
 		var coord := instance.hex_coord
 		var train_header := Label.new()
 		train_header.text = "Train at %s" % coord
@@ -303,6 +310,7 @@ func _add_training_queue(coord: Vector2i) -> void:
 ## `can_train_units` already gets below.
 func _add_building_economy_stats(instance: BuildingInstance) -> void:
 	var definition := instance.definition
+	_add_production_stat(instance)
 	if definition.population_provided > 0:
 		var population_stats := Label.new()
 		population_stats.text = "Population: %d / %d" % [instance.current_population, definition.population_provided]
@@ -322,6 +330,35 @@ func _add_building_economy_stats(instance: BuildingInstance) -> void:
 		_list.add_child(upkeep_stats)
 
 	_add_energy_stat(definition)
+
+## User report (playtest round 6): "selecting a building should tell you
+## what it does, e.g. brickworks produce X bricks per day, Iron Foundry
+## produces X iron per day" — the same effective-output preview
+## BuildMenuView._describe_effect() already shows BEFORE a building is
+## placed, now shown for a real, already-placed instance too. Reads
+## BuildingInstance.get_effective_output() (soil-fertility-scaled for farms,
+## via BuildingManager.get_hex_cell()) rather than the flat
+## definition.daily_output, so this can't disagree with what
+## BuildingManager._compute_daily_totals() is actually crediting the colony
+## today. ENERGY is a one-time grid draw/contribution, not a daily flow —
+## handled separately by _add_energy_stat() below, same split
+## _recurring_upkeep_display() already keeps.
+func _add_production_stat(instance: BuildingInstance) -> void:
+	var cell: HexCell = _building_manager.get_hex_cell(instance.hex_coord) if _building_manager else null
+	var output := instance.get_effective_output(cell)
+	var parts: Array[String] = []
+	for resource_type in output:
+		if resource_type == GameEnums.ResourceType.ENERGY:
+			continue
+		var amount := float(output[resource_type])
+		if amount > 0.0:
+			parts.append("+%s %s/day" % [String.num(amount, 1), ResourceVisuals.display_name(resource_type)])
+	if parts.is_empty():
+		return
+	var production_stats := Label.new()
+	production_stats.text = "Produces: %s" % ", ".join(parts)
+	HUDStyles.style_label(production_stats)
+	_list.add_child(production_stats)
 
 ## Adversarial code-review finding, HIGH severity (this pass's own
 ## verification step): a plain `definition.daily_upkeep` read left the
@@ -537,7 +574,20 @@ func _render_unit_panel(instance: UnitInstance) -> void:
 	retrain_header.text = "Retrain into:"
 	HUDStyles.style_label(retrain_header, true)
 	_list.add_child(retrain_header)
-	var any_retrain_candidate := false
+	# User report (playtest round 6): "remove 'retrain' options... if they
+	# are not currently available to do. Only display retraining options
+	# that are researched and can be purchased." Used to show EVERY
+	# same-role/higher-tier candidate, disabled-with-a-reason when
+	# tech-locked or unaffordable; now a candidate that fails
+	# get_retrain_error() for any reason is skipped entirely rather than
+	# shown greyed out. `any_higher_tier_exists` (role/tier check alone)
+	# vs. `any_retrain_available` (also passed get_retrain_error()) are
+	# tracked separately so the empty-state message can still tell "this
+	# is genuinely the top tier" apart from "a higher tier exists but isn't
+	# unlocked/affordable yet" instead of collapsing both into one
+	# ambiguous "(top tier for this role)" like before.
+	var any_retrain_available := false
+	var any_higher_tier_exists := false
 	var retrain_grid := GridContainer.new()  # Same card shape as the training grid above — see its own comment.
 	retrain_grid.columns = 2
 	retrain_grid.add_theme_constant_override("h_separation", 6)
@@ -545,23 +595,25 @@ func _render_unit_panel(instance: UnitInstance) -> void:
 	for candidate in UnitCatalog.get_all_definitions():
 		if candidate.role != definition.role or candidate.tier <= definition.tier:
 			continue
-		any_retrain_candidate = true
+		any_higher_tier_exists = true
 		var error := _unit_manager.get_retrain_error(instance, candidate.unit_type) if _unit_manager else "No UnitManager wired."
-		var enabled := error.is_empty()
-		var details := error if not enabled else "Cost: %s" % HUDStyles.format_resource_dict(_retrain_preview_cost(candidate))
+		if not error.is_empty():
+			continue
+		any_retrain_available = true
+		var details := "Cost: %s" % HUDStyles.format_resource_dict(_retrain_preview_cost(candidate))
 		retrain_grid.add_child(HUDStyles.build_card(
 			"%s (T%d)" % [candidate.display_name, candidate.tier],
 			UnitVisuals.unit_texture(candidate.unit_type),
 			details,
 			_on_retrain_pressed.bind(candidate.unit_type),
-			enabled,
+			true,
 			110.0, 36.0,
 		))
-	if any_retrain_candidate:
+	if any_retrain_available:
 		_list.add_child(retrain_grid)
 	else:
 		var none_label := Label.new()
-		none_label.text = "(top tier for this role)"
+		none_label.text = "(higher tier not yet available — check research/resources)" if any_higher_tier_exists else "(top tier for this role)"
 		HUDStyles.style_label(none_label)
 		_list.add_child(none_label)
 

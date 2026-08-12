@@ -352,6 +352,41 @@ func get_buildings_at(coord: Vector2i) -> Array[BuildingInstance]:
 func get_all_buildings() -> Array[BuildingInstance]:
 	return _instances.duplicate()
 
+## Exposed for UnitOrderController's Garrison order (playtest round 6, user
+## report: "garrison command does nothing for units, it should return them
+## to the closest garrison/town hall") — the nearest OPERATIONAL (not
+## under construction, not ruined — an incomplete/wrecked building can't
+## shelter anyone) building whose type is in `types`, by plain hex
+## distance from `from`. A linear scan over every building rather than
+## HexCoord.hex_disk()'s outward-ring search (`_find_starting_farm_hex()`'s
+## own approach) — that pattern exists specifically to avoid scanning the
+## WHOLE MAP's hexes; this project's building count (dozens, not
+## thousands) makes "check them all, keep the closest" simpler and just as
+## fast in practice. Null if none exist yet.
+func find_nearest_building(from: Vector2i, types: Array) -> BuildingInstance:
+	var best: BuildingInstance = null
+	var best_distance := -1
+	for instance in _instances:
+		if instance.is_under_construction or instance.is_ruined:
+			continue
+		if not types.has(instance.definition.building_type):
+			continue
+		var distance := HexCoord.distance(from, instance.hex_coord)
+		if best == null or distance < best_distance:
+			best = instance
+			best_distance = distance
+	return best
+
+## Exposed for UnitPanelView (playtest round 6, "selecting a building should
+## tell you what it does") — the same HexCell get_effective_output() needs
+## to compute a soil-fertility-scaled preview, without handing out the
+## whole HexGridMap reference. Null if unwired or `coord` is off-map, same
+## as HexGridMap.get_cell() itself.
+func get_hex_cell(coord: Vector2i) -> HexCell:
+	if not _hex_grid_map:
+		return null
+	return _hex_grid_map.get_cell(coord)
+
 ## Exposed for SaveLoadManager (Phase 2.8) — the next id a freshly-placed
 ## building would get, so a save can restore it exactly on load instead of
 ## quietly renumbering everything placed afterward.

@@ -51,6 +51,17 @@ extends Resource
 @export var patrol_waypoint_locals: Array[Vector2] = []
 var patrol_target_index: int = 0                        ## Not @export — cheap to restart a patrol loop from its first leg after a load rather than persist exact progress, same "not worth saving" call Horde.path makes.
 
+## Playtest round 6: "garrison command should return units to the closest
+## garrison/town hall" — set true only by UnitOrderController.
+## issue_garrison_order() when it has to route the unit there first (order
+## becomes MOVE toward that building's hex); UnitOrderController's own
+## arrival handling checks this to apply the real GARRISON stance instead
+## of the usual HOLD once the unit gets there. Not @export — same
+## "cheap to not persist mid-flight order state" call `path` above already
+## makes; a unit mid-transit to garrison when a save is made just needs the
+## order re-issued, same as any other in-flight move would.
+var pending_garrison_arrival: bool = false
+
 ## Current movement path (Phase 5.5's HexPathfinder) toward move_target or
 ## the active patrol leg — hex_coord itself excluded, so the next hex to
 ## step into is path[0]. Not @export, same reasoning as Horde.path: cheap

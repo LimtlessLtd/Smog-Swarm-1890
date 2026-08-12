@@ -71,17 +71,25 @@ const DISPLAY_BAR_WIDTH := 150.0
 ## hand side"): one full-width bottom strip now holds BuildMenuView
 ## (SIZE_EXPAND_FILL — see _build_bottom_bar()) and MinimapView side by side,
 ## replacing their old separate bottom-left/bottom-right placements.
-## Shrunk 190 -> 130 (playtest round 6: "reduce the size of the building
-## cards... make sure that it lines up with the mini map") alongside
-## BuildMenuView's own smaller cards (_CARD_WIDTH/_CARD_ICON_SIZE/font
-## sizes) — tall enough for a shrunk card's icon + name + a 2-3 line
-## cost/upkeep/effect block without clipping, found by actually rendering
-## one and looking at it, not a guessed number.
-const BOTTOM_BAR_HEIGHT := 130.0
-## Shrunk alongside BOTTOM_BAR_HEIGHT (same request) — kept roughly the
-## same aspect ratio as the old 220x160 rather than just scaling height
-## alone, so the map itself doesn't read as oddly squashed.
-const MINIMAP_SIZE := Vector2(160.0, 116.0)
+## Shrunk 190 -> 130 in an earlier pass, then raised again here (playtest
+## round 6 follow-up: "make each building card... large enough so the text
+## fits... some of them currently go off the bottom of the screen") once
+## 130 turned out too short for BuildMenuView's own (also revisited)
+## _CARD_WIDTH/_CARD_ICON_SIZE/font sizes — see that file's own doc
+## comment for the shared history. Tall enough for a card's icon + name +
+## a 2-3 line cost/upkeep/effect block without clipping, verified together
+## via an actual live screenshot, not just arithmetic.
+const BOTTOM_BAR_HEIGHT := 172.0
+## Height now matches BOTTOM_BAR_HEIGHT exactly (playtest round 6: "the
+## minimap... should sit flush with the building menu so the UX is
+## better") — paired with `size_flags_vertical = SIZE_FILL` at the one
+## call site below instead of the old SIZE_SHRINK_CENTER, so the minimap's
+## own rect exactly fills the bar's full height (top AND bottom edges
+## flush against the build-menu card column) rather than floating centered
+## with a visible gap above/below whenever its own height fell short of
+## the bar's. Width picked independently — wide enough to read the map at
+## a glance, not derived from the old aspect ratio.
+const MINIMAP_SIZE := Vector2(200.0, 172.0)
 const UNIT_PANEL_SIZE := Vector2(320.0, 320.0)  ## Widened/heightened (playtest round 4, #8) for the new 2-column training/retrain card grid (HUDStyles.build_card()) — the old text-only button list fit 260x260, real icon+cost+upkeep cards need more room.
 const SAVE_LOAD_VIEW_SIZE := Vector2(320.0, 320.0)
 const TECH_TREE_VIEW_SIZE := Vector2(380.0, 360.0)
@@ -383,6 +391,19 @@ func _build_bottom_bar(hex_grid_map: HexGridMap, fog_of_war_manager: FogOfWarMan
 	var bar := HBoxContainer.new()
 	bar.name = "BottomBar"
 	bar.add_theme_constant_override("separation", MARGIN)
+	# User report (playtest round 6): "while hovering your mouse over the
+	# bottom menu, you shouldn't be able to zoom in or out" — scrolling
+	# through building cards and drifting into a gap between cards (or onto
+	# the minimap) used to leak the wheel event through to
+	# CameraController._handle_zoom_input() (an _unhandled_input listener),
+	# since nothing at this outer row level explicitly claimed it.
+	# MOUSE_FILTER_STOP here "physically blocks any mouse input events from
+	# reaching any other Control node behind it, INCLUDING THE VIEWPORT"
+	# (Godot's own Control.mouse_filter docs) — covers the whole bar's
+	# rect (build menu AND minimap AND the gaps between/around them) in one
+	# place, rather than relying on every child control's own filter to
+	# happen to add up to full coverage.
+	bar.mouse_filter = Control.MOUSE_FILTER_STOP
 	add_child(bar)
 	_place_bottom_wide_row(bar, BOTTOM_BAR_HEIGHT)
 
@@ -395,7 +416,7 @@ func _build_bottom_bar(hex_grid_map: HexGridMap, fog_of_war_manager: FogOfWarMan
 	var minimap := MinimapView.new()
 	minimap.name = "Minimap"
 	minimap.custom_minimum_size = MINIMAP_SIZE
-	minimap.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	minimap.size_flags_vertical = Control.SIZE_FILL  ## Flush against the bar's full height — see MINIMAP_SIZE's own doc comment.
 	bar.add_child(minimap)
 	minimap.setup(hex_grid_map, _building_manager, fog_of_war_manager, camera, MINIMAP_SIZE, noise_manager)
 

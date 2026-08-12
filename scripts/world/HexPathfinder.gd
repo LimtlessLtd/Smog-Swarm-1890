@@ -75,7 +75,19 @@ const _BIOME_COST_MULTIPLIER: Dictionary = {
 ## if no path exists (goal unreachable, either endpoint off-map, or either
 ## endpoint itself impassable). `start == goal` returns a single-element
 ## path rather than searching.
-static func find_path(hex_grid_map: HexGridMap, start: Vector2i, goal: Vector2i, logistics_network: LogisticsNetwork = null) -> Array[Vector2i]:
+##
+## `wall_manager` (playtest round 6, user report: "units do not path around
+## walls... correctly") — optional, same "unset gracefully skips it"
+## convention as `logistics_network`. When supplied, any edge crossed by an
+## un-breached WallSegment (WallManager.get_blocking_segment(), the SAME
+## check HordeManager already peeks per hex-crossing before deciding to
+## siege) is excluded from the graph entirely, same treatment as an
+## impassable hex — a unit route now genuinely goes AROUND a wall instead
+## of what used to be no wall-awareness at all (the class doc comment's own
+## "units are still never blocked by walls" gap, now closed for the
+## strategic route; HordeManager's siege-on-contact behavior is unrelated
+## and unchanged — hordes still want to smash through, units want to avoid).
+static func find_path(hex_grid_map: HexGridMap, start: Vector2i, goal: Vector2i, logistics_network: LogisticsNetwork = null, wall_manager: WallManager = null) -> Array[Vector2i]:
 	if not hex_grid_map or not hex_grid_map.has_cell(start) or not hex_grid_map.has_cell(goal):
 		return []
 	var start_cell := hex_grid_map.get_cell(start)
@@ -113,6 +125,8 @@ static func find_path(hex_grid_map: HexGridMap, start: Vector2i, goal: Vector2i,
 		for neighbor in HexCoord.neighbors(current):
 			var cell := hex_grid_map.get_cell(neighbor)
 			if not cell or not cell.is_passable():
+				continue
+			if wall_manager and wall_manager.get_blocking_segment(current, neighbor, HexCoord.axial_to_world(current), HexCoord.axial_to_world(neighbor)):
 				continue
 			var tentative_g: float = g_score[current] + _step_cost(current, neighbor, cell, logistics_network)
 			if tentative_g < g_score.get(neighbor, INF):

@@ -117,6 +117,7 @@ unit_manager_path = NodePath("../UnitManager")
 logistics_network_path = NodePath("../LogisticsNetwork")
 building_manager_path = NodePath("../BuildingManager")
 local_detail_manager_path = NodePath("../WorldRoot/LocalDetailManager")
+wall_manager_path = NodePath("../WallManager")
 
 [node name="CombatCoordinator" parent="." instance=ExtResource("19")]
 unit_manager_path = NodePath("../UnitManager")

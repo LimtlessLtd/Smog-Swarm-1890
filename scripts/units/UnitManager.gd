@@ -162,6 +162,8 @@ func get_training_error(unit_type: GameEnums.UnitType, coord: Vector2i) -> Strin
 	if not _hex_grid_map.has_cell(coord):
 		return "%s is outside the map." % coord
 	if not _get_training_building(coord):
+		if _has_incomplete_training_building(coord):
+			return "This building must finish construction (or be repaired) before it can train units."
 		return "%s can only be trained at a building that trains units (a Garrison)." % definition.display_name
 	if _resource_manager and not _resource_manager.can_afford(definition.training_cost):
 		return "Not enough resources to train %s." % definition.display_name
@@ -383,9 +385,23 @@ func _get_training_building(coord: Vector2i) -> BuildingInstance:
 	if not _building_manager:
 		return null
 	for instance in _building_manager.get_buildings_at(coord):
-		if instance.definition.can_train_units:
+		if instance.definition.can_train_units and not instance.is_under_construction and not instance.is_ruined:
 			return instance
 	return null
+
+## User report (playtest round 6): "you shouldn't be able to build units
+## from a garrison that is under construction" — a construction site (or a
+## ruined shell) that WOULD train units once complete/repaired shouldn't be
+## silently indistinguishable from "no training building here at all";
+## used by get_training_error() to give the real reason rather than the
+## generic "can only be trained at a building that trains units" message.
+func _has_incomplete_training_building(coord: Vector2i) -> bool:
+	if not _building_manager:
+		return false
+	for instance in _building_manager.get_buildings_at(coord):
+		if instance.definition.can_train_units and (instance.is_under_construction or instance.is_ruined):
+			return true
+	return false
 
 ## Daily Gunpowder upkeep tally (UnitDefinition.daily_upkeep, only nonzero
 ## for requires_gunpowder units) — ResourceManager.apply_daily_flow() with

@@ -70,19 +70,29 @@ const _EXCLUDED_FROM_MENU: Array[GameEnums.BuildingType] = [
 	GameEnums.BuildingType.OIL_PIT,
 ]
 
-## User request (playtest round 6: "reduce the size of the building cards
-## on the bottom main menu... reduce the size of the text please as its
-## currently very large") — shrunk from HUDStyles.build_card()'s own
-## defaults (132/44, tuned for UnitPanelView's roomier top-left panel,
-## unaffected by this change since it doesn't pass these explicitly). Sized
-## down alongside MainHUD.BOTTOM_BAR_HEIGHT/MINIMAP_SIZE (see that file's
-## own doc comment) so the shorter card column actually lines up with the
-## minimap instead of leaving a tall gap of empty bar below a short column
-## of small cards.
-const _CARD_WIDTH: float = 92.0
-const _CARD_ICON_SIZE: float = 28.0
-const _CARD_NAME_FONT_SIZE: int = 11
-const _CARD_DETAILS_FONT_SIZE: int = 9
+## An earlier pass (playtest round 6: "reduce the size of the building
+## cards... reduce the size of the text... its currently very large")
+## shrunk these from HUDStyles.build_card()'s own defaults (132/44, tuned
+## for UnitPanelView's roomier top-left panel, unaffected by this change
+## since it doesn't pass these explicitly) down to 92/28/11/9 — but that
+## went far enough that a card's autowrapped icon+name+details column
+## regularly exceeded MainHUD.BOTTOM_BAR_HEIGHT's own (also-shrunk) 130px,
+## clipping text off the bottom of the screen (next playtest round's own
+## report: "make each building card... large enough so the text fits...
+## some of them currently go off the bottom of the screen"). Settled on a
+## middle ground here — noticeably more compact than the original
+## 132/44/15/13, but wide/tall enough that a typical multi-clause details
+## string ("+3 Bricks/day; Houses 6 population; Trains: Melee, Ranged")
+## wraps to 2-3 lines instead of 4-5. MainHUD.BOTTOM_BAR_HEIGHT (see that
+## file's own doc comment) was raised to match — verified together via an
+## actual live screenshot, not just this arithmetic, since autowrap line
+## count is a real-font-metrics question static reasoning can't settle on
+## its own (same lesson the minimap-hiding regression a few rounds back
+## already taught this project once).
+const _CARD_WIDTH: float = 112.0
+const _CARD_ICON_SIZE: float = 32.0
+const _CARD_NAME_FONT_SIZE: int = 12
+const _CARD_DETAILS_FONT_SIZE: int = 10
 
 func _ready() -> void:
 	size_flags_horizontal = Control.SIZE_EXPAND_FILL
