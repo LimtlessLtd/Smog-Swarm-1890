@@ -21,17 +21,19 @@ extends CanvasLayer
 ## before wiring this up, and no editor session in this workflow to lay out
 ## a Control tree by hand anyway.
 ##
-## Quick Save/Load buttons stay for a one-click fixed campaign/slot, but a
-## real campaign/slot browser now exists too (`SaveLoadView`, Phase 2.8.3,
-## a "Browse Saves..." button opens it) — the deferred piece that phase's
-## own note used to point at. Phase 2.9.3's Tech Tree screen (`TechTreeView`,
-## a "Tech Tree..." button) follows the exact same toggleable-panel
-## convention, the second view to do so. **`DisplayOptionsView`** (user
-## request — "add options so we can enable and disable the overlays," a
-## "Display..." button) is the third, letting the player toggle every
+## `SaveLoadView` (Phase 2.8.3, a real campaign/slot browser) and
+## `DisplayOptionsView` (user request — "add options so we can enable and
+## disable the overlays"), letting the player toggle every
 ## `StrategicOverlayManager` marker layer AND the Threat Meter's two
-## surfaces independently via the `DisplaySettings` autoload; all three
-## centered panels close each other on open so they never visibly stack.
+## surfaces independently via the `DisplaySettings` autoload, are both
+## reached through a single "Menu" button now (`InGameMenuView`, playtest
+## round 6 — "There should be a 'Main Menu' that has all the save/load
+## functionality on it... remove [display options] from the main screen")
+## instead of their own dedicated always-visible buttons; the same Menu
+## also offers Resume/Quit to Main Menu/Exit to Desktop. Phase 2.9.3's Tech
+## Tree screen (`TechTreeView`, a "Tech Tree..." button) keeps its own
+## dedicated button, unaffected by this — all four centered panels close
+## each other on open so they never visibly stack.
 ##
 ## Phase 5.3's Reconnaissance countdown (`_recon_label`) is a single status
 ## row, not a separate view class — deliberately as minimal as `_mode_label`
@@ -54,8 +56,6 @@ extends CanvasLayer
 @export var wall_manager_path: NodePath   ## Optional — feeds UnitPanelView's wall-repair toast/live-refresh; unset means a selected wall's Repair button still works (UnitCommandController owns the actual call) but the panel won't live-refresh mid-repair and no toast fires.
 @export var wall_placement_controller_path: NodePath  ## Optional — arms WallPlacementController from BuildMenuView's new Walls tab; unset means that tab's buttons simply do nothing (same "gracefully skip it" convention as every other optional MainHUD dependency).
 
-const DEFAULT_CAMPAIGN := "Default"
-const DEFAULT_SLOT := "QuickSave"
 const TOAST_SECONDS := 3.0
 const RECON_REFRESH_SECONDS := 1.0  ## Matches TimeControlsView's own "refreshed once a second" cadence — no need to recompute an ETA every frame.
 
@@ -65,7 +65,6 @@ const TIME_CONTROLS_WIDTH := 420.0  ## Speed buttons only now (playtest round 5 
 const DAY_PHASE_VIEW_WIDTH := 260.0  ## Fallback width for the new bottom-right date/countdown strip — see DAY_PHASE_VIEW's own placement helper.
 const SAVE_LOAD_WIDTH := 220.0
 const TECH_BAR_WIDTH := 150.0
-const DISPLAY_BAR_WIDTH := 150.0
 ## User request, playtest round 4 ("incorporate [the build menu] into some
 ## main menu bar at the bottom of the screen with the mini map on the right
 ## hand side"): one full-width bottom strip now holds BuildMenuView
@@ -94,6 +93,7 @@ const UNIT_PANEL_SIZE := Vector2(320.0, 320.0)  ## Widened/heightened (playtest 
 const SAVE_LOAD_VIEW_SIZE := Vector2(320.0, 320.0)
 const TECH_TREE_VIEW_SIZE := Vector2(380.0, 360.0)
 const DISPLAY_OPTIONS_VIEW_SIZE := Vector2(320.0, 300.0)
+const IN_GAME_MENU_VIEW_SIZE := Vector2(240.0, 260.0)  ## Fallback only — get_content_min_size() resizes this to its real 5-button content, same as every other centered panel here.
 
 var _building_manager: BuildingManager
 var _save_load_manager: SaveLoadManager
@@ -103,6 +103,7 @@ var _save_load_view: SaveLoadView
 var _tech_manager: TechManager
 var _tech_tree_view: TechTreeView
 var _display_options_view: DisplayOptionsView
+var _in_game_menu_view: InGameMenuView
 var _horde_manager: HordeManager
 var _fog_of_war_manager: FogOfWarManager
 
@@ -174,12 +175,12 @@ func _ready() -> void:
 
 	_build_resource_bar(resource_manager)
 	_build_time_controls()
-	_build_save_load_bar()
+	_build_menu_bar()
 	_build_save_load_view()
 	_build_tech_bar()
 	_build_tech_tree_view()
-	_build_display_bar()
 	_build_display_options_view()
+	_build_in_game_menu_view()
 	_build_mode_label()
 	_build_recon_label()
 	_build_bottom_bar(hex_grid_map, _fog_of_war_manager, camera, noise_manager)
@@ -222,34 +223,29 @@ func _build_day_phase_view() -> void:
 	add_child(day_phase_view)
 	_place_above_bottom_bar_right(day_phase_view, DAY_PHASE_VIEW_WIDTH)
 
-func _build_save_load_bar() -> void:
+## User report (playtest round 6): "There should be a 'Main Menu' that has
+## all the save/load functionality on it, it should also have all the
+## display options (remove them from the main screen...)" — replaces the
+## old always-visible "Quick Save"/"Quick Load"/"Browse Saves..." row with
+## one "Menu" button that opens InGameMenuView (Resume/Save-Load/Display
+## Options/Quit to Main Menu/Exit), same row-stacking slot (row 2) the old
+## bar occupied.
+func _build_menu_bar() -> void:
 	var bar := HBoxContainer.new()
-	bar.name = "SaveLoadBar"
+	bar.name = "MenuBar"
 	add_child(bar)
 	_place_top_right(bar, SAVE_LOAD_WIDTH, 2)  # Row 2: stacks below TimeControlsView in the same corner.
 
-	var save_button := Button.new()
-	save_button.text = "Quick Save"
-	save_button.pressed.connect(_on_quick_save_pressed)
-	HUDStyles.style_button(save_button)
-	bar.add_child(save_button)
+	var menu_button := Button.new()
+	menu_button.text = "Menu"
+	menu_button.pressed.connect(_on_menu_pressed)
+	HUDStyles.style_button(menu_button)
+	bar.add_child(menu_button)
 
-	var load_button := Button.new()
-	load_button.text = "Quick Load"
-	load_button.pressed.connect(_on_quick_load_pressed)
-	HUDStyles.style_button(load_button)
-	bar.add_child(load_button)
-
-	var browse_button := Button.new()
-	browse_button.text = "Browse Saves..."
-	browse_button.pressed.connect(_on_browse_saves_pressed)
-	HUDStyles.style_button(browse_button)
-	bar.add_child(browse_button)
-
-## Phase 2.8.3's actual Save/Load UI — centered, hidden until
-## "Browse Saves..." opens it (see SaveLoadView's own doc comment for why
-## it's the first toggleable panel in this HUD rather than another
-## always-visible corner view).
+## Phase 2.8.3's actual Save/Load UI — centered, hidden until opened from
+## InGameMenuView's "Save / Load..." button (see SaveLoadView's own doc
+## comment for why it's the first toggleable panel in this HUD rather than
+## another always-visible corner view).
 func _build_save_load_view() -> void:
 	_save_load_view = SaveLoadView.new()
 	_save_load_view.name = "SaveLoadView"
@@ -261,14 +257,14 @@ func _build_save_load_view() -> void:
 	_save_load_view.load_requested.connect(_on_save_load_view_load_requested)
 
 ## Design doc Phase 2.9.3's Tech Tree screen — a single "Tech Tree..."
-## button, same row-stacking convention as SaveLoadBar (row 3, directly
-## below it in the same top-right corner). Gracefully no-ops if
-## tech_manager_path wasn't wired, same convention as everything else here.
+## button, row 3 (stacks below MenuBar in the same corner). Gracefully
+## no-ops if tech_manager_path wasn't wired, same convention as everything
+## else here.
 func _build_tech_bar() -> void:
 	var bar := HBoxContainer.new()
 	bar.name = "TechBar"
 	add_child(bar)
-	_place_top_right(bar, TECH_BAR_WIDTH, 3)  # Row 3: stacks below SaveLoadBar in the same corner.
+	_place_top_right(bar, TECH_BAR_WIDTH, 3)  # Row 3: stacks below MenuBar in the same corner.
 
 	var tech_button := Button.new()
 	tech_button.text = "Tech Tree..."
@@ -288,31 +284,30 @@ func _build_tech_tree_view() -> void:
 		_tech_tree_view.setup(_tech_manager)
 	_tech_tree_view.research_requested.connect(_on_research_requested)
 
-## User request ("add options so we can enable and disable the overlays"):
-## a single "Display..." button, row 4 — stacks below TechBar in the same
-## top-right corner, same row-stacking convention as SaveLoadBar/TechBar.
-func _build_display_bar() -> void:
-	var bar := HBoxContainer.new()
-	bar.name = "DisplayBar"
-	add_child(bar)
-	_place_top_right(bar, DISPLAY_BAR_WIDTH, 4)
-
-	var display_button := Button.new()
-	display_button.text = "Display..."
-	display_button.pressed.connect(_on_display_options_pressed)
-	HUDStyles.style_button(display_button)
-	bar.add_child(display_button)
-
-## Centered, hidden until "Display..." opens it — the third panel here to
-## follow SaveLoadView/TechTreeView's own toggleable convention. No
-## `setup()` call needed (unlike those two) — DisplayOptionsView reads/
-## writes the DisplaySettings autoload directly, see its own doc comment
-## for why that's a deliberate exception to this HUD's usual pattern.
+## Centered, hidden until opened from InGameMenuView's "Display Options..."
+## button (playtest round 6 — used to have its own dedicated "Display..."
+## row button, removed as part of consolidating save/load/display under
+## one Menu). No `setup()` call needed — DisplayOptionsView reads/writes
+## the DisplaySettings autoload directly, see its own doc comment for why
+## that's a deliberate exception to this HUD's usual pattern.
 func _build_display_options_view() -> void:
 	_display_options_view = DisplayOptionsView.new()
 	_display_options_view.name = "DisplayOptionsView"
 	add_child(_display_options_view)
 	_place_center(_display_options_view, DISPLAY_OPTIONS_VIEW_SIZE)
+
+## Playtest round 6's own new hub panel (see InGameMenuView's own doc
+## comment) — the fourth centered toggleable panel here, same convention.
+func _build_in_game_menu_view() -> void:
+	_in_game_menu_view = InGameMenuView.new()
+	_in_game_menu_view.name = "InGameMenuView"
+	add_child(_in_game_menu_view)
+	_place_center(_in_game_menu_view, IN_GAME_MENU_VIEW_SIZE)
+	_in_game_menu_view.save_load_requested.connect(_on_browse_saves_pressed)
+	_in_game_menu_view.display_options_requested.connect(_on_display_options_pressed)
+	_in_game_menu_view.resume_requested.connect(_on_in_game_menu_resume)
+	_in_game_menu_view.quit_to_menu_requested.connect(_on_in_game_menu_quit_to_menu)
+	_in_game_menu_view.exit_requested.connect(_on_in_game_menu_exit)
 
 func _build_mode_label() -> void:
 	_mode_label = Label.new()
@@ -744,22 +739,35 @@ func _on_retrain_started(_instance: UnitInstance, new_type: GameEnums.UnitType, 
 	var display_name := definition.display_name if definition else "unit"
 	_show_toast("Retraining into %s — ready in %d day%s." % [display_name, days, "" if days == 1 else "s"])
 
-func _on_quick_save_pressed() -> void:
-	if _save_load_manager:
-		_save_load_manager.save_game(DEFAULT_CAMPAIGN, DEFAULT_SLOT)
+func _on_menu_pressed() -> void:
+	_save_load_view.close()
+	_tech_tree_view.close()
+	_display_options_view.close()
+	_in_game_menu_view.open()
 
-func _on_quick_load_pressed() -> void:
-	if _save_load_manager:
-		_save_load_manager.load_game(DEFAULT_CAMPAIGN, DEFAULT_SLOT)
+func _on_in_game_menu_resume() -> void:
+	_in_game_menu_view.close()
 
-## Each of the three centered panels (SaveLoadView/TechTreeView/
-## DisplayOptionsView) shares the same screen position — closing the other
-## two before opening this one keeps them from visibly stacking on top of
-## each other. Harmless to call close() on an already-closed panel (it's
-## just a redundant visible = false).
+## Playtest round 6: "Main Menu... options for New Game and Exit" — the
+## in-game equivalent, reachable via Menu -> Quit to Main Menu rather than
+## only at boot. Godot frees the whole current scene tree on
+## change_scene_to_file() (MainHUD included), so there's nothing else to
+## tear down here first.
+func _on_in_game_menu_quit_to_menu() -> void:
+	get_tree().change_scene_to_file("res://scenes/main/MainMenu.tscn")
+
+func _on_in_game_menu_exit() -> void:
+	get_tree().quit()
+
+## Each of the four centered panels (SaveLoadView/TechTreeView/
+## DisplayOptionsView/InGameMenuView) shares the same screen position —
+## closing the other three before opening this one keeps them from
+## visibly stacking on top of each other. Harmless to call close() on an
+## already-closed panel (it's just a redundant visible = false).
 func _on_browse_saves_pressed() -> void:
 	_tech_tree_view.close()
 	_display_options_view.close()
+	_in_game_menu_view.close()
 	_save_load_view.open()
 
 func _on_save_load_view_save_requested(campaign_name: String, slot_name: String) -> void:
@@ -782,11 +790,13 @@ func _on_load_failed(_campaign_name: String, _slot_name: String, reason: String)
 func _on_tech_tree_pressed() -> void:
 	_save_load_view.close()
 	_display_options_view.close()
+	_in_game_menu_view.close()
 	_tech_tree_view.open()
 
 func _on_display_options_pressed() -> void:
 	_save_load_view.close()
 	_tech_tree_view.close()
+	_in_game_menu_view.close()
 	_display_options_view.open()
 
 func _on_research_requested(tech_id: StringName) -> void:

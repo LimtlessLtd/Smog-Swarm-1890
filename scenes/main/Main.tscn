@@ -33,6 +33,7 @@
 script = ExtResource("27")
 camera_path = NodePath("CameraController")
 building_manager_path = NodePath("BuildingManager")
+save_load_manager_path = NodePath("SaveLoadManager")
 
 [node name="WorldRoot" type="Node2D" parent="."]
 

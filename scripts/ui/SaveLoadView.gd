@@ -37,6 +37,7 @@ var _campaign_list: VBoxContainer
 var _slot_edit: LineEdit
 var _slot_list: VBoxContainer
 var _layout: VBoxContainer
+var _save_button: Button
 
 func _ready() -> void:
 	visible = false
@@ -63,11 +64,11 @@ func _ready() -> void:
 	buttons.add_theme_constant_override("separation", 6)
 	_layout.add_child(buttons)
 
-	var save_button := Button.new()
-	save_button.text = "Save"
-	save_button.pressed.connect(_on_save_pressed)
-	HUDStyles.style_button(save_button)
-	buttons.add_child(save_button)
+	_save_button = Button.new()
+	_save_button.text = "Save"
+	_save_button.pressed.connect(_on_save_pressed)
+	HUDStyles.style_button(_save_button)
+	buttons.add_child(_save_button)
 
 	var load_button := Button.new()
 	load_button.text = "Load"
@@ -90,6 +91,14 @@ func get_content_min_size() -> Vector2:
 
 func setup(save_load_manager: SaveLoadManager) -> void:
 	_save_load_manager = save_load_manager
+
+## MainMenuView's boot-screen "Continue" browser (playtest round 6) reuses
+## this same view for Load, but there's no live game to save FROM there —
+## hides the Save button entirely rather than leaving a dead button that
+## would just silently do nothing useful. MainHUD's own in-game instance
+## never calls this, so it keeps Save visible exactly as before.
+func set_save_enabled(enabled: bool) -> void:
+	_save_button.visible = enabled
 
 ## Re-scans disk for campaigns/slots every time — cheap (a directory
 ## listing, Phase 2.8's own `get_campaign_names()`/`get_slot_names()`), and

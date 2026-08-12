@@ -16,7 +16,7 @@ compatibility/default_parent_skeleton_in_mesh_instance_3d=true
 
 config/name="The Smog & The Swarm"
 config/description="Persistent background real-time strategy & base-building set in 1890 Victorian Britain."
-run/main_scene="res://scenes/main/Main.tscn"
+run/main_scene="res://scenes/main/MainMenu.tscn"
 config/features=PackedStringArray("4.7", "GL Compatibility")
 
 [autoload]
@@ -25,6 +25,7 @@ BackgroundExecutionManager="*res://scripts/core/BackgroundExecutionManager.gd"
 TickManager="*res://scripts/core/TickManager.gd"
 TimeCycleManager="*res://scripts/core/TimeCycleManager.gd"
 DisplaySettings="*res://scripts/core/DisplaySettings.gd"
+GameLaunchState="*res://scripts/core/GameLaunchState.gd"
 
 [display]
 
