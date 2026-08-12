@@ -115,9 +115,10 @@ func setup(cell: HexCell) -> void:
 			continue
 		var biome: GameEnums.BiomeType = sample["biome_type"]
 		var soil := cell.soil_fertility if (biome == GameEnums.BiomeType.FARMLAND or biome == GameEnums.BiomeType.MOORLAND) else GameEnums.SoilFertility.NOT_ARABLE
+		var feature: GameEnums.TerrainFeature = sample["terrain_feature"]
 		biomes.append(biome)
 		soils.append(soil)
-		textures.append(TerrainVisuals.terrain_texture(biome, soil))
+		textures.append(TerrainVisuals.terrain_texture(biome, soil, feature))
 
 	var distinct_textures: Dictionary = {}
 	for row in range(_GRID_N):

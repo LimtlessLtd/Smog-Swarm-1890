@@ -81,7 +81,7 @@ func _redraw() -> void:
 	_polygon.polygon = points
 	_outline.points = points
 
-	var texture := TerrainVisuals.terrain_texture(cell.biome_type, cell.soil_fertility)
+	var texture := TerrainVisuals.terrain_texture(cell.biome_type, cell.soil_fertility, cell.terrain_feature)
 	_polygon.texture = texture
 	_polygon.color = Color.WHITE if texture else TerrainVisuals.biome_color(cell.biome_type, cell.soil_fertility)
 
