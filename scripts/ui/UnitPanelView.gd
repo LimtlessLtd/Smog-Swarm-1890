@@ -3,8 +3,9 @@ extends ScrollContainer
 
 ## Selection-driven HUD panel — the training-and-orders counterpart to
 ## BuildMenuView, reading UnitCommandController's current selection instead
-## of arming a placement mode. Five states:
-##   - Nothing selected: an idle hint.
+## of arming a placement mode. Four states (a fifth, "nothing selected", is
+## deliberately not a rendered state at all — see _render_idle()'s own doc
+## comment):
 ##   - A building that can train units (Garrison today) selected: one Train
 ##     button per UnitCatalog definition (tier-locked/unaffordable ones
 ##     shown disabled with UnitManager.get_training_error()'s reason as a
@@ -64,6 +65,14 @@ func setup(unit_command_controller: UnitCommandController, unit_manager: UnitMan
 		_unit_manager.unit_trained.connect(_on_roster_changed)
 		_unit_manager.unit_removed.connect(_on_roster_changed)
 		_unit_manager.unit_retrained.connect(_on_roster_changed)
+		# User request (playtest round 5, training queue): a freshly-queued
+		# job (training_started, fires the instant it's accepted/paid for —
+		# unit_trained itself doesn't fire until the queue actually finishes)
+		# should appear in the panel immediately, and its "ready in N days"
+		# countdown needs to tick down once per real day_completed, not just
+		# whenever the roster happens to change for an unrelated reason.
+		_unit_manager.training_started.connect(_on_training_started)
+		TickManager.day_completed.connect(_on_day_completed)
 	if _building_manager:
 		_building_manager.repair_started.connect(_on_building_stats_changed)
 		_building_manager.building_repaired.connect(_on_building_stats_changed)
@@ -105,6 +114,17 @@ func _on_patrol_recording_changed(_is_recording: bool, _waypoint_count: int) -> 
 func _on_roster_changed(_instance: UnitInstance) -> void:
 	_refresh_current_selection()
 
+## Training queue (playtest round 5) — a fresh job appearing, or one day's
+## worth of countdown ticking off an existing one, both need the currently-
+## selected building's panel (if any) to redraw with the new numbers.
+## `_refresh_current_selection()` itself already no-ops harmlessly if
+## nothing/a non-training-building is selected right now.
+func _on_training_started(_unit_type: GameEnums.UnitType, _coord: Vector2i, _days: int) -> void:
+	_refresh_current_selection()
+
+func _on_day_completed(_day_number: int) -> void:
+	_refresh_current_selection()
+
 ## Broadened past its original "repair state changed" scope (adversarial
 ## code-review finding, this pass's own verification step) — a repair
 ## starting/finishing, a fresh ruin, combat damage, or a starvation/
@@ -137,16 +157,26 @@ func _refresh_current_selection() -> void:
 	if wall:
 		_render_wall_panel(wall)
 
+## Also re-shows the panel — the only caller that wants it hidden again
+## (_render_idle()) sets `visible = false` itself right after calling this,
+## so that override always wins for the idle case.
 func _clear_list() -> void:
+	visible = true
 	for child in _list.get_children():
 		child.queue_free()
 
+## User request (playtest round 4): the idle hint window "serves no purpose
+## since you can get to all the windows and options by selecting the
+## buildings or units directly" — this panel now just hides itself entirely
+## with nothing selected, instead of showing an always-on instructional
+## label. `_on_selection_cleared()`/`setup()` still route here; the whole
+## ScrollContainer (this class extends it) simply goes invisible rather than
+## rendering empty content, same "nothing to show, so show nothing" contract
+## the other toggleable HUD panels (SaveLoadView/TechTreeView/
+## DisplayOptionsView) already use for their own closed state.
 func _render_idle() -> void:
 	_clear_list()
-	var hint := Label.new()
-	hint.text = "Click a unit to command it, a building to inspect/repair it, or a wall segment to repair it."
-	HUDStyles.style_label(hint)
-	_list.add_child(hint)
+	visible = false
 
 ## Training panel (a `can_train_units` building, Garrison today) and the
 ## general building-info panel (everything else) share one function —
@@ -184,22 +214,83 @@ func _render_building_panel(instance: BuildingInstance) -> void:
 		instance.is_under_construction
 	)
 
-	if definition.can_train_units:
+	# User report (playtest round 6): "you shouldn't be able to build units
+	# from a garrison that is under construction... while under
+	# construction they shouldn't be able to do anything" — same
+	# is_under_construction/is_ruined gate _add_building_economy_stats()
+	# above already applies, extended to the training grid/queue too
+	# rather than showing a Train section for a building that would just
+	# reject every card with "must finish construction" anyway.
+	if definition.can_train_units and not instance.is_under_construction and not instance.is_ruined:
 		var coord := instance.hex_coord
 		var train_header := Label.new()
 		train_header.text = "Train at %s" % coord
 		HUDStyles.style_label(train_header, true)
 		_list.add_child(train_header)
 		if _unit_manager:
+			# User request (playtest round 4, #8): "you should be able to see
+			# what the unit looks like, how much it costs and the upkeep" —
+			# same HUDStyles.build_card() shape BuildMenuView's own building
+			# cards use (see that function's own doc comment), not a
+			# text-only Button. A GridContainer (2 columns), not the plain
+			## HBoxContainer BuildMenuView's wider bottom bar affords — this
+			# panel is a narrow top-left corner box (UNIT_PANEL_SIZE) with no
+			# horizontal scrolling (_ready()'s own "no dialog should ever
+			# need a horizontal scrollbar" rule) — 2 columns keeps every
+			# card fully visible via ordinary vertical scrolling instead.
+			var grid := GridContainer.new()
+			grid.columns = 2
+			grid.add_theme_constant_override("h_separation", 6)
+			grid.add_theme_constant_override("v_separation", 6)
+			_list.add_child(grid)
 			for unit_definition in UnitCatalog.get_all_definitions():
-				var button := Button.new()
-				button.text = "%s (T%d %s)" % [unit_definition.display_name, unit_definition.tier, _role_name(unit_definition.role)]
 				var error := _unit_manager.get_training_error(unit_definition.unit_type, coord)
-				button.disabled = not error.is_empty()
-				button.tooltip_text = error if not error.is_empty() else _format_cost(unit_definition.training_cost)
-				button.pressed.connect(_on_train_pressed.bind(coord, unit_definition.unit_type))
-				HUDStyles.style_button(button)
-				_list.add_child(button)
+				var enabled := error.is_empty()
+				var details := "%s\n%s" % [_role_name(unit_definition.role), (error if not enabled else _unit_card_details(unit_definition))]
+				grid.add_child(HUDStyles.build_card(
+					"%s (T%d)" % [unit_definition.display_name, unit_definition.tier],
+					UnitVisuals.unit_texture(unit_definition.unit_type),
+					details,
+					_on_train_pressed.bind(coord, unit_definition.unit_type),
+					enabled,
+					110.0, 36.0,
+				))
+			_add_training_queue(coord)
+
+## User request (playtest round 5): "there should be a visible unit
+## building queue so that we can see how long is remaining on units under
+## construction and how many units of what types we have under
+## construction" — every `UnitManager.get_pending_training()` entry queued
+## AT THIS building (matched by coord; a second Garrison elsewhere has its
+## own independent queue, not shown here), oldest-first, straight off the
+## same list `_process_pending_training()` itself ticks down — this can't
+## show a different number than what will actually finish. Skipped
+## entirely (not even an empty header) when nothing's queued, same "don't
+## show a section with nothing to say" restraint the Population/zombie
+## lines above already keep for a building with no housing capacity.
+func _add_training_queue(coord: Vector2i) -> void:
+	if not _unit_manager:
+		return
+	var jobs := []
+	for job in _unit_manager.get_pending_training():
+		if job["coord"] == coord:
+			jobs.append(job)
+	if jobs.is_empty():
+		return
+
+	var queue_header := Label.new()
+	queue_header.text = "Training Queue (%d)" % jobs.size()
+	HUDStyles.style_label(queue_header, true)
+	_list.add_child(queue_header)
+
+	for job in jobs:
+		var definition := UnitCatalog.get_definition(job["unit_type"])
+		var display_name := definition.display_name if definition else "Unit"
+		var days: int = job["days_remaining"]
+		var line := Label.new()
+		line.text = "%s — ready in %d day%s" % [display_name, days, "" if days == 1 else "s"]
+		HUDStyles.style_label(line, false, true)
+		_list.add_child(line)
 
 ## User request ("when selecting a building, we should see various
 ## statistics... how much upkeep it costs, how many population it has
@@ -219,6 +310,7 @@ func _render_building_panel(instance: BuildingInstance) -> void:
 ## `can_train_units` already gets below.
 func _add_building_economy_stats(instance: BuildingInstance) -> void:
 	var definition := instance.definition
+	_add_production_stat(instance)
 	if definition.population_provided > 0:
 		var population_stats := Label.new()
 		population_stats.text = "Population: %d / %d" % [instance.current_population, definition.population_provided]
@@ -238,6 +330,35 @@ func _add_building_economy_stats(instance: BuildingInstance) -> void:
 		_list.add_child(upkeep_stats)
 
 	_add_energy_stat(definition)
+
+## User report (playtest round 6): "selecting a building should tell you
+## what it does, e.g. brickworks produce X bricks per day, Iron Foundry
+## produces X iron per day" — the same effective-output preview
+## BuildMenuView._describe_effect() already shows BEFORE a building is
+## placed, now shown for a real, already-placed instance too. Reads
+## BuildingInstance.get_effective_output() (soil-fertility-scaled for farms,
+## via BuildingManager.get_hex_cell()) rather than the flat
+## definition.daily_output, so this can't disagree with what
+## BuildingManager._compute_daily_totals() is actually crediting the colony
+## today. ENERGY is a one-time grid draw/contribution, not a daily flow —
+## handled separately by _add_energy_stat() below, same split
+## _recurring_upkeep_display() already keeps.
+func _add_production_stat(instance: BuildingInstance) -> void:
+	var cell: HexCell = _building_manager.get_hex_cell(instance.hex_coord) if _building_manager else null
+	var output := instance.get_effective_output(cell)
+	var parts: Array[String] = []
+	for resource_type in output:
+		if resource_type == GameEnums.ResourceType.ENERGY:
+			continue
+		var amount := float(output[resource_type])
+		if amount > 0.0:
+			parts.append("+%s %s/day" % [String.num(amount, 1), ResourceVisuals.display_name(resource_type)])
+	if parts.is_empty():
+		return
+	var production_stats := Label.new()
+	production_stats.text = "Produces: %s" % ", ".join(parts)
+	HUDStyles.style_label(production_stats)
+	_list.add_child(production_stats)
 
 ## Adversarial code-review finding, HIGH severity (this pass's own
 ## verification step): a plain `definition.daily_upkeep` read left the
@@ -292,14 +413,16 @@ func _add_energy_stat(definition: BuildingDefinition) -> void:
 	HUDStyles.style_label(energy_stats, false, true)
 	_list.add_child(energy_stats)
 
-## Dedicated formatter for the Upkeep line — _format_cost() below (shared
-## with training/retrain cost display, where every value is a whole
-## number by design) truncates via int(), which would silently understate
-## e.g. a Terraced Tenement's real 1.2 Food/day (12 population *
-## BuildingManager.FOOD_PER_POPULATION) as "1 Food". One decimal place is
-## exactly enough precision for every value this project's upkeep numbers
-## ever take — a flat per-building constant, or population times the
-## single FOOD_PER_POPULATION constant — without the noise of a full float.
+## Dedicated formatter for the Upkeep line — HUDStyles.format_resource_dict()
+## (used for training/retrain cost display, where every value is a whole
+## number by design) trims trailing ".0" but still shows real precision for a
+## genuinely fractional value, which would otherwise understate e.g. a
+## Houses instance's real 1.2 Food/day (12 population *
+## BuildingManager.FOOD_PER_POPULATION) as "1 Food" if truncated via int().
+## One decimal place is exactly enough precision for every value this
+## project's upkeep numbers ever take — a flat per-building constant, or
+## population times the single FOOD_PER_POPULATION constant — without the
+## noise of a full float.
 func _format_upkeep(upkeep: Dictionary) -> String:
 	var text := ""
 	var first := true
@@ -401,6 +524,22 @@ func _render_unit_panel(instance: UnitInstance) -> void:
 	HUDStyles.style_label(stats)
 	_list.add_child(stats)
 
+	# User request (playtest round 5): "a selected unit should display any
+	# move commands it is currently obeying and any patrol waypoints it has
+	# set" — a dedicated line under the HP/order summary above, not just
+	# "Moving"/"Patrolling" with no destination. Refreshed live off
+	# UnitCommandController's own `unit_selected` re-emit whenever an order
+	# actually changes (see that controller's own `_on_unit_order_issued()`
+	# doc comment) — right-clicking a new destination updates this
+	# immediately, not just at the moment of selection.
+	var order_detail := _describe_current_order(instance)
+	if not order_detail.is_empty():
+		var order_label := Label.new()
+		order_label.text = order_detail
+		order_label.autowrap_mode = TextServer.AUTOWRAP_WORD
+		HUDStyles.style_label(order_label, false, true)
+		_list.add_child(order_label)
+
 	var hold_button := Button.new()
 	hold_button.text = "Hold"
 	hold_button.pressed.connect(_unit_command_controller.order_hold)
@@ -435,22 +574,46 @@ func _render_unit_panel(instance: UnitInstance) -> void:
 	retrain_header.text = "Retrain into:"
 	HUDStyles.style_label(retrain_header, true)
 	_list.add_child(retrain_header)
-	var any_retrain_candidate := false
+	# User report (playtest round 6): "remove 'retrain' options... if they
+	# are not currently available to do. Only display retraining options
+	# that are researched and can be purchased." Used to show EVERY
+	# same-role/higher-tier candidate, disabled-with-a-reason when
+	# tech-locked or unaffordable; now a candidate that fails
+	# get_retrain_error() for any reason is skipped entirely rather than
+	# shown greyed out. `any_higher_tier_exists` (role/tier check alone)
+	# vs. `any_retrain_available` (also passed get_retrain_error()) are
+	# tracked separately so the empty-state message can still tell "this
+	# is genuinely the top tier" apart from "a higher tier exists but isn't
+	# unlocked/affordable yet" instead of collapsing both into one
+	# ambiguous "(top tier for this role)" like before.
+	var any_retrain_available := false
+	var any_higher_tier_exists := false
+	var retrain_grid := GridContainer.new()  # Same card shape as the training grid above — see its own comment.
+	retrain_grid.columns = 2
+	retrain_grid.add_theme_constant_override("h_separation", 6)
+	retrain_grid.add_theme_constant_override("v_separation", 6)
 	for candidate in UnitCatalog.get_all_definitions():
 		if candidate.role != definition.role or candidate.tier <= definition.tier:
 			continue
-		any_retrain_candidate = true
-		var retrain_button := Button.new()
-		retrain_button.text = candidate.display_name
+		any_higher_tier_exists = true
 		var error := _unit_manager.get_retrain_error(instance, candidate.unit_type) if _unit_manager else "No UnitManager wired."
-		retrain_button.disabled = not error.is_empty()
-		retrain_button.tooltip_text = error if not error.is_empty() else _format_cost(_retrain_preview_cost(candidate))
-		retrain_button.pressed.connect(_on_retrain_pressed.bind(candidate.unit_type))
-		HUDStyles.style_button(retrain_button)
-		_list.add_child(retrain_button)
-	if not any_retrain_candidate:
+		if not error.is_empty():
+			continue
+		any_retrain_available = true
+		var details := "Cost: %s" % HUDStyles.format_resource_dict(_retrain_preview_cost(candidate))
+		retrain_grid.add_child(HUDStyles.build_card(
+			"%s (T%d)" % [candidate.display_name, candidate.tier],
+			UnitVisuals.unit_texture(candidate.unit_type),
+			details,
+			_on_retrain_pressed.bind(candidate.unit_type),
+			true,
+			110.0, 36.0,
+		))
+	if any_retrain_available:
+		_list.add_child(retrain_grid)
+	else:
 		var none_label := Label.new()
-		none_label.text = "(top tier for this role)"
+		none_label.text = "(higher tier not yet available — check research/resources)" if any_higher_tier_exists else "(top tier for this role)"
 		HUDStyles.style_label(none_label)
 		_list.add_child(none_label)
 
@@ -464,14 +627,17 @@ func _retrain_preview_cost(definition: UnitDefinition) -> Dictionary:
 		cost[resource_type] = float(definition.training_cost[resource_type]) * UnitManager.RETRAIN_COST_FRACTION
 	return cost
 
-func _format_cost(cost: Dictionary) -> String:
-	var text := ""
-	var first := true
-	for resource_type in cost:
-		if not first:
-			text += ", "
-		text += "%d %s" % [int(cost[resource_type]), ResourceVisuals.display_name(resource_type)]
-		first = false
+## "how much it costs and the upkeep" (user request, #8) — training cost is
+## one-time (UnitManager.train_unit()'s own spend), daily_upkeep is the
+## recurring Gunpowder drain (UnitDefinition.daily_upkeep's own doc
+## comment); shown as two separate lines for the same "one-time vs
+## recurring" clarity BuildMenuView's own card details already keep for
+## buildings (construction cost vs. daily upkeep).
+func _unit_card_details(definition: UnitDefinition) -> String:
+	var text := "Cost: %s" % HUDStyles.format_resource_dict(definition.training_cost)
+	var upkeep := HUDStyles.format_resource_dict(definition.daily_upkeep)
+	if not upkeep.is_empty():
+		text += "\nUpkeep: %s/day" % upkeep
 	return text
 
 func _role_name(role: GameEnums.UnitRole) -> String:
@@ -506,3 +672,27 @@ func _order_name(order: GameEnums.UnitOrderType) -> String:
 			return "Garrisoned"
 		_:
 			return "Holding"
+
+## "any move commands it is currently obeying and any patrol waypoints it
+## has set" (user request, playtest round 5) — MOVE/ATTACK_MOVE shows the
+## real destination hex; PATROL shows the FULL waypoint loop with the
+## currently-active leg marked, so the player can see the whole route, not
+## just where it's headed right now. Empty string for HOLD/GARRISON (no
+## destination to report — _render_unit_panel() skips the line entirely
+## rather than showing a blank one).
+func _describe_current_order(instance: UnitInstance) -> String:
+	match instance.order:
+		GameEnums.UnitOrderType.MOVE, GameEnums.UnitOrderType.ATTACK_MOVE:
+			return "Destination: %s" % instance.move_target
+		GameEnums.UnitOrderType.PATROL:
+			if not instance.has_patrol_waypoints():
+				return ""
+			var legs: Array[String] = []
+			for i in range(instance.patrol_waypoints.size()):
+				var text := "%s" % instance.patrol_waypoints[i]
+				if i == instance.patrol_target_index:
+					text = "[%s]" % text  ## The leg currently being walked toward.
+				legs.append(text)
+			return "Patrol route: %s" % " → ".join(legs)
+		_:
+			return ""

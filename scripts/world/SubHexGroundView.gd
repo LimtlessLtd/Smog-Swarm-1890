@@ -34,8 +34,16 @@ extends Node2D
 ## the actual "move away from hex-tile mechanics" ask; real biome/water/
 ## elevation placement is).
 
-const _GRID_N: int = 7  ## odd, so there's a true center sample aligned with the hex's own already-computed majority-vote biome_type — avoids a visible seam between Strategic's flat tile and this grid's own center.
-const _GRID_SPAN: float = HexCoord.HEX_SIZE * 1.6  ## matches RealTerrainSampler.sample_grid()'s own span so sub-cells tile edge to edge with zero gap/overlap ambiguity.
+## Bumped 7 -> 11 (user request, playtest round 4, #12: "tactical view
+## terrain tiles are too big... make them smaller and more numerous per hex
+## tile grid") — still odd, so there's a true center sample aligned with the
+## hex's own already-computed majority-vote biome_type, same reasoning as
+## before. More, smaller sub-cells also read as smoother/more "seamless"
+## cross-biome blending at a glance even though _compute_blend() itself is
+## unchanged — a finer grid just means each individual blend seam is
+## shorter and less noticeable.
+const _GRID_N: int = 11
+const _GRID_SPAN: float = HexCoord.SUB_HEX_GRID_SPAN  ## Shared with RealTerrainSampler.sample_grid()'s own span (HexCoord.gd) — see that constant's own doc comment for why this exact value, and why a hex-shaped clip mask (below) is what actually keeps it from overhanging into neighboring hexes.
 
 ## Real cross-hex/cross-biome blending (user request: "changes in terrain
 ## and across hex borders should blend smoothly... some sort of gradient
@@ -69,6 +77,26 @@ func setup(cell: HexCell) -> void:
 		_build_fallback(cell)
 		return
 
+	# **Real bug fix (playtest round 4, #9): "tactical view hexgrids have
+	# overhanging terrain on each corner going over into neighbouring hex
+	# tile grids"** — a SQUARE sample/render grid can never exactly match a
+	# HEXAGONAL footprint; sized to fully cover the hex's own bounding box
+	# (see HexCoord.SUB_HEX_GRID_SPAN's own doc comment), the square's own
+	# four corners necessarily poke past the hex's real circumradius, into
+	# whichever neighbor sits in that direction. `_hex_mask` below is a real
+	# hex-shaped `Polygon2D` (HexCoord.corner_points() — the same six points
+	# every hex-outline draw in this project already uses) with
+	# `clip_children = CLIP_CHILDREN_ONLY`: every sub-cell sprite added as
+	# ITS child (not this Node2D's directly) gets stencil-clipped to the
+	# true hex shape, so whatever a corner sprite renders past the hex's own
+	# edge is simply never drawn — the mask itself stays invisible
+	# (CLIP_CHILDREN_ONLY, not _AND_DRAW), it's purely a stencil.
+	var hex_mask := Polygon2D.new()
+	hex_mask.polygon = HexCoord.corner_points(Vector2.ZERO)
+	hex_mask.color = Color.WHITE  # Irrelevant to the final look — CLIP_CHILDREN_ONLY never actually draws this shape, only uses it as a stencil.
+	hex_mask.clip_children = CanvasItem.CLIP_CHILDREN_ONLY
+	add_child(hex_mask)
+
 	var cell_size := _GRID_SPAN / float(_GRID_N)
 	var start := -_GRID_SPAN * 0.5 + cell_size * 0.5
 
@@ -87,9 +115,10 @@ func setup(cell: HexCell) -> void:
 			continue
 		var biome: GameEnums.BiomeType = sample["biome_type"]
 		var soil := cell.soil_fertility if (biome == GameEnums.BiomeType.FARMLAND or biome == GameEnums.BiomeType.MOORLAND) else GameEnums.SoilFertility.NOT_ARABLE
+		var feature: GameEnums.TerrainFeature = sample["terrain_feature"]
 		biomes.append(biome)
 		soils.append(soil)
-		textures.append(TerrainVisuals.terrain_texture(biome, soil))
+		textures.append(TerrainVisuals.terrain_texture(biome, soil, feature))
 
 	var distinct_textures: Dictionary = {}
 	for row in range(_GRID_N):
@@ -102,7 +131,7 @@ func setup(cell: HexCell) -> void:
 			var texture: Texture2D = textures[i]
 			var sub_pos := Vector2(start + col * cell_size, start + row * cell_size)
 			var blend := _compute_blend(row, col, biomes, textures) if texture else {}
-			add_child(_build_sub_cell(texture, biome, soil, sub_pos, cell_size, blend))
+			hex_mask.add_child(_build_sub_cell(texture, biome, soil, sub_pos, cell_size, blend))
 			if texture:
 				distinct_textures[texture] = true
 			else:

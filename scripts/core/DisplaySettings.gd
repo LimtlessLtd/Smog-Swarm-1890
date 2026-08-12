@@ -41,6 +41,13 @@ var show_threat_meter_world: bool = true
 ## Zone of Control (Phase 2.3), visualized for the first time this pass —
 ## consulted by `StrategicOverlayManager`'s own ZoC layer.
 var show_zoc_world: bool = true
+## Elevation/impassable-terrain overlay (playtest round 6, user report:
+## "we need to make elevation and impassable terrain obvious to the
+## user") — consulted by `StrategicOverlayManager`'s own TerrainLayer.
+## Defaults ON (unlike being an opt-in curiosity, this is safety-relevant
+## information — "can my unit actually walk there" — the same reasoning
+## every other marker layer here already defaults ON).
+var show_terrain_hazards: bool = true
 
 ## Consulted by `MinimapView` — the Threat Meter's OTHER surface (Phase
 ## 6.1's own "hex overview map" reading), independent of the world-view

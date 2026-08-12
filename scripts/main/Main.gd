@@ -21,10 +21,33 @@ extends Node2D
 ## whole scene tree where "BuildingManager has definitely already seeded
 ## its starting buildings" is a safe assumption without an extra signal.
 
+## Playtest round 6 ("There should be a 'Main Menu' that has all the
+## save/load functionality on it") — MainMenu.tscn is now the project's
+## boot scene; its own "Continue" screen can't load state into managers
+## that don't exist yet there, so it just records which campaign/slot on
+## the GameLaunchState autoload and changes scene to THIS one. Consuming
+## it here (rather than in SaveLoadManager itself) keeps GameLaunchState a
+## dumb data-holder — same "owns neither, only reads/writes what's passed
+## in" split every other cross-system reference in this project already
+## keeps — and reuses this exact `_ready()`'s own "runs after every
+## sibling manager's `_ready()`" guarantee the camera-recenter logic below
+## already depends on: SaveLoadManager.load_game() needs every manager it
+## restores into to already exist.
 @export var camera_path: NodePath
 @export var building_manager_path: NodePath
+@export var save_load_manager_path: NodePath  ## Optional — unset just means a GameLaunchState pending-load request is silently skipped rather than crashing (same "gracefully skip it" convention every optional NodePath in this project follows).
 
 func _ready() -> void:
+	if GameLaunchState.has_pending_load() and save_load_manager_path != NodePath():
+		var save_load_manager: SaveLoadManager = get_node(save_load_manager_path)
+		var pending := GameLaunchState.consume_pending_load()
+		save_load_manager.load_game(pending["campaign"], pending["slot"])
+		# Deliberately falls through to the same camera recenter below —
+		# SaveGameData doesn't capture camera position at all (nothing to
+		# restore), so a freshly-loaded game needs exactly the same
+		# "recenter on the starting settlement" fallback a brand-new game
+		# already does, for the same reason.
+
 	if camera_path == NodePath() or building_manager_path == NodePath():
 		return
 	var camera: CameraController = get_node(camera_path)

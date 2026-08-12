@@ -1,0 +1,115 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <g transform="translate(0,0)"><rect width="256" height="128" fill="#2a4a5c" />
+
+      <rect x="0" y="0" width="256" height="10" fill="#5c554a" />
+      <rect x="0" y="0" width="256" height="4" fill="#6b6357" />
+      <line x1="0" y1="10" x2="256" y2="10" stroke="#211c19" stroke-width="1.5" opacity="0.6" />
+
+      <line x1="0" y1="28" x2="256" y2="28" stroke="#4a7a90" stroke-width="3" opacity="0.55" />
+      <line x1="0" y1="46" x2="256" y2="46" stroke="#3a6a80" stroke-width="3" opacity="0.5" />
+      <line x1="0" y1="64" x2="256" y2="64" stroke="#5b93a8" stroke-width="2.5" opacity="0.45" />
+      <line x1="0" y1="82" x2="256" y2="82" stroke="#3a6a80" stroke-width="3" opacity="0.5" />
+      <line x1="0" y1="100" x2="256" y2="100" stroke="#4a7a90" stroke-width="3" opacity="0.5" />
+
+      <rect x="0" y="120" width="256" height="8" fill="#4a453d" opacity="0.7" />
+      <line x1="0" y1="120" x2="256" y2="120" stroke="#211c19" stroke-width="1.5" opacity="0.6" />
+</g><g transform="translate(256,0)"><rect width="256" height="128" fill="#2a4a5c" />
+
+      <rect x="0" y="0" width="256" height="10" fill="#5c554a" />
+      <rect x="0" y="0" width="256" height="4" fill="#6b6357" />
+      <line x1="0" y1="10" x2="256" y2="10" stroke="#211c19" stroke-width="1.5" opacity="0.6" />
+
+      <line x1="0" y1="28" x2="256" y2="28" stroke="#4a7a90" stroke-width="3" opacity="0.55" />
+      <line x1="0" y1="46" x2="256" y2="46" stroke="#3a6a80" stroke-width="3" opacity="0.5" />
+      <line x1="0" y1="64" x2="256" y2="64" stroke="#5b93a8" stroke-width="2.5" opacity="0.45" />
+      <line x1="0" y1="82" x2="256" y2="82" stroke="#3a6a80" stroke-width="3" opacity="0.5" />
+      <line x1="0" y1="100" x2="256" y2="100" stroke="#4a7a90" stroke-width="3" opacity="0.5" />
+
+      <rect x="0" y="120" width="256" height="8" fill="#4a453d" opacity="0.7" />
+      <line x1="0" y1="120" x2="256" y2="120" stroke="#211c19" stroke-width="1.5" opacity="0.6" />
+</g><g transform="translate(0,128)"><rect width="256" height="128" fill="#2a4a5c" />
+
+      <rect x="0" y="0" width="256" height="10" fill="#5c554a" />
+      <rect x="0" y="0" width="256" height="4" fill="#6b6357" />
+      <line x1="0" y1="10" x2="256" y2="10" stroke="#211c19" stroke-width="1.5" opacity="0.6" />
+
+      <line x1="0" y1="28" x2="256" y2="28" stroke="#4a7a90" stroke-width="3" opacity="0.55" />
+      <line x1="0" y1="46" x2="256" y2="46" stroke="#3a6a80" stroke-width="3" opacity="0.5" />
+      <line x1="0" y1="64" x2="256" y2="64" stroke="#5b93a8" stroke-width="2.5" opacity="0.45" />
+      <line x1="0" y1="82" x2="256" y2="82" stroke="#3a6a80" stroke-width="3" opacity="0.5" />
+      <line x1="0" y1="100" x2="256" y2="100" stroke="#4a7a90" stroke-width="3" opacity="0.5" />
+
+      <rect x="0" y="120" width="256" height="8" fill="#4a453d" opacity="0.7" />
+      <line x1="0" y1="120" x2="256" y2="120" stroke="#211c19" stroke-width="1.5" opacity="0.6" />
+</g><g transform="translate(256,128)"><rect width="256" height="128" fill="#2a4a5c" />
+
+      <rect x="0" y="0" width="256" height="10" fill="#5c554a" />
+      <rect x="0" y="0" width="256" height="4" fill="#6b6357" />
+      <line x1="0" y1="10" x2="256" y2="10" stroke="#211c19" stroke-width="1.5" opacity="0.6" />
+
+      <line x1="0" y1="28" x2="256" y2="28" stroke="#4a7a90" stroke-width="3" opacity="0.55" />
+      <line x1="0" y1="46" x2="256" y2="46" stroke="#3a6a80" stroke-width="3" opacity="0.5" />
+      <line x1="0" y1="64" x2="256" y2="64" stroke="#5b93a8" stroke-width="2.5" opacity="0.45" />
+      <line x1="0" y1="82" x2="256" y2="82" stroke="#3a6a80" stroke-width="3" opacity="0.5" />
+      <line x1="0" y1="100" x2="256" y2="100" stroke="#4a7a90" stroke-width="3" opacity="0.5" />
+
+      <rect x="0" y="120" width="256" height="8" fill="#4a453d" opacity="0.7" />
+      <line x1="0" y1="120" x2="256" y2="120" stroke="#211c19" stroke-width="1.5" opacity="0.6" />
+</g><g transform="translate(0,256)"><rect width="256" height="128" fill="#2a4a5c" />
+
+      <rect x="0" y="0" width="256" height="10" fill="#5c554a" />
+      <rect x="0" y="0" width="256" height="4" fill="#6b6357" />
+      <line x1="0" y1="10" x2="256" y2="10" stroke="#211c19" stroke-width="1.5" opacity="0.6" />
+
+      <line x1="0" y1="28" x2="256" y2="28" stroke="#4a7a90" stroke-width="3" opacity="0.55" />
+      <line x1="0" y1="46" x2="256" y2="46" stroke="#3a6a80" stroke-width="3" opacity="0.5" />
+      <line x1="0" y1="64" x2="256" y2="64" stroke="#5b93a8" stroke-width="2.5" opacity="0.45" />
+      <line x1="0" y1="82" x2="256" y2="82" stroke="#3a6a80" stroke-width="3" opacity="0.5" />
+      <line x1="0" y1="100" x2="256" y2="100" stroke="#4a7a90" stroke-width="3" opacity="0.5" />
+
+      <rect x="0" y="120" width="256" height="8" fill="#4a453d" opacity="0.7" />
+      <line x1="0" y1="120" x2="256" y2="120" stroke="#211c19" stroke-width="1.5" opacity="0.6" />
+</g><g transform="translate(256,256)"><rect width="256" height="128" fill="#2a4a5c" />
+
+      <rect x="0" y="0" width="256" height="10" fill="#5c554a" />
+      <rect x="0" y="0" width="256" height="4" fill="#6b6357" />
+      <line x1="0" y1="10" x2="256" y2="10" stroke="#211c19" stroke-width="1.5" opacity="0.6" />
+
+      <line x1="0" y1="28" x2="256" y2="28" stroke="#4a7a90" stroke-width="3" opacity="0.55" />
+      <line x1="0" y1="46" x2="256" y2="46" stroke="#3a6a80" stroke-width="3" opacity="0.5" />
+      <line x1="0" y1="64" x2="256" y2="64" stroke="#5b93a8" stroke-width="2.5" opacity="0.45" />
+      <line x1="0" y1="82" x2="256" y2="82" stroke="#3a6a80" stroke-width="3" opacity="0.5" />
+      <line x1="0" y1="100" x2="256" y2="100" stroke="#4a7a90" stroke-width="3" opacity="0.5" />
+
+      <rect x="0" y="120" width="256" height="8" fill="#4a453d" opacity="0.7" />
+      <line x1="0" y1="120" x2="256" y2="120" stroke="#211c19" stroke-width="1.5" opacity="0.6" />
+</g><g transform="translate(0,384)"><rect width="256" height="128" fill="#2a4a5c" />
+
+      <rect x="0" y="0" width="256" height="10" fill="#5c554a" />
+      <rect x="0" y="0" width="256" height="4" fill="#6b6357" />
+      <line x1="0" y1="10" x2="256" y2="10" stroke="#211c19" stroke-width="1.5" opacity="0.6" />
+
+      <line x1="0" y1="28" x2="256" y2="28" stroke="#4a7a90" stroke-width="3" opacity="0.55" />
+      <line x1="0" y1="46" x2="256" y2="46" stroke="#3a6a80" stroke-width="3" opacity="0.5" />
+      <line x1="0" y1="64" x2="256" y2="64" stroke="#5b93a8" stroke-width="2.5" opacity="0.45" />
+      <line x1="0" y1="82" x2="256" y2="82" stroke="#3a6a80" stroke-width="3" opacity="0.5" />
+      <line x1="0" y1="100" x2="256" y2="100" stroke="#4a7a90" stroke-width="3" opacity="0.5" />
+
+      <rect x="0" y="120" width="256" height="8" fill="#4a453d" opacity="0.7" />
+      <line x1="0" y1="120" x2="256" y2="120" stroke="#211c19" stroke-width="1.5" opacity="0.6" />
+</g><g transform="translate(256,384)"><rect width="256" height="128" fill="#2a4a5c" />
+
+      <rect x="0" y="0" width="256" height="10" fill="#5c554a" />
+      <rect x="0" y="0" width="256" height="4" fill="#6b6357" />
+      <line x1="0" y1="10" x2="256" y2="10" stroke="#211c19" stroke-width="1.5" opacity="0.6" />
+
+      <line x1="0" y1="28" x2="256" y2="28" stroke="#4a7a90" stroke-width="3" opacity="0.55" />
+      <line x1="0" y1="46" x2="256" y2="46" stroke="#3a6a80" stroke-width="3" opacity="0.5" />
+      <line x1="0" y1="64" x2="256" y2="64" stroke="#5b93a8" stroke-width="2.5" opacity="0.45" />
+      <line x1="0" y1="82" x2="256" y2="82" stroke="#3a6a80" stroke-width="3" opacity="0.5" />
+      <line x1="0" y1="100" x2="256" y2="100" stroke="#4a7a90" stroke-width="3" opacity="0.5" />
+
+      <rect x="0" y="120" width="256" height="8" fill="#4a453d" opacity="0.7" />
+      <line x1="0" y1="120" x2="256" y2="120" stroke="#211c19" stroke-width="1.5" opacity="0.6" />
+</g>
+</svg>

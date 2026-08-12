@@ -38,6 +38,7 @@ const OPTIONS: Array[Array] = [
 	["Under-Attack Alerts (World Map)", "show_attack_alerts"],
 	["Threat Meter (World Map)", "show_threat_meter_world"],
 	["Zone of Control (World Map)", "show_zoc_world"],
+	["Elevation / Impassable Terrain (World Map)", "show_terrain_hazards"],
 	["Threat Meter (Minimap)", "show_threat_meter_minimap"],
 	["Zone of Control (Tactical View)", "show_zoc_tactical"],
 ]

@@ -51,14 +51,22 @@ static func _build_definitions() -> Array[BuildingDefinition]:
 		_timber_camp(),
 		_clay_brickworks(), _charcoal_kiln(), _coal_pithead(),
 		_cast_iron_foundry(), _saltpetre_powder_mill(), _forward_ammo_dump(),
-		_tenant_farm(), _grain_silo(), _cattle_yard(),
+		_tenant_farm(), _grain_silo(),
+		# _cattle_yard() deliberately omitted (user request, playtest round 4:
+		# "Remove Cattle Yard for now") — the function itself stays below,
+		# unreferenced, so re-adding it later is a one-line change, same
+		# "art/data lands incrementally" precedent every other *Catalog here
+		# already follows for not-yet-ready content.
 		_searchlight_tower(), _ditch(), _oil_pit(),
 	]
 
 # --- Housing & Civil -------------------------------------------------------
 
+## Display name shortened (user request, playtest round 4: "terraced tenement
+## can simply be called 'Houses'") — BuildingType.TERRACED_TENEMENT (the
+## enum/save-data identifier) is untouched, only the player-facing string.
 static func _terraced_tenement() -> BuildingDefinition:
-	var d := BuildingDefinition.new(GameEnums.BuildingType.TERRACED_TENEMENT, "Terraced Tenement")
+	var d := BuildingDefinition.new(GameEnums.BuildingType.TERRACED_TENEMENT, "Houses")
 	d.category = GameEnums.BuildingCategory.HOUSING_CIVIL
 	d.construction_cost = {GameEnums.ResourceType.WOOD: 40, GameEnums.ResourceType.BRICKS: 60}
 	d.population_provided = 12
@@ -75,8 +83,12 @@ static func _workhouse() -> BuildingDefinition:
 	d.requires_settlement = true
 	return d
 
+## Display name shortened (user request, playtest round 4: "'Church steeple
+## watchtower' should just be called 'Watchtower'") — BuildingType stays
+## CHURCH_STEEPLE_WATCHTOWER (the enum/save-data/texture-key identifier),
+## only the player-facing string changes.
 static func _church_steeple_watchtower() -> BuildingDefinition:
-	var d := BuildingDefinition.new(GameEnums.BuildingType.CHURCH_STEEPLE_WATCHTOWER, "Church Steeple Watchtower")
+	var d := BuildingDefinition.new(GameEnums.BuildingType.CHURCH_STEEPLE_WATCHTOWER, "Watchtower")
 	d.category = GameEnums.BuildingCategory.HOUSING_CIVIL
 	d.construction_cost = {GameEnums.ResourceType.BRICKS: 100, GameEnums.ResourceType.CAST_IRON: 10}
 	d.allowed_biomes = [GameEnums.BiomeType.URBAN]
@@ -87,8 +99,9 @@ static func _church_steeple_watchtower() -> BuildingDefinition:
 	d.lit_at_night = true  # "Watchtower searchlights" (design doc 2.6.4) hold/extend vision after dark.
 	return d
 
+## Display name shortened (user request, playtest round 4).
 static func _gas_streetlamp() -> BuildingDefinition:
-	var d := BuildingDefinition.new(GameEnums.BuildingType.GAS_STREETLAMP, "Gas Streetlamp")
+	var d := BuildingDefinition.new(GameEnums.BuildingType.GAS_STREETLAMP, "Streetlamp")
 	d.category = GameEnums.BuildingCategory.HOUSING_CIVIL
 	d.construction_cost = {GameEnums.ResourceType.CAST_IRON: 15}
 	d.daily_upkeep = {GameEnums.ResourceType.ENERGY: 1.0}
@@ -98,8 +111,9 @@ static func _gas_streetlamp() -> BuildingDefinition:
 	d.lit_at_night = true  # Literally the design doc 2.6.4 example of a lit source.
 	return d
 
+## Display name shortened (user request, playtest round 4).
 static func _telegraph_relay_office() -> BuildingDefinition:
-	var d := BuildingDefinition.new(GameEnums.BuildingType.TELEGRAPH_RELAY_OFFICE, "Telegraph Relay Office")
+	var d := BuildingDefinition.new(GameEnums.BuildingType.TELEGRAPH_RELAY_OFFICE, "Telegraph Relay")
 	d.category = GameEnums.BuildingCategory.HOUSING_CIVIL
 	d.construction_cost = {GameEnums.ResourceType.WOOD: 20, GameEnums.ResourceType.CAST_IRON: 20}
 	# Knowledge/civic source for the Tech Tree (Phase 2.9.1) — telegraph traffic
@@ -110,8 +124,9 @@ static func _telegraph_relay_office() -> BuildingDefinition:
 	d.zoc_roles = [GameEnums.ZoneOfControlType.CIVILIAN]
 	return d
 
+## Display name shortened (user request, playtest round 4).
 static func _steam_printing_press() -> BuildingDefinition:
-	var d := BuildingDefinition.new(GameEnums.BuildingType.STEAM_PRINTING_PRESS, "Steam Printing Press")
+	var d := BuildingDefinition.new(GameEnums.BuildingType.STEAM_PRINTING_PRESS, "Printing Press")
 	d.category = GameEnums.BuildingCategory.HOUSING_CIVIL
 	d.construction_cost = {GameEnums.ResourceType.WOOD: 25, GameEnums.ResourceType.CAST_IRON: 30}
 	d.daily_upkeep = {GameEnums.ResourceType.ENERGY: 2.0}
@@ -183,8 +198,9 @@ static func _timber_camp() -> BuildingDefinition:
 	d.noise_output = 2  # Axes/saws/cartage — quieter than a kiln or foundry, louder than nothing.
 	return d
 
+## Display name shortened (user request, playtest round 4).
 static func _clay_brickworks() -> BuildingDefinition:
-	var d := BuildingDefinition.new(GameEnums.BuildingType.CLAY_BRICKWORKS, "Clay Brickworks")
+	var d := BuildingDefinition.new(GameEnums.BuildingType.CLAY_BRICKWORKS, "Brickworks")
 	d.category = GameEnums.BuildingCategory.INDUSTRY_EXTRACTION
 	d.construction_cost = {GameEnums.ResourceType.WOOD: 50}
 	# Economy-balance pass (user request, "raise output of brickworks"):
@@ -213,8 +229,9 @@ static func _charcoal_kiln() -> BuildingDefinition:
 	d.noise_output = 3
 	return d
 
+## Display name shortened (user request, playtest round 4).
 static func _coal_pithead() -> BuildingDefinition:
-	var d := BuildingDefinition.new(GameEnums.BuildingType.COAL_PITHEAD, "Coal Pithead")
+	var d := BuildingDefinition.new(GameEnums.BuildingType.COAL_PITHEAD, "Coal Pit")
 	d.category = GameEnums.BuildingCategory.INDUSTRY_EXTRACTION
 	d.construction_cost = {GameEnums.ResourceType.WOOD: 60, GameEnums.ResourceType.CAST_IRON: 20}
 	d.daily_output = {GameEnums.ResourceType.ENERGY: 10.0}
@@ -222,8 +239,9 @@ static func _coal_pithead() -> BuildingDefinition:
 	d.noise_output = 5  # Winding gear/heavy machinery — louder than a surface kiln.
 	return d
 
+## Display name shortened (user request, playtest round 4).
 static func _cast_iron_foundry() -> BuildingDefinition:
-	var d := BuildingDefinition.new(GameEnums.BuildingType.CAST_IRON_FOUNDRY, "Cast Iron Foundry")
+	var d := BuildingDefinition.new(GameEnums.BuildingType.CAST_IRON_FOUNDRY, "Iron Foundry")
 	d.category = GameEnums.BuildingCategory.INDUSTRY_EXTRACTION
 	d.construction_cost = {GameEnums.ResourceType.BRICKS: 70, GameEnums.ResourceType.CAST_IRON: 30}
 	d.daily_upkeep = {GameEnums.ResourceType.ENERGY: 8.0}
@@ -232,8 +250,9 @@ static func _cast_iron_foundry() -> BuildingDefinition:
 	d.noise_output = 6  # Hammering/casting — the loudest single source in the tree today.
 	return d
 
+## Display name shortened (user request, playtest round 4).
 static func _saltpetre_powder_mill() -> BuildingDefinition:
-	var d := BuildingDefinition.new(GameEnums.BuildingType.SALTPETRE_POWDER_MILL, "Saltpetre & Powder Mill")
+	var d := BuildingDefinition.new(GameEnums.BuildingType.SALTPETRE_POWDER_MILL, "Gunpowder Mill")
 	d.category = GameEnums.BuildingCategory.INDUSTRY_EXTRACTION
 	d.construction_cost = {GameEnums.ResourceType.BRICKS: 60, GameEnums.ResourceType.WOOD: 20}
 	d.daily_upkeep = {GameEnums.ResourceType.ENERGY: 4.0}
@@ -254,8 +273,9 @@ static func _forward_ammo_dump() -> BuildingDefinition:
 
 # --- Agriculture -------------------------------------------------------------
 
+## Display name shortened (user request, playtest round 4).
 static func _tenant_farm() -> BuildingDefinition:
-	var d := BuildingDefinition.new(GameEnums.BuildingType.TENANT_FARM, "Tenant Farm")
+	var d := BuildingDefinition.new(GameEnums.BuildingType.TENANT_FARM, "Farm")
 	d.category = GameEnums.BuildingCategory.AGRICULTURE
 	d.construction_cost = {GameEnums.ResourceType.WOOD: 30}
 	d.daily_output = {GameEnums.ResourceType.FOOD: 10.0}

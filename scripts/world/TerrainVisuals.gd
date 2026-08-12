@@ -62,14 +62,22 @@ static func soil_color(soil: GameEnums.SoilFertility) -> Color:
 ## biome_color() whenever this returns null.
 static var _texture_cache: Dictionary = {}  # String key -> Texture2D (nullable)
 
-static func terrain_texture(biome: GameEnums.BiomeType, soil: GameEnums.SoilFertility) -> Texture2D:
-	var key := _texture_key(biome, soil)
+## `terrain_feature` (playtest round 6, user report: "display rivers
+## better so that a user can actually determine where they are and where
+## they go") — optional, defaults to NONE so every pre-existing caller
+## keeps its old behavior untouched. Only WATERWAY branches on it: a River
+## and a Canal used to resolve to the exact same "waterway" texture despite
+## HexCell.terrain_feature already distinguishing them (RIVER vs CANAL) —
+## now a Canal reads as visibly man-made (straight banks/towpath,
+## assets/terrain/canal.svg) instead of identical to a natural river.
+static func terrain_texture(biome: GameEnums.BiomeType, soil: GameEnums.SoilFertility, terrain_feature: GameEnums.TerrainFeature = GameEnums.TerrainFeature.NONE) -> Texture2D:
+	var key := _texture_key(biome, soil, terrain_feature)
 	if not _texture_cache.has(key):
 		_texture_cache[key] = _load_texture(key)
 	return _texture_cache[key]
 
 ## Matches assets/terrain/<key>.svg exactly — see that folder's own file list.
-static func _texture_key(biome: GameEnums.BiomeType, soil: GameEnums.SoilFertility) -> String:
+static func _texture_key(biome: GameEnums.BiomeType, soil: GameEnums.SoilFertility, terrain_feature: GameEnums.TerrainFeature = GameEnums.TerrainFeature.NONE) -> String:
 	match biome:
 		GameEnums.BiomeType.URBAN:
 			return "urban"
@@ -78,7 +86,7 @@ static func _texture_key(biome: GameEnums.BiomeType, soil: GameEnums.SoilFertili
 		GameEnums.BiomeType.HIGHLAND:
 			return "highland"
 		GameEnums.BiomeType.WATERWAY:
-			return "waterway"
+			return "canal" if terrain_feature == GameEnums.TerrainFeature.CANAL else "waterway"
 		GameEnums.BiomeType.WETLAND:
 			return "wetland"
 		GameEnums.BiomeType.OCEAN:

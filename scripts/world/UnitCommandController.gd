@@ -93,6 +93,7 @@ var _selected_building: BuildingInstance
 var _selected_wall: WallSegment
 var _is_recording_patrol: bool = false
 var _patrol_waypoints: Array[Vector2i] = []
+var _patrol_waypoint_locals: Array[Vector2] = []  ## Index-aligned with _patrol_waypoints — playtest round 5, see UnitInstance.patrol_waypoint_locals' own doc comment.
 
 var _selection_ring: Line2D
 var _wall_highlight: Line2D
@@ -106,7 +107,7 @@ func _ready() -> void:
 		_unit_manager.unit_removed.connect(_on_unit_removed)
 	if unit_order_controller_path != NodePath():
 		_unit_order_controller = get_node(unit_order_controller_path)
-		_unit_order_controller.unit_moved.connect(_on_unit_moved)
+		_unit_order_controller.unit_order_issued.connect(_on_unit_order_issued)
 	if building_manager_path != NodePath():
 		_building_manager = get_node(building_manager_path)
 		_building_manager.building_removed.connect(_on_building_removed)
@@ -174,11 +175,18 @@ func _on_left_click(world_pos: Vector2) -> void:
 	var coord := _hex_grid_map.world_to_coord(world_pos)
 	if _is_recording_patrol:
 		_patrol_waypoints.append(coord)
+		_patrol_waypoint_locals.append(world_pos - HexCoord.axial_to_world(coord))
 		_update_patrol_preview()
 		patrol_recording_changed.emit(true, _patrol_waypoints.size())
 		return
 	_select_at(coord, world_pos)
 
+## User request (playtest round 5): "a selected unit should immediately
+## move to where the user has right clicked" — the exact clicked point
+## (world_pos - the hex's own center), not just whichever hex it resolves
+## to. See UnitInstance.move_target_local's own doc comment for how this
+## reaches the actual movement math untouched for every hex the path merely
+## passes through along the way.
 func _on_right_click(world_pos: Vector2) -> void:
 	if not _hex_grid_map:
 		return
@@ -187,7 +195,8 @@ func _on_right_click(world_pos: Vector2) -> void:
 		_cancel_patrol_recording()
 		return
 	if _selected_unit and _unit_order_controller:
-		_unit_order_controller.issue_move_order(_selected_unit, coord)
+		var local_offset := world_pos - HexCoord.axial_to_world(coord)
+		_unit_order_controller.issue_move_order(_selected_unit, coord, local_offset)
 
 func _select_at(coord: Vector2i, world_pos: Vector2) -> void:
 	if _unit_manager:
@@ -418,24 +427,29 @@ func begin_patrol_recording() -> void:
 		return
 	_is_recording_patrol = true
 	_patrol_waypoints.clear()
+	_patrol_waypoint_locals.clear()
 	_update_patrol_preview()
 	patrol_recording_changed.emit(true, 0)
 
 func confirm_patrol_recording() -> void:
 	if _selected_unit and _unit_order_controller and not _patrol_waypoints.is_empty():
-		_unit_order_controller.issue_patrol_order(_selected_unit, _patrol_waypoints)
+		_unit_order_controller.issue_patrol_order(_selected_unit, _patrol_waypoints, _patrol_waypoint_locals)
 	_cancel_patrol_recording()
 
 func _cancel_patrol_recording() -> void:
 	_is_recording_patrol = false
 	_patrol_waypoints.clear()
+	_patrol_waypoint_locals.clear()
 	_update_patrol_preview()
 	patrol_recording_changed.emit(false, 0)
 
+## Draws through the exact clicked points (playtest round 5) rather than
+## each waypoint's own hex center — the preview line, and the eventual
+## patrol route it becomes, are now drawn from the identical positions.
 func _update_patrol_preview() -> void:
 	var points := PackedVector2Array()
-	for coord in _patrol_waypoints:
-		points.append(HexCoord.axial_to_world(coord))
+	for i in range(_patrol_waypoints.size()):
+		points.append(HexCoord.axial_to_world(_patrol_waypoints[i]) + _patrol_waypoint_locals[i])
 	_patrol_preview.points = points
 
 func retrain_selected(new_type: GameEnums.UnitType) -> void:
@@ -465,9 +479,34 @@ func _on_wall_segment_removed(segment: WallSegment) -> void:
 	if _selected_wall == segment:
 		clear_selection()
 
-func _on_unit_moved(instance: UnitInstance, _from_coord: Vector2i, to_coord: Vector2i) -> void:
+## Real bug fix (playtest round 5: "the selection circle around the unit
+## should follow the unit as it moves") — the old version only re-positioned
+## the ring on UnitOrderController.unit_moved, which fires once per whole
+## HEX BOUNDARY crossed, not continuously; between crossings (most of any
+## given move, under Phase 5.5's continuous movement) the ring stayed
+## visually frozen at the unit's LAST hex while the unit itself smoothly
+## walked away from it. A plain per-frame `_process()` read of the unit's
+## own real, continuously-updated `hex_coord + local_position` (the exact
+## position TacticalEntityLayer itself renders the unit at) replaces that
+## discrete signal-driven update entirely — cheap (one Vector2 add) and
+## correct regardless of how far a unit moves in a single frame at high
+## TickManager speed.
+func _process(_delta: float) -> void:
+	if _selected_unit:
+		_selection_ring.position = HexCoord.axial_to_world(_selected_unit.hex_coord) + _selected_unit.local_position
+
+## User request (playtest round 5): "a selected unit should display any
+## move commands it is currently obeying" — UnitPanelView has no direct
+## reference to UnitOrderController (this controller owns that, same "world
+## input layer stays UI-agnostic" split this class's own doc comment
+## already establishes), so an order change reaches it by re-emitting the
+## SAME unit_selected signal a fresh selection already uses — UnitPanelView
+## re-renders identically either way, it doesn't need to know WHY. Only for
+## the currently selected unit; every other unit's order changing is
+## irrelevant to what's on screen right now.
+func _on_unit_order_issued(instance: UnitInstance, _order: GameEnums.UnitOrderType) -> void:
 	if instance == _selected_unit:
-		_selection_ring.position = HexCoord.axial_to_world(to_coord)
+		unit_selected.emit(instance)
 
 func _ring_points(radius: float, segments: int = 16) -> PackedVector2Array:
 	var points := PackedVector2Array()

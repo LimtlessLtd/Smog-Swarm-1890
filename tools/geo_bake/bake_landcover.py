@@ -182,79 +182,96 @@ def point_in_ring(px: float, py: float, ring: list[tuple[float, float]]) -> bool
 
 
 def rasterize_features_onto_grid(features, transform, grid_min_x, grid_min_y, px_size,
-                                  grid_w, grid_h, biome_grid, feature_grid):
+                                  grid_w, grid_h, biome_grid, feature_grid,
+                                  core_buffer_fraction=0.0):
     """For each OSM feature (way/relation ring in lon/lat), project its
     points to world-space, find its own pixel-space bbox, and only test
     pixels inside that bbox -- avoids an O(pixels x features) blowup.
     Vectorized per-feature with numpy (bbox-limited, so each call is
     cheap even though there may be thousands of features total).
+
+    **Real bug fix (playtest round 6, user report: "the water sub hex
+    tiles... central Manchester seems to be covered in water for some
+    reason"):** three compounding problems, all three fixed here. Two
+    earlier attempts THIS SAME ROUND at fixing this were tried, measured
+    directly against the pre-fix raster around Manchester, and found
+    still wrong before landing on this one -- keeping the history because
+    the wrong intuition ("water should still win somewhere, even over
+    real ground") is exactly what an unmeasured "looks reasonable" fix
+    would reach for again:
+
+    1. AREA polygons (landuse/natural -- real, solid ground
+       classifications) and WATERWAY lines used to be rasterized in
+       whatever order Overpass happened to return them in (`features`'
+       own iteration order, effectively random per bake run), each
+       unconditionally overwriting the other wherever they overlapped.
+       Fixed by processing every AREA feature FIRST (a real, explicit
+       ground-truth polygon), THEN every WATERWAY line -- see the
+       two-pass split below.
+
+    2. **First attempt**: kept the original single ~0.6-pixel-width
+       buffer (its only legitimate job is "guarantee no gaps between
+       pixels along the line's own path" -- a real river/stream, ~10-100m
+       wide, is sub-pixel at this raster's ~878m/pixel resolution
+       regardless) but excluded URBAN/INDUSTRIAL from it. WRONG: left
+       every OTHER real polygon classification (FARMLAND/WOODLAND/
+       WETLAND/HEATHLAND) just as overwritable as before, AND made water
+       win the old coin-flip DETERMINISTICALLY instead of only
+       sometimes. Measured result: water within ~10 hexes of Manchester
+       went UP, 22.9% to 33.5%.
+
+    3. **Second attempt**: split into a tight "CORE" buffer that always
+       wins even over a real polygon (the idea being "a river genuinely
+       running through a city centre should read as a visible ribbon of
+       water through the urban texture") plus a wider "GAP-FILL" buffer
+       restricted to still-unclassified (biome code 0 -- nothing in
+       `_LANDUSE_MAP`/`_NATURAL_MAP` maps anything TO code 0, so
+       `sub_biome == 0` is an exact, cheap "no real polygon ever touched
+       this pixel" test) ground only. WRONG AGAIN, and instrumented to
+       find out why: across the whole corridor the "always wins" core
+       buffer alone accounted for ~50k pixel-markings (vs. only ~13k from
+       the gap-fill buffer), nearly a THIRD of which were overwriting a
+       real non-water classification. At 878m/pixel, "the exact channel"
+       nuance the core buffer was trying to preserve isn't meaningful --
+       real England (especially the historic industrial Northwest) has
+       enough distinct nearby watercourse segments that a supposedly
+       "tight" per-segment buffer still adds up to widespread over-
+       marking once you sum every segment's own core zone. Measured
+       result at ~10 hexes: still 28.9%, still worse than the original
+       22.9% bug.
+
+    **What's actually implemented now**: no core buffer, by default
+    (`core_buffer_fraction=0.0` -- the coarse whole-corridor bake calls
+    this with the default). A waterway line NEVER overwrites any real
+    polygon-derived classification at this resolution, full stop -- it
+    only ever fills in still-unclassified (moorland-default) ground
+    within `GAP_FILL_BUFFER_FRACTION` of its own path. `core_buffer_fraction`
+    stays available as an opt-in parameter for `bake_fine_tiles.py`'s
+    OWN, much finer per-hex tiles (~104m/pixel, ~8.4x tighter than this
+    file's own raster) where "the exact channel visibly crossing a
+    block" is a proportionally much smaller, more legitimate nuance
+    rather than the dominant source of the whole bug.
     """
     from geo_projection import apply_affine
 
+    GAP_FILL_BUFFER_FRACTION = 0.6  ## Wins ONLY over still-unclassified (biome code 0) ground -- see this function's own doc comment.
+
     n_polygons = n_lines = 0
+
+    # Pass 1: every AREA feature (landuse/natural polygons) -- real ground
+    # classification, processed before any waterway line can compete with it.
     for feat in features:
         tags = feat["tags"]
-        ring = feat["ring"]
-        waterway = tags.get("waterway")
+        if tags.get("waterway"):
+            continue
         landuse = tags.get("landuse")
         natural = tags.get("natural")
-
-        world_ring = [apply_affine(transform, lon, lat) for lon, lat in ring]
-
-        if waterway:
-            # Line feature -- buffer by just enough to guarantee no gaps
-            # between pixels along the line's own path (a real river/
-            # stream corridor, ~10-100m, is sub-pixel at this raster's
-            # resolution anyway -- the buffer's job is rasterization
-            # correctness, not modelling true real-world width. A prior
-            # version of this buffer was set to 120 world units thinking
-            # it meant "~120 real metres" -- it actually meant ~1170
-            # real metres (see WORLD_UNITS_PER_REAL_METER), which
-            # over-marked roughly half the pixels in a validation run as
-            # WATERWAY. Fixed by deriving the buffer from pixel size
-            # instead of hand-guessing a real-world distance.
-            biome = "WATERWAY"
-            terrain_feature = _WATERWAY_FEATURE.get(waterway, "RIVER")
-            buffer_world_units = WORLD_UNITS_PER_PIXEL * 0.6
-            xs = [p[0] for p in world_ring]
-            ys = [p[1] for p in world_ring]
-            min_px = max(0, int((min(xs) - buffer_world_units - grid_min_x) / px_size))
-            max_px = min(grid_w - 1, int((max(xs) + buffer_world_units - grid_min_x) / px_size))
-            min_py = max(0, int((min(ys) - buffer_world_units - grid_min_y) / px_size))
-            max_py = min(grid_h - 1, int((max(ys) + buffer_world_units - grid_min_y) / px_size))
-            if min_px > max_px or min_py > max_py:
-                continue
-            sub_w = max_px - min_px + 1
-            sub_h = max_py - min_py + 1
-            xs_grid = grid_min_x + (min_px + np.arange(sub_w)) * px_size
-            ys_grid = grid_min_y + (min_py + np.arange(sub_h)) * px_size
-            gx, gy = np.meshgrid(xs_grid, ys_grid)
-            min_dist = np.full(gx.shape, np.inf)
-            for i in range(len(world_ring) - 1):
-                x1, y1 = world_ring[i]
-                x2, y2 = world_ring[i + 1]
-                seg = np.array([x2 - x1, y2 - y1])
-                seg_len2 = seg[0] ** 2 + seg[1] ** 2
-                if seg_len2 < 1e-9:
-                    continue
-                t = ((gx - x1) * seg[0] + (gy - y1) * seg[1]) / seg_len2
-                t = np.clip(t, 0.0, 1.0)
-                proj_x = x1 + t * seg[0]
-                proj_y = y1 + t * seg[1]
-                dist = np.hypot(gx - proj_x, gy - proj_y)
-                min_dist = np.minimum(min_dist, dist)
-            mask = min_dist <= buffer_world_units
-            sub_biome = biome_grid[min_py:min_py + sub_h, min_px:min_px + sub_w]
-            sub_feat = feature_grid[min_py:min_py + sub_h, min_px:min_px + sub_w]
-            sub_biome[mask] = _BIOME_CODE[biome]
-            sub_feat[mask] = _FEATURE_CODE[terrain_feature]
-            n_lines += 1
-            continue
-
         biome = _LANDUSE_MAP.get(landuse) or _NATURAL_MAP.get(natural)
         if not biome:
             continue
 
+        ring = feat["ring"]
+        world_ring = [apply_affine(transform, lon, lat) for lon, lat in ring]
         xs = [p[0] for p in world_ring]
         ys = [p[1] for p in world_ring]
         min_px = max(0, int((min(xs) - grid_min_x) / px_size))
@@ -285,6 +302,79 @@ def rasterize_features_onto_grid(features, transform, grid_min_x, grid_min_y, px
         sub_biome[inside] = _BIOME_CODE[biome]
         sub_feat[inside & (sub_feat == 0)] = _FEATURE_CODE["NONE"]
         n_polygons += 1
+
+    # Pass 2: every WATERWAY line, now that every real polygon
+    # classification already sits in biome_grid/feature_grid.
+    for feat in features:
+        tags = feat["tags"]
+        waterway = tags.get("waterway")
+        if not waterway:
+            continue
+
+        ring = feat["ring"]
+        world_ring = [apply_affine(transform, lon, lat) for lon, lat in ring]
+        # Line feature -- buffered by just enough to guarantee no gaps
+        # between pixels along the line's own path (a real river/
+        # stream corridor, ~10-100m, is sub-pixel at this raster's
+        # resolution anyway -- the buffer's job is rasterization
+        # correctness, not modelling true real-world width. A prior
+        # version of this buffer was set to 120 world units thinking
+        # it meant "~120 real metres" -- it actually meant ~1170
+        # real metres (see WORLD_UNITS_PER_REAL_METER), which
+        # over-marked roughly half the pixels in a validation run as
+        # WATERWAY. Fixed by deriving the buffer from pixel size
+        # instead of hand-guessing a real-world distance -- see this
+        # function's own doc comment for the full history.
+        #
+        # `px_size` (the ACTUAL per-call pixel size), not the module-level
+        # WORLD_UNITS_PER_PIXEL constant -- this function is shared with
+        # bake_fine_tiles.py's own, much finer per-hex tiles; hard-coding
+        # the coarse constant here would size every buffer for 90-world-
+        # unit pixels even when actually rasterizing ~10.7-world-unit fine
+        # pixels, over-marking those by roughly 8x.
+        biome = "WATERWAY"
+        terrain_feature = _WATERWAY_FEATURE.get(waterway, "RIVER")
+        gap_fill_buffer = px_size * GAP_FILL_BUFFER_FRACTION
+        core_buffer = px_size * core_buffer_fraction
+        xs = [p[0] for p in world_ring]
+        ys = [p[1] for p in world_ring]
+        min_px = max(0, int((min(xs) - gap_fill_buffer - grid_min_x) / px_size))
+        max_px = min(grid_w - 1, int((max(xs) + gap_fill_buffer - grid_min_x) / px_size))
+        min_py = max(0, int((min(ys) - gap_fill_buffer - grid_min_y) / px_size))
+        max_py = min(grid_h - 1, int((max(ys) + gap_fill_buffer - grid_min_y) / px_size))
+        if min_px > max_px or min_py > max_py:
+            continue
+        sub_w = max_px - min_px + 1
+        sub_h = max_py - min_py + 1
+        xs_grid = grid_min_x + (min_px + np.arange(sub_w)) * px_size
+        ys_grid = grid_min_y + (min_py + np.arange(sub_h)) * px_size
+        gx, gy = np.meshgrid(xs_grid, ys_grid)
+        min_dist = np.full(gx.shape, np.inf)
+        for i in range(len(world_ring) - 1):
+            x1, y1 = world_ring[i]
+            x2, y2 = world_ring[i + 1]
+            seg = np.array([x2 - x1, y2 - y1])
+            seg_len2 = seg[0] ** 2 + seg[1] ** 2
+            if seg_len2 < 1e-9:
+                continue
+            t = ((gx - x1) * seg[0] + (gy - y1) * seg[1]) / seg_len2
+            t = np.clip(t, 0.0, 1.0)
+            proj_x = x1 + t * seg[0]
+            proj_y = y1 + t * seg[1]
+            dist = np.hypot(gx - proj_x, gy - proj_y)
+            min_dist = np.minimum(min_dist, dist)
+        sub_biome = biome_grid[min_py:min_py + sub_h, min_px:min_px + sub_w]
+        sub_feat = feature_grid[min_py:min_py + sub_h, min_px:min_px + sub_w]
+        # core_buffer is 0 (core_buffer_fraction=0.0) for the coarse
+        # whole-corridor bake by default -- core_mask is then all-False
+        # and only gap_fill_mask (still-unclassified ground only) ever
+        # applies. See this function's own doc comment for why.
+        core_mask = min_dist <= core_buffer
+        gap_fill_mask = (min_dist <= gap_fill_buffer) & (sub_biome == 0)  ## Only still-unclassified (default MOORLAND) ground -- see this function's own doc comment.
+        mask = core_mask | gap_fill_mask
+        sub_biome[mask] = _BIOME_CODE[biome]
+        sub_feat[mask] = _FEATURE_CODE[terrain_feature]
+        n_lines += 1
 
     print(f"  rasterized {n_polygons} area features + {n_lines} line features")
 

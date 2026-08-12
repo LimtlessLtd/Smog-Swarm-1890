@@ -155,6 +155,8 @@ func _redraw() -> void:
 	ground.setup(cell)
 	add_child(ground)
 
+	add_child(_build_grid_outline())  # Always-on structural hex boundary — see that function's own doc comment for why this is a SEPARATE layer from the ZoC outline below, not the same line reused.
+
 	add_child(_build_zoc_overlay())  # Ground-level tint — drawn before props/buildings so they render on top of it, not under.
 
 	for prop in _props:
@@ -167,6 +169,34 @@ func _redraw() -> void:
 		_building_containers[building.id] = container
 		if _selected_building and building.id == _selected_building.id:
 			container.modulate = _SELECTED_TINT
+
+## **Real bug fix (playtest round 4, #10): "the hex tile grid borders
+## disappear when the display option 'Zone of Control (tactical view)' is
+## unticked... and you zoom out and zoom back in"** — before this fix,
+## `_build_zoc_overlay()`'s olive-green `MilitaryOutline` below (a genuine
+## ZoC visualization, `ZoneOfControlVisuals.MILITARY_OUTLINE_COLOR`) was the
+## ONLY hex-boundary line drawn anywhere in Tactical view at all —
+## `SubHexGroundView`'s real sub-hex terrain has no outline of its own (only
+## its `HexCellView` no-data fallback does). Since most settled hexes carry
+## Military ZoC coverage, that outline was doing double duty as the de facto
+## "hex grid" the player actually relies on for navigation — so unticking
+## the ZoC display option (which correctly hides ONLY the ZoC visualization,
+## exactly as it's supposed to) incidentally erased the only grid lines that
+## existed at all, and only became visible once a hex actually re-hydrated
+## (LocalDetailManager's zoom-out/in cycle re-triggering `_redraw()`) applied
+## the new setting for the first time. This is a genuinely separate, always-
+## visible `Line2D` (same thin dark stroke `HexCellView`'s own `_outline`
+## already establishes for Strategic zoom) — never gated by
+## `DisplaySettings.show_zoc_tactical` or anything else — so basic hex-grid
+## legibility can never depend on an unrelated display toggle again.
+func _build_grid_outline() -> Line2D:
+	var outline := Line2D.new()
+	outline.name = "GridOutline"
+	outline.closed = true
+	outline.width = 1.5
+	outline.default_color = Color(0.0, 0.0, 0.0, 0.35)
+	outline.points = HexCoord.corner_points(Vector2.ZERO)
+	return outline
 
 ## Zone of Control (Phase 2.3), Tactical surface — see
 ## `ZoneOfControlVisuals.gd`'s own doc comment for the outline-vs-fill shape

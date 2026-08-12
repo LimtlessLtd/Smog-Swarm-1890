@@ -352,6 +352,41 @@ func get_buildings_at(coord: Vector2i) -> Array[BuildingInstance]:
 func get_all_buildings() -> Array[BuildingInstance]:
 	return _instances.duplicate()
 
+## Exposed for UnitOrderController's Garrison order (playtest round 6, user
+## report: "garrison command does nothing for units, it should return them
+## to the closest garrison/town hall") — the nearest OPERATIONAL (not
+## under construction, not ruined — an incomplete/wrecked building can't
+## shelter anyone) building whose type is in `types`, by plain hex
+## distance from `from`. A linear scan over every building rather than
+## HexCoord.hex_disk()'s outward-ring search (`_find_starting_farm_hex()`'s
+## own approach) — that pattern exists specifically to avoid scanning the
+## WHOLE MAP's hexes; this project's building count (dozens, not
+## thousands) makes "check them all, keep the closest" simpler and just as
+## fast in practice. Null if none exist yet.
+func find_nearest_building(from: Vector2i, types: Array) -> BuildingInstance:
+	var best: BuildingInstance = null
+	var best_distance := -1
+	for instance in _instances:
+		if instance.is_under_construction or instance.is_ruined:
+			continue
+		if not types.has(instance.definition.building_type):
+			continue
+		var distance := HexCoord.distance(from, instance.hex_coord)
+		if best == null or distance < best_distance:
+			best = instance
+			best_distance = distance
+	return best
+
+## Exposed for UnitPanelView (playtest round 6, "selecting a building should
+## tell you what it does") — the same HexCell get_effective_output() needs
+## to compute a soil-fertility-scaled preview, without handing out the
+## whole HexGridMap reference. Null if unwired or `coord` is off-map, same
+## as HexGridMap.get_cell() itself.
+func get_hex_cell(coord: Vector2i) -> HexCell:
+	if not _hex_grid_map:
+		return null
+	return _hex_grid_map.get_cell(coord)
+
 ## Exposed for SaveLoadManager (Phase 2.8) — the next id a freshly-placed
 ## building would get, so a save can restore it exactly on load instead of
 ## quietly renumbering everything placed afterward.
@@ -391,6 +426,41 @@ func get_placement_error(building_type: GameEnums.BuildingType, coord: Vector2i)
 	if _resource_manager and not _resource_manager.can_afford(_construction_energy_cost(definition)):
 		return "Not enough Energy capacity to build %s." % definition.display_name
 	return ""
+
+## User request (playtest round 5): "if you click on a building you cannot
+## afford to build yet, it should display an error saying how much more
+## resources you need" — resource-only, deliberately NOT terrain/settlement
+## legality (that's get_placement_error()'s job, and it needs a `coord`
+## this doesn't have: BuildMenuView's card click fires BEFORE placement
+## mode is even armed, well before the player has picked a hex). Returns ""
+## when affordable (or no ResourceManager wired) so callers can treat an
+## empty string as "nothing to report" the same way every other
+## `get_*_error()` in this project already does.
+func get_affordability_error(building_type: GameEnums.BuildingType) -> String:
+	var definition := BuildingCatalog.get_definition(building_type)
+	if not definition or not _resource_manager:
+		return ""
+	var shortfalls := _resource_shortfalls(definition.construction_cost)
+	shortfalls.append_array(_resource_shortfalls(_construction_energy_cost(definition)))
+	if shortfalls.is_empty():
+		return ""
+	return "Need %s more to build %s." % [", ".join(shortfalls), definition.display_name]
+
+## Shared by get_affordability_error() for both the construction cost AND
+## the (separately-tracked, see _construction_energy_cost()'s own doc
+## comment) one-time Energy draw — one shortfall list per cost dictionary,
+## trimmed to only the resources actually short (an affordable resource in
+## the same cost dict isn't reported, same "only say what's actually
+## wrong" restraint every other error message here already keeps).
+func _resource_shortfalls(cost: Dictionary) -> Array[String]:
+	var shortfalls: Array[String] = []
+	for resource_type in cost:
+		var needed := float(cost[resource_type])
+		var have := _resource_manager.get_amount(resource_type)
+		if have < needed:
+			var missing := String.num(needed - have, 1).rstrip("0").rstrip(".")
+			shortfalls.append("%s %s" % [missing, ResourceVisuals.display_name(resource_type)])
+	return shortfalls
 
 func can_place_building(building_type: GameEnums.BuildingType, coord: Vector2i) -> bool:
 	return get_placement_error(building_type, coord).is_empty()
@@ -782,6 +852,33 @@ func _on_day_completed(_day_number: int) -> void:
 	if not _resource_manager:
 		return
 
+	var totals := _compute_daily_totals()
+	var consumed: Dictionary = totals["consumed"]
+	var produced: Dictionary = totals["produced"]
+	var ratio: float = totals["ratio"]
+	food_satisfaction_changed.emit(ratio)
+
+	_resource_manager.apply_daily_flow(consumed, produced)
+
+	# 2.10.3/2.10.4: population consequences apply AFTER this day's flow, so
+	# they affect tomorrow's food_demand rather than today's — avoids a
+	# same-tick circular dependency between "how many mouths to feed" and
+	# "how many mouths starved because of how many there were".
+	if ratio < FOOD_STARVATION_RATIO:
+		_apply_starvation_deaths(ratio)
+	elif ratio >= FOOD_SURPLUS_RATIO:
+		_apply_population_regrowth()
+
+## The actual per-instance upkeep/output tally, extracted out of
+## _on_day_completed() so a non-mutating preview (get_projected_daily_flow(),
+## user request — a resource-bar tooltip showing "total daily income and
+## total daily expenditure") can run the exact same math the real daily tick
+## uses instead of a second, driftable approximation. Returns the SAME
+## `consumed`/`produced` dictionaries _on_day_completed() used to feed
+## ResourceManager.apply_daily_flow() with (already food-satisfaction-scaled
+## on the produced side) — this function only computes, it never touches
+## ResourceManager or BuildingInstance state itself.
+func _compute_daily_totals() -> Dictionary:
 	var consumed: Dictionary = {}
 	var produced: Dictionary = {}
 	var total_population := 0
@@ -833,7 +930,6 @@ func _on_day_completed(_day_number: int) -> void:
 		consumed[food] = consumed.get(food, 0.0) + food_demand
 
 	var ratio := _compute_food_satisfaction_ratio(food_demand, produced)
-	food_satisfaction_changed.emit(ratio)
 
 	# 2.10.2/2.10.4: scale this day's total output by the satisfaction ratio
 	# (a penalty below full satisfaction, a small bonus at a genuine surplus)
@@ -845,16 +941,19 @@ func _on_day_completed(_day_number: int) -> void:
 		for resource_type in produced:
 			produced[resource_type] = float(produced[resource_type]) * production_multiplier
 
-	_resource_manager.apply_daily_flow(consumed, produced)
+	return {"consumed": consumed, "produced": produced, "ratio": ratio}
 
-	# 2.10.3/2.10.4: population consequences apply AFTER this day's flow, so
-	# they affect tomorrow's food_demand rather than today's — avoids a
-	# same-tick circular dependency between "how many mouths to feed" and
-	# "how many mouths starved because of how many there were".
-	if ratio < FOOD_STARVATION_RATIO:
-		_apply_starvation_deaths(ratio)
-	elif ratio >= FOOD_SURPLUS_RATIO:
-		_apply_population_regrowth()
+## User request (playtest round 4, resource bar tooltip: "total daily income
+## and total daily expenditure"): today's projected upkeep/output at CURRENT
+## building/population state, computed but never applied — a read-only
+## preview via the exact same _compute_daily_totals() math the real daily
+## tick banks, not a second approximation that could silently drift from it.
+## Excludes ENERGY on both sides for the same reason _compute_daily_totals()
+## itself does (a one-time grid draw/contribution, not a daily flow) — see
+## BuildingDefinition.daily_upkeep/daily_output's own doc comments.
+func get_projected_daily_flow() -> Dictionary:
+	var totals := _compute_daily_totals()
+	return {"consumed": totals["consumed"], "produced": totals["produced"]}
 
 ## `food_demand <= 0` (no population yet) reports a flat 1.0 — "fully fed" is
 ## the correct trivial answer when there's nobody to feed, and avoids

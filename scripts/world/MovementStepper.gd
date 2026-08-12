@@ -52,16 +52,18 @@ const STEERING_LOOKAHEAD: float = 140.0
 
 ## Advances a point currently at `hex_coord`'s own local space
 ## (`local_position`, an offset from that hex's center) up to
-## `available_seconds` of continuous travel toward `target_hex`'s exact
-## center, at `speed` world-units/second. Returns
+## `available_seconds` of continuous travel toward `target_hex`'s center
+## (or `target_local_offset` away from it — see that param's own doc
+## comment), at `speed` world-units/second. Returns
 ## `{"hex_coord": Vector2i, "local_position": Vector2, "arrived": bool,
 ## "seconds_used": float}` — `hex_coord`/`local_position` together are
 ## ALWAYS the entity's new authoritative position, unconditionally safe for
 ## the caller to overwrite its own two fields with regardless of `arrived`:
-## when true they describe `target_hex` (local_position exactly `ZERO`,
-## its center); when false they're still the original `hex_coord`, with
-## `local_position` advanced partway toward the target. No separate
-## re-basing step needed either way — this is the one thing the old
+## when true they describe `target_hex` (local_position exactly
+## `target_local_offset`, ZERO — its plain center — unless the caller asked
+## for a specific point within it); when false they're still the original
+## `hex_coord`, with `local_position` advanced partway toward the target. No
+## separate re-basing step needed either way — this is the one thing the old
 ## `HexCoord.entry_local_position()` write-site used to do in a single
 ## jump, computed continuously now instead.
 ##
@@ -83,17 +85,28 @@ const STEERING_LOOKAHEAD: float = 140.0
 ## dead-straight line, only wavy instead). See `_wobbled_direction()`'s
 ## own doc comment for why this is safe against the wall-crossing
 ## invariant this class's own header doc comment describes.
-static func advance_toward_hex(hex_coord: Vector2i, local_position: Vector2, target_hex: Vector2i, available_seconds: float, speed: float, obstacles: Array[Dictionary], entity_radius: float, wobble_seed: float = 0.0) -> Dictionary:
+##
+## `target_local_offset` (playtest round 5, user request: "a selected unit
+## should immediately move to where the user has right clicked" — not just
+## the nearest hex's center) — an offset from `target_hex`'s own center,
+## ZERO by default (every existing caller, and every INTERMEDIATE hex of a
+## multi-hex path, still means exactly "walk to this hex's plain center" —
+## unchanged behavior). A caller advancing toward the FINAL hex of a
+## player-issued move/patrol order can pass the real clicked offset instead,
+## so the unit's true destination is the exact point clicked, not a
+## hex-snapped approximation — pathfinding between hexes is unaffected
+## either way, this only changes where the LAST leg's own arrival point is.
+static func advance_toward_hex(hex_coord: Vector2i, local_position: Vector2, target_hex: Vector2i, available_seconds: float, speed: float, obstacles: Array[Dictionary], entity_radius: float, wobble_seed: float = 0.0, target_local_offset: Vector2 = Vector2.ZERO) -> Dictionary:
 	if available_seconds <= 0.0:
 		return {"hex_coord": hex_coord, "local_position": local_position, "arrived": false, "seconds_used": 0.0}
 
 	var world_pos := HexCoord.axial_to_world(hex_coord) + local_position
-	var target_world := HexCoord.axial_to_world(target_hex)
+	var target_world := HexCoord.axial_to_world(target_hex) + target_local_offset
 	var to_target := target_world - world_pos
 	var distance := to_target.length()
 
 	if distance <= 0.01:
-		return {"hex_coord": target_hex, "local_position": Vector2.ZERO, "arrived": true, "seconds_used": 0.0}
+		return {"hex_coord": target_hex, "local_position": target_local_offset, "arrived": true, "seconds_used": 0.0}
 
 	var safe_speed := maxf(speed, 0.01)  ## Guards the division below — a zero/negative speed multiplier should never happen in practice, but this avoids a hard crash if one ever does.
 	var time_to_arrive := distance / safe_speed
@@ -105,7 +118,7 @@ static func advance_toward_hex(hex_coord: Vector2i, local_position: Vector2, tar
 	# every single call, same re-check cadence the wall-crossing safety
 	# property this class's header doc comment already relies on.
 	if time_to_arrive <= available_seconds:
-		return {"hex_coord": target_hex, "local_position": Vector2.ZERO, "arrived": true, "seconds_used": time_to_arrive}
+		return {"hex_coord": target_hex, "local_position": target_local_offset, "arrived": true, "seconds_used": time_to_arrive}
 
 	var direction := to_target / distance
 	direction = _wobbled_direction(direction, world_pos, wobble_seed)

@@ -124,6 +124,18 @@ func _ready() -> void:
 func get_all_units() -> Array[UnitInstance]:
 	return _instances.duplicate()
 
+## User request (playtest round 5): "there should be a visible unit
+## building queue so that we can see how long is remaining on units under
+## construction and how many units of what types we have under
+## construction." Exposes the SAME `_pending_training` entries
+## `_process_pending_training()` itself ticks down and completes — a UI
+## reading this can't drift from what's actually queued. Duplicated (same
+## "caller gets its own copy" convention `get_all_units()` above already
+## follows) so a caller can't accidentally mutate the real queue by editing
+## what it reads.
+func get_pending_training() -> Array[Dictionary]:
+	return _pending_training.duplicate(true)
+
 func get_units_at(coord: Vector2i) -> Array[UnitInstance]:
 	var result: Array[UnitInstance] = []
 	for instance in _instances:
@@ -150,6 +162,8 @@ func get_training_error(unit_type: GameEnums.UnitType, coord: Vector2i) -> Strin
 	if not _hex_grid_map.has_cell(coord):
 		return "%s is outside the map." % coord
 	if not _get_training_building(coord):
+		if _has_incomplete_training_building(coord):
+			return "This building must finish construction (or be repaired) before it can train units."
 		return "%s can only be trained at a building that trains units (a Garrison)." % definition.display_name
 	if _resource_manager and not _resource_manager.can_afford(definition.training_cost):
 		return "Not enough resources to train %s." % definition.display_name
@@ -341,13 +355,15 @@ func _retrain_cost(new_definition: UnitDefinition) -> Dictionary:
 ## validated/paid above) and load_save_state() (restoring units already paid
 ## for in a previous session) — same split BuildingManager.place_building()/
 ## load_save_entries() use around _register_instance().
-func _register_instance(definition: UnitDefinition, coord: Vector2i, id: int, advance_next_id: bool, current_hp: float = -1.0, order: GameEnums.UnitOrderType = GameEnums.UnitOrderType.HOLD, move_target: Vector2i = Vector2i.ZERO, patrol_waypoints: Array[Vector2i] = [], kill_count: int = 0, local_position: Vector2 = Vector2.ZERO) -> UnitInstance:
+func _register_instance(definition: UnitDefinition, coord: Vector2i, id: int, advance_next_id: bool, current_hp: float = -1.0, order: GameEnums.UnitOrderType = GameEnums.UnitOrderType.HOLD, move_target: Vector2i = Vector2i.ZERO, patrol_waypoints: Array[Vector2i] = [], kill_count: int = 0, local_position: Vector2 = Vector2.ZERO, move_target_local: Vector2 = Vector2.ZERO, patrol_waypoint_locals: Array[Vector2] = []) -> UnitInstance:
 	var instance := UnitInstance.new(definition, coord, id, current_hp)
 	instance.order = order
 	instance.move_target = move_target
 	instance.patrol_waypoints = patrol_waypoints
 	instance.kill_count = kill_count
 	instance.local_position = local_position
+	instance.move_target_local = move_target_local
+	instance.patrol_waypoint_locals = patrol_waypoint_locals
 	if advance_next_id:
 		_next_id = id + 1
 	_instances.append(instance)
@@ -369,9 +385,23 @@ func _get_training_building(coord: Vector2i) -> BuildingInstance:
 	if not _building_manager:
 		return null
 	for instance in _building_manager.get_buildings_at(coord):
-		if instance.definition.can_train_units:
+		if instance.definition.can_train_units and not instance.is_under_construction and not instance.is_ruined:
 			return instance
 	return null
+
+## User report (playtest round 6): "you shouldn't be able to build units
+## from a garrison that is under construction" — a construction site (or a
+## ruined shell) that WOULD train units once complete/repaired shouldn't be
+## silently indistinguishable from "no training building here at all";
+## used by get_training_error() to give the real reason rather than the
+## generic "can only be trained at a building that trains units" message.
+func _has_incomplete_training_building(coord: Vector2i) -> bool:
+	if not _building_manager:
+		return false
+	for instance in _building_manager.get_buildings_at(coord):
+		if instance.definition.can_train_units and (instance.is_under_construction or instance.is_ruined):
+			return true
+	return false
 
 ## Daily Gunpowder upkeep tally (UnitDefinition.daily_upkeep, only nonzero
 ## for requires_gunpowder units) — ResourceManager.apply_daily_flow() with
@@ -399,7 +429,7 @@ func _on_day_completed(_day_number: int) -> void:
 func get_save_entries() -> Array[UnitSaveEntry]:
 	var result: Array[UnitSaveEntry] = []
 	for instance in _instances:
-		result.append(UnitSaveEntry.new(instance.definition.unit_type, instance.hex_coord, instance.id, instance.current_hp, instance.order, instance.move_target, instance.patrol_waypoints, instance.kill_count, instance.local_position))
+		result.append(UnitSaveEntry.new(instance.definition.unit_type, instance.hex_coord, instance.id, instance.current_hp, instance.order, instance.move_target, instance.patrol_waypoints, instance.kill_count, instance.local_position, instance.move_target_local, instance.patrol_waypoint_locals))
 	return result
 
 ## Restores trained units from a save (Phase 2.8.2): clears whatever is
@@ -414,7 +444,7 @@ func load_save_entries(entries: Array[UnitSaveEntry], next_id: int) -> void:
 	for entry in entries:
 		var definition := UnitCatalog.get_definition(entry.unit_type)
 		if definition:
-			_register_instance(definition, entry.hex_coord, entry.id, false, entry.current_hp, entry.order, entry.move_target, entry.patrol_waypoints, entry.kill_count, entry.local_position)
+			_register_instance(definition, entry.hex_coord, entry.id, false, entry.current_hp, entry.order, entry.move_target, entry.patrol_waypoints, entry.kill_count, entry.local_position, entry.move_target_local, entry.patrol_waypoint_locals)
 	_next_id = next_id
 
 ## Exposed for SaveLoadManager (Phase 2.8) — rally-point configuration

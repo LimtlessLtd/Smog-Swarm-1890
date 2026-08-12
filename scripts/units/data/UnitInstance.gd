@@ -33,8 +33,34 @@ extends Resource
 
 @export var order: GameEnums.UnitOrderType = GameEnums.UnitOrderType.HOLD
 @export var move_target: Vector2i = Vector2i.ZERO       ## Meaningful only while order is MOVE/ATTACK_MOVE.
+## Offset from move_target's own hex center — same contract as
+## local_position (playtest round 5: "a selected unit should immediately
+## move to where the user has right clicked", not just to the nearest hex's
+## center). ZERO means "the hex center", which is what every move order
+## used to unconditionally target before this field existed — a right-click
+## dead-center of a hex, or any pre-existing save (this field defaults to
+## ZERO), still behaves identically. Only the FINAL hex of a path ever
+## targets this offset; every hex the unit merely passes through along the
+## way still routes through its own plain center (UnitOrderController's own
+## doc comment on _advance_toward() has the full reasoning).
+@export var move_target_local: Vector2 = Vector2.ZERO
 @export var patrol_waypoints: Array[Vector2i] = []      ## Meaningful only while order is PATROL; looped in order, index 0 first.
+## Index-aligned with patrol_waypoints — same move_target_local contract,
+## per waypoint, so a patrol genuinely visits the exact points the player
+## clicked while recording rather than snapping every leg to a hex center.
+@export var patrol_waypoint_locals: Array[Vector2] = []
 var patrol_target_index: int = 0                        ## Not @export — cheap to restart a patrol loop from its first leg after a load rather than persist exact progress, same "not worth saving" call Horde.path makes.
+
+## Playtest round 6: "garrison command should return units to the closest
+## garrison/town hall" — set true only by UnitOrderController.
+## issue_garrison_order() when it has to route the unit there first (order
+## becomes MOVE toward that building's hex); UnitOrderController's own
+## arrival handling checks this to apply the real GARRISON stance instead
+## of the usual HOLD once the unit gets there. Not @export — same
+## "cheap to not persist mid-flight order state" call `path` above already
+## makes; a unit mid-transit to garrison when a save is made just needs the
+## order re-issued, same as any other in-flight move would.
+var pending_garrison_arrival: bool = false
 
 ## Current movement path (Phase 5.5's HexPathfinder) toward move_target or
 ## the active patrol leg — hex_coord itself excluded, so the next hex to

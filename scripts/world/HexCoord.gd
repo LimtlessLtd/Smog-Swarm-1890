@@ -83,6 +83,31 @@ const HEX_SIZE: float = 512.0
 ## from this one the moment either constant is ever revisited.
 const WORLD_UNITS_PER_REAL_METER: float = 0.1025599
 
+## Real-world sampling/rendering footprint shared by RealTerrainSampler.
+## sample_grid() and SubHexGroundView's own sub-cell grid — a single source
+## of truth so the two can't silently drift the way they used to (both
+## previously hardcoded their own separate "HEX_SIZE * 1.6" literal).
+## **Real bug fix (playtest round 4: "tactical view hexgrids have
+## overhanging terrain on each corner going over into neighbouring hex tile
+## grids")** — 1.6x HEX_SIZE (819.2) is SMALLER than a pointy-top hex's own
+## bounding box at this circumradius (887 wide x 1024 tall — see
+## corner_points()'s own vertex layout), so the old square sample/render
+## grid under-covered a hex's own top/bottom vertices; that gap only looked
+## "filled" because each NEIGHBORING hex's own square grid — whose corners
+## sit at half_span*sqrt(2) ≈ 579 world units from center, past HEX_SIZE's
+## own 512 circumradius — spilled over the shared edge into it. Two bugs
+## masking each other: an under-covering grid on the one hand, an
+## over-hanging one on the other, netting out to "looks about right, but
+## the overhang is real and visible at the corners" exactly as reported.
+## 2.0x HEX_SIZE is the smallest span whose square fully CIRCUMSCRIBES the
+## hex's own bounding box in both dimensions, so paired with
+## SubHexGroundView's new hex-shaped clip mask (its own doc comment has the
+## full mechanism), the grid now truly covers the whole hex with zero gaps,
+## and the clip mask removes whatever the square's own corners still poke
+## past the hex's real boundary — instead of leaving a real hole there the
+## way a smaller, unclipped span would.
+const SUB_HEX_GRID_SPAN: float = HEX_SIZE * 2.0
+
 const NEIGHBOR_DIRECTIONS: Array[Vector2i] = [
 	Vector2i(1, 0), Vector2i(1, -1), Vector2i(0, -1),
 	Vector2i(-1, 0), Vector2i(-1, 1), Vector2i(0, 1),

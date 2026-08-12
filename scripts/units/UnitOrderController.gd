@@ -71,12 +71,14 @@ signal unit_moved(instance: UnitInstance, from_coord: Vector2i, to_coord: Vector
 @export var logistics_network_path: NodePath  ## Optional — HexPathfinder's road/rail/canal discount (now a continuous SPEED bonus, not just a path-preference one — see MovementStepper), AND (Phase 2.5.4) the Zone of Control read _is_friendly_hex() gates Garrison/Hold healing on. Unset skips both gracefully.
 @export var building_manager_path: NodePath  ## Optional — local obstacle avoidance (user request): buildings steer continuous movement around them regardless of Tactical hydration. Unset just means no building avoidance.
 @export var local_detail_manager_path: NodePath  ## Optional — local obstacle avoidance: props (trees/rocks/etc.) only exist as live data while their hex is Tactical-hydrated (LocalDetailManager.get_props_at()) — unset (or a currently-dehydrated hex) just means no prop avoidance there.
+@export var wall_manager_path: NodePath  ## Optional — strategic route wall-avoidance (playtest round 6): fed straight into HexPathfinder.find_path() so a unit's own route genuinely goes around an un-breached wall instead of the old total wall-blindness. Unset just means no wall-awareness, same graceful-skip convention as every other optional manager here.
 
 var _hex_grid_map: HexGridMap
 var _unit_manager: UnitManager
 var _logistics_network: LogisticsNetwork
 var _building_manager: BuildingManager
 var _local_detail_manager: LocalDetailManager
+var _wall_manager: WallManager
 var _logic_tick_timer: float = 0.0
 
 ## Balancing number, not an architecture one — same framing as
@@ -93,6 +95,34 @@ const LOGIC_TICK_SECONDS: float = 20.0
 ## actually clip an obstacle. Placeholder balancing number, not an
 ## architecture decision, same framing as ObstacleRadii's own table.
 const ENTITY_RADIUS: float = 20.0
+
+## Local steering is a cheap, memoryless nudge — MovementStepper's own doc
+## comment already admits it's "NOT guaranteed to escape a dense obstacle
+## cluster". User report (playtest round 6): units "ping backwards and
+## forwards when encountering something they cannot path round" is exactly
+## that documented limitation showing up live against clustered buildings/
+## props (walls themselves are now avoided at the STRATEGIC route level
+## instead — see `_replan()`/`HexPathfinder.find_path()`'s new
+## `wall_manager` param — so this fallback mainly matters for local-only
+## obstacles the route can't route around, since a hex is much bigger than
+## a single building's footprint). Past STUCK_UNSTICK_SECONDS of
+## near-zero net progress, the next crossing attempt bypasses obstacle
+## steering entirely (a direct beeline, briefly clipping through whatever
+## it was stuck on) rather than oscillating forever — a pragmatic escape
+## hatch, not a real local pathfinding search (still nobody's asked for
+## one, same call `steer_around_obstacles()`'s own doc comment already
+## makes).
+const STUCK_UNSTICK_SECONDS: float = 3.0
+const STUCK_PROGRESS_FRACTION: float = 0.25  ## Below this fraction of the speed-implied distance, a crossing attempt counts as "not really progressing".
+
+## Transient (never saved) — unit id -> seconds of near-zero net progress
+## while under a moving order. Reset to 0 the instant real progress
+## resumes, or the unit stops moving for any reason (order change,
+## HOLD/GARRISON, arrival). Small and self-bounded (one entry per
+## currently-or-recently-moving unit, pruned on every order change away
+## from a moving order) — not worth a full LRU/cleanup pass for this
+## project's scale.
+var _stuck_seconds: Dictionary = {}
 
 ## Design doc Phase 5.1's Day Phase bullet: "Military units get increased
 ## movement speed and damage" — the movement-speed half, unblocked now that
@@ -129,6 +159,8 @@ func _ready() -> void:
 		_building_manager = get_node(building_manager_path)
 	if local_detail_manager_path != NodePath():
 		_local_detail_manager = get_node(local_detail_manager_path)
+	if wall_manager_path != NodePath():
+		_wall_manager = get_node(wall_manager_path)
 
 func _process(delta: float) -> void:
 	if not _unit_manager:
@@ -151,36 +183,77 @@ func _process(delta: float) -> void:
 
 ## --- Order issuing (player-facing API — called by UnitCommandController, Phase 6.1) --
 
-func issue_move_order(instance: UnitInstance, destination: Vector2i) -> void:
+## `destination_local` (playtest round 5) — the exact offset within
+## `destination`'s hex to walk to, ZERO (the hex center) if the caller
+## doesn't have/want sub-hex precision. See UnitInstance.move_target_local's
+## own doc comment.
+func issue_move_order(instance: UnitInstance, destination: Vector2i, destination_local: Vector2 = Vector2.ZERO) -> void:
+	instance.pending_garrison_arrival = false  ## A fresh player order always overrides an in-flight "route to garrison" — see that field's own doc comment.
 	_set_order(instance, GameEnums.UnitOrderType.MOVE)
 	instance.move_target = destination
+	instance.move_target_local = destination_local
 	instance.path.clear()
 
-func issue_attack_move_order(instance: UnitInstance, destination: Vector2i) -> void:
+func issue_attack_move_order(instance: UnitInstance, destination: Vector2i, destination_local: Vector2 = Vector2.ZERO) -> void:
+	instance.pending_garrison_arrival = false
 	_set_order(instance, GameEnums.UnitOrderType.ATTACK_MOVE)
 	instance.move_target = destination
+	instance.move_target_local = destination_local
 	instance.path.clear()
 
 func issue_hold_order(instance: UnitInstance) -> void:
+	instance.pending_garrison_arrival = false
 	_set_order(instance, GameEnums.UnitOrderType.HOLD)
 	instance.path.clear()
 
-## Stationary at the unit's own current hex — "assign a unit to a
-## building/wall segment for a stationary defense bonus instead of
-## patrolling" (design doc). The bonus itself isn't computed anywhere yet;
-## see this class's own doc comment for why.
+## "Assign a unit to a building for a stationary defense bonus" (design
+## doc) — user report (playtest round 6): "garrison command does nothing
+## for units, it should return them to the closest garrison/town hall".
+## Used to just apply the stationary GARRISON stance in PLACE, wherever the
+## unit already happened to be standing; now actually routes it to the
+## nearest OPERATIONAL Town Hall or Garrison building first
+## (BuildingManager.find_nearest_building()) — the real payoffs
+## (Phase 2.5.4 healing, Phase 4.1/5.6 incoming-damage reduction, both
+## keyed off `instance.order == GARRISON` wherever they're actually
+## computed — see this class's own doc comment) only apply once it's
+## actually there. A unit already standing on a Town Hall/Garrison hex, or
+## with no such building anywhere yet (`_building_manager` unwired, or
+## none placed/completed), just gets the stance applied immediately in
+## place — nothing to route to, same as the old behavior.
+##
+## Deliberately does NOT call issue_move_order() for the routing case —
+## that function unconditionally clears pending_garrison_arrival (a fresh
+## player MOVE order should always cancel an in-flight garrison-route, see
+## its own doc comment), which would immediately undo the flag this
+## function needs to set.
 func issue_garrison_order(instance: UnitInstance) -> void:
-	_set_order(instance, GameEnums.UnitOrderType.GARRISON)
+	var target: BuildingInstance = null
+	if _building_manager:
+		target = _building_manager.find_nearest_building(instance.hex_coord, [GameEnums.BuildingType.TOWN_HALL, GameEnums.BuildingType.GARRISON])
+	if not target or target.hex_coord == instance.hex_coord:
+		instance.pending_garrison_arrival = false
+		_set_order(instance, GameEnums.UnitOrderType.GARRISON)
+		instance.path.clear()
+		return
+	instance.pending_garrison_arrival = true
+	_set_order(instance, GameEnums.UnitOrderType.MOVE)
+	instance.move_target = target.hex_coord
+	instance.move_target_local = Vector2.ZERO
 	instance.path.clear()
 
 ## `waypoints` must be non-empty — a no-op (reported via return value) if
 ## it isn't, rather than silently accepting a PATROL order with nothing to
-## loop through.
-func issue_patrol_order(instance: UnitInstance, waypoints: Array[Vector2i]) -> bool:
+## loop through. `waypoint_locals` (playtest round 5) — index-aligned with
+## `waypoints`, the exact offset within each waypoint's hex to actually
+## visit; empty (the default) means "every leg targets its own hex center",
+## unchanged prior behavior.
+func issue_patrol_order(instance: UnitInstance, waypoints: Array[Vector2i], waypoint_locals: Array[Vector2] = []) -> bool:
 	if waypoints.is_empty():
 		return false
+	instance.pending_garrison_arrival = false
 	_set_order(instance, GameEnums.UnitOrderType.PATROL)
 	instance.patrol_waypoints = waypoints.duplicate()
+	instance.patrol_waypoint_locals = waypoint_locals.duplicate()
 	instance.patrol_target_index = 0
 	instance.path.clear()
 	return true
@@ -189,21 +262,46 @@ func _set_order(instance: UnitInstance, order: GameEnums.UnitOrderType) -> void:
 	instance.order = order
 	unit_order_issued.emit(instance, order)
 
+## What a one-shot MOVE/ATTACK_MOVE order reverts to once it actually
+## arrives — HOLD, unless issue_garrison_order() routed this unit here
+## specifically to garrison (pending_garrison_arrival, see that field's own
+## doc comment), in which case arriving should apply the real GARRISON
+## stance, not just stop moving.
+func _revert_on_arrival(instance: UnitInstance) -> void:
+	if instance.pending_garrison_arrival:
+		instance.pending_garrison_arrival = false
+		_set_order(instance, GameEnums.UnitOrderType.GARRISON)
+	else:
+		_set_order(instance, GameEnums.UnitOrderType.HOLD)
+
 ## --- Continuous movement ----------------------------------------------------
 
 func _advance_unit(instance: UnitInstance, delta: float) -> void:
 	match instance.order:
 		GameEnums.UnitOrderType.MOVE, GameEnums.UnitOrderType.ATTACK_MOVE:
-			_advance_toward(instance, instance.move_target, true, delta)
+			_advance_toward(instance, instance.move_target, instance.move_target_local, true, delta)
 		GameEnums.UnitOrderType.PATROL:
 			_advance_patrol(instance, delta)
 		_:
-			pass  ## HOLD/GARRISON: stationary — regen is handled by the periodic logic tick in _process(), not every frame.
+			## HOLD/GARRISON: stationary — regen is handled by the periodic
+			## logic tick in _process(), not every frame. Also the natural
+			## place to drop this unit's stuck-tracking state (below) — a
+			## unit that's stopped moving on purpose shouldn't carry a stale
+			## "was stuck" timer into its next order.
+			_stuck_seconds.erase(instance.id)
 
 ## `revert_to_hold_on_arrival`: true for MOVE/ATTACK_MOVE (a one-shot order
 ## that's "done" once the destination is reached — design doc: "then
 ## reverts to HOLD on arrival"), false for PATROL (arriving just advances to
 ## the next leg, handled by _advance_patrol() itself rather than here).
+##
+## `destination_local` (playtest round 5: "a selected unit should
+## immediately move to where the user has right clicked") — the offset
+## within `destination`'s own hex the unit should actually end up at, ZERO
+## for "just the hex center" (unchanged default). Only ever applied on the
+## FINAL leg of the path (see the `next_coord == destination` check below)
+## — every hex merely passed through en route still routes through its own
+## plain center, same clean hex-to-hex pathing as before this field existed.
 ##
 ## Walks `instance` continuously toward `destination`, consuming up to
 ## `delta` seconds of travel this call — MovementStepper.advance_toward_hex()
@@ -213,23 +311,63 @@ func _advance_unit(instance: UnitInstance, delta: float) -> void:
 ## crossed, in order — see this class's own doc comment on why that
 ## per-crossing signal contract matters to CombatCoordinator/
 ## StrategicOverlayManager/etc.
-func _advance_toward(instance: UnitInstance, destination: Vector2i, revert_to_hold_on_arrival: bool, delta: float) -> void:
+func _advance_toward(instance: UnitInstance, destination: Vector2i, destination_local: Vector2, revert_to_hold_on_arrival: bool, delta: float) -> void:
+	# Already on the destination hex — real bug fix (playtest round 6:
+	# "I cannot move units around a hex tile they are already on"). The old
+	# code short-circuited to "arrived" purely off hex_coord equality,
+	# silently ignoring destination_local — right-clicking a different spot
+	# on a unit's own hex was a no-op. There's no strategic route to plan
+	# here (start == goal), just a direct sub-hex walk toward
+	# destination_local via the same MovementStepper math every other leg
+	# uses — deliberately NOT routed through `instance.path`/`_replan()`:
+	# HexPathfinder.find_path() returns a trivial single-hex path for
+	# start == goal that _replan() discards (path.size() > 1 check), so
+	# going through that path would leave the unit permanently stuck.
 	if instance.hex_coord == destination:
-		if revert_to_hold_on_arrival:
-			_set_order(instance, GameEnums.UnitOrderType.HOLD)
+		var obstacles := [] if _is_stuck(instance) else _gather_obstacles(instance.hex_coord, destination)
+		var speed := _movement_speed(instance, instance.hex_coord, destination)
+		var before := HexCoord.axial_to_world(instance.hex_coord) + instance.local_position
+		var result := MovementStepper.advance_toward_hex(instance.hex_coord, instance.local_position, destination, delta, speed, obstacles, ENTITY_RADIUS, float(instance.id), destination_local)
+		instance.local_position = result["local_position"]
+		_update_stuck(instance, before, HexCoord.axial_to_world(instance.hex_coord) + instance.local_position, speed, delta)
+		if result["arrived"]:
+			unit_arrived.emit(instance, instance.hex_coord)
+			if revert_to_hold_on_arrival:
+				_revert_on_arrival(instance)
 		return
 	if instance.path.is_empty():
 		_replan(instance, destination)
 	if instance.path.is_empty():
 		return  ## No route found this cycle (e.g. destination currently unreachable) — try again next frame.
 
+	var bypass_obstacles := _is_stuck(instance)
+	var world_pos_before := HexCoord.axial_to_world(instance.hex_coord) + instance.local_position
+	var last_speed := 1.0
 	var remaining := delta
 	while remaining > 0.0 and not instance.path.is_empty():
 		var next_coord: Vector2i = instance.path[0]
 		var from_coord := instance.hex_coord  ## Captured BEFORE the call below overwrites it — this is the hex actually being left this crossing.
+
+		# Live wall re-check (playtest round 6, user report: "units do not
+		# path around walls... correctly") — `_replan()` above only avoids
+		# walls that already existed AT PLANNING TIME; a wall built mid-
+		# route (or restored from a save) could leave a stale `instance.path`
+		# still pointing straight through an edge that's blocked NOW. Same
+		# "peek every hex-crossing attempt" cadence HordeManager already
+		# uses before deciding to siege — units instead just get a fresh
+		# route around it.
+		if _wall_manager and _wall_manager.get_blocking_segment(from_coord, next_coord, HexCoord.axial_to_world(from_coord), HexCoord.axial_to_world(next_coord)):
+			instance.path.clear()
+			_replan(instance, destination)
+			if instance.path.is_empty():
+				return  ## No route around the new wall right now — try again next frame.
+			continue  ## Re-read path[0] fresh — it may not even be `next_coord` any more.
+
 		var speed := _movement_speed(instance, from_coord, next_coord)
-		var obstacles := _gather_obstacles(from_coord, next_coord)
-		var result := MovementStepper.advance_toward_hex(from_coord, instance.local_position, next_coord, remaining, speed, obstacles, ENTITY_RADIUS, float(instance.id))
+		last_speed = speed
+		var obstacles: Array[Dictionary] = [] if bypass_obstacles else _gather_obstacles(from_coord, next_coord)
+		var leg_local_offset := destination_local if next_coord == destination else Vector2.ZERO
+		var result := MovementStepper.advance_toward_hex(from_coord, instance.local_position, next_coord, remaining, speed, obstacles, ENTITY_RADIUS, float(instance.id), leg_local_offset)
 		instance.hex_coord = result["hex_coord"]
 		instance.local_position = result["local_position"]
 		remaining -= float(result["seconds_used"])
@@ -241,22 +379,51 @@ func _advance_toward(instance: UnitInstance, destination: Vector2i, revert_to_ho
 		if instance.hex_coord == destination:
 			unit_arrived.emit(instance, instance.hex_coord)
 			if revert_to_hold_on_arrival:
-				_set_order(instance, GameEnums.UnitOrderType.HOLD)
+				_revert_on_arrival(instance)
+	var world_pos_after := HexCoord.axial_to_world(instance.hex_coord) + instance.local_position
+	_update_stuck(instance, world_pos_before, world_pos_after, last_speed, delta)
 
+## Real bug fix (playtest round 5: "units do not follow waypoints when they
+## are placed") — the old version, on reaching a waypoint, only ever
+## advanced `patrol_target_index` and returned, leaving the unit sitting
+## idle for a full frame/tick before the NEXT call finally started it
+## walking toward the following leg; on a patrol with many close-together
+## waypoints (or a very short LOGIC_TICK at low TickManager speed) that
+## read as "stuck"/"not following the route". Now loops immediately to the
+## next waypoint within the SAME call whenever the unit is already standing
+## on the current one, so travel toward a genuinely unreached leg starts
+## this frame, not next. `guard` bounds the loop to patrol_waypoints.size()
+## iterations — a patrol can never legitimately need more "already
+## there, advance" steps than it has waypoints, so this can't spin forever
+## even in the degenerate case of every waypoint sharing one hex.
 func _advance_patrol(instance: UnitInstance, delta: float) -> void:
 	if not instance.has_patrol_waypoints():
 		return
-	instance.patrol_target_index = wrapi(instance.patrol_target_index, 0, instance.patrol_waypoints.size())
-	var target: Vector2i = instance.patrol_waypoints[instance.patrol_target_index]
-	if instance.hex_coord == target:
+	var guard := instance.patrol_waypoints.size()
+	while guard > 0:
+		instance.patrol_target_index = wrapi(instance.patrol_target_index, 0, instance.patrol_waypoints.size())
+		var target: Vector2i = instance.patrol_waypoints[instance.patrol_target_index]
+		if instance.hex_coord != target:
+			_advance_toward(instance, target, _patrol_waypoint_local(instance, instance.patrol_target_index), false, delta)
+			return
 		instance.patrol_target_index = wrapi(instance.patrol_target_index + 1, 0, instance.patrol_waypoints.size())
-		return
-	_advance_toward(instance, target, false, delta)
+		guard -= 1
+	# Every waypoint shares the unit's current hex (a degenerate all-in-one-
+	# hex patrol) — nothing left to actually walk toward this frame.
+
+## `patrol_waypoint_locals` is index-aligned with `patrol_waypoints` but
+## (same as `move_target_local`) defaults to empty for any unit/save
+## predating this field — out-of-range or missing falls back to ZERO (the
+## hex center), never a hard error.
+func _patrol_waypoint_local(instance: UnitInstance, index: int) -> Vector2:
+	if index < instance.patrol_waypoint_locals.size():
+		return instance.patrol_waypoint_locals[index]
+	return Vector2.ZERO
 
 func _replan(instance: UnitInstance, destination: Vector2i) -> void:
 	if not _hex_grid_map:
 		return
-	var path := HexPathfinder.find_path(_hex_grid_map, instance.hex_coord, destination, _logistics_network)
+	var path := HexPathfinder.find_path(_hex_grid_map, instance.hex_coord, destination, _logistics_network, _wall_manager)
 	if path.size() > 1:
 		path.remove_at(0)  # path[0] is the unit's own current hex.
 		instance.path = path
@@ -279,6 +446,25 @@ func _movement_speed(instance: UnitInstance, from_coord: Vector2i, to_coord: Vec
 	if TimeCycleManager.is_day():
 		speed *= DAY_MOVE_SPEED_MULTIPLIER
 	return speed
+
+func _is_stuck(instance: UnitInstance) -> bool:
+	return _stuck_seconds.get(instance.id, 0.0) >= STUCK_UNSTICK_SECONDS
+
+## `speed` is whatever the caller was using for this crossing attempt (the
+## expected distance-per-second if nothing were in the way) — comparing
+## ACTUAL net displacement against that speed-implied distance, rather
+## than a flat world-units constant, keeps this correct across every
+## terrain/logistics/day speed multiplier already stacked into `speed`
+## instead of needing its own separate threshold table.
+func _update_stuck(instance: UnitInstance, before: Vector2, after: Vector2, speed: float, delta: float) -> void:
+	if delta <= 0.0:
+		return
+	var moved := before.distance_to(after)
+	var expected := maxf(speed, 0.01) * delta
+	if moved < expected * STUCK_PROGRESS_FRACTION:
+		_stuck_seconds[instance.id] = _stuck_seconds.get(instance.id, 0.0) + delta
+	else:
+		_stuck_seconds[instance.id] = 0.0
 
 ## Buildings (always queryable) + props (only where Tactical-hydrated) near
 ## both the hex a unit currently occupies and the one it's walking toward —

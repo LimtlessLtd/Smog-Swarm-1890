@@ -47,6 +47,27 @@ var speed_index: int = 1
 ## sane fallback rather than restoring to a meaningless sentinel.
 var _last_nonzero_speed_index: int = 1
 
+## Real bug fix (playtest round 4, #11: "when the game is already paused and
+## you press the space button, it quickly flashes on '5x' then flashes back
+## to '0x'... looks like theres a toggle bug"). AlertManager.set_speed_index(0)
+## is the only OTHER caller (besides this class's own toggle_pause()) able to
+## force speed back to 0 — it auto-pauses on any WARNING/CRITICAL
+## EventManager event. A player who paused because of an active threat (a
+## wall under siege, a resource shortfall) and then presses Space to resume
+## can have that exact same still-unfolding situation cross another real
+## threshold within the very next tick or two, re-triggering AlertManager
+## before the player even sees the game move — a real, code-driven "unpause,
+## then immediately re-paused for a legitimate reason" sequence that reads
+## exactly like a broken toggle. `_MANUAL_UNPAUSE_GRACE_MS` gives a manual
+## Space-triggered unpause a short real-time (Time.get_ticks_msec(), same
+## "unaffected by Engine.time_scale" reasoning AlertManager's own chime
+## cooldown already uses) window immune to being paused again — long enough
+## to be visibly, unambiguously "it actually resumed," short enough
+## (well under a second) that it never meaningfully delays a genuinely new
+## alert the player needs to see.
+const _MANUAL_UNPAUSE_GRACE_MS: int = 400
+var _manual_unpause_at_ms: int = -_MANUAL_UNPAUSE_GRACE_MS
+
 func _ready() -> void:
 	# Keep ticking even if a future system pauses the SceneTree, same as
 	# BackgroundExecutionManager — this is background-simulation infrastructure.
@@ -73,12 +94,26 @@ func _unhandled_input(event: InputEvent) -> void:
 ## _last_nonzero_speed_index if currently paused — see that var's own doc
 ## comment for why it's tracked centrally rather than just here.
 func toggle_pause() -> void:
-	set_speed_index(_last_nonzero_speed_index if speed_index == 0 else 0)
+	var was_paused := speed_index == 0
+	set_speed_index(_last_nonzero_speed_index if was_paused else 0)
+	if was_paused:
+		_manual_unpause_at_ms = Time.get_ticks_msec()  ## Starts this unpause's own grace window — see _MANUAL_UNPAUSE_GRACE_MS's own doc comment.
 
 func get_day_progress() -> float:
 	return elapsed_in_day / DAY_LENGTH_SECONDS
 
-func set_speed_index(index: int) -> void:
+## `is_automatic_pause` — true ONLY for AlertManager's own auto-pause-on-alert
+## call. A deliberate player action (a speed button click, toggle_pause()'s
+## own unpause, a save load) always takes effect immediately and is never
+## subject to _MANUAL_UNPAUSE_GRACE_MS below — only an automatic system-driven
+## pause request arriving inside a just-issued manual unpause's own grace
+## window gets silently dropped (see that constant's own doc comment for the
+## exact bug this prevents). Everything genuinely NEW still gets through: the
+## grace window is real-time-bounded and short, so a fresh alert even a
+## fraction of a second later still pauses normally.
+func set_speed_index(index: int, is_automatic_pause: bool = false) -> void:
+	if is_automatic_pause and index == 0 and Time.get_ticks_msec() - _manual_unpause_at_ms < _MANUAL_UNPAUSE_GRACE_MS:
+		return
 	if speed_index != 0:
 		_last_nonzero_speed_index = speed_index
 	speed_index = clampi(index, 0, SPEED_MULTIPLIERS.size() - 1)
