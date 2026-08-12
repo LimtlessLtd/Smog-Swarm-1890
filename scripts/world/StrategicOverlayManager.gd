@@ -141,6 +141,7 @@ var _horde_layer: Node2D
 var _attack_layer: Node2D
 var _threat_layer: Node2D
 var _zoc_layer: Node2D
+var _terrain_layer: Node2D
 
 var _building_icons: Dictionary = {}    # int (BuildingInstance.id) -> Node2D
 var _unit_icons: Dictionary = {}        # int (UnitInstance.id) -> Node2D
@@ -164,9 +165,11 @@ func _ready() -> void:
 	_attack_layer = _new_layer("AttackLayer")
 	_threat_layer = _new_layer("ThreatLayer")
 	_zoc_layer = _new_layer("ZocLayer")
+	_terrain_layer = _new_layer("TerrainLayer")
 
 	if hex_grid_map_path != NodePath():
 		_hex_grid_map = get_node(hex_grid_map_path)
+		_build_terrain_hazard_markers()
 	if building_manager_path != NodePath():
 		_building_manager = get_node(building_manager_path)
 		_building_manager.building_placed.connect(_on_building_placed)
@@ -247,6 +250,7 @@ func _sync_layer_visibility() -> void:
 	_attack_layer.visible = DisplaySettings.show_attack_alerts
 	_threat_layer.visible = DisplaySettings.show_threat_meter_world
 	_zoc_layer.visible = DisplaySettings.show_zoc_world
+	_terrain_layer.visible = DisplaySettings.show_terrain_hazards
 
 func _on_tactical_mode_changed(is_tactical: bool) -> void:
 	visible = not is_tactical
@@ -841,3 +845,70 @@ func _build_zoc_marker(coord: Vector2i, state: ZoneOfControlState) -> Node2D:
 func _apply_zoc_marker_look(marker: Node2D, state: ZoneOfControlState) -> void:
 	(marker.get_node("MilitaryOutline") as Line2D).visible = state.has_military_coverage()
 	(marker.get_node("CivilianFill") as Polygon2D).visible = state.has_civilian_coverage
+
+## User report (playtest round 6): "we need to make elevation and
+## impassable terrain obvious to the user" — code read confirmed both were
+## previously invisible: `HexCell.elevation` was stored but never rendered
+## anywhere, and impassable terrain (marsh/peat bog/ocean — see
+## `HexCell.is_passable()`) rendered with the exact same textures as
+## passable ground, no distinct treatment at all. One static pass over
+## every cell at `_ready()` — unlike every other layer here, neither
+## elevation nor passability ever changes mid-game (no reclamation system
+## touches ocean/marsh's underlying terrain type, only WETLAND's
+## passability via `ReclamationManager`, which is a whole-biome swap
+## `HexMapGenerator`-side, not a live per-cell flip this layer would need
+## to watch for) — so there's no signal to rebuild off, same one-shot
+## reasoning `_refresh_frontier_markers()`'s own static hexes would follow
+## if frontier state could never change either.
+const _IMPASSABLE_FILL_COLOR := Color(0.65, 0.12, 0.08, 0.28)
+const _IMPASSABLE_OUTLINE_COLOR := Color(0.85, 0.25, 0.15, 0.85)
+const _ELEVATION_OUTLINE_COLOR := Color(0.62, 0.48, 0.30)  ## Warm "high ground" brown — tinted toward white at the very highest elevations, see _build_terrain_hazard_marker().
+const _ELEVATION_VISIBLE_THRESHOLD := 0.35  ## Below this, elevation is gentle enough not to be worth outlining — avoids a low-lying hex-grid's worth of near-invisible tinting noise.
+
+func _build_terrain_hazard_markers() -> void:
+	for cell in _hex_grid_map.get_all_cells():
+		var marker := _build_terrain_hazard_marker(cell)
+		if marker:
+			_terrain_layer.add_child(marker)
+
+func _build_terrain_hazard_marker(cell: HexCell) -> Node2D:
+	var is_impassable := not cell.is_passable()
+	var show_elevation := cell.elevation >= _ELEVATION_VISIBLE_THRESHOLD
+	if not is_impassable and not show_elevation:
+		return null
+
+	var container := Node2D.new()
+	container.position = HexCoord.axial_to_world(cell.coord)
+	var points := HexCoord.corner_points(Vector2.ZERO)
+
+	if is_impassable:
+		var fill := Polygon2D.new()
+		fill.name = "ImpassableFill"
+		fill.color = _IMPASSABLE_FILL_COLOR
+		fill.polygon = points
+		container.add_child(fill)
+
+		var outline := Line2D.new()
+		outline.name = "ImpassableOutline"
+		outline.closed = true
+		outline.default_color = _IMPASSABLE_OUTLINE_COLOR
+		outline.width = 3.0
+		outline.points = points
+		container.add_child(outline)
+
+	if show_elevation:
+		# Brighter/more opaque toward the highest peaks (elevation 1.0),
+		# just perceptible at the threshold — a real gradient, not a flat
+		# on/off line, so "quite high" and "Pennine summit" read
+		# differently at a glance.
+		var elevation_fraction := (cell.elevation - _ELEVATION_VISIBLE_THRESHOLD) / (1.0 - _ELEVATION_VISIBLE_THRESHOLD)
+		var outline := Line2D.new()
+		outline.name = "ElevationOutline"
+		outline.closed = true
+		outline.default_color = _ELEVATION_OUTLINE_COLOR.lerp(Color.WHITE, elevation_fraction * 0.5)
+		outline.default_color.a = 0.35 + elevation_fraction * 0.55
+		outline.width = 2.0 + elevation_fraction * 2.5
+		outline.points = points
+		container.add_child(outline)
+
+	return container
