@@ -70,12 +70,18 @@ const DISPLAY_BAR_WIDTH := 150.0
 ## main menu bar at the bottom of the screen with the mini map on the right
 ## hand side"): one full-width bottom strip now holds BuildMenuView
 ## (SIZE_EXPAND_FILL — see _build_bottom_bar()) and MinimapView side by side,
-## replacing their old separate bottom-left/bottom-right placements. Tall
-## enough for a card's icon (BuildMenuView.ICON_SIZE) + name + a 2-3 line
-## cost/upkeep/effect block without clipping — found by actually rendering a
-## card and looking at it, not a guessed number.
-const BOTTOM_BAR_HEIGHT := 190.0
-const MINIMAP_SIZE := Vector2(220.0, 160.0)
+## replacing their old separate bottom-left/bottom-right placements.
+## Shrunk 190 -> 130 (playtest round 6: "reduce the size of the building
+## cards... make sure that it lines up with the mini map") alongside
+## BuildMenuView's own smaller cards (_CARD_WIDTH/_CARD_ICON_SIZE/font
+## sizes) — tall enough for a shrunk card's icon + name + a 2-3 line
+## cost/upkeep/effect block without clipping, found by actually rendering
+## one and looking at it, not a guessed number.
+const BOTTOM_BAR_HEIGHT := 130.0
+## Shrunk alongside BOTTOM_BAR_HEIGHT (same request) — kept roughly the
+## same aspect ratio as the old 220x160 rather than just scaling height
+## alone, so the map itself doesn't read as oddly squashed.
+const MINIMAP_SIZE := Vector2(160.0, 116.0)
 const UNIT_PANEL_SIZE := Vector2(320.0, 320.0)  ## Widened/heightened (playtest round 4, #8) for the new 2-column training/retrain card grid (HUDStyles.build_card()) — the old text-only button list fit 260x260, real icon+cost+upkeep cards need more room.
 const SAVE_LOAD_VIEW_SIZE := Vector2(320.0, 320.0)
 const TECH_TREE_VIEW_SIZE := Vector2(380.0, 360.0)

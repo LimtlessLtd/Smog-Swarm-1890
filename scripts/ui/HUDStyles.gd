@@ -170,7 +170,15 @@ static func style_tab_container(tabs: TabContainer) -> void:
 ## family) is what actually reads as "this category's color" at a glance —
 ## two tones from one accent color pair, not a flat block of raw color that
 ## would fight this project's own dark Victorian palette everywhere else.
-static func build_card(display_name: String, icon_texture: Texture2D, details: String, on_pressed: Callable, enabled: bool = true, card_width: float = 132.0, icon_size: float = 44.0, category_colors: Dictionary = {}) -> Control:
+## `name_font_size`/`details_font_size` (user request, playtest round 6:
+## "reduce the size of the text please as its currently very large") —
+## default to `style_label()`'s own existing 15/13 (today's exact look,
+## UnitPanelView's training/retrain cards keep looking exactly as before),
+## overridable per call site for a denser card — BuildMenuView's own bottom-
+## bar cards pass smaller values (see that class's own call sites) since a
+## shrunk `card_width` alone would otherwise leave `style_label()`'s normal
+## text cramped/wrapping awkwardly against the new narrower card.
+static func build_card(display_name: String, icon_texture: Texture2D, details: String, on_pressed: Callable, enabled: bool = true, card_width: float = 132.0, icon_size: float = 44.0, category_colors: Dictionary = {}, name_font_size: int = 15, details_font_size: int = 13) -> Control:
 	var card := PanelContainer.new()
 	card.custom_minimum_size = Vector2(card_width, 0)
 	card.mouse_filter = Control.MOUSE_FILTER_STOP
@@ -248,6 +256,7 @@ static func build_card(display_name: String, icon_texture: Texture2D, details: S
 	name_label.autowrap_mode = TextServer.AUTOWRAP_WORD
 	name_label.custom_minimum_size.x = label_width
 	style_label(name_label, enabled, not enabled)
+	name_label.add_theme_font_size_override("font_size", name_font_size)
 	content.add_child(name_label)
 
 	var details_label := Label.new()
@@ -255,6 +264,7 @@ static func build_card(display_name: String, icon_texture: Texture2D, details: S
 	details_label.autowrap_mode = TextServer.AUTOWRAP_WORD
 	details_label.custom_minimum_size.x = label_width
 	style_label(details_label, false, true)
+	details_label.add_theme_font_size_override("font_size", details_font_size)
 	content.add_child(details_label)
 
 	return card

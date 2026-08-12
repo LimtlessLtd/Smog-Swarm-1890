@@ -70,6 +70,20 @@ const _EXCLUDED_FROM_MENU: Array[GameEnums.BuildingType] = [
 	GameEnums.BuildingType.OIL_PIT,
 ]
 
+## User request (playtest round 6: "reduce the size of the building cards
+## on the bottom main menu... reduce the size of the text please as its
+## currently very large") — shrunk from HUDStyles.build_card()'s own
+## defaults (132/44, tuned for UnitPanelView's roomier top-left panel,
+## unaffected by this change since it doesn't pass these explicitly). Sized
+## down alongside MainHUD.BOTTOM_BAR_HEIGHT/MINIMAP_SIZE (see that file's
+## own doc comment) so the shorter card column actually lines up with the
+## minimap instead of leaving a tall gap of empty bar below a short column
+## of small cards.
+const _CARD_WIDTH: float = 92.0
+const _CARD_ICON_SIZE: float = 28.0
+const _CARD_NAME_FONT_SIZE: int = 11
+const _CARD_DETAILS_FONT_SIZE: int = 9
+
 func _ready() -> void:
 	size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -82,6 +96,17 @@ func _ready() -> void:
 
 	var columns := HBoxContainer.new()
 	columns.add_theme_constant_override("separation", 16)
+	# User request (playtest round 6: "make sure that it lines up with the
+	# mini map") — with vertical scrolling disabled, ScrollContainer would
+	# otherwise stretch `columns` to fill the FULL bar height and then
+	# top-align its (now much shorter, since the round-6 card shrink) real
+	# content inside that — leaving a visibly empty gap below the cards
+	# while MinimapView (SIZE_SHRINK_CENTER, MainHUD's own
+	# _build_bottom_bar()) sits vertically centered in the same row.
+	# SHRINK_CENTER here makes `columns` request only its own real content
+	# height and center within the leftover space instead, the same
+	# vertical anchor the minimap already uses.
+	columns.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	scroll.add_child(columns)
 
 	for category in CATEGORY_ORDER:
@@ -144,14 +169,14 @@ func _build_defense_and_walls_column() -> Control:
 		WallVisuals.tier_texture(WallCatalog.WOODEN),
 		"Cost: %s\nClick+drag to draw — auto-splits into ≤100m pieces." % HUDStyles.format_resource_dict(WallCatalog.get_build_cost(WallCatalog.WOODEN)),
 		func() -> void: wall_placement_selected.emit(false),
-		true, 132.0, 44.0, colors,
+		true, _CARD_WIDTH, _CARD_ICON_SIZE, colors, _CARD_NAME_FONT_SIZE, _CARD_DETAILS_FONT_SIZE,
 	))
 	row.add_child(HUDStyles.build_card(
 		"Gate",
 		WallVisuals.tier_texture(WallCatalog.WOODEN),
 		"Cost: %s\nSame as a Wooden Wall, deliberately weaker." % HUDStyles.format_resource_dict(WallCatalog.get_build_cost(WallCatalog.WOODEN)),
 		func() -> void: wall_placement_selected.emit(true),
-		true, 132.0, 44.0, colors,
+		true, _CARD_WIDTH, _CARD_ICON_SIZE, colors, _CARD_NAME_FONT_SIZE, _CARD_DETAILS_FONT_SIZE,
 	))
 	column.add_child(row)
 
@@ -163,7 +188,7 @@ func _build_building_card(definition: BuildingDefinition, colors: Dictionary = {
 		BuildingVisuals.building_texture(definition.building_type),
 		_describe_building(definition),
 		_on_building_button_pressed.bind(definition.building_type),
-		true, 132.0, 44.0, colors,
+		true, _CARD_WIDTH, _CARD_ICON_SIZE, colors, _CARD_NAME_FONT_SIZE, _CARD_DETAILS_FONT_SIZE,
 	)
 
 ## "how much each building costs, the upkeep it requires, and what it
