@@ -107,7 +107,10 @@ func _ready() -> void:
 	# seam right at each hex's own edge, letting slivers of the
 	# (8x-Tactical-scaled) wall line peek through at hex boundaries.
 	# SubHexGroundView's sub-cell grid deliberately overlaps its neighbors
-	# (_GRID_SPAN = HEX_SIZE * 1.6, see that class's own doc comment)
+	# (_GRID_SPAN = HexCoord.SUB_HEX_GRID_SPAN, see that constant's own doc
+	# comment — a later pass replaced the original 1.6x-HEX_SIZE span with a
+	# fully-covering 2.0x one plus a hex-shaped clip mask, but the same
+	# "no gap at the seam" property held even before that fix)
 	# specifically to eliminate seams between adjacent hexes' sub-hex
 	# samples — which also sealed the one gap that used to let a wall show
 	# through at all, making the bug total instead of partial.

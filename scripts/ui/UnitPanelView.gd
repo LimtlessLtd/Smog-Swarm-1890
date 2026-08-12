@@ -3,8 +3,9 @@ extends ScrollContainer
 
 ## Selection-driven HUD panel — the training-and-orders counterpart to
 ## BuildMenuView, reading UnitCommandController's current selection instead
-## of arming a placement mode. Five states:
-##   - Nothing selected: an idle hint.
+## of arming a placement mode. Four states (a fifth, "nothing selected", is
+## deliberately not a rendered state at all — see _render_idle()'s own doc
+## comment):
 ##   - A building that can train units (Garrison today) selected: one Train
 ##     button per UnitCatalog definition (tier-locked/unaffordable ones
 ##     shown disabled with UnitManager.get_training_error()'s reason as a
@@ -137,16 +138,26 @@ func _refresh_current_selection() -> void:
 	if wall:
 		_render_wall_panel(wall)
 
+## Also re-shows the panel — the only caller that wants it hidden again
+## (_render_idle()) sets `visible = false` itself right after calling this,
+## so that override always wins for the idle case.
 func _clear_list() -> void:
+	visible = true
 	for child in _list.get_children():
 		child.queue_free()
 
+## User request (playtest round 4): the idle hint window "serves no purpose
+## since you can get to all the windows and options by selecting the
+## buildings or units directly" — this panel now just hides itself entirely
+## with nothing selected, instead of showing an always-on instructional
+## label. `_on_selection_cleared()`/`setup()` still route here; the whole
+## ScrollContainer (this class extends it) simply goes invisible rather than
+## rendering empty content, same "nothing to show, so show nothing" contract
+## the other toggleable HUD panels (SaveLoadView/TechTreeView/
+## DisplayOptionsView) already use for their own closed state.
 func _render_idle() -> void:
 	_clear_list()
-	var hint := Label.new()
-	hint.text = "Click a unit to command it, a building to inspect/repair it, or a wall segment to repair it."
-	HUDStyles.style_label(hint)
-	_list.add_child(hint)
+	visible = false
 
 ## Training panel (a `can_train_units` building, Garrison today) and the
 ## general building-info panel (everything else) share one function —
@@ -191,15 +202,33 @@ func _render_building_panel(instance: BuildingInstance) -> void:
 		HUDStyles.style_label(train_header, true)
 		_list.add_child(train_header)
 		if _unit_manager:
+			# User request (playtest round 4, #8): "you should be able to see
+			# what the unit looks like, how much it costs and the upkeep" —
+			# same HUDStyles.build_card() shape BuildMenuView's own building
+			# cards use (see that function's own doc comment), not a
+			# text-only Button. A GridContainer (2 columns), not the plain
+			## HBoxContainer BuildMenuView's wider bottom bar affords — this
+			# panel is a narrow top-left corner box (UNIT_PANEL_SIZE) with no
+			# horizontal scrolling (_ready()'s own "no dialog should ever
+			# need a horizontal scrollbar" rule) — 2 columns keeps every
+			# card fully visible via ordinary vertical scrolling instead.
+			var grid := GridContainer.new()
+			grid.columns = 2
+			grid.add_theme_constant_override("h_separation", 6)
+			grid.add_theme_constant_override("v_separation", 6)
+			_list.add_child(grid)
 			for unit_definition in UnitCatalog.get_all_definitions():
-				var button := Button.new()
-				button.text = "%s (T%d %s)" % [unit_definition.display_name, unit_definition.tier, _role_name(unit_definition.role)]
 				var error := _unit_manager.get_training_error(unit_definition.unit_type, coord)
-				button.disabled = not error.is_empty()
-				button.tooltip_text = error if not error.is_empty() else _format_cost(unit_definition.training_cost)
-				button.pressed.connect(_on_train_pressed.bind(coord, unit_definition.unit_type))
-				HUDStyles.style_button(button)
-				_list.add_child(button)
+				var enabled := error.is_empty()
+				var details := "%s\n%s" % [_role_name(unit_definition.role), (error if not enabled else _unit_card_details(unit_definition))]
+				grid.add_child(HUDStyles.build_card(
+					"%s (T%d)" % [unit_definition.display_name, unit_definition.tier],
+					UnitVisuals.unit_texture(unit_definition.unit_type),
+					details,
+					_on_train_pressed.bind(coord, unit_definition.unit_type),
+					enabled,
+					110.0, 36.0,
+				))
 
 ## User request ("when selecting a building, we should see various
 ## statistics... how much upkeep it costs, how many population it has
@@ -292,14 +321,16 @@ func _add_energy_stat(definition: BuildingDefinition) -> void:
 	HUDStyles.style_label(energy_stats, false, true)
 	_list.add_child(energy_stats)
 
-## Dedicated formatter for the Upkeep line — _format_cost() below (shared
-## with training/retrain cost display, where every value is a whole
-## number by design) truncates via int(), which would silently understate
-## e.g. a Terraced Tenement's real 1.2 Food/day (12 population *
-## BuildingManager.FOOD_PER_POPULATION) as "1 Food". One decimal place is
-## exactly enough precision for every value this project's upkeep numbers
-## ever take — a flat per-building constant, or population times the
-## single FOOD_PER_POPULATION constant — without the noise of a full float.
+## Dedicated formatter for the Upkeep line — HUDStyles.format_resource_dict()
+## (used for training/retrain cost display, where every value is a whole
+## number by design) trims trailing ".0" but still shows real precision for a
+## genuinely fractional value, which would otherwise understate e.g. a
+## Houses instance's real 1.2 Food/day (12 population *
+## BuildingManager.FOOD_PER_POPULATION) as "1 Food" if truncated via int().
+## One decimal place is exactly enough precision for every value this
+## project's upkeep numbers ever take — a flat per-building constant, or
+## population times the single FOOD_PER_POPULATION constant — without the
+## noise of a full float.
 func _format_upkeep(upkeep: Dictionary) -> String:
 	var text := ""
 	var first := true
@@ -436,19 +467,28 @@ func _render_unit_panel(instance: UnitInstance) -> void:
 	HUDStyles.style_label(retrain_header, true)
 	_list.add_child(retrain_header)
 	var any_retrain_candidate := false
+	var retrain_grid := GridContainer.new()  # Same card shape as the training grid above — see its own comment.
+	retrain_grid.columns = 2
+	retrain_grid.add_theme_constant_override("h_separation", 6)
+	retrain_grid.add_theme_constant_override("v_separation", 6)
 	for candidate in UnitCatalog.get_all_definitions():
 		if candidate.role != definition.role or candidate.tier <= definition.tier:
 			continue
 		any_retrain_candidate = true
-		var retrain_button := Button.new()
-		retrain_button.text = candidate.display_name
 		var error := _unit_manager.get_retrain_error(instance, candidate.unit_type) if _unit_manager else "No UnitManager wired."
-		retrain_button.disabled = not error.is_empty()
-		retrain_button.tooltip_text = error if not error.is_empty() else _format_cost(_retrain_preview_cost(candidate))
-		retrain_button.pressed.connect(_on_retrain_pressed.bind(candidate.unit_type))
-		HUDStyles.style_button(retrain_button)
-		_list.add_child(retrain_button)
-	if not any_retrain_candidate:
+		var enabled := error.is_empty()
+		var details := error if not enabled else "Cost: %s" % HUDStyles.format_resource_dict(_retrain_preview_cost(candidate))
+		retrain_grid.add_child(HUDStyles.build_card(
+			"%s (T%d)" % [candidate.display_name, candidate.tier],
+			UnitVisuals.unit_texture(candidate.unit_type),
+			details,
+			_on_retrain_pressed.bind(candidate.unit_type),
+			enabled,
+			110.0, 36.0,
+		))
+	if any_retrain_candidate:
+		_list.add_child(retrain_grid)
+	else:
 		var none_label := Label.new()
 		none_label.text = "(top tier for this role)"
 		HUDStyles.style_label(none_label)
@@ -464,14 +504,17 @@ func _retrain_preview_cost(definition: UnitDefinition) -> Dictionary:
 		cost[resource_type] = float(definition.training_cost[resource_type]) * UnitManager.RETRAIN_COST_FRACTION
 	return cost
 
-func _format_cost(cost: Dictionary) -> String:
-	var text := ""
-	var first := true
-	for resource_type in cost:
-		if not first:
-			text += ", "
-		text += "%d %s" % [int(cost[resource_type]), ResourceVisuals.display_name(resource_type)]
-		first = false
+## "how much it costs and the upkeep" (user request, #8) — training cost is
+## one-time (UnitManager.train_unit()'s own spend), daily_upkeep is the
+## recurring Gunpowder drain (UnitDefinition.daily_upkeep's own doc
+## comment); shown as two separate lines for the same "one-time vs
+## recurring" clarity BuildMenuView's own card details already keep for
+## buildings (construction cost vs. daily upkeep).
+func _unit_card_details(definition: UnitDefinition) -> String:
+	var text := "Cost: %s" % HUDStyles.format_resource_dict(definition.training_cost)
+	var upkeep := HUDStyles.format_resource_dict(definition.daily_upkeep)
+	if not upkeep.is_empty():
+		text += "\nUpkeep: %s/day" % upkeep
 	return text
 
 func _role_name(role: GameEnums.UnitRole) -> String:

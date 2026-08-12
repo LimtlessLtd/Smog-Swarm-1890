@@ -197,7 +197,7 @@ static func sample_grid(coord: Vector2i, n: int) -> Array:
 	if n <= 1:
 		result.append(sample_at(center))
 		return result
-	var span := HexCoord.HEX_SIZE * 1.6  # slightly over the hex's own footprint, matches LocalDetailGenerator's own 0.85x-radius scatter convention scaled up to a full diameter
+	var span := HexCoord.SUB_HEX_GRID_SPAN  # Shared with SubHexGroundView's own render grid — see that constant's own doc comment (HexCoord.gd) for why this exact value.
 	var step := span / float(n - 1)
 	var start := -span * 0.5
 	for row in range(n):

@@ -116,7 +116,7 @@ func _ready() -> void:
 func _on_event_raised(event: GameEvent) -> void:
 	_play(AlertTones.critical_tone() if event.severity == GameEnums.EventSeverity.CRITICAL else AlertTones.warning_tone())
 	if event.severity != GameEnums.EventSeverity.INFO and TickManager.speed_index != 0:
-		TickManager.set_speed_index(0)
+		TickManager.set_speed_index(0, true)  ## is_automatic_pause=true — see that param's own doc comment (TickManager.gd) for the manual-unpause grace window this respects.
 
 func _check_phase_warnings() -> void:
 	if TimeCycleManager.is_day():

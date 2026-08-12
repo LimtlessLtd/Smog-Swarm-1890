@@ -1,12 +1,37 @@
 class_name ResourceBarView
-extends HBoxContainer
+extends PanelContainer
 
-## Top HUD strip (design doc Phase 6.1): one Label per GameEnums.ResourceType,
+## Top HUD strip (design doc Phase 6.1): one entry per GameEnums.ResourceType,
 ## live-updated off ResourceManager.resources_changed. Deliberately dumb — it
-## only formats whatever ResourceManager reports (amount/cap), no economy
+## only formats whatever ResourceManager/BuildingManager report, no economy
 ## logic of its own. Built entirely in code rather than scene-authored,
 ## matching HexCellView/StrategicOverlayManager's "code-drawn placeholder"
 ## convention.
+##
+## **Icon-only, dark-background rework (user request, playtest round 4:
+## "remove the names of the items and keep the icons... make the resource bar
+## have a dark background"):** the per-resource Label used to read
+## "Food: 42/100" — the "Food:" name prefix is gone (the icon carries that
+## now), the "42/100" amount/cap stays since that's live state, not a name,
+## and is genuinely useful to see at a glance without hovering. A hover
+## tooltip (Control.tooltip_text, Godot's own built-in mechanism — no custom
+## Popup needed) fills the gap left by the removed name AND adds the two
+## numbers the user asked for that weren't shown anywhere before: today's
+## projected income and expenditure, straight off
+## BuildingManager.get_projected_daily_flow() so the tooltip can never drift
+## from what the next `day_completed` tick will actually bank.
+##
+## **Dark background — real bug, not a re-skin:** `extends HBoxContainer`
+## used to plainly not draw a background at all — `HUDStyles.style_panel()`
+## sets a `"panel"` theme stylebox override, but only `Panel`/`PanelContainer`
+## (and similar) actually draw one; plain `Container` subclasses like
+## `HBoxContainer` silently ignore it. Switching the root to `PanelContainer`
+## (with the resource entries in an inner `HBoxContainer` — `PanelContainer`
+## itself only manages ONE child's margins, not a row layout) is what
+## actually renders `HUDStyles.PANEL_COLOR`. Scoped to this bar only, not a
+## project-wide `HUDStyles.style_panel()` fix — that would touch every other
+## HUD element's visuals as an unintended side effect of a resource-bar bug
+## report, out of scope here.
 
 ## Icon pixel size — small enough to sit comfortably inline with a Label at
 ## this bar's own font size, matching HUDStyles' existing text scale rather
@@ -14,21 +39,19 @@ extends HBoxContainer
 const ICON_SIZE: int = 20
 
 var _resource_manager: ResourceManager
+var _building_manager: BuildingManager
+var _entries: Dictionary = {}  # GameEnums.ResourceType -> Control (tooltip owner)
 var _labels: Dictionary = {}  # GameEnums.ResourceType -> Label
 
 func _ready() -> void:
-	add_theme_constant_override("separation", 18)
 	HUDStyles.style_panel(self)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 18)
+	add_child(row)
 	for resource_type in ResourceVisuals.display_order():
-		# User request, this pass: a real icon (assets/icons/README.md) next
-		# to each resource's text where one exists yet — an inner HBoxContainer
-		# per resource so the icon (TextureRect, only added when
-		# ResourceVisuals.icon() returns non-null) and Label sit side by side.
-		# No icon authored yet just means today's exact text-only look, same
-		# "art lands incrementally" contract every other *Visuals.gd here
-		# already follows.
 		var entry := HBoxContainer.new()
 		entry.add_theme_constant_override("separation", 4)
+		entry.mouse_filter = Control.MOUSE_FILTER_STOP  ## Own tooltip target — PASS (the container default) would let hover fall through to whatever's behind this bar instead of showing it.
 		var icon_texture := ResourceVisuals.icon(resource_type)
 		if icon_texture:
 			var icon_rect := TextureRect.new()
@@ -44,20 +67,27 @@ func _ready() -> void:
 			# with STRETCH_KEEP_ASPECT_CENTERED scaling the texture down to fit it.
 			icon_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 			icon_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+			icon_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE  ## The parent `entry` owns the tooltip/hover, not this child.
 			entry.add_child(icon_rect)
 		var label := Label.new()
 		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 		label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		HUDStyles.style_label(label)
 		entry.add_child(label)
-		add_child(entry)
+		row.add_child(entry)
+		_entries[resource_type] = entry
 		_labels[resource_type] = label
 
-## Called by MainHUD once it has resolved its ResourceManager NodePath — this
-## view has no NodePath of its own since MainHUD builds it in code, not via
-## a scene with pre-wired exports.
-func setup(resource_manager: ResourceManager) -> void:
+## Called by MainHUD once it has resolved its ResourceManager/BuildingManager
+## NodePaths — this view has no NodePath of its own since MainHUD builds it
+## in code, not via a scene with pre-wired exports. `building_manager` is
+## optional (same "gracefully skip it" convention every other optional MainHUD
+## dependency follows) — without it, the tooltip still shows the resource's
+## name, just no income/expenditure lines.
+func setup(resource_manager: ResourceManager, building_manager: BuildingManager = null) -> void:
 	_resource_manager = resource_manager
+	_building_manager = building_manager
 	_resource_manager.resources_changed.connect(_on_resources_changed)
 	_on_resources_changed(_resource_manager.get_full_stockpile())
 
@@ -66,4 +96,22 @@ func _on_resources_changed(stockpile: Dictionary) -> void:
 		var amount: float = stockpile.get(resource_type, 0.0)
 		var cap := _resource_manager.get_storage_cap(resource_type)
 		var cap_text := "∞" if is_inf(cap) else str(int(cap))
-		_labels[resource_type].text = "%s: %d/%s" % [ResourceVisuals.display_name(resource_type), int(amount), cap_text]
+		_labels[resource_type].text = "%d/%s" % [int(amount), cap_text]
+		_entries[resource_type].tooltip_text = _build_tooltip(resource_type)
+
+## "the name of the resource, total daily income and total daily
+## expenditure" (user request) — income/expenditure read straight off
+## BuildingManager.get_projected_daily_flow()'s live preview, so this can't
+## drift from what the next day_completed tick will actually bank. A
+## resource with neither income nor expenditure today still gets a tooltip
+## (just the name) rather than an empty one.
+func _build_tooltip(resource_type: GameEnums.ResourceType) -> String:
+	var text := ResourceVisuals.display_name(resource_type)
+	if not _building_manager:
+		return text
+	var flow := _building_manager.get_projected_daily_flow()
+	var income: float = (flow["produced"] as Dictionary).get(resource_type, 0.0)
+	var expenditure: float = (flow["consumed"] as Dictionary).get(resource_type, 0.0)
+	text += "\nIncome: %s/day" % String.num(income, 1)
+	text += "\nExpenditure: %s/day" % String.num(expenditure, 1)
+	return text

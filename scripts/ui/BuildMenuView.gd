@@ -1,38 +1,49 @@
 class_name BuildMenuView
-extends Control
+extends PanelContainer
 
 ## Build menu (design doc Phase 6.1 — "the actual UI for
 ## BuildingManager.place_building_at_world(), built in Phase 2.5, never
-## called by anything since"). One button per BuildingCatalog definition,
-## grouped into a tab per category; pressing one arms placement mode by
+## called by anything since"). One card per BuildingCatalog definition,
+## grouped into a column per category; clicking one arms placement mode by
 ## emitting building_selected. This view only knows about *selecting* a
 ## type — it has no idea what a hex or a world position is;
 ## BuildPlacementController (Phase 6.1, `/scripts/world`) is what turns a
 ## selection into an actual placed building.
 ##
-## **Tabbed, not one long scrolling list** (user report/request): the
-## original single VBoxContainer under one ScrollContainer worked but grew
-## to five-plus screens of vertical scrolling once every category was
-## authored, and buried DEFENSE_WORKS entirely (see below) below the fold
-## with no visual grouping. A TabContainer — one tab per
-## GameEnums.BuildingCategory, unchanged category order — replaces it;
-## each tab keeps its own ScrollContainer+VBoxContainer in case a category
-## itself ever grows long enough to need scrolling, but no longer forces
-## scrolling PAST other categories to reach one.
+## **All categories visible at once, no tabs (user request, playtest round
+## 4: "too many clicks having to scroll to the right tab, just display all
+## the tabs all the time")** — the previous `TabContainer` (one category
+## hidden behind another until clicked) is gone; every category is now its
+## own always-visible column (header + a row of building cards) inside one
+## horizontally-scrolling strip. Nothing is hidden behind a click anymore —
+## "scrolling" sideways to reach a category some categories to the right
+## replaces "clicking a tab", which is the actual complaint (extra clicks),
+## not scrolling itself.
 ##
-## **DEFENSE_WORKS is now included** — CATEGORY_ORDER previously omitted it
-## entirely, which meant Searchlight Tower (a normal, fully-placeable
-## building) had no click path to it at all despite being fully
-## implemented, found during a real playtest. Ditch/Oil Pit stay excluded
-## (see _EXCLUDED_FROM_MENU below) — they're real BuildingCatalog entries
-## for their cost data only; WallManager.add_defense_work() is their actual
-## placement path, not this menu.
+## **Cards, not bare-text buttons (user request: "display the pictures of
+## the building... how much each building costs, the upkeep it requires,
+## and what it actually does")** — each card shows the building's real art
+## (BuildingVisuals.building_texture(), same texture TacticalHexView
+## renders), its name, and a compact cost/upkeep/effect summary, all
+## visible without hovering (a tooltip was the OLD cost-only convention;
+## this pass makes the same information a first-class part of the card
+## instead of hiding it behind a hover).
+##
+## **Merged into one bottom bar with the minimap (user request, #5)** — this
+## view no longer positions or sizes itself (MainHUD._build_bottom_bar()
+## does, sizing it to SIZE_EXPAND_FILL alongside a fixed-width MinimapView
+## in the same row) or draws its own background via a bare `Control`
+## (that never actually rendered anything — see the dark-background note
+## below); it now extends `PanelContainer` so `HUDStyles.style_panel()`
+## genuinely draws a background, same fix `ResourceBarView` needed for the
+## same reason (only `Panel`/`PanelContainer` actually draw a `"panel"`
+## theme stylebox — a plain `Control` silently ignores one).
 
 signal building_selected(building_type: GameEnums.BuildingType)
 ## Real bug fixed (player report: walls "are not free hand to place/draw"
 ## — a project-wide grep confirmed there was never ANY placement UI for
 ## walls at all, not merely a hex-locked one; every wall a player has ever
-## seen was the free starting perimeter). A fourth tab, own signal rather
+## seen was the free starting perimeter). A fourth column, own signal rather
 ## than reusing building_selected — arming WallPlacementController's
 ## click-DRAG flow is a different shape from BuildPlacementController's
 ## click-to-place one, not a building type.
@@ -57,24 +68,46 @@ const _EXCLUDED_FROM_MENU: Array[GameEnums.BuildingType] = [
 ]
 
 func _ready() -> void:
-	custom_minimum_size = Vector2(320, 300)
+	size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	size_flags_vertical = Control.SIZE_EXPAND_FILL
 	HUDStyles.style_panel(self)
 
-	var tabs := TabContainer.new()
-	tabs.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT, Control.PRESET_MODE_MINSIZE, 8)
-	HUDStyles.style_tab_container(tabs)
-	add_child(tabs)
+	var scroll := ScrollContainer.new()
+	scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO  ## The whole point of this rework — sideways scrolling replaces tab-clicking, see class doc.
+	add_child(scroll)
+
+	var columns := HBoxContainer.new()
+	columns.add_theme_constant_override("separation", 16)
+	scroll.add_child(columns)
 
 	for category in CATEGORY_ORDER:
 		var definitions := _visible_definitions(category)
 		if definitions.is_empty():
-			continue  # An empty tab (e.g. every entry filtered out) would just be a dead click target.
-		tabs.add_child(_build_tab(category, definitions))
+			continue  # An empty column would just be dead space.
+		columns.add_child(_build_category_column(category, definitions))
 
-	tabs.add_child(_build_wall_tab())
+	columns.add_child(_build_wall_column())
+
+func _build_category_column(category: GameEnums.BuildingCategory, definitions: Array[BuildingDefinition]) -> Control:
+	var column := VBoxContainer.new()
+	column.add_theme_constant_override("separation", 6)
+
+	var header := Label.new()
+	header.text = _category_name(category)
+	HUDStyles.style_label(header, true)
+	column.add_child(header)
+
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+	for definition in definitions:
+		row.add_child(_build_building_card(definition))
+	column.add_child(row)
+
+	return column
 
 ## Real placement UI for walls (see wall_placement_selected's own doc
-## comment) — deliberately just two buttons, not a per-tier list the way
+## comment) — deliberately just two cards, not a per-tier list the way
 ## buildings get one: WallManager.place_wall_line() only ever places fresh
 ## Wooden segments (upgrade_segment(), reached by selecting an existing
 ## wall, is still the only way to a Brick/Concrete tier — unchanged from
@@ -83,62 +116,93 @@ func _ready() -> void:
 ## intrinsically weaker (WallSegment.is_gate's own doc comment) — a
 ## deliberate weak point the player places on purpose, not a difference
 ## the build menu needs to price separately.
-func _build_wall_tab() -> Control:
-	var container := Control.new()
-	container.name = "Walls"  # TabContainer reads a child's own `name` as its tab label.
+func _build_wall_column() -> Control:
+	var column := VBoxContainer.new()
+	column.add_theme_constant_override("separation", 6)
 
-	var list := VBoxContainer.new()
-	list.add_theme_constant_override("separation", 6)
-	list.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE, Control.PRESET_MODE_MINSIZE, 8)
-	container.add_child(list)
+	var header := Label.new()
+	header.text = "Walls"
+	HUDStyles.style_label(header, true)
+	column.add_child(header)
 
-	var hint := Label.new()
-	hint.text = "Click and drag along the map to draw a wall — a long drag auto-splits into short, independently-defended pieces."
-	hint.autowrap_mode = TextServer.AUTOWRAP_WORD
-	HUDStyles.style_label(hint)
-	list.add_child(hint)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+	row.add_child(HUDStyles.build_card(
+		"Wooden Wall",
+		WallVisuals.tier_texture(WallCatalog.WOODEN),
+		"Cost: %s\nClick+drag to draw — auto-splits into ≤100m pieces." % HUDStyles.format_resource_dict(WallCatalog.get_build_cost(WallCatalog.WOODEN)),
+		func() -> void: wall_placement_selected.emit(false),
+	))
+	row.add_child(HUDStyles.build_card(
+		"Gate",
+		WallVisuals.tier_texture(WallCatalog.WOODEN),
+		"Cost: %s\nSame as a Wooden Wall, deliberately weaker." % HUDStyles.format_resource_dict(WallCatalog.get_build_cost(WallCatalog.WOODEN)),
+		func() -> void: wall_placement_selected.emit(true),
+	))
+	column.add_child(row)
 
-	var wall_button := Button.new()
-	wall_button.text = "Wooden Wall"
-	wall_button.tooltip_text = _format_cost(WallCatalog.get_build_cost(WallCatalog.WOODEN)) + " (per hex-edge-length drawn)"
-	wall_button.pressed.connect(_on_wall_button_pressed.bind(false))
-	HUDStyles.style_button(wall_button)
-	list.add_child(wall_button)
+	return column
 
-	var gate_button := Button.new()
-	gate_button.text = "Gate"
-	gate_button.tooltip_text = "Same cost as a Wooden Wall, deliberately weaker (a fortification's traditional weak point)."
-	gate_button.pressed.connect(_on_wall_button_pressed.bind(true))
-	HUDStyles.style_button(gate_button)
-	list.add_child(gate_button)
+func _build_building_card(definition: BuildingDefinition) -> Control:
+	return HUDStyles.build_card(
+		definition.display_name,
+		BuildingVisuals.building_texture(definition.building_type),
+		_describe_building(definition),
+		_on_building_button_pressed.bind(definition.building_type),
+	)
 
-	return container
+## "how much each building costs, the upkeep it requires, and what it
+## actually does e.g. how much of x does it produce daily, does it produce
+## units and if so what kind" (user request) — one compact multi-line
+## string covering all three asks per building.
+func _describe_building(definition: BuildingDefinition) -> String:
+	var lines: Array[String] = []
+	lines.append("Cost: %s" % HUDStyles.format_resource_dict(definition.construction_cost))
+	var upkeep := HUDStyles.format_resource_dict(definition.daily_upkeep)
+	if not upkeep.is_empty():
+		lines.append("Upkeep: %s/day" % upkeep)
+	lines.append(_describe_effect(definition))
+	return "\n".join(lines)
 
-func _on_wall_button_pressed(is_gate: bool) -> void:
-	wall_placement_selected.emit(is_gate)
+## The "what it actually does" line — production (resource amounts),
+## training (and what kind of units), and housing all read directly off the
+## same BuildingDefinition fields the rest of the game already simulates
+## from, so this can't silently drift out of sync with real behavior. Falls
+## back to a plain structural description for the handful of buildings with
+## none of the above (Town Hall, Watchtower, Ammo Dump, ...) so a card is
+## never left with a blank third line.
+func _describe_effect(definition: BuildingDefinition) -> String:
+	var parts: Array[String] = []
+	for resource_type in definition.daily_output:
+		var amount := float(definition.daily_output[resource_type])
+		if resource_type == GameEnums.ResourceType.ENERGY:
+			parts.append("+%s Energy (one-time)" % String.num(amount, 0))
+		else:
+			parts.append("+%s %s/day" % [String.num(amount, 0), ResourceVisuals.display_name(resource_type)])
+	if definition.population_provided > 0:
+		parts.append("Houses %d population" % definition.population_provided)
+	if definition.can_train_units:
+		parts.append("Trains units: %s" % _trainable_unit_names())
+	if not parts.is_empty():
+		return "; ".join(parts)
+	if not definition.zoc_roles.is_empty():
+		return "Extends territorial control"
+	if definition.vision_radius > 0:
+		return "Extends vision"
+	return "Support structure"
 
-func _build_tab(category: GameEnums.BuildingCategory, definitions: Array[BuildingDefinition]) -> Control:
-	var scroll := ScrollContainer.new()
-	scroll.name = _category_name(category)  # TabContainer reads a child's own `name` as its tab label.
-	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED  ## No dialog should ever need a horizontal scrollbar — button text wraps/fits within the panel's own width instead.
-
-	var list := VBoxContainer.new()
-	list.add_theme_constant_override("separation", 6)
-	list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	scroll.add_child(list)
-
-	for definition in definitions:
-		var button := Button.new()
-		button.text = definition.display_name
-		# Full cost as a hover tooltip rather than inline text — cost
-		# strings ("Church Steeple Watchtower: 100 Bricks, 10 Cast
-		# Iron") run too long to fit the panel alongside the name.
-		button.tooltip_text = _format_cost(definition.construction_cost)
-		button.pressed.connect(_on_building_button_pressed.bind(definition.building_type))
-		HUDStyles.style_button(button)
-		list.add_child(button)
-
-	return scroll
+## "does it produce units and if so what kind" (user request) — every
+## `can_train_units` building trains off the SAME UnitCatalog roster today
+## (UnitManager.train_unit() takes no building-specific filter — see
+## UnitPanelView's own training-button loop, which iterates
+## UnitCatalog.get_all_definitions() the identical way), so this is genuinely
+## accurate for Garrison and any future can_train_units building alike, not
+## a Garrison-specific guess.
+func _trainable_unit_names() -> String:
+	var names: Array[String] = []
+	for unit_definition in UnitCatalog.get_all_definitions():
+		names.append(unit_definition.display_name)
+	return ", ".join(names)
 
 func _visible_definitions(category: GameEnums.BuildingCategory) -> Array[BuildingDefinition]:
 	var result: Array[BuildingDefinition] = []
@@ -162,13 +226,3 @@ func _category_name(category: GameEnums.BuildingCategory) -> String:
 			return "Defense Works"
 		_:
 			return "Other"
-
-func _format_cost(cost: Dictionary) -> String:
-	var text := ""
-	var first := true
-	for resource_type in cost:
-		if not first:
-			text += ", "
-		text += "%d %s" % [int(cost[resource_type]), ResourceVisuals.display_name(resource_type)]
-		first = false
-	return text

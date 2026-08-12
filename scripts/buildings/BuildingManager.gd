@@ -782,6 +782,33 @@ func _on_day_completed(_day_number: int) -> void:
 	if not _resource_manager:
 		return
 
+	var totals := _compute_daily_totals()
+	var consumed: Dictionary = totals["consumed"]
+	var produced: Dictionary = totals["produced"]
+	var ratio: float = totals["ratio"]
+	food_satisfaction_changed.emit(ratio)
+
+	_resource_manager.apply_daily_flow(consumed, produced)
+
+	# 2.10.3/2.10.4: population consequences apply AFTER this day's flow, so
+	# they affect tomorrow's food_demand rather than today's — avoids a
+	# same-tick circular dependency between "how many mouths to feed" and
+	# "how many mouths starved because of how many there were".
+	if ratio < FOOD_STARVATION_RATIO:
+		_apply_starvation_deaths(ratio)
+	elif ratio >= FOOD_SURPLUS_RATIO:
+		_apply_population_regrowth()
+
+## The actual per-instance upkeep/output tally, extracted out of
+## _on_day_completed() so a non-mutating preview (get_projected_daily_flow(),
+## user request — a resource-bar tooltip showing "total daily income and
+## total daily expenditure") can run the exact same math the real daily tick
+## uses instead of a second, driftable approximation. Returns the SAME
+## `consumed`/`produced` dictionaries _on_day_completed() used to feed
+## ResourceManager.apply_daily_flow() with (already food-satisfaction-scaled
+## on the produced side) — this function only computes, it never touches
+## ResourceManager or BuildingInstance state itself.
+func _compute_daily_totals() -> Dictionary:
 	var consumed: Dictionary = {}
 	var produced: Dictionary = {}
 	var total_population := 0
@@ -833,7 +860,6 @@ func _on_day_completed(_day_number: int) -> void:
 		consumed[food] = consumed.get(food, 0.0) + food_demand
 
 	var ratio := _compute_food_satisfaction_ratio(food_demand, produced)
-	food_satisfaction_changed.emit(ratio)
 
 	# 2.10.2/2.10.4: scale this day's total output by the satisfaction ratio
 	# (a penalty below full satisfaction, a small bonus at a genuine surplus)
@@ -845,16 +871,19 @@ func _on_day_completed(_day_number: int) -> void:
 		for resource_type in produced:
 			produced[resource_type] = float(produced[resource_type]) * production_multiplier
 
-	_resource_manager.apply_daily_flow(consumed, produced)
+	return {"consumed": consumed, "produced": produced, "ratio": ratio}
 
-	# 2.10.3/2.10.4: population consequences apply AFTER this day's flow, so
-	# they affect tomorrow's food_demand rather than today's — avoids a
-	# same-tick circular dependency between "how many mouths to feed" and
-	# "how many mouths starved because of how many there were".
-	if ratio < FOOD_STARVATION_RATIO:
-		_apply_starvation_deaths(ratio)
-	elif ratio >= FOOD_SURPLUS_RATIO:
-		_apply_population_regrowth()
+## User request (playtest round 4, resource bar tooltip: "total daily income
+## and total daily expenditure"): today's projected upkeep/output at CURRENT
+## building/population state, computed but never applied — a read-only
+## preview via the exact same _compute_daily_totals() math the real daily
+## tick banks, not a second approximation that could silently drift from it.
+## Excludes ENERGY on both sides for the same reason _compute_daily_totals()
+## itself does (a one-time grid draw/contribution, not a daily flow) — see
+## BuildingDefinition.daily_upkeep/daily_output's own doc comments.
+func get_projected_daily_flow() -> Dictionary:
+	var totals := _compute_daily_totals()
+	return {"consumed": totals["consumed"], "produced": totals["produced"]}
 
 ## `food_demand <= 0` (no population yet) reports a flat 1.0 — "fully fed" is
 ## the correct trivial answer when there's nobody to feed, and avoids
