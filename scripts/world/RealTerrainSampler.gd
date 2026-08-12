@@ -190,12 +190,19 @@ static func sample_at(world_pos: Vector2) -> Dictionary:
 
 ## Samples an n x n grid centred on a hex's world position, spanning its
 ## own real-world footprint (HexCoord.HEX_SIZE radius). Returns an Array
-## of n*n Dictionaries (sample_at()'s own shape), row-major.
+## of n*n Dictionaries (sample_at()'s own shape), row-major. Prefers a
+## fine per-hex tile when one has been baked for `coord` (see the "Fine
+## per-hex tiles" section below) — this is SubHexGroundView's own call
+## site, i.e. the ONE consumer that's already gated to only exist for
+## Tactical-hydrated/nearby hexes (LocalDetailManager's existing
+## proximity system), so fine detail streams in "only when you're nearby"
+## for free, riding on that existing mechanism rather than a new one.
 static func sample_grid(coord: Vector2i, n: int) -> Array:
 	var center := HexCoord.axial_to_world(coord)
 	var result: Array = []
+	var use_fine := _fine_tile_for(coord) != null
 	if n <= 1:
-		result.append(sample_at(center))
+		result.append(_sample_fine(coord, center) if use_fine else sample_at(center))
 		return result
 	var span := HexCoord.SUB_HEX_GRID_SPAN  # Shared with SubHexGroundView's own render grid — see that constant's own doc comment (HexCoord.gd) for why this exact value.
 	var step := span / float(n - 1)
@@ -203,8 +210,86 @@ static func sample_grid(coord: Vector2i, n: int) -> Array:
 	for row in range(n):
 		for col in range(n):
 			var offset := Vector2(start + col * step, start + row * step)
-			result.append(sample_at(center + offset))
+			var world_pos := center + offset
+			result.append(_sample_fine(coord, world_pos) if use_fine else sample_at(world_pos))
 	return result
+
+## --- Fine per-hex tiles (playtest round 6, user request: "fine detail
+## everywhere but it's only rendered when you're nearby based on the
+## current tactical view system") -----------------------------------
+##
+## One small PNG per hex coordinate (res://assets/terrain_data/fine/
+## <q>_<r>.png), baked at a MUCH finer WORLD_UNITS_PER_PIXEL_FINE than the
+## single whole-corridor landcover.png above — genuinely resolves
+## individual street blocks/field boundaries instead of an 877m/pixel
+## blur. Keyed directly by hex coordinate (not an arbitrary world-space
+## tile grid) because the thing that already decides "which hexes are
+## worth this extra detail right now" is LocalDetailManager's existing
+## Tactical-hydration radius (DETAIL_RADIUS — a handful of hexes around
+## the camera) — this rides on that existing system instead of building a
+## second proximity tracker, exactly matching the user's own framing.
+## Every fine tile covers the same HexCoord.SUB_HEX_GRID_SPAN square
+## sample_grid() already samples across, so swapping which raster answers
+## a given sample is transparent to every caller.
+##
+## A hex with no baked fine tile yet (the overwhelming majority — only a
+## demo radius around the starting settlement is baked this round, see
+## tools/geo_bake/bake_fine_tiles.py's own doc comment) falls back to the
+## existing coarse landcover.png exactly as before — nothing regresses,
+## coverage only ever gets BETTER as more fine tiles are baked later, same
+## "art/data lands incrementally, zero further code changes needed" contract
+## every other lazy-loaded asset in this project already follows.
+## Deliberately does NOT bake/read a fine elevation tile — elevation
+## varies smoothly enough at this scale that the coarse elevation.png
+## (already sampled by sample_at() below) is unaffected by this whole
+## section; only biome/terrain_feature get the fine treatment.
+const WORLD_UNITS_PER_PIXEL_FINE: float = 1024.0 / 96.0  ## ~10.7 world units/pixel (~104 real metres) — must match tools/geo_bake/bake_fine_tiles.py's own FINE_TILE_PIXELS/HexCoord.SUB_HEX_GRID_SPAN-derived constant exactly, same documented cross-reference convention as WORLD_UNITS_PER_PIXEL above.
+const _FINE_TILE_DIR: String = "res://assets/terrain_data/fine"
+
+## Vector2i (hex coord) -> Image, or null once confirmed no tile exists —
+## caching the miss too means a hex with no fine tile is only ever checked
+## on disk once, not on every single sub-hex sample.
+static var _fine_tile_cache: Dictionary = {}
+
+static func _fine_tile_for(coord: Vector2i) -> Image:
+	if _fine_tile_cache.has(coord):
+		return _fine_tile_cache[coord]
+	var path := "%s/%d_%d.png" % [_FINE_TILE_DIR, coord.x, coord.y]
+	var image: Image = null
+	if FileAccess.file_exists(path):
+		var img := Image.new()
+		if img.load(path) == OK:
+			image = img
+	_fine_tile_cache[coord] = image
+	return image
+
+## Same {} "no data here" contract as sample_at() — the caller
+## (sample_grid() above) only ever calls this once it's already confirmed
+## a tile exists for `coord`, but a specific `world_pos` can still fall
+## just outside this tile's own pixel bounds (rounding at the very edge of
+## the sampled span) and correctly reports empty rather than reading
+## garbage from an adjacent, differently-classified hex's data.
+static func _sample_fine(coord: Vector2i, world_pos: Vector2) -> Dictionary:
+	var image := _fine_tile_for(coord)
+	if image == null:
+		return {}
+	var half_span := HexCoord.SUB_HEX_GRID_SPAN * 0.5
+	var tile_origin := HexCoord.axial_to_world(coord) - Vector2(half_span, half_span)
+	var local := world_pos - tile_origin
+	var px := int(local.x / WORLD_UNITS_PER_PIXEL_FINE)
+	var py := int(local.y / WORLD_UNITS_PER_PIXEL_FINE)
+	if px < 0 or py < 0 or px >= image.get_width() or py >= image.get_height():
+		return {}
+	var color := image.get_pixelv(Vector2i(px, py))
+	var biome_code := int(round(color.r * 255.0))
+	var feature_code := int(round(color.g * 255.0))
+	var elevation_sample := sample_at(world_pos)  ## Elevation always comes from the coarse raster — see this section's own doc comment.
+	return {
+		"biome_type": _BIOME_BY_CODE[biome_code] if biome_code < _BIOME_BY_CODE.size() else GameEnums.BiomeType.MOORLAND,
+		"terrain_feature": _FEATURE_BY_CODE[feature_code] if feature_code < _FEATURE_BY_CODE.size() else GameEnums.TerrainFeature.NONE,
+		"elevation_m": elevation_sample.get("elevation_m", 0.0),
+		"elevation": elevation_sample.get("elevation", 0.0),
+	}
 
 ## Majority-vote biome + mean elevation across a 5x5 sample grid for one
 ## hex — HexMapGenerator's per-hex real-data derivation. A coarser grid

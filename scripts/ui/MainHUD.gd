@@ -78,7 +78,7 @@ const TECH_BAR_WIDTH := 150.0
 ## comment for the shared history. Tall enough for a card's icon + name +
 ## a 2-3 line cost/upkeep/effect block without clipping, verified together
 ## via an actual live screenshot, not just arithmetic.
-const BOTTOM_BAR_HEIGHT := 172.0
+const BOTTOM_BAR_HEIGHT := 224.0  ## Raised again after live-testing the 172 value — Garrison's card (2-resource cost + upkeep + "Trains: ..." all on one card, this tree's longest) still clipped its last line off the bottom of the real screen. See BuildMenuView's own doc comment for the same live-testing history.
 ## Height now matches BOTTOM_BAR_HEIGHT exactly (playtest round 6: "the
 ## minimap... should sit flush with the building menu so the UX is
 ## better") — paired with `size_flags_vertical = SIZE_FILL` at the one
@@ -88,7 +88,7 @@ const BOTTOM_BAR_HEIGHT := 172.0
 ## with a visible gap above/below whenever its own height fell short of
 ## the bar's. Width picked independently — wide enough to read the map at
 ## a glance, not derived from the old aspect ratio.
-const MINIMAP_SIZE := Vector2(200.0, 172.0)
+const MINIMAP_SIZE := Vector2(200.0, 224.0)
 const UNIT_PANEL_SIZE := Vector2(320.0, 320.0)  ## Widened/heightened (playtest round 4, #8) for the new 2-column training/retrain card grid (HUDStyles.build_card()) — the old text-only button list fit 260x260, real icon+cost+upkeep cards need more room.
 const SAVE_LOAD_VIEW_SIZE := Vector2(320.0, 320.0)
 const TECH_TREE_VIEW_SIZE := Vector2(380.0, 360.0)

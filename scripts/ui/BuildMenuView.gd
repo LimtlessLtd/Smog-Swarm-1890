@@ -89,7 +89,7 @@ const _EXCLUDED_FROM_MENU: Array[GameEnums.BuildingType] = [
 ## count is a real-font-metrics question static reasoning can't settle on
 ## its own (same lesson the minimap-hiding regression a few rounds back
 ## already taught this project once).
-const _CARD_WIDTH: float = 112.0
+const _CARD_WIDTH: float = 128.0  ## Widened again alongside MainHUD.BOTTOM_BAR_HEIGHT — see that constant's own doc comment for the live-testing history that found 112 still wrapped Garrison's 2-resource cost line ("90 Bricks, 25 Cast Iron") across 2 lines by itself.
 const _CARD_ICON_SIZE: float = 32.0
 const _CARD_NAME_FONT_SIZE: int = 12
 const _CARD_DETAILS_FONT_SIZE: int = 10
