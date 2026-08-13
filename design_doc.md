@@ -1,0 +1,412 @@
+# Technical Specifications & Game Design Document: The Smog & The Swarm (1890s-1920s Era Post-Zombie Apocalypse Industrial Revolution British Empire) - v4.4
+
+---
+
+## 1. Biomes & Terrain Rules
+
+### Movement Modifiers
+* **FARMLAND** - Movement reduced for ground units & zombies by 10% (0.9x speed)
+  * **Clay:** Abundant | **Wood:** Common | **Limestone:** Rare
+* **MOORLAND** - Movement reduced for ground units & zombies by 50% (0.5x speed)
+  * **Coal:** Common | **Iron Ore:** Common | **Limestone:** Rare | **Wood:** Rare
+* **HIGHLAND** - Movement reduced for ground units & zombies by 25% (0.75x speed)
+  * **Iron Ore:** Abundant | **Coal:** Common | **Limestone:** Common | **Sulfur:** Rare | **Wood:** Rare
+* **WETLAND** - Movement reduced for ground units & zombies by 50% (0.5x speed)
+  * **Clay:** Abundant | **Wood:** Common | **Coal:** Rare
+* **WOODLAND** - Movement reduced for ground units & zombies by 25% (0.75x speed)
+  * **Wood:** Abundant | **Clay:** Common | **Iron Ore:** Rare | **Coal:** Rare
+* **HEATHLAND** - Movement reduced for ground units & zombies by 50% (0.5x speed)
+  * **Wood:** Common | **Clay:** Common | **Limestone:** Rare | **Sulfur:** Rare
+* **WATERWAY** - IMPASSABLE for all ground units & zombies. Traversable ONLY via Bridges.
+  * **Resources:** None
+* **OCEAN** - IMPASSABLE for all ground units & zombies
+  * **Resources:** None
+
+### Terrain vs. Infrastructure Speed Stacking Rule
+Constructed transit corridors (**Dirt Road, Cobblestone Road, Concrete Road, Railway, Bridges**) increase base movement speed by their respective tier multiplier while **completely ignoring underlying biome movement speed reductions** (terrain penalties do not apply while units are actively traversing directly on the infrastructure tile itself). These movement bonuses and biome immunity do not apply broadly to off-road movement within the surrounding biome.
+
+*For example, a unit traveling directly along a Concrete Road (+100% base speed) through a Wetland (normally 0.5x speed) moves at the full +100% speed bonus (2.0x base speed), completely ignoring the native 50% Wetland movement penalty. However, stepping off the road into the adjacent Wetland tile immediately applies the native 0.5x Wetland movement penalty.*
+
+---
+
+## 2. Core Resource System, Extraction Gating & Logistics Rules
+
+### Streamlined Resource Pool
+To maintain deep industrial strategy without overwhelming player management, resources are streamlined into:
+
+* **Raw Resources (6):** Wood, Clay, Coal, Limestone, Iron Ore, Sulfur.
+* **Processed Resources (5):** Bricks, Iron, Steel, Concrete, Gunpowder.
+* **Capacity & Yield Pools (4):** Population, Energy, Food, Research.
+
+### Resource Tier Extraction Hierarchy
+* **Tier 0 (Wood Base):** Wood (Lumber Yard), Clay (Clay Pit)
+* **Tier 1 (Brick Base):** Coal (Coal Mine), Limestone (Limestone Quarry)
+* **Tier 2 (Iron Base):** Iron Ore (Iron Ore Mine)
+* **Tier 3 (Steel Base):** Sulfur (Sulfur Mine) & **City Expansion** (Remote specialized outposts)
+* **Tier 4 (Traction Era):** Advanced Extraction (Steam Excavator Depot boosts node yields by +50%)
+* **Tier 5 (Armament Era):** Mass Synthesis & Automation (Bessemer Smelting Complexes & Synthetic Refineries)
+
+### Processed Resource Recipes
+* **Bricks** — Produced at Brickworks (Inputs: Clay).
+* **Iron** — Produced at Iron Foundry (Inputs: Iron Ore, Coal).
+* **Steel** — Produced at Steelworks / Bessemer Complex (Inputs: Iron Ore or Iron + Coal).
+* **Concrete** — Produced at Concrete Plant (Inputs: Limestone, Clay, Coal).
+* **Gunpowder** — Produced at Gunpowder Mill / Synthetic Refinery (Inputs: Sulfur, Coal).
+
+### Capacity Systems & Research Pacing
+* **Population** — Provided by housing. Reserved as flat cost by facilities and military units. Fully refunded upon demolition or unit death.
+* **Energy** — Provided by power generators. Reserved as flat cost by active infrastructure and industrial facilities.
+* **Food** — Daily upkeep produced by agricultural structures. Deducted continuously based on housing and facility demands.
+* **Research** — Daily yield produced by research facilities.
+  * **Tech Unlock Thresholds:**
+    * Tier 1 (Borough): 50 Research
+    * Tier 2 (Industrial District): 200 Research
+    * Tier 3 (Rail Network): 500 Research
+    * Tier 4 (Automation Era): 1,200 Research
+    * Tier 5 (Super-Complex Era): 2,500 Research
+
+### Unified Zone of Control (ZoC) & Field Supply Rules
+* **ZoC Emission & Expansion:** Players begin with **1 Pre-built Starter Town Hall** emitting a 5km x 5km ZoC circle. Constructing new Town Halls to establish far-flung cities and expand global network coverage is **locked until Tier 3**. Linked ZoCs pool global stockpiles; unlinked ZoCs remain local.
+* **Infantry Gunpowder Logistics:** Units inside ZoC draw seamlessly from stockpiles. Units exiting ZoC reserve **20 rounds of Gunpowder**. Re-entering any ZoC or visiting an Supply Dump automatically re-arms reserves.
+* **Steam Vehicle Fuel Logistics:** Steam-powered combat vehicles draw Coal directly from pooled stockpiles inside ZoC. When leaving ZoC, steam vehicles reserve **50 Coal** (enabling independent field operations). Re-entering ZoC or visiting a Supply Dump refuels reserves automatically.
+
+### Infrastructure Velocity Modifiers
+Each tier of road/transit infrastructure increases base movement speed while ignoring all native biome movement speed reductions:
+* **Dirt Road:** +25% Speed (Ignores Biome Reductions)
+* **Cobblestone Road:** +50% Speed (Ignores Biome Reductions)
+* **Concrete Road:** +100% Speed (Ignores Biome Reductions)
+* **Railway:** +300% Speed (Primary heavy bulk freight line; Ignores Biome Reductions)
+* **Canal:** +200% Speed (Bulk aquatic freight route; Ignores Biome Reductions)
+
+---
+
+## 3. Tiered Building Specifications
+
+### Tier 0: Wood Base / Settlement
+* **Town Hall** — **Pre-built at Game Start (1 Max at T0-T2)** | **Construction of additional Town Halls locked until Tier 3** | **Capacity:** +100 Pop, +20 Energy | **Upkeep:** 10 Food/day | **Output:** 5 Research/day | **ZoC:** 5km x 5km. Trains Tier 0 units (*Truncheoneer, Toxophilite, Outrider*).
+* **Lumber Yard** — **Cost:** 50 Wood | **Capacity:** -5 Pop, -5 Energy | **Output:** 200 Wood/day | **Time:** 1 day
+* **Clay Pit** — **Cost:** 60 Wood | **Capacity:** -15 Pop, -10 Energy | **Upkeep:** 10 Food/day | **Output:** 200 Clay/day | **Time:** 2 days
+* **Smallholding Farm** — **Cost:** 100 Wood | **Capacity:** -10 Pop, -5 Energy | **Output:** 150 Food/day | **Time:** 1 day
+* **Steam Furnace** — **Cost:** 100 Wood | **Capacity:** -5 Pop, +100 Energy | **Upkeep:** 30 Wood/day | **Time:** 1 day
+* **Wooden Houses** — **Cost:** 40 Wood | **Capacity:** +50 Pop, -5 Energy | **Upkeep:** 20 Food/day | **Time:** 1 day
+* **Dirt Road** — **Cost:** 10 Wood/seg | **Time:** 0.5 days | **Bonus:** +25% Speed (Ignores Biome Reductions)
+* **Wooden Bridge** — **Cost:** 30 Wood/seg | **Time:** 1 day
+* **Watchtower** — **Cost:** 80 Wood | **Capacity:** -5 Pop | **Time:** 1 day
+* **Wooden Wall & Gate** — **Cost:** 10 Wood/seg | **Time:** 0.25 days
+
+---
+
+### Tier 1: Brick Base / Borough
+* **Coal Mine** — **Cost:** 120 Wood, 50 Bricks | **Capacity:** -25 Pop, -20 Energy | **Upkeep:** 20 Food/day | **Output:** 100 Coal/day | **Time:** 2 days
+* **Limestone Quarry** — **Cost:** 100 Wood, 50 Bricks | **Capacity:** -20 Pop, -15 Energy | **Upkeep:** 15 Food/day | **Output:** 150 Limestone/day | **Time:** 2 days
+* **Brickworks** — **Cost:** 150 Wood | **Capacity:** -10 Pop, -30 Energy | **Upkeep:** 100 Clay/day | **Output:** 100 Bricks/day | **Time:** 2 days
+* **Estate Farm** — **Cost:** 180 Wood, 50 Bricks | **Capacity:** -15 Pop, -30 Energy | **Output:** 450 Food/day | **Time:** 2 days
+* **Coal Powerplant** — **Cost:** 100 Wood, 250 Bricks | **Capacity:** -15 Pop, +500 Energy | **Upkeep:** 40 Coal/day | **Time:** 3 days
+* **Research Institute** — **Cost:** 100 Wood, 400 Bricks | **Capacity:** -50 Pop, -150 Energy | **Upkeep:** 80 Food/day | **Output:** 10 Research/day | **Time:** 4 days
+* **Brick Houses** — **Cost:** 50 Wood, 50 Bricks | **Capacity:** +200 Pop, -10 Energy | **Upkeep:** 80 Food/day | **Time:** 2 days
+* **Garrison** — **Cost:** 200 Wood, 100 Bricks | **Capacity:** -20 Pop, -20 Energy | **Time:** 2 days
+* **Cobblestone Road** — **Cost:** 5 Wood, 10 Bricks/seg | **Bonus:** +50% Speed (Ignores Biome Reductions)
+* **Brick Arch Bridge** — **Cost:** 15 Wood, 30 Bricks/seg
+* **Brick Wall & Gate** — **Cost:** 10 Wood, 10 Bricks/seg
+* **Supply Dump** — **Cost:** 100 Wood, 50 Bricks | Field gunpowder/fuel resupply node.
+
+---
+
+### Tier 2: Iron Base / Industrial District
+* **Iron Ore Mine** — **Cost:** 200 Wood, 100 Bricks | **Capacity:** -30 Pop, -40 Energy | **Upkeep:** 25 Food/day | **Output:** 100 Iron Ore/day | **Time:** 3 days
+* **Iron Foundry** — **Cost:** 200 Wood, 100 Bricks | **Capacity:** -40 Pop, -150 Energy | **Upkeep:** 100 Iron Ore/day, 25 Coal/day, 30 Food/day | **Output:** 100 Iron/day | **Time:** 3 days
+* **Concrete Plant** — **Cost:** 100 Wood, 100 Bricks | **Capacity:** -30 Pop, -80 Energy | **Upkeep:** 100 Limestone/day, 50 Clay/day, 20 Coal/day, 30 Food/day | **Output:** 150 Concrete/day | **Time:** 3 days
+* **Industrial Farm** — **Cost:** 400 Wood, 200 Bricks, 50 Iron | **Capacity:** -30 Pop, -20 Energy | **Output:** 1,200 Food/day | **Time:** 3 days
+* **Tower Blocks** — **Cost:** 150 Wood, 100 Bricks, 50 Iron, 50 Concrete | **Capacity:** +500 Pop, -25 Energy | **Upkeep:** 200 Food/day | **Time:** 3 days
+* **Armory & Barracks** — **Cost:** 250 Wood, 150 Bricks, 50 Iron | **Capacity:** -30 Pop, -40 Energy | **Time:** 3 days
+* **Concrete Road** — **Cost:** 5 Wood, 10 Bricks, 10 Iron/seg | **Bonus:** +100% Speed (Ignores Biome Reductions)
+* **Iron Girder Bridge** — **Cost:** 10 Wood, 20 Bricks, 20 Iron/seg
+* **Concrete Wall & Gate** — **Cost:** 10 Wood, 10 Bricks, 10 Concrete/seg
+* **Search Light** — **Cost:** 80 Wood, 50 Bricks, 30 Concrete, 20 Iron | **Capacity:** -5 Pop, -50 Energy | Large area of visibility.
+
+---
+
+### Tier 3: Steel Base / Rail Network
+* **Town Hall** — **Unlocked at Tier 3** | **Cost:** 300 Wood, 200 Bricks, 150 Concrete, 100 Steel | **Capacity:** +100 Pop, +20 Energy | **Upkeep:** 10 Food/day | **Time:** 3 days | **Function:** Establishes a new 5km x 5km ZoC hex. Allows players to found far-flung cities specialized in extracting specific resource nodes. Only 1 can be built per hex tile.
+* **Sulfur Mine** — **Cost:** 250 Wood, 150 Bricks, 100 Concrete, 50 Iron | **Capacity:** -35 Pop, -60 Energy | **Upkeep:** 30 Food/day | **Output:** 50 Sulfur/day | **Time:** 3 days
+* **Gunpowder Mill** — **Cost:** 150 Wood, 100 Bricks, 50 Iron | **Capacity:** -15 Pop, -40 Energy | **Upkeep:** 60 Sulfur/day, 40 Coal/day, 20 Food/day | **Output:** 120 Gunpowder/day | **Time:** 3 days
+* **Steelworks** — **Cost:** 300 Wood, 200 Bricks, 150 Concrete, 100 Iron | **Capacity:** -40 Pop, -300 Energy | **Upkeep:** 100 Iron/day, 50 Coal/day, 40 Food/day | **Output:** 75 Steel/day | **Time:** 4 days
+* **Mechanised Farm** — **Cost:** 800 Wood, 400 Bricks, 300 Concrete, 100 Steel | **Capacity:** -40 Pop, -50 Energy | **Output:** 3,500 Food/day | **Time:** 4 days
+* **Advanced Coal Powerplant** — **Cost:** 400 Wood, 400 Bricks, 200 Concrete, 200 Steel | **Capacity:** -20 Pop, +3,000 Energy | **Upkeep:** 150 Coal/day | **Time:** 4 days
+* **High Command & Cavalry Depot** — **Cost:** 300 Wood, 200 Bricks, 100 Concrete, 100 Steel | **Capacity:** -40 Pop, -80 Energy
+* **Railway** — **Cost:** 15 Wood, 15 Bricks, 15 Concrete, 15 Steel/seg | **Bonus:** +300% Speed (Ignores Biome Reductions)
+* **Canal** — **Cost:** 20 Wood, 20 Bricks, 20 Concrete, 10 Steel/seg | **Bonus:** +200% Speed (Ignores Biome Reductions)
+* **Steel Truss Bridge** — **Cost:** 10 Wood, 10 Bricks, 20 Concrete, 20 Steel/seg
+* **Steel Wall & Gate** — **Cost:** 10 Wood, 10 Bricks, 10 Concrete, 10 Steel/seg
+
+---
+
+### Tier 4: Advanced Engineering / Automation & Maintenance Era
+* **Steam Excavator Depot** — **Cost:** 300 Wood, 300 Bricks, 250 Concrete, 150 Steel | **Capacity:** -20 Pop, -150 Energy | **Upkeep:** 40 Coal/day | **Function:** +50% raw node extraction yield across sector.
+* **Heavy Coal Washery & Pulverizer** — **Cost:** 350 Wood, 400 Bricks, 300 Concrete, 200 Steel | **Capacity:** -30 Pop, -200 Energy | **Upkeep:** 150 Coal/day | **Function:** Boosts output of connected smelters/foundries by +100%.
+* **Mechanized Maintenance Depot** — **Cost:** 250 Wood, 250 Bricks, 200 Concrete, 150 Steel | **Capacity:** -25 Pop, -100 Energy | **Upkeep:** 20 Iron/day, 10 Steel/day | Continuous auto-repair in ZoC.
+* **Macadamized Transport Hub** — **Cost:** 200 Wood, 200 Bricks, 200 Concrete, 100 Steel | **Capacity:** -20 Pop, -100 Energy | **Upkeep:** 20 Food/day | +50% transfer throughput and speed.
+* **Steam Turbine Power Plant** — **Cost:** 300 Wood, 500 Bricks, 400 Concrete, 400 Steel | **Capacity:** -30 Pop, +7,500 Energy | **Upkeep:** 300 Coal/day | **Time:** 6 days
+* **Traction Works & Workshop** — **Cost:** 400 Wood, 300 Bricks, 200 Concrete, 200 Steel | **Capacity:** -50 Pop, -150 Energy
+* **Reinforced Heavy Rampart** — **Cost:** 10 Wood, 15 Bricks, 20 Concrete, 15 Steel/seg
+
+---
+
+### Tier 5: Heavy Industrial / Super-Complex Era
+* **Bessemer Smelting Complex** — **Cost:** 500 Wood, 600 Bricks, 500 Concrete, 400 Steel | **Capacity:** -50 Pop, -600 Energy | **Upkeep:** 150 Iron Ore/day, 50 Coal/day | **Output:** 250 Steel/day
+* **Automated Freight Marshalling Yard** — **Cost:** 400 Wood, 500 Bricks, 400 Concrete, 300 Steel | **Capacity:** -40 Pop, -300 Energy | **Upkeep:** 50 Coal/day | Global rail speed +500%, zero transfer delay.
+* **Synthetic Chemical Refinery** — **Cost:** 400 Wood, 400 Bricks, 300 Concrete, 300 Steel | **Capacity:** -40 Pop, -400 Energy | **Upkeep:** 150 Coal/day, 100 Sulfur/day | **Output:** 350 Gunpowder/day
+* **Central High-Voltage Grid Station** — **Cost:** 500 Wood, 800 Bricks, 600 Concrete, 600 Steel | **Capacity:** -40 Pop, +18,000 Energy | **Upkeep:** 500 Coal/day
+* **Ordnance & Armament Complex** — **Cost:** 600 Wood, 500 Bricks, 500 Concrete, 500 Steel | **Capacity:** -60 Pop, -300 Energy
+* **Armored Bunker Fortification** — **Cost:** 20 Wood, 20 Bricks, 40 Concrete, 30 Steel/seg | **Capacity:** -10 Energy
+
+---
+
+## 4. Units
+
+### Progression & Retraining Rules
+* **Tech Hierarchy:** T0 -> T1 -> T2 -> T3 -> T4 -> T5. Unlocked via Research thresholds.
+* **Upgrades:** 2 research upgrades per unit type (auto-applies to active & future units).
+* **Retraining Mechanics:** Same archetype only (Melee/Ranged/Special). Retrain cost = **50% of target unit's resource cost**.
+
+---
+
+### Tier 0 Units (Town Hall)
+* **Truncheoneer** (Melee) — **Cost:** 20 Wood | **Cap:** -1 Pop | **Upkeep:** 1 Food/day
+* **Toxophilite** (Ranged) — **Cost:** 30 Wood | **Cap:** -1 Pop | **Upkeep:** 1 Food/day (No gunpowder needed)
+* **Outrider** (Special) — **Cost:** 50 Wood | **Cap:** -1 Pop | **Upkeep:** 2 Food/day (Scout)
+
+### Tier 1 Units (Garrison)
+* **Navvy** (Melee) — **Cost:** 40 Wood, 10 Bricks | **Cap:** -1 Pop | **Upkeep:** 2 Food/day
+* **Yeoman Marksman** (Ranged) — **Cost:** 40 Wood, 10 Bricks, 5 Gunpowder | **Cap:** -1 Pop | **Upkeep:** 2 Food/day, 1 Gunpowder/shot
+* **Grenadier** (Special) — **Cost:** 50 Wood, 20 Bricks, 15 Gunpowder | **Cap:** -1 Pop | **Upkeep:** 3 Food/day, 2 Gunpowder/throw
+
+### Tier 2 Units (Armory & Barracks)
+* **Bayoneteer** (Melee) — **Cost:** 50 Wood, 20 Bricks, 10 Iron | **Cap:** -1 Pop | **Upkeep:** 3 Food/day
+* **Redcoat** (Ranged) — **Cost:** 50 Wood, 20 Bricks, 15 Iron, 10 Gunpowder | **Cap:** -1 Pop | **Upkeep:** 3 Food/day, 1 Gunpowder/volley
+* **Chasseur** (Special) — **Cost:** 80 Wood, 30 Bricks, 25 Iron, 10 Gunpowder | **Cap:** -2 Pop | **Upkeep:** 5 Food/day, 1 Gunpowder/shot
+
+### Tier 3 Units (High Command & Cavalry Depot)
+* **Highlander** (Melee) — **Cost:** 60 Wood, 30 Bricks, 30 Steel | **Cap:** -1 Pop | **Upkeep:** 4 Food/day
+* **Sharpshooter** (Ranged) — **Cost:** 60 Wood, 30 Bricks, 40 Steel, 20 Gunpowder | **Cap:** -1 Pop | **Upkeep:** 4 Food/day, 1 Gunpowder/shot
+* **Dragoon** (Special) — **Cost:** 100 Wood, 40 Bricks, 50 Steel, 15 Gunpowder | **Cap:** -2 Pop | **Upkeep:** 6 Food/day, 1 Gunpowder/shot
+
+### Tier 4 Units (Traction Works & Workshop)
+* **Traction Ram** (Melee Vehicle) — **Cost:** 150 Wood, 100 Bricks, 100 Concrete, 100 Steel | **Cap:** -3 Pop, -20 Energy | **Upkeep:** 10 Food/day, 10 Coal/day | **Fuel Reserve:** 50 Coal
+* **Maxim Quadricycle** (Ranged Vehicle) — **Cost:** 100 Wood, 100 Bricks, 80 Concrete, 120 Steel, 40 Gunpowder | **Cap:** -2 Pop, -10 Energy | **Upkeep:** 8 Food/day, 5 Coal/day, 1 Gunpowder/burst | **Fuel Reserve:** 50 Coal
+* **Searchlight Tender** (Special Vehicle) — **Cost:** 120 Wood, 80 Bricks, 100 Concrete, 80 Steel | **Cap:** -2 Pop, -15 Energy | **Upkeep:** 8 Food/day, 5 Coal/day | **Fuel Reserve:** 50 Coal
+
+### Tier 5 Units (Ordnance & Armament Complex)
+* **Holt Breaker** (Melee Vehicle) — **Cost:** 300 Wood, 200 Bricks, 200 Concrete, 300 Steel | **Cap:** -5 Pop, -50 Energy | **Upkeep:** 15 Food/day, 20 Coal/day | **Fuel Reserve:** 50 Coal
+* **Howitzer Gun Tractor** (Ranged Vehicle) — **Cost:** 200 Wood, 200 Bricks, 200 Concrete, 400 Steel, 80 Gunpowder | **Cap:** -4 Pop, -40 Energy | **Upkeep:** 12 Food/day, 15 Coal/day, 3 Gunpowder/shell | **Fuel Reserve:** 50 Coal
+* **Armoured Command Car** (Special Vehicle) — **Cost:** 250 Wood, 150 Bricks, 150 Concrete, 250 Steel, 30 Gunpowder | **Cap:** -4 Pop, -30 Energy | **Upkeep:** 12 Food/day, 10 Coal/day | **Fuel Reserve:** 50 Coal
+
+---
+
+## 5. Map Architecture & Terrain Generation (2D Top-Down)
+
+### Dual-Layer View System
+
+The map covers the British Isles (Ireland and Great Britain) using a two-tier 2D top-down camera architecture:
+
+* **World View (Strategic Tier)**
+  * **Grid Unit:** Uniform 5km × 5km hexagonal grid.
+  * **Visual Display:** Strategic overview rendering overall Zone of Control (ZoC) networks, macro Fog of War, sector threat levels, regional resource totals, major transit corridors (Railways/Canals), macro elevation contours, and aggregated army/horde icons.
+  * **Purpose:** Macro logistics, empire planning, and regional military movement.
+
+* **Tactical View (Operational Tier)**
+  * **Transition:** Smooth camera zoom from World View down to ground level.
+  * **Visual Display:** High-resolution 2D top-down environment rendering individual buildings, animated industrial lines, distinct resource nodes, micro-infrastructure (roads/walls), individual combat units, and zombie hordes.
+  * **Purpose:** Base layout, defense micro-management, tactical combat, and localized resource extraction.
+
+---
+
+### Logical Elevation System
+
+Rather than using complex 3D terrain meshes, height is managed via discrete 2D integer flags (`height_level` 0 to 4) assigned to map coordinates:
+
+* **Level 0 — Sea-level:** The lowest level possible, sea level should be applied to everywhere the sea biome is present, it is the lowest possible elevation.
+* **Level 1 — Lowland:** Standard baseline elevation. No vision or range modifiers.
+* **Level 2 — Hill:** Minor elevated terrain.
+  * **Combat Bonus:** +15% Range and Line of Sight (LoS) for ranged units targeting Level 0 or 1.
+  * **Movement:** Standard biome rules apply.
+* **Level 3 — Highland:** Major elevated terrain.
+  * **Combat Bonus:** +25% Range and Line of Sight (LoS) for ranged units targeting Level 0, 1 or 2.
+  * **LoS Block:** Occludes vision to lower elevation tiles directly behind it.
+* **Level 4 — Mountain:** Extreme peak elevation.
+  * **Passability:** **IMPASSABLE** for all ground units, vehicles, and zombies.
+  * **LoS Block:** Completely blocks all Line of Sight and projectable vision across its boundary.
+
+---
+
+### Sub-Hex Granular Biomes
+
+Biome boundaries operate completely independently of the 5km hex grid:
+
+* **Continuous Blending:** Biomes (Farmland, Moorland, Highland, Wetland, Woodland, Heathland) are stored as continuous 2D weightmaps (splatmaps) rather than locked hex tiles.
+* **Multi-Biome Hexes:** A single 5km hex tile can seamlessly blend multiple biomes (e.g., a Wetland valley transitioning into Highland ridges bordered by Woodland).
+* **Coordinate-Based Modifiers:** Movement speed and terrain mechanics evaluate the exact sub-hex biome blend directly beneath a unit's current position.
+
+---
+
+### Open-Source Data "Baking" Pipeline
+
+Map generation uses real-world open geospatial data, pre-processed and "baked" into 2D game data by an AI pipeline:
+
+#### Input Sources
+* **Topography (Elevation):** NASA SRTM / Copernicus DEM (30m elevation data converted into 0–4 integer elevation masks and vector cliff boundaries).
+* **Land Cover (Biomes):** CORINE Land Cover / Copernicus land use data (historical forest, wetland, moorland distributions).
+* **Hydrology & Infrastructure:** OpenStreetMap (OSM) vector data (natural river channels, coastlines, historical road/rail routes). Applied last so rivers, coastlines, roads, rails and canals are formed correctly on top of the map and not overwritten by other sweeps.
+* **Geology (Resource Nodes):** British Geological Survey (BGS) & Geological Survey Ireland (GSI) spatial data (coal seams, iron ore veins, limestone deposits).
+
+#### Baking Process
+1. **Raster Quantization:** Raw SRTM DEM height values are processed through threshold filters to output discrete 2D `height_level` masks (0–4) and mark steep slope boundaries as impassable cliff edges.
+2. **Splatmap Generation:** AI terrain synthesis converts land-cover datasets into smooth 2D sub-hex biome weightmaps for Tactical View rendering.
+3. **Hex Feature Aggregation:** Aggregates regional totals across each 5km hex area to populate strategic resource potentials, dominant terrain profiles, and base travel speeds for the World View.
+
+---
+
+## 6. Vision, Sound, Light & Zombie AI Systems
+
+### Line of Sight (LoS) & Elevation Rules
+
+Vision uses a **2D Symmetric Shadowcasting** algorithm calculated from the unit's tile origin out to its maximum Vision Radius.
+
+#### Elevation Interaction
+* **Height Advantage (+1 Tile Radius per level):** Units on a higher `height_level` gain +1 tile vision radius per elevation level above the target tile.
+* **Occlusion Rules:**
+  * **Level 3 (Mountain):** Completely opaque. Blocks all LoS, rays, and vision fields regardless of viewer elevation.
+  * **Level N Obstacle:** Occludes all tiles behind it that have an elevation lower than Level N, unless the viewer is on an elevation higher than Level N.
+* **Biome Vision Modifiers:**
+  * **Woodland:** 50% Vision Penetration. Vision range looking into or through Woodland is reduced by 50%.
+  * **Searchlight / High Ground Synergy:** Ranged units targeting enemies on lower elevations or inside illuminated zones gain +15% Accuracy.
+
+---
+
+### Light & Illumination System
+
+The game features a dynamic ambient light state (Day / Dusk / Night cycle) overlaid with local point/cone light emitters.
+
+#### Dynamic Ambient Light Levels
+* **Day (100% Ambient):** Standard vision ranges apply for all units.
+* **Dusk/Dawn (50% Ambient):** Human vision range reduced by 25%. Zombie detection range unchanged.
+* **Night (15% Ambient):** Human vision range reduced by 60% without light sources. Zombie detection range reduced by 30%.
+
+#### Light Source Emitters
+* **Radial Emitters (Lanterns, Fires):** Emits a 360-degree light pool (Radius: 3 to 8 tiles).
+* **Cone Emitters (Searchlights):** Emits a 60-degree forward cone (Radius: 15 tiles). Uncovers fog of war and illuminates units within the cone.
+* **Transient Emitters (Muzzle Flashes, Flares, Explosions):** Brief light pulses lasting 0.1 to 2.0 seconds. 
+
+#### Combat & Aggro Modifiers in Light
+* **Target Acquisition:** Ranged units cannot lock onto targets in pitch darkness unless revealed by a light source or muzzle flash.
+* **Light Attraction:** Idle zombies within 12 tiles of a static/moving light source at night will enter *Investigate* state and drift toward the light origin.
+
+---
+
+### Sound & Acoustic Propagation System
+
+Sound travels as dynamic wave impulses across the tile grid, triggering Zombie AI reaction vectors.
+
+#### Sound Generation & Decibel (dB) Ratings
+Each action emits an acoustic impulse with a specific base radius (`R_sound` in tiles):
+
+| Action Type | Base Sound Radius (Tiles) | Primary Attractors |
+| :--- | :--- | :--- |
+| **Melee / Bow Strike** | 1–2 | Immediate adjacent zombies only |
+| **Pistol / Rifle Shot** | 10–15 | Local patrol groups |
+| **Maxim Machine Gun** | 25 | Regional sector zombies |
+| **Steam Vehicle Engine** | 12 (Continuous) | Pulls wandering zombies into transit corridors |
+| **Artillery / Explosions** | 40+ | Triggers sector-wide horde aggregations |
+| **Building Construction** | 8 | Local wandering threat |
+
+#### Sound Attenuation Rules
+* **Open Terrain / Waterways:** Sound travels at 100% nominal distance.
+* **Woodland / Structures / Walls:** Dampens sound propagation by -2 tiles per obstacle tile traversed.
+* **Elevation Barriers (Level 2/3):** Level 3 Mountains block sound completely. Level 2 Highlands reduce sound propagation radius by 50%.
+
+---
+
+### Zombie Perception & AI State Machine
+
+Zombies process sensory inputs through a prioritized 4-state behavioral logic tree:
+
+* **State 1: Idle / Wander**
+  * **Base Behavior:** Wanders randomly at 30% movement speed. Evaluates perception triggers every 1.0 second.
+  * **Transitions:**
+    * **To Investigate:** Triggered upon detecting a sound impulse or seeing an illuminated tile outside direct Line of Sight (LoS).
+    * **To Aggro / Chase:** Triggered immediately upon acquiring direct LoS to a target or hearing a high-volume sound (`R_sound` <= 3 tiles).
+
+* **State 2: Investigate (Suspicious)**
+  * **Base Behavior:** Pathfinds directly toward the target Acoustic Centroid or Light Source Coordinate at 60% movement speed.
+  * **Transitions:**
+    * **To Aggro / Chase:** Triggered immediately upon acquiring direct LoS to a valid target unit.
+    * **To Idle / Wander:** Triggered if the zombie reaches the source coordinate and finds no active target.
+
+* **State 3: Aggro / Chase**
+  * **Base Behavior:** Locks onto a specific target unit and pathfinds along the shortest route at 100% movement speed.
+  * **Transitions:**
+    * **To Swarm Vector:** Automatically triggers every 1.0 second while active in combat.
+    * **To Investigate:** Triggered if target unit is lost in Fog of War / darkness for > 5 seconds.
+
+* **State 4: Swarm Vector (Horde Cascading)**
+  * **Base Behavior:** Broadcasts a 3-tile radial Pheromone Pulse every 1.0 second.
+  * **Cascade Effect:** Any Idle or Investigating zombies touching this pulse immediately force-transition to **Aggro / Chase** targeting the same location, initiating a chain-reaction horde surge.
+
+---
+
+### Technical Implementation & Data Structures
+
+To handle thousands of active zombies and pathing/perception calls at high performance:
+
+#### Spatial Hash Grid & Bitmask Layers
+* **Spatial Partitioning:** The tactical view map is divided into 16 x 16 tile spatial hash buckets to instantly retrieve units and sound events within perception queries.
+* **Light & Sound Grid (Bitfield Matrix):**
+  * Light and Noise levels are calculated on a coarse grid overlaid on the tile map.
+  * `LightMap[x][y]` stores a single `uint8` illumination value (0-255).
+  * `SoundQueue` processes noise events ring-by-ring using a ring-buffer event list updated on tick intervals rather than continuous per-frame propagation.
+
+#### Zombie AI Tick Throttling
+To optimize CPU usage during large horde events:
+* **Distance-Based Ticking:**
+  * **Off-screen / Far (>50 tiles from player):** AI state evaluated once every 2.0s.
+  * **Mid-range (20-50 tiles):** AI state evaluated once every 0.5s.
+  * **Combat Range (<20 tiles):** AI state evaluated every frame (16ms / 60Hz).
+
+
+## 7. Technical Glossary & Spatial Specifications
+
+### Spatial Scale & Unit Grid Hierarchy
+
+To eliminate ambiguity between macro strategy and micro tactics, spatial dimensions are locked to the following real-world equivalent metrics:
+
+* **Strategic Hex (World View Cell):**
+  * **Dimensions:** Regular hexagon with a 5 km width (flat-to-flat distance).
+  * **Bounding Area:** ~21.65 km²
+  * **Purpose:** Primary unit for regional Zone of Control (ZoC), empire pathfinding, resource distribution, and macro fog of war.
+
+* **Tactical Tile (Operational View Cell):**
+  * **Dimensions:** Uniform 10 m x 10 m square grid cell.
+  * **Scale Conversion:** 1 Strategic Hex ≈ 500 x 500 Tactical Tiles in bounding area.
+  * **Purpose:** Fundamental atomic unit for pathfinding, building placement, weapon ranges, collision detection, and LoS shadowcasting.
+
+---
+
+### Core Technical Definitions
+
+* **Tile:** The atomic 10 m x 10 m square grid coordinate (x, y) in Tactical View. All unit speeds, vision radii, explosion effects, and building footprints are measured in integers or floats of Tiles (e.g., 1 Tile/sec = 36 km/h).
+
+* **Splatmap / Biome Weightmap:** A resolution-independent 2D texture array mapping normalized float values (0.0 to 1.0) for each biome type per coordinate. Used to render smooth visual transitions and compute exact weighted movement penalties at sub-tile resolution.
+
+* **Logical Height Level (`height_level`):** An integer byte flag (0, 1, 2, or 3) assigned per 10 m x 10 m tile. Controls vision occlusion, range bonuses, and passability without requiring 3D mesh height calculations.
+
+* **Zone of Control (ZoC):** A strategic and tactical supply aura centered on key infrastructure. Graphically represented on the World View as a 5 km x 5 km area. Unlocks local building placement and seamlessly connects resources to global logistics pools.
+
+* **Symmetric Shadowcasting:** A grid-based 2D Line of Sight (LoS) algorithm that casts light rays outward from a tile center to determine visible vs. occluded tiles in O(N) time, where N is the number of tiles in the vision radius.
+
+* **Acoustic Impulse (`R_sound`):** A temporary radial event generated at an origin tile coordinate upon firing a weapon, starting an engine, or triggering an explosion. Measured in Tile radius, decaying outward frame-by-frame or tick-by-tick.
+
+* **Acoustic Centroid:** The calculated focal coordinate (x, y) of noise propagation that a zombie in the *Investigate* state pathfinds towards.
+
+* **Spatial Hash Bucket:** A 16 x 16 Tile grid partition (160 m x 160 m) used by the engine to chunk entity spatial data, allowing rapid proximity queries without iterating over every unit on the map.
+
+* **Pheromone Pulse:** A recurring 3-Tile radial event broadcasted by active *Aggro* zombies that forces adjacent *Idle* or *Investigating* zombies to immediately acquire the same target vector.
