@@ -6,111 +6,80 @@ extends Camera2D
 ## never moves the world's actual content — it tweens `world_root`'s
 ## scale/rotation (a classic 2D fake-isometric technique: rotate 45° and
 ## squash Y) while the camera keeps panning/zooming normally on top of it.
-## Swap this projection trick for true isometric art direction later without
-## touching pan/zoom or any other system.
+## Swap this projection trick for true isometric art direction later
+## without touching pan/zoom or any other system.
 ##
-## Also owns the Strategic <-> Tactical zoom threshold (Phase 2.5): a hard
-## cut, Total-War-campaign-map-style, at `tactical_zoom_threshold` — no
-## separate "battle map" scene, just this camera's own zoom value crossing a
-## line. LocalDetailManager listens to `tactical_mode_changed` rather than
-## polling zoom every frame.
+## Also owns the Strategic <-> Tactical zoom threshold: a hard cut, at
+## `tactical_zoom_threshold` — no separate "battle map" scene, just this
+## camera's own zoom value crossing a line. LocalDetailManager listens to
+## `tactical_mode_changed` rather than polling zoom every frame.
 ##
-## Zoom-direction bug fix (found while implementing Phase 2.5.6): Godot's
-## Camera2D.zoom is a MAGNIFICATION factor — LARGER zoom.x shows LESS of the
-## world (zoomed in/close), SMALLER zoom.x shows MORE of it (zoomed out/wide).
-## Verified empirically against a real windowed build via
-## Camera2D.get_canvas_transform() (visible_world_width == viewport_width /
-## zoom.x, not viewport_width * zoom.x). Every constant/comparison below was
-## previously written assuming the opposite, which meant "Tactical" used to
-## trigger when zooming OUT past a point (not in), and mouse-wheel-up used to
-## zoom out instead of in — mechanically consistent (the threshold-crossing
-## itself still worked, LocalDetailManager only cares about that), but
-## backwards from how it reads and from normal scroll-to-zoom convention.
-## min_zoom/max_zoom's VALUES were fine (0.03 genuinely is the widest, most
-## zoomed-out bound; 2.5 genuinely is the closest, most zoomed-in bound) —
-## only the wheel-direction mapping and tactical_zoom_threshold's comparison
-## + value needed to move to the other side of the default zoom.
+## Godot's Camera2D.zoom is a MAGNIFICATION factor — LARGER zoom.x shows
+## LESS of the world (zoomed in/close), SMALLER zoom.x shows MORE of it
+## (zoomed out/wide): Camera2D.get_canvas_transform() confirms
+## visible_world_width == viewport_width / zoom.x, not viewport_width *
+## zoom.x. min_zoom/max_zoom's VALUES (0.03/2.5 originally) were correct on
+## the axis they describe — only the wheel-direction mapping and
+## tactical_zoom_threshold's comparison needed to move to the other side of
+## the default zoom.
 ##
-## **max_zoom raised 19.2x (0.3125 -> 6.0), found while playing: the whole
-## point of Phase 2.5.4's individual-figure rendering and Phase 2.5.6's
-## true-scale in-hex space was to zoom in on a real 5x5-mile hex and see
-## individual soldiers/zombies — but the camera's own max_zoom never
-## actually got pushed far enough to make that possible. A UnitInstance
-## figure (TacticalEntityLayer.FIGURE_RADIUS = 6.0 world units) at the OLD
-## max_zoom (0.3125) rendered at a 1.875px screen radius — a sub-pixel
-## smear, not a soldier. At the new max_zoom, the same figure renders at a
-## 36px screen radius (72px across) — genuinely legible. Chosen by working
-## backward from "a 6-unit figure should read as a clear ~70px circle at
-## closest zoom", not by proportionally scaling the old value — this is a
-## real usability floor, not an aesthetic preference.
+## `max_zoom` was raised twice from its original 0.3125: first 19.2x to
+## 6.0 so a UnitInstance figure (TacticalEntityLayer.FIGURE_RADIUS = 6.0
+## world units), which rendered at a 1.875px sub-pixel smear at the old
+## value, reads at a legible ~36px screen radius at closest zoom — chosen
+## by working backward from "a 6-unit figure should read as a clear ~70px
+## circle at closest zoom," a usability floor, not an aesthetic preference.
+## Then doubled again to 12.0 per user feedback ("we should be able to zoom
+## in further too") — screen radius is world_radius * zoom.x, so the same
+## figure now reads at a 72px radius, roomier than the floor called for,
+## deliberately. medium_fidelity_threshold/high_fidelity_threshold below
+## are untouched by this second change — it only extends how much further
+## HIGH fidelity's own range goes.
 ##
-## **max_zoom doubled again (6.0 -> 12.0), user request ("we should be able
-## to zoom in further too").** Screen radius is `world_radius * zoom.x`
-## (Camera2D magnification, see the zoom-direction note above) — the same
-## 6-unit figure now reads as a 72px radius (144px across) at closest zoom,
-## roomier than the original usability floor called for, deliberately (the
-## floor above was the MINIMUM needed for legibility, not a ceiling on how
-## close the player should ever be able to get). `medium_fidelity_threshold`/
-## `high_fidelity_threshold` below are untouched — this only extends how
-## much further HIGH fidelity's own range now goes, it doesn't move where
-## LOW/MEDIUM/HIGH themselves start.
-##
-## **zoom_step replaced by zoom_factor_per_step (additive -> multiplicative)**:
-## the old flat +/-0.0125 per scroll click would need ~465 clicks to cross
-## just the (old) Tactical range, and with max_zoom now 19x further out,
-## a flat step is hopeless — either far too slow near the top of the range
-## or far too coarse near the bottom. A percentage-per-click step (12%)
-## handles a huge dynamic range gracefully (this is why Google Maps/most
-## strategy games zoom multiplicatively, not additively) — the full
-## min_zoom..max_zoom span takes ~65 clicks, tactical_zoom_threshold..
-## max_zoom takes ~31, both reasonable scroll counts regardless of how
-## wide the underlying range is.
+## `zoom_step` was replaced by `zoom_factor_per_step` (additive ->
+## multiplicative): the old flat +/-0.0125 per scroll click needed ~465
+## clicks to cross the original Tactical range, and with max_zoom now 19x
+## further out a flat step is either too slow near the top of the range or
+## too coarse near the bottom. A percentage-per-click step (12%) handles a
+## wide dynamic range gracefully (the same reason Google Maps/most
+## strategy games zoom multiplicatively) — the full min_zoom..max_zoom span
+## takes ~65 clicks, tactical_zoom_threshold..max_zoom takes ~31.
 
 @export var world_root_path: NodePath
-## Phase 2.5.6: scaled by 8x^2 = 64x alongside HexCoord.HEX_SIZE's 8x
-## increase (800 -> 51,200 at the time). **Recalibrated again (51,200 ->
-## 128) alongside the pan-speed FORMULA change below** (multiply-by-zoom.x
-## -> divide-by-zoom.x) — this is now the world-units/sec pan rate AT
-## zoom.x == 1.0, not a raw multiplier; picked so panning at the default
-## starting Strategic zoom (Main.tscn's zoom = 0.05) feels identical to
-## before this change (both formulas agree at that one zoom level by
-## construction), while every OTHER zoom level now pans at a genuinely
-## constant on-screen (not world-space) rate — see _handle_pan_input()'s
-## own comment for why the old formula would have made panning catastrophically
-## twitchy at the new, much deeper max_zoom.
+## This is the world-units/sec pan rate AT zoom.x == 1.0, not a raw
+## multiplier — picked so panning at the default starting Strategic zoom
+## (Main.tscn's zoom = 0.05) feels identical to before the pan-speed
+## formula changed from multiply-by-zoom.x to divide-by-zoom.x (see
+## _handle_pan_input()'s own comment for why the old formula would have
+## made panning catastrophically twitchy at the deeper max_zoom).
 @export var pan_speed: float = 220.0
-@export var min_zoom: float = 0.00375  ## The most zoomed-OUT allowed value. Phase 2.5.6: scaled by 1/8 alongside HexCoord.HEX_SIZE's 8x increase (0.03 -> 0.00375) — visible world width is viewport/zoom.x, so a bigger world needs a SMALLER zoom value to keep framing the same fraction of it — see tactical_zoom_threshold.
-@export var max_zoom: float = 12.0  ## The most zoomed-IN allowed value — see this class's own doc comment for the two separate reasons this has been raised: first 19.2x (0.3125 -> 6.0) so individual figures aren't sub-pixel, then doubled again (6.0 -> 12.0) per direct user request for more zoom headroom.
+@export var min_zoom: float = 0.00375  ## The most zoomed-OUT allowed value. Visible world width is viewport/zoom.x, so a bigger world needs a SMALLER zoom value to keep framing the same fraction of it — see tactical_zoom_threshold.
+@export var max_zoom: float = 12.0  ## The most zoomed-IN allowed value — see this class's own doc comment for the two raises that got it here.
 @export var zoom_factor_per_step: float = 1.12  ## Multiplicative zoom per scroll click (12%) — see this class's own doc comment for why this replaced a flat additive zoom_step.
-@export var tactical_zoom_threshold: float = 0.1875  ## zoom.x at/above this = Tactical view (Camera2D: LARGER zoom = more zoomed in — see the class doc comment). Phase 2.5.6: scaled by 1/8 alongside HexCoord.HEX_SIZE's 8x increase (1.5 -> 0.1875) — the Strategic/Tactical cut still happens at the same relative zoom level. Unchanged by the max_zoom increase — this still marks "left the abstract Strategic map", independent of how much further Tactical itself now goes.
+@export var tactical_zoom_threshold: float = 0.1875  ## zoom.x at/above this = Tactical view (LARGER zoom = more zoomed in). Unchanged by the max_zoom increases — this still marks "left the abstract Strategic map", independent of how much further Tactical itself now goes.
 
-## Phase 2.5.5: subdivides [tactical_zoom_threshold, max_zoom] into three
-## LOW/MEDIUM/HIGH fidelity bands (GameEnums.TacticalFidelity) as the camera
-## keeps zooming in past the Strategic/Tactical cut — see get_tactical_fidelity().
-## **Re-tuned alongside the max_zoom increase above** (were 0.2292/0.2708,
-## an even three-way split of the OLD, much narrower Tactical range) —
-## HIGH specifically now starts where individual figures are already a
-## legible ~18px screen radius (FIGURE_RADIUS 6.0 * 2.0) and only gets
-## clearer approaching max_zoom, rather than starting the instant Tactical
-## mode itself does. Still a balancing/feel pass, not an architecture
-## decision, same framing as before.
+## Subdivides [tactical_zoom_threshold, max_zoom] into three LOW/MEDIUM/HIGH
+## fidelity bands (GameEnums.TacticalFidelity) as the camera zooms in past
+## the Strategic/Tactical cut — see get_tactical_fidelity(). HIGH starts
+## where individual figures are already a legible ~18px screen radius
+## (FIGURE_RADIUS 6.0 * 2.0) and only gets clearer approaching max_zoom,
+## rather than starting the instant Tactical mode itself does. A
+## balancing/feel pass, not an architecture decision.
 @export var medium_fidelity_threshold: float = 0.5
 @export var high_fidelity_threshold: float = 2.0
 
-## Feature request: pan the camera when the mouse sits at/near the screen
-## edge, RTS-convention style, on top of (not instead of) keyboard pan and
-## middle-mouse drag. Off by default distance is edge_pan_margin_px, not a
-## whole-screen "gravity toward the cursor" — only the outer strip actually
-## pans.
+## Pan the camera when the mouse sits at/near the screen edge, RTS-
+## convention style, on top of (not instead of) keyboard pan and
+## middle-mouse drag. Only the outer edge_pan_margin_px strip actually pans.
 @export var edge_pan_enabled: bool = true
-@export var edge_pan_margin_px: float = 10.0  ## Screen pixels from the viewport edge before edge-pan kicks in — matches the user's own "maybe 10 pixels" ask.
+@export var edge_pan_margin_px: float = 10.0  ## Screen pixels from the viewport edge before edge-pan kicks in.
 
 @export var perspective_tween_duration: float = 0.6
 @export var isometric_y_scale: float = 0.577
 @export var isometric_rotation_degrees: float = 45.0
 
 signal tactical_mode_changed(is_tactical: bool)
-signal tactical_fidelity_changed(fidelity: GameEnums.TacticalFidelity)  ## Phase 2.5.5 — fires on every LOW<->MEDIUM<->HIGH band crossing, independent of tactical_mode_changed (which only fires on the Strategic/Tactical cut itself).
+signal tactical_fidelity_changed(fidelity: GameEnums.TacticalFidelity)  ## Fires on every LOW<->MEDIUM<->HIGH band crossing, independent of tactical_mode_changed (which only fires on the Strategic/Tactical cut itself).
 
 var perspective: GameEnums.CameraPerspective = GameEnums.CameraPerspective.TOP_DOWN
 
@@ -124,14 +93,14 @@ func _ready() -> void:
 		_world_root = get_node(world_root_path)
 	make_current()
 	tactical_mode_changed.emit(is_tactical_zoom())  ## Sync any listener already wired up to our starting zoom.
-	tactical_fidelity_changed.emit(get_tactical_fidelity())  ## Phase 2.5.5 — same "sync on ready" reasoning.
+	tactical_fidelity_changed.emit(get_tactical_fidelity())  ## Same "sync on ready" reasoning.
 
 func is_tactical_zoom() -> bool:
 	return zoom.x >= tactical_zoom_threshold
 
-## Phase 2.5.5 — see GameEnums.TacticalFidelity's own doc comment for why
-## this is meaningless (always reports LOW) while not actually in Tactical
-## zoom; every real consumer already checks is_tactical_zoom() first.
+## See GameEnums.TacticalFidelity's own doc comment for why this is
+## meaningless (always reports LOW) while not actually in Tactical zoom;
+## every real consumer already checks is_tactical_zoom() first.
 func get_tactical_fidelity() -> GameEnums.TacticalFidelity:
 	if zoom.x >= high_fidelity_threshold:
 		return GameEnums.TacticalFidelity.HIGH
@@ -194,29 +163,27 @@ func _handle_pan_input(delta: float) -> void:
 	if Input.is_action_pressed(InputBindings.PAN_DOWN):
 		direction.y += 1.0
 	if direction != Vector2.ZERO:
-		# Constant SCREEN-space pan speed, independent of zoom level: visible
-		# world width is viewport/zoom.x (see the class doc comment on the
-		# zoom-direction fix), so dividing by zoom.x here means the fraction
-		# of the visible view crossed per second stays the same at any zoom.
-		# The OLD formula (pan_speed*zoom.x) made world-space speed scale UP
-		# with zoom — harmless at the old, narrow max_zoom, but with
-		# max_zoom now 19x further in (see this class's own doc comment),
-		# that formula would have made panning ~369x more twitchy at max
-		# zoom than at the default view — exactly the fine control close-up
-		# unit inspection needs. pan_speed itself was recalibrated (see its
-		# own doc comment) so this reads identically to the old formula at
-		# the default starting Strategic zoom.
+		# Constant SCREEN-space pan speed, independent of zoom level:
+		# visible world width is viewport/zoom.x, so dividing by zoom.x
+		# here means the fraction of the visible view crossed per second
+		# stays the same at any zoom. The OLD formula (pan_speed*zoom.x)
+		# made world-space speed scale UP with zoom — harmless at the old,
+		# narrow max_zoom, but with max_zoom now 19x further in, that
+		# formula would make panning ~369x more twitchy at max zoom than
+		# at the default view — exactly the fine control close-up unit
+		# inspection needs. pan_speed itself was recalibrated so this
+		# reads identically to the old formula at the default starting
+		# Strategic zoom.
 		position += direction.normalized() * (pan_speed / zoom.x) * delta
 
-## Feature request: pan toward whichever edge(s) the mouse is currently
-## within edge_pan_margin_px of. Uses the same screen-space-constant
-## pan_speed/zoom.x formula _handle_pan_input() already uses, so it feels
-## identical in speed to keyboard panning at any zoom level. Skipped
-## entirely while middle-mouse-dragging (that gesture already IS an
-## explicit "move the camera" input — edge-pan fighting it would feel
-## broken) or while the game window itself doesn't have focus (Godot keeps
-## reporting the last known mouse position after alt-tab/focus-loss, which
-## would otherwise silently keep panning the camera in the background).
+## Pans toward whichever edge(s) the mouse is within edge_pan_margin_px of.
+## Uses the same screen-space-constant pan_speed/zoom.x formula
+## _handle_pan_input() uses, so it feels identical in speed to keyboard
+## panning at any zoom level. Skipped entirely while middle-mouse-dragging
+## (that gesture already IS an explicit "move the camera" input) or while
+## the game window doesn't have focus (Godot keeps reporting the last
+## known mouse position after alt-tab/focus-loss, which would otherwise
+## silently keep panning the camera in the background).
 func _handle_edge_pan_input(delta: float) -> void:
 	if not edge_pan_enabled or _middle_dragging:
 		return
@@ -256,7 +223,7 @@ func _handle_zoom_input(event: InputEventMouseButton) -> void:
 	if not event.pressed:
 		return
 	if event.button_index == MOUSE_BUTTON_WHEEL_UP:
-		_apply_zoom_factor(zoom_factor_per_step)  ## Scroll up = zoom in = larger zoom.x (see class doc comment).
+		_apply_zoom_factor(zoom_factor_per_step)  ## Scroll up = zoom in = larger zoom.x.
 	elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
 		_apply_zoom_factor(1.0 / zoom_factor_per_step)
 
