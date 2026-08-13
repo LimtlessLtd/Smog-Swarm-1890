@@ -1,66 +1,53 @@
 class_name HexPathfinder
 extends RefCounted
 
-## Design doc Phase 5.5: strategic-scale hex pathfinding foundation —
-## "documented once here rather than solved twice", since both a wandering
-## horde (Phase 5.2/5.10) and a unit column (Phase 5.4/5.6) will eventually
-## route several hexes across the map through the same graph. Neither system
-## exists yet; this is pure, stateless graph-search utility code with no
-## dependency on either — same "pure static utility, no state" shape as
-## HexCoord itself, just one level up (a path across many hexes rather than
-## math about a single one).
+## Strategic-scale hex pathfinding — a wandering horde and a unit column
+## both route several hexes across the map through the same graph. Pure,
+## stateless graph-search utility code, same "pure static utility, no
+## state" shape as HexCoord itself, just one level up (a path across many
+## hexes rather than math about a single one).
 ##
 ## A HexGridMap (terrain/passability) and, optionally, a LogisticsNetwork
-## (cheaper road/rail/canal edges) are passed in per call rather than held —
-## this owns neither, only reads them, the same relationship LogisticsNetwork
-## itself has to HexGridMap/BuildingManager.
+## (cheaper road/rail/canal edges) are passed in per call rather than held
+## — this owns neither, only reads them, the same relationship
+## LogisticsNetwork itself has to HexGridMap/BuildingManager.
 ##
 ## Tactical-scale LOCAL movement within a single hydrated hex (steering
-## around scattered props/buildings, user request) deliberately does NOT
-## share this A* graph search — that's `MovementStepper.gd` (continuous,
-## per-frame, geometry-based), a much shorter-range problem that doesn't
-## need a second hex-graph search. This class still supplies the STRATEGIC
-## route (which hexes to cross) that `MovementStepper` walks continuously
-## between, and — via `get_terrain_speed_multiplier()`/
-## `get_logistics_speed_multiplier()` below — the same biome/logistics
-## numbers that shape that route also shape how fast continuous movement
-## crosses each hex, one shared table instead of two.
+## around scattered props/buildings) deliberately does NOT share this A*
+## graph search — that's MovementStepper.gd (continuous, per-frame,
+## geometry-based), a much shorter-range problem that doesn't need a second
+## hex-graph search. This class still supplies the STRATEGIC route (which
+## hexes to cross) that MovementStepper walks continuously between, and —
+## via get_terrain_speed_multiplier()/get_logistics_speed_multiplier()
+## below — the same biome/logistics numbers that shape that route also
+## shape how fast continuous movement crosses each hex, one shared table
+## instead of two.
 ##
-## Consumers: `HordeManager` (Phase 5.2/5.10) and `UnitOrderController`
-## (Phase 5.4/5.6) both route several hexes across the map through this
-## same graph, then hand the resulting hex sequence to `MovementStepper`
-## for the actual continuous walk between them.
+## Consumers: HordeManager and UnitOrderController both route several hexes
+## across the map through this same graph, then hand the resulting hex
+## sequence to MovementStepper for the actual continuous walk between them.
 
-## Base traversal cost for an ordinary hex-to-hex step — a balancing number,
-## not an architecture one, same framing as every other placeholder constant
-## table in this project.
-const BASE_HEX_COST: float = 1.0
+const BASE_HEX_COST: float = 1.0  ## Base traversal cost for an ordinary hex-to-hex step — a balancing number, not an architecture one.
 
 ## Cost multiplier applied to a step when an unsevered supply line segment
-## (Phase 2.3 — any of ROAD/RAILWAY/CANAL) connects the two hexes: "existing
-## roads/rail/canal (LogisticsNetwork segments as cheaper edges)" per the
-## design doc. A severed segment doesn't count — a horde or column can't
-## lean on a supply line the player's own network no longer considers
-## usable.
+## (ROAD/RAILWAY/CANAL) connects the two hexes. A severed segment doesn't
+## count — a horde or column can't lean on a supply line the player's own
+## network no longer considers usable.
 const LOGISTICS_EDGE_COST_MULTIPLIER: float = 0.5
 
-## Design doc Phase 2.12.1: each biome gets its own movement-cost multiplier
-## instead of every passable hex costing the flat BASE_HEX_COST — "Highland/
-## Wetland slower than Farmland/Moorland" (design doc's own worked example).
-## A balancing pass, not an architecture decision, same framing as
-## LOGISTICS_EDGE_COST_MULTIPLIER above; a biome with no entry here costs the
-## unmodified baseline. Applied to the DESTINATION hex of a step (moving
-## INTO dense terrain is what's slow, not leaving it) and stacks
-## multiplicatively with the logistics discount — a road through a highland
-## pass is still cheaper than the bare hillside beside it, just not as cheap
-## as a road through open farmland.
+## Each biome gets its own movement-cost multiplier instead of every
+## passable hex costing the flat BASE_HEX_COST — Highland/Wetland slower
+## than Farmland/Moorland. A balancing pass, not an architecture decision;
+## a biome with no entry here costs the unmodified baseline. Applied to the
+## DESTINATION hex of a step (moving INTO dense terrain is what's slow, not
+## leaving it) and stacks multiplicatively with the logistics discount — a
+## road through a highland pass is still cheaper than the bare hillside
+## beside it, just not as cheap as a road through open farmland.
 ##
-## Shapes both scales now: the Strategic A* route above weighs a step by
-## this multiplier as a path-preference cost, and `get_terrain_speed_multiplier()`
+## Shapes both scales: the Strategic A* route weighs a step by this
+## multiplier as a path-preference cost, and get_terrain_speed_multiplier()
 ## below inverts the SAME table into a continuous movement speed for
-## whichever hex an entity is currently crossing (`MovementStepper.gd`) —
-## the design doc's own "applies at both scales" aspiration, closed now
-## that Tactical local movement exists to apply it to.
+## whichever hex an entity is currently crossing (MovementStepper.gd).
 const _BIOME_COST_MULTIPLIER: Dictionary = {
 	GameEnums.BiomeType.HIGHLAND: 1.6,  ## Elevated terrain — Pennine/Chiltern/Cotswold chokepoints.
 	GameEnums.BiomeType.WETLAND: 1.8,   ## Boggy going even where it's not outright impassable MARSH/PEAT_BOG.
@@ -68,25 +55,22 @@ const _BIOME_COST_MULTIPLIER: Dictionary = {
 }
 
 ## A* search from `start` to `goal` over `hex_grid_map`'s cells, weighted by
-## HexCell.is_passable() (impassable hexes — marsh/peat bog, see Phase 4.2's
-## reclamation — are never entered, not even as a detour) and discounted
-## across `logistics_network` segments when one is supplied. Returns an
-## Array[Vector2i] path INCLUDING both `start` and `goal`, or an empty array
-## if no path exists (goal unreachable, either endpoint off-map, or either
-## endpoint itself impassable). `start == goal` returns a single-element
-## path rather than searching.
+## HexCell.is_passable() (impassable hexes — marsh/peat bog — are never
+## entered, not even as a detour) and discounted across
+## `logistics_network` segments when one is supplied. Returns an
+## Array[Vector2i] path INCLUDING both `start` and `goal`, or an empty
+## array if no path exists (goal unreachable, either endpoint off-map, or
+## either endpoint itself impassable). `start == goal` returns a single-
+## element path rather than searching.
 ##
-## `wall_manager` (playtest round 6, user report: "units do not path around
-## walls... correctly") — optional, same "unset gracefully skips it"
-## convention as `logistics_network`. When supplied, any edge crossed by an
+## `wall_manager` — optional, same "unset gracefully skips it" convention
+## as `logistics_network`. When supplied, any edge crossed by an
 ## un-breached WallSegment (WallManager.get_blocking_segment(), the SAME
-## check HordeManager already peeks per hex-crossing before deciding to
-## siege) is excluded from the graph entirely, same treatment as an
-## impassable hex — a unit route now genuinely goes AROUND a wall instead
-## of what used to be no wall-awareness at all (the class doc comment's own
-## "units are still never blocked by walls" gap, now closed for the
-## strategic route; HordeManager's siege-on-contact behavior is unrelated
-## and unchanged — hordes still want to smash through, units want to avoid).
+## check HordeManager peeks per hex-crossing before deciding to siege) is
+## excluded from the graph entirely, same treatment as an impassable hex —
+## a unit route genuinely goes AROUND a wall. HordeManager's siege-on-
+## contact behavior is unrelated and unchanged — hordes still want to
+## smash through, units want to avoid.
 static func find_path(hex_grid_map: HexGridMap, start: Vector2i, goal: Vector2i, logistics_network: LogisticsNetwork = null, wall_manager: WallManager = null) -> Array[Vector2i]:
 	if not hex_grid_map or not hex_grid_map.has_cell(start) or not hex_grid_map.has_cell(goal):
 		return []
@@ -100,17 +84,17 @@ static func find_path(hex_grid_map: HexGridMap, start: Vector2i, goal: Vector2i,
 	# Standard A*: open_set is a cheap Vector2i -> true membership map (the
 	# frontier), g_score is the cheapest known cost from `start` to a given
 	# hex, f_score is g_score plus the hex-distance heuristic to `goal`.
-	# NOT strictly admissible once LOGISTICS_EDGE_COST_MULTIPLIER (0.5, below
-	# BASE_HEX_COST) or Phase 2.12.1's per-biome multipliers (some below 1.0
+	# NOT strictly admissible once LOGISTICS_EDGE_COST_MULTIPLIER (0.5,
+	# below BASE_HEX_COST) or the per-biome multipliers (some below 1.0
 	# too, e.g. any future fast-terrain entry) are in play — a long enough
-	# discounted route could in principle cost less than the plain hex-count
-	# heuristic assumes, which can occasionally steer A* away from the
-	# GLOBAL optimum toward "a" reachable, still-perfectly-valid path
-	# instead. Accepted, not fixed: same "cheap enough at this scale, no
-	# consumer has ever needed provably-optimal routing" call every other
-	# recompute in this codebase (LogisticsNetwork, FogOfWarManager) already
-	# makes over a real performance/precision profile, rather than a binary
-	# heap or a corrected heuristic ahead of an actual need.
+	# discounted route could in principle cost less than the plain
+	# hex-count heuristic assumes, which can occasionally steer A* away
+	# from the GLOBAL optimum toward "a" reachable, still-perfectly-valid
+	# path instead. Accepted, not fixed: same "cheap enough at this scale,
+	# no consumer has ever needed provably-optimal routing" call every
+	# other recompute in this codebase (LogisticsNetwork, FogOfWarManager)
+	# makes over a real performance/precision profile, rather than a
+	# binary heap or a corrected heuristic ahead of an actual need.
 	var open_set: Dictionary = {start: true}
 	var came_from: Dictionary = {}          # Vector2i -> Vector2i
 	var g_score: Dictionary = {start: 0.0}  # Vector2i -> float
@@ -145,15 +129,11 @@ static func _step_cost(from: Vector2i, to: Vector2i, to_cell: HexCell, logistics
 			return cost * LOGISTICS_EDGE_COST_MULTIPLIER
 	return cost
 
-## Design doc, user request (continuous local movement, replacing the old
-## hex-stepping): the exact inverse of `_BIOME_COST_MULTIPLIER` above,
-## reusing the SAME table rather than a second one — terrain that costs
-## more to path THROUGH is also slower to actually walk ACROSS once chosen.
-## Consumed by `MovementStepper.advance_toward_hex()` to scale continuous
-## travel speed by whichever hex the entity is currently crossing. Closes
-## Phase 2.12.1's own flagged gap ("Tactical-scale local movement costs...
-## blocked on Phase 5.5's unbuilt in-hex pathfinding") now that continuous
-## local movement exists to apply it to.
+## The exact inverse of _BIOME_COST_MULTIPLIER above, reusing the SAME
+## table rather than a second one — terrain that costs more to path
+## THROUGH is also slower to actually walk ACROSS once chosen. Consumed by
+## MovementStepper.advance_toward_hex() to scale continuous travel speed by
+## whichever hex the entity is currently crossing.
 static func get_terrain_speed_multiplier(cell: HexCell) -> float:
 	if not cell:
 		return 1.0
@@ -162,7 +142,7 @@ static func get_terrain_speed_multiplier(cell: HexCell) -> float:
 ## Same inversion for the logistics discount — a road/rail/canal edge is
 ## FASTER to walk, not just cheaper to path through. `to` isn't required to
 ## already be the entity's next hex specifically; any adjacent pair works,
-## same as `LogisticsNetwork.get_segment_between()` itself.
+## same as LogisticsNetwork.get_segment_between() itself.
 static func get_logistics_speed_multiplier(logistics_network: LogisticsNetwork, from: Vector2i, to: Vector2i) -> float:
 	if not logistics_network:
 		return 1.0

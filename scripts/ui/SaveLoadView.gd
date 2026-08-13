@@ -1,24 +1,19 @@
 class_name SaveLoadView
 extends Panel
 
-## Design doc Phase 2.8.3's actual Save/Load UI — a campaign-name field, a
-## clickable browser of existing campaigns, a slot-name field, and a
-## clickable browser of existing slots within whichever campaign is
-## currently typed. The underlying `SaveLoadManager.save_game()`/
-## `load_game()`/`get_campaign_names()`/`get_slot_names()` API has supported
-## exactly this since Phase 2.8 itself — only the screen was ever missing
-## (MainHUD's own Quick Save/Load buttons, still present alongside this,
-## were always documented as "just enough to prove the save system is
-## reachable," not the intended final UI).
+## The Save/Load UI — a campaign-name field, a clickable browser of
+## existing campaigns, a slot-name field, and a clickable browser of
+## existing slots within whichever campaign is currently typed. The
+## underlying SaveLoadManager.save_game()/load_game()/get_campaign_names()/
+## get_slot_names() API supports exactly this.
 ##
 ## Same "dumb display component, doesn't own logic" convention every other
-## HUD view here already follows (see MainHUD's own header comment):
-## doesn't call `SaveLoadManager` directly — emits `save_requested`/
-## `load_requested` and lets `MainHUD` do that, exactly like
-## `BuildMenuView.building_selected`/`UnitPanelView`'s own button signals.
+## HUD view here follows: doesn't call SaveLoadManager directly — emits
+## save_requested/load_requested and lets MainHUD do that, exactly like
+## BuildMenuView.building_selected/UnitPanelView's own button signals.
 ## Feedback (saved/loaded/failed) reuses MainHUD's existing toast, driven
-## off `SaveLoadManager`'s own signals it's already listening to — this
-## view doesn't need a second feedback mechanism.
+## off SaveLoadManager's own signals it's already listening to — this view
+## doesn't need a second feedback mechanism.
 ##
 ## Hidden by default — the first TOGGLEABLE panel in this HUD (every other
 ## view here is always visible in its own corner). `open()`/`close()` own
@@ -92,11 +87,11 @@ func get_content_min_size() -> Vector2:
 func setup(save_load_manager: SaveLoadManager) -> void:
 	_save_load_manager = save_load_manager
 
-## MainMenuView's boot-screen "Continue" browser (playtest round 6) reuses
-## this same view for Load, but there's no live game to save FROM there —
-## hides the Save button entirely rather than leaving a dead button that
-## would just silently do nothing useful. MainHUD's own in-game instance
-## never calls this, so it keeps Save visible exactly as before.
+## MainMenuView's boot-screen "Continue" browser reuses this same view for
+## Load, but there's no live game to save FROM there — hides the Save
+## button entirely rather than leaving a dead button that would silently
+## do nothing. MainHUD's own in-game instance never calls this, so it
+## keeps Save visible.
 func set_save_enabled(enabled: bool) -> void:
 	_save_button.visible = enabled
 
