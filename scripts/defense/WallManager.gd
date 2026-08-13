@@ -1,30 +1,25 @@
 class_name WallManager
 extends Node
 
-## Runtime owner of every placed WallSegment (design doc Phase 4.1). Mirrors
-## BuildingManager's shape (validate -> spend -> register) and
-## LogisticsNetwork's "chain of individually-tracked segments between hex
-## pairs" shape — walls are the same idea, just defensive instead of
-## logistical, and each segment carries its OWN health pool rather than a
-## shared network-wide state (design doc, decided).
+## Runtime owner of every placed WallSegment. Mirrors BuildingManager's shape
+## (validate -> spend -> register) and LogisticsNetwork's "chain of
+## independently-tracked segments between hex pairs" shape — walls are the
+## same idea, defensive instead of logistical, each segment carrying its OWN
+## health pool rather than a shared network-wide state.
 ##
-## Ditches and Oil Pits are deliberately NOT placed through
-## BuildingManager.place_building() despite being real BuildingCatalog
-## entries (Phase 2.1, added here in Phase 4.1): the design doc frames them
-## as stacking WITH a specific wall segment ("per segment"), not occupying
-## independent hex+local_position the way every other building does. This
-## class reuses BuildingCatalog purely as their cost-data source
-## (add_defense_work() below) and tracks which segment has which as a plain
-## bool flag on WallSegment, rather than inventing a second building-tree
-## system or awkwardly bolting them onto BuildingManager's placement flow.
+## Ditches and Oil Pits are NOT placed through BuildingManager.place_building()
+## despite being real BuildingCatalog entries: they stack WITH a specific
+## wall segment ("per segment"), not occupying independent hex+local_position
+## the way every other building does. This class reuses BuildingCatalog
+## purely as their cost-data source (add_defense_work()) and tracks which
+## segment has which as a plain bool flag on WallSegment.
 ##
-## Combat is real now: `HordeManager._siege_wall()` (Phase 4.1/5.10) calls
-## `damage_segment()` below directly whenever a horde's own drift path
-## crosses an unbreached segment, with a siege-damage bonus and Ditch/Oil
-## Pit counter-damage folded in on that caller's side — this class itself
-## stays combat-ignorant, same "manager mutates a passed-in Resource"
-## split every other combat-adjacent class here keeps. `repair_segment()`
-## is the recovery action a real breach now needs.
+## Combat: HordeManager._siege_wall() calls damage_segment() below directly
+## whenever a horde's drift path crosses an unbreached segment, with siege-
+## damage bonus and Ditch/Oil Pit counter-damage applied on that caller's
+## side — this class stays combat-ignorant, same "manager mutates a passed-in
+## Resource" split every other combat-adjacent class here keeps.
+## repair_segment() is the recovery action a breach needs.
 
 signal wall_segment_placed(segment: WallSegment)
 signal wall_segment_upgraded(segment: WallSegment)
@@ -35,35 +30,15 @@ signal defense_work_added(segment: WallSegment, work_type: GameEnums.BuildingTyp
 signal placement_rejected(hex_a: Vector2i, hex_b: Vector2i, reason: String)
 signal upgrade_rejected(segment: WallSegment, reason: String)
 signal repair_rejected(segment: WallSegment, reason: String)
-## User report ("repairing... should take some amount of time") —
-## wall_segment_repaired (above) now only fires once a queued job finishes.
-signal repair_started(segment: WallSegment, days: int)
-## User request ("there should also be a demolish button on every building
-## (and wall)") — the first-ever removal path a WallSegment has. Every
-## other consumer of this class's placement signals (StrategicOverlayManager,
-## LocalDetailManager, UnitCommandController) previously documented "walls
-## are never removed once placed" as the reason they had no removal
-## handler; demolish_segment() below makes that no longer true, so each of
-## those now has one too.
+signal repair_started(segment: WallSegment, days: int)  ## wall_segment_repaired (above) only fires once a queued repair job finishes.
 signal wall_segment_removed(segment: WallSegment)
 signal demolish_rejected(segment: WallSegment, reason: String)
 
 @export var hex_grid_map_path: NodePath
 @export var resource_manager_path: NodePath
-## Optional — gates upgrade_segment() against Phase 2.9's Tech Tree. Unset
-## means every wall tier is treated as unlocked (no tech-gate check).
-@export var tech_manager_path: NodePath
-## Optional — feeds is_legacy_segment()'s outer/inner classification (Phase
-## 4.1). Unset means every segment reads as "outer" (today's pre-4.1-decision
-## look), same "gracefully skip it" convention as tech_manager_path above.
-@export var logistics_network_path: NodePath
-## Optional — start-of-game pass (user request): seed_starting_defenses()
-## below needs to know where BuildingManager.seed_starting_buildings() put
-## the free Town Hall, so it can wall that hex in. Unset skips seeding
-## entirely (same "gracefully skip it" convention as every other optional
-## dependency here) — this class stays fully usable without it, same as
-## before this pass, for any test/scene that doesn't wire one up.
-@export var building_manager_path: NodePath
+@export var tech_manager_path: NodePath  ## Optional — gates upgrade_segment() against the Tech Tree. Unset means every wall tier reads as unlocked.
+@export var logistics_network_path: NodePath  ## Optional — feeds is_legacy_segment()'s outer/inner classification. Unset means every segment reads as "outer".
+@export var building_manager_path: NodePath  ## Optional — seed_starting_defenses() needs BuildingManager.get_starting_settlement_hexes() to know what to wall. Unset skips seeding entirely; the class stays usable without it.
 
 var _hex_grid_map: HexGridMap
 var _resource_manager: ResourceManager
@@ -72,10 +47,7 @@ var _logistics_network: LogisticsNetwork
 var _building_manager: BuildingManager
 var _segments: Array[WallSegment] = []
 var _next_id: int = 1
-## Paid-for repairs not yet finished — {segment, days_remaining}. Same known
-## save/load gap as BuildingManager's/UnitManager's own equivalent queues
-## (flagged on theirs, not repeated per-file).
-var _pending_repair: Array[Dictionary] = []
+var _pending_repair: Array[Dictionary] = []  ## Paid-for repairs not yet finished — {segment, days_remaining}.
 
 func _ready() -> void:
 	if hex_grid_map_path != NodePath():
@@ -88,16 +60,9 @@ func _ready() -> void:
 		_logistics_network = get_node(logistics_network_path)
 	if building_manager_path != NodePath():
 		_building_manager = get_node(building_manager_path)
-	# Bug fix (user request): the game used to auto-fence the starting
-	# Manchester settlement with a free Wooden perimeter on every new game —
-	# no longer called. seed_starting_defenses() itself is left intact
-	# below (still reachable for a future "start with walls" option) so
-	# this is a one-line behavior change, not a removal of the mechanism.
 	TickManager.day_completed.connect(_on_day_completed)
 
-## Ticks every queued repair down by one day, applying the actual HP
-## restoration and firing wall_segment_repaired once it reaches zero —
-## mirrors BuildingManager._process_pending_repair()'s own shape.
+## Mirrors BuildingManager's own construction/repair queue processing shape.
 func _on_day_completed(_day_number: int) -> void:
 	var still_pending: Array[Dictionary] = []
 	for job in _pending_repair:
@@ -113,19 +78,6 @@ func _on_day_completed(_day_number: int) -> void:
 func get_segments() -> Array[WallSegment]:
 	return _segments.duplicate()
 
-## **Removed (freehand wall rework): `get_segment_between(hex_a, hex_b)`.**
-## "The wall between these two hexes" stopped being a meaningful question
-## once a wall became a chain of independent <=100m pieces along a
-## player-drawn line rather than one piece per hex edge — a single edge
-## can now hold anywhere from zero to dozens of pieces, or none at all if
-## the drawn line only clips a corner of it. `get_blocking_segment()` below
-## is the real replacement for HordeManager's siege lookup (the one actual
-## caller this had); `get_placement_error_for_points()` no longer has an
-## "already defends this edge" dedup check at all — see that function's own
-## doc comment for why overlap-prevention was deliberately dropped rather
-## than ported forward as a wrong, edge-shaped approximation of a
-## genuinely 2D "do these two line segments overlap" problem.
-
 func get_segments_at(coord: Vector2i) -> Array[WallSegment]:
 	var result: Array[WallSegment] = []
 	for segment in _segments:
@@ -133,21 +85,15 @@ func get_segments_at(coord: Vector2i) -> Array[WallSegment]:
 			result.append(segment)
 	return result
 
-## Real replacement for the old get_segment_between()-based siege lookup —
-## HordeManager._advance_horde()'s "peek before crossing" (see its own doc
-## comment) now needs "does ANY unbreached piece actually cross this
-## horde's real travel line," not "is there THE piece between these two
-## hexes," since several independent pieces can now sit along or near one
-## hex boundary. Returns the first unbreached piece whose own line
+## "The wall between these two hexes" isn't a single lookup — a wall is a
+## chain of independent <=100m pieces along a player-drawn line, not one
+## piece per hex edge; a single edge can hold anywhere from zero to dozens
+## of pieces. Returns the first unbreached piece whose own line
 ## (point_a-point_b) genuinely intersects the travel segment
-## (from_world -> to_world), via Godot's own Geometry2D.segment_intersects_segment()
-## rather than hand-rolled line math. Restricted to pieces registered
-## under `from_hex`/`to_hex` (WallSegment.connects(), same as
-## get_segments_at() above) for efficiency — a piece can only ever block a
-## crossing near the specific hex(es) its own endpoints actually fall in,
-## the same spatial-index role hex_a/hex_b already played before this
-## rework, just geometry-checked now instead of assumed from the hex pair
-## alone.
+## (from_world -> to_world), via Geometry2D.segment_intersects_segment().
+## Restricted to pieces registered under from_hex/to_hex (WallSegment.connects())
+## for efficiency — a piece can only block a crossing near the specific
+## hex(es) its own endpoints fall in.
 func get_blocking_segment(from_hex: Vector2i, to_hex: Vector2i, from_world: Vector2, to_world: Vector2) -> WallSegment:
 	var candidates := get_segments_at(from_hex)
 	if to_hex != from_hex:
@@ -159,44 +105,33 @@ func get_blocking_segment(from_hex: Vector2i, to_hex: Vector2i, from_world: Vect
 			return segment
 	return null
 
-## Exposed for SaveLoadManager (Phase 2.8) — mirrors BuildingManager.get_next_id().
 func get_next_id() -> int:
 	return _next_id
 
-## Design doc Phase 4.1: "retain legacy inner walls as fallback bulkheads
-## during breach events" — **decided:** this is a purely POSITIONAL
-## classification derived live from Zone of Control coverage
-## (LogisticsNetwork, Phase 2.3), not a new stored WallSegment field. A
-## segment is "legacy" (an inner ring — once the frontier, now fully
-## enclosed by the settlement's own controlled ground) once BOTH the hexes
-## it connects carry ZoC coverage, meaning some other edge — another wall,
-## or simply distance — now stands between it and any unclaimed ground. A
-## segment with at least one uncovered end is still "outer": the currently
-## exposed defensive line. Territory shifting (Phase 5.8 loss/recapture,
-## ZoC recompute) means this can and does flip live, same as ZoC itself.
+## "Legacy" (inner ring) is a purely positional classification derived live
+## from Zone of Control coverage, not a stored WallSegment field — a segment
+## is legacy once BOTH hexes it connects carry ZoC coverage, meaning some
+## other edge (another wall, or distance) now stands between it and any
+## unclaimed ground. A segment with at least one uncovered end is still
+## "outer": the currently exposed defensive line. Territory shifting
+## (recapture, ZoC recompute) can flip this live, same as ZoC itself.
 ##
-## Deliberately NOT a new combat concept — an "inner" segment blocks and
-## sieges exactly like an "outer" one, same WallCatalog HP/tier math for
-## both. The actual fallback-bulkhead BEHAVIOR the design doc asks for
-## already falls out for free from HordeManager._advance_horde()'s existing
-## per-edge peek, which re-checks for an unbreached WallSegment on EVERY hex
-## boundary a horde's path crosses, not just the first one — a horde that
-## breaches an outer segment and keeps walking its pre-planned route simply
-## hits whatever the next edge holds, an inner ring included, and sieges it
-## the same way. Verified, not just assumed (see this phase's own todo.md
-## note). This method exists purely so a renderer (StrategicOverlayManager's
-## wall markers, Phase 2.7.3) — or a future wall-selection UI — can tell the
-## two apart; it changes nothing about how either one behaves in combat.
+## Not a new combat concept — an "inner" segment blocks and sieges exactly
+## like an "outer" one, same WallCatalog HP/tier math for both. The fallback-
+## bulkhead behavior falls out for free from HordeManager._advance_horde()'s
+## existing per-edge peek, which re-checks for an unbreached WallSegment on
+## EVERY hex boundary a horde's path crosses — a horde that breaches an
+## outer segment and keeps walking its route simply hits whatever the next
+## edge holds, an inner ring included. This method exists purely so a
+## renderer (StrategicOverlayManager's wall markers) can tell the two apart;
+## it changes nothing about how either behaves in combat.
 ##
 ## No LogisticsNetwork wired means no distinction is knowable — every
-## segment reads as "outer", the same "gracefully skip it" fallback every
-## other optional dependency here already uses.
-## **Freehand rework note:** a short (<=100m) piece's own two endpoints
+## segment reads as "outer". A short (<=100m) piece's own two endpoints
 ## often land in the SAME hex (hexes are ~5000m across) rather than two
-## different adjacent ones the way a whole-edge segment always used to —
-## `hex_a == hex_b` in that case just means "both ends of this piece are
-## inside one hex," and the legacy check collapses to that single hex's
-## own coverage rather than requiring two.
+## different adjacent ones — hex_a == hex_b in that case means "both ends of
+## this piece are inside one hex," and the legacy check collapses to that
+## single hex's own coverage.
 func is_legacy_segment(segment: WallSegment) -> bool:
 	if not _logistics_network or not segment:
 		return false
@@ -206,21 +141,15 @@ func is_legacy_segment(segment: WallSegment) -> bool:
 	return covered.has(segment.hex_a) and covered.has(segment.hex_b)
 
 ## Returns "" if a single wall PIECE can legally be placed with its own
-## endpoints at `point_a`/`point_b` right now, or a human-readable
-## rejection reason otherwise — mirrors BuildingManager.get_placement_error()'s
-## "queryable without side effects" pattern. Called once per chopped piece
-## by place_wall_line() below, not once per whole drawn line.
+## endpoints at point_a/point_b right now, or a rejection reason otherwise.
+## Called once per chopped piece by place_wall_line(), not once per whole
+## drawn line.
 ##
-## **Deliberately no "already defends this edge" duplicate check anymore**
-## (the old hex-pair version had one, via the now-removed
-## get_segment_between()). Preventing two freehand pieces from overlapping
-## is a genuinely different, harder 2D "do these line segments cross or
-## run parallel within some tolerance" problem, not a hex-pair lookup —
-## and *They Are Billions* itself doesn't strictly prevent overlapping/
-## adjacent wall placement either (its own "no more than two rows deep"
-## rule is a different, depth-limiting constraint, not an anti-overlap
-## one). Out of scope for this pass: overlapping pieces are wasteful but
-## harmless, not a correctness bug.
+## No "already defends this edge" duplicate check: preventing two freehand
+## pieces from overlapping is a genuinely harder 2D "do these line segments
+## cross or run parallel within some tolerance" problem, not a hex-pair
+## lookup, and overlapping pieces are wasteful but harmless, not a
+## correctness bug.
 func get_placement_error_for_points(point_a: Vector2, point_b: Vector2, tier: int = WallCatalog.WOODEN) -> String:
 	if not _hex_grid_map:
 		return "No hex grid map wired to WallManager."
@@ -239,33 +168,22 @@ func get_placement_error_for_points(point_a: Vector2, point_b: Vector2, tier: in
 func can_place_wall_piece(point_a: Vector2, point_b: Vector2, tier: int = WallCatalog.WOODEN) -> bool:
 	return get_placement_error_for_points(point_a, point_b, tier).is_empty()
 
-## Cost scales with a piece's own real length now that a "segment" is a
-## short player-drawn chunk (player spec: <=100m) rather than a fixed
-## whole-hex-edge span — the OLD flat WallCatalog.get_build_cost(tier)/
-## get_repair_cost(tier)/get_upgrade_cost(tier) prices were implicitly
-## "per one hex edge" (HexCoord.HEX_SIZE world units long, the single
-## piece a whole edge used to be). Dividing by that gives a stable
-## cost-per-world-unit rate, so a full-length drawn wall costs about what
-## the old one-piece-per-edge wall used to in total — spread across many
-## small, individually cheap pieces — instead of every ~10-unit piece
-## independently costing the OLD whole-edge price (which would have
-## inflated a full drawn perimeter's total cost by ~50x for no reason
-## connected to the actual bug being fixed). **Max HP is deliberately NOT
-## scaled the same way** — WallSegment.get_max_hp() still returns the
-## tier's full value per piece, matching *They Are Billions*' own real
-## model (confirmed via research): each small placed piece is fully as
-## tough as its tier implies, not a fraction of it: cheap-but-tough small
-## pieces, where a long drawn wall's TOTAL toughness genuinely scales up
-## with how much of it you build, not just its cost.
+## Cost scales with a piece's own real length — a "segment" is a short
+## player-drawn chunk (<=100m) rather than a fixed whole-hex-edge span. The
+## flat WallCatalog.get_build_cost(tier)/get_repair_cost(tier)/get_upgrade_cost(tier)
+## prices are implicitly "per one hex edge" (HexCoord.HEX_SIZE world units
+## long); dividing by that gives a stable cost-per-world-unit rate, so a
+## full-length drawn wall costs about what a one-piece-per-edge wall used to
+## in total, spread across many small, individually cheap pieces. Max HP is
+## NOT scaled the same way — WallSegment.get_max_hp() still returns the
+## tier's full value per piece (matches *They Are Billions*' own model):
+## cheap-but-tough small pieces, where a long drawn wall's TOTAL toughness
+## scales up with how much of it you build, not just its cost.
 static func _cost_for_length(tier: int, length: float) -> Dictionary:
 	return _scaled_by_length(WallCatalog.get_build_cost(tier), length)
 
-## Shared by build/repair/upgrade costs alike — see _cost_for_length()'s
-## own doc comment for the full "why length-scale cost but not HP"
-## reasoning; this is just the generic form so get_repair_error()/
-## upgrade_segment() below can apply the exact same scaling to THEIR own
-## flat per-tier WallCatalog costs against a specific segment's own length,
-## not just fresh-build cost.
+## Shared by build/repair/upgrade costs — see _cost_for_length()'s own doc
+## comment for the length-scale-cost-but-not-HP reasoning.
 static func _scaled_by_length(cost: Dictionary, length: float) -> Dictionary:
 	var fraction := length / HexCoord.HEX_SIZE
 	var scaled: Dictionary = {}
@@ -273,24 +191,15 @@ static func _scaled_by_length(cost: Dictionary, length: float) -> Dictionary:
 		scaled[resource_type] = float(cost[resource_type]) * fraction
 	return scaled
 
-## A segment's own real length — point_a/point_b are its actual placement
-## geometry now (freehand rework), so this is a plain distance, not
-## anything hex-derived.
-static func _segment_length(segment: WallSegment) -> float:
+func _segment_length(segment: WallSegment) -> float:
 	return segment.point_a.distance_to(segment.point_b)
 
-## **The real placement entry point (player report: walls should be "free
-## hand to place/draw," matching *They Are Billions*' own click-drag
-## model, plus "no longer than 100 meters MAXIMUM... split up into
-## multiple segments" beyond that).** Chops the straight line from
-## `world_a` to `world_b` (wherever the player actually dragged) into
+## The real placement entry point — freehand click-drag, chopped into
 ## independently-placed, independently-HP'd pieces no longer than
-## `WallCatalog.MAX_SEGMENT_LENGTH_WORLD_UNITS` each, validating and
-## paying for every piece individually — a piece that fails validation
-## (dips into impassable terrain, say) is simply skipped rather than
-## aborting the whole drawn line, so one bad stretch doesn't waste an
-## otherwise-good drag. Returns every piece actually placed (empty if
-## none were, e.g. the whole line was invalid or unaffordable).
+## WallCatalog.MAX_SEGMENT_LENGTH_WORLD_UNITS each, validating and paying
+## for every piece individually. A piece that fails validation (dips into
+## impassable terrain) is skipped rather than aborting the whole drawn line.
+## Returns every piece actually placed (empty if none were).
 func place_wall_line(world_a: Vector2, world_b: Vector2, tier: int = WallCatalog.WOODEN, is_gate: bool = false) -> Array[WallSegment]:
 	var placed: Array[WallSegment] = []
 	if not _hex_grid_map:
@@ -311,14 +220,10 @@ func place_wall_line(world_a: Vector2, world_b: Vector2, tier: int = WallCatalog
 		placed.append(_register_freehand_segment(point_a, point_b, tier, is_gate))
 	return placed
 
-## Free/seeded placement (seed_starting_defenses() below) — same chopping
-## as place_wall_line() but bypasses get_placement_error_for_points()'s
-## cost check entirely and never spends resources, same "this is the
-## game's own starting state, not a player purchase" framing
-## seed_starting_defenses() itself already documents. Terrain/map-bounds
-## validity is still worth checking (a malformed core-hex boundary
-## shouldn't silently place pieces off the map), so this reuses the same
-## per-piece error check, just ignores an affordability-only rejection.
+## Free/seeded placement (seed_starting_defenses()) — same chopping as
+## place_wall_line() but bypasses the cost check and never spends resources.
+## Terrain/map-bounds validity is still checked so a malformed core-hex
+## boundary doesn't silently place pieces off the map.
 func _seed_wall_line(world_a: Vector2, world_b: Vector2, tier: int, is_gate: bool) -> void:
 	var total_length := world_a.distance_to(world_b)
 	if total_length <= 0.01:
@@ -342,41 +247,26 @@ func _register_freehand_segment(point_a: Vector2, point_b: Vector2, tier: int, i
 	wall_segment_placed.emit(segment)
 	return segment
 
-## Start-of-game pass (user request: "start the game with an iron foundry
-## already inside a set of walls", extended a pass later to "extend the
-## starting walls so [the Farm is] within the perimeter too"). Walls the
-## OUTER boundary of BuildingManager.get_starting_settlement_hexes() — Town
-## Hall + Foundry's own hex, plus the Farm and its connecting corridor when
-## one was found — with a free Wooden segment on every edge that crosses
-## from a core hex to a non-core, passable one. An edge BETWEEN two core
-## hexes is deliberately skipped (it's interior ground once both sides are
-## "inside", not a boundary to defend) — get_segment_between() is the dedup
-## guard for the genuinely rare case where two core hexes share a common
-## outside neighbor and would otherwise both try to wall the same edge.
-## Free the same way every other piece of this opening move is (bypasses
-## get_placement_error()'s cost check entirely, registered directly) — this
-## is the game's own starting state, not a player purchase.
+## Walls the OUTER boundary of BuildingManager.get_starting_settlement_hexes()
+## with a free Wooden segment on every edge crossing from a core hex to a
+## non-core, passable one. An edge BETWEEN two core hexes is skipped (it's
+## interior ground once both sides are "inside"). Free the same way every
+## other piece of the opening move is (bypasses the cost check, registered
+## directly) — this is the game's own starting state, not a player purchase.
 ##
-## A subset of those boundary edges are Gates instead of solid wall (see
-## WallSegment.is_gate) rather than left as bare unwalled gaps: the whole
-## ring would only ever block a HORDE anyway (walls never block the
-## player's own units/logistics — see HexPathfinder's own doc comment), so
-## a plain gap wouldn't be "protecting an opening", it would just be a hole
-## a horde walks through uncontested. A Gate still sieges like any other
-## segment, just at a fraction of the HP — a deliberately weaker point, not
-## an undefended one. `- 1` below reserves at least one solid (non-gate)
-## segment whenever there's more than one boundary edge at all — found by
-## actually booting the game and inspecting a real seeded result: Manchester
-## alone only ever has 2 walled edges (4 of its 6 neighbors are impassable
-## Chat Moss peat bog), and a fixed gate count with no such reservation
-## silently turned both into Gates, leaving ~0 real defensive value.
+## A subset of boundary edges are Gates instead of solid wall: the whole
+## ring only ever blocks a HORDE (walls never block the player's own
+## units/logistics), so a plain gap would just be a hole a horde walks
+## through uncontested. A Gate still sieges like any other segment, just at
+## a fraction of the HP. Each DISTINCT source hex's own first boundary edge
+## is reserved as solid (not just one global reservation) — a global
+## reservation only guarantees one solid wall total, which can leave an
+## entire disconnected ring at 100% Gates if a different ring's own edges
+## consume the whole shared reservation first.
 ##
-## Guarded the same way BuildingManager.seed_starting_buildings() guards
-## itself: a no-op if segments already exist (a loaded save already has its
-## own, real wall state) or if the dependencies this needs aren't wired.
-## Runs from _ready(), which fires after BuildingManager's own _ready() as
-## long as this node stays a LATER Main.tscn sibling (already true — see
-## DiscontentManager's own doc comment for the same ordering requirement).
+## No-op if segments already exist (a loaded save has its own wall state) or
+## if the dependencies aren't wired. Runs from _ready(), which fires after
+## BuildingManager's own _ready() as long as this stays a later Main.tscn sibling.
 const _STARTING_WALL_GATE_COUNT: int = 2
 
 func seed_starting_defenses() -> void:
@@ -385,13 +275,13 @@ func seed_starting_defenses() -> void:
 	var core_hexes := _building_manager.get_starting_settlement_hexes()
 	if core_hexes.is_empty():
 		return
-	var core_set: Dictionary = {}  # Vector2i -> true, for O(1) "is this hex inside the perimeter" checks
+	var core_set: Dictionary = {}  # Vector2i -> true, O(1) "is this hex inside the perimeter"
 	for coord in core_hexes:
 		core_set[coord] = true
 
-	var boundary_edges: Array[Vector2i] = []  # outside-hex half of each (core_hex, outside_hex) pair, paired 1:1 with boundary_sources below
+	var boundary_edges: Array[Vector2i] = []  # outside-hex half of each (core_hex, outside_hex) pair, paired 1:1 with boundary_sources
 	var boundary_sources: Array[Vector2i] = []
-	var seen_edges: Dictionary = {}  # String (canonical "q,r-q,r" key) -> true — dedup WITHIN this pass; get_segment_between() can't help here since nothing is actually registered until the loop below runs.
+	var seen_edges: Dictionary = {}  # String ("q,r-q,r") -> true — dedup within this pass
 	for core_coord in core_hexes:
 		for neighbor in HexCoord.neighbors(core_coord):
 			if core_set.has(neighbor):
@@ -399,9 +289,9 @@ func seed_starting_defenses() -> void:
 			var cell := _hex_grid_map.get_cell(neighbor)
 			if not cell or not cell.is_passable():
 				continue
-			# Two DIFFERENT core hexes can share the same outside neighbor
-			# (common in a hex grid) — canonicalize by sorting the pair so
-			# both directions hash to the same key.
+			# Two DIFFERENT core hexes can share the same outside neighbor —
+			# canonicalize by sorting the pair so both directions hash to the
+			# same key.
 			var a := core_coord
 			var b := neighbor
 			if b.x < a.x or (b.x == a.x and b.y < a.y):
@@ -415,14 +305,6 @@ func seed_starting_defenses() -> void:
 			boundary_sources.append(core_coord)
 			boundary_edges.append(neighbor)
 
-	# Reserve each DISTINCT source hex's own first boundary edge as solid —
-	# not just one global reservation across the whole perimeter — so the
-	# disclosed "farm unreachable, two separate compounds" fallback above
-	# can't repeat the exact bug the single-hex version of this method
-	# already hit once: a global "- 1" only guarantees ONE solid wall
-	# total, which silently left an entire disconnected ring (Town Hall's
-	# own 2-edge one) at 100% Gates when the Farm's own 4-edge ring
-	# consumed the whole shared reservation instead.
 	var gate_eligible_indices: Array[int] = []
 	var reserved_source: Dictionary = {}  # Vector2i -> true, one reservation per distinct source hex
 	for i in boundary_edges.size():
@@ -438,16 +320,10 @@ func seed_starting_defenses() -> void:
 		gate_indices[gate_eligible_indices[i]] = true
 
 	for i in boundary_edges.size():
-		# Freehand rework: each boundary EDGE now seeds as a chain of
-		# <=100m pieces (via _seed_wall_line(), hex-center to hex-center —
-		# the same line the old single whole-edge segment used to run
-		# along) rather than one giant piece, same as any player-drawn
-		# wall now would. gate_indices is still keyed per EDGE, not per
-		# piece — every piece along a "gate" edge seeds as a Gate, which
-		# reads as one long weak stretch rather than a single-tile weak
-		# point; a deliberate simplification, not a bug, since the
-		# starting perimeter's own gate count/spacing was already a
-		# placeholder balancing choice before this rework.
+		# Each boundary EDGE seeds as a chain of <=100m pieces
+		# (_seed_wall_line(), hex-center to hex-center), same as any player-
+		# drawn wall would. gate_indices is keyed per EDGE, not per piece —
+		# every piece along a "gate" edge seeds as a Gate.
 		_seed_wall_line(HexCoord.axial_to_world(boundary_sources[i]), HexCoord.axial_to_world(boundary_edges[i]), WallCatalog.WOODEN, gate_indices.has(i))
 
 func get_upgrade_error(segment: WallSegment) -> String:
@@ -467,11 +343,10 @@ func get_upgrade_error(segment: WallSegment) -> String:
 func can_upgrade_segment(segment: WallSegment) -> bool:
 	return get_upgrade_error(segment).is_empty()
 
-## Rebuilds the segment to the next tier's full spec — current_hp resets to
-## the new tier's max_hp rather than carrying forward whatever fraction of
-## damage it had, matching how a genuine reconstruction (not a patch-up)
-## would work. Costs 50% of building that tier from scratch (design doc,
-## decided), via WallCatalog.get_upgrade_cost().
+## current_hp resets to the new tier's max_hp rather than carrying forward
+## whatever fraction of damage it had, matching a genuine reconstruction
+## (not a patch-up). Costs 50% of building that tier from scratch, via
+## WallCatalog.get_upgrade_cost().
 func upgrade_segment(segment: WallSegment) -> bool:
 	var error := get_upgrade_error(segment)
 	if not error.is_empty():
@@ -518,13 +393,6 @@ func add_defense_work(segment: WallSegment, work_type: GameEnums.BuildingType) -
 	defense_work_added.emit(segment, work_type)
 	return true
 
-## Exposed for Phase 5.4's CombatEngine / 5.10's horde siege AI to call once
-## they exist — nothing calls this yet. A besieging horde's siege bonus and
-## Ditches/Oil Pits actually inflicting counter-damage (design doc: "each
-## adds toughness/breach-difficulty or inflicts damage on a besieging horde
-## before/during a breach attempt") are documented as future inputs to
-## whatever `amount` a combat resolution loop computes, not implemented
-## here — there's no attacking horde or combat loop yet to compute one.
 func damage_segment(segment: WallSegment, amount: float) -> void:
 	if not segment or segment.is_breached():
 		return
@@ -533,15 +401,9 @@ func damage_segment(segment: WallSegment, amount: float) -> void:
 	if segment.is_breached():
 		wall_segment_breached.emit(segment)
 
-## Design doc Phase 4.1/4.2: the recovery action a breach genuinely needs
-## now that Phase 5.10's `HordeManager` can actually inflict one
-## (`_siege_wall()`) — `upgrade_segment()`'s own `get_upgrade_error()`
-## already anticipated this ("a breached wall segment must be repaired
-## before it can be upgraded"), but nothing implemented repair itself until
-## now. Restores to the segment's OWN current tier's full health (not an
-## upgrade — same tier, just fixed), for `WallCatalog.get_repair_cost()`
-## (50% of building that tier from scratch, same fraction
-## `upgrade_segment()` already uses).
+## Restores to the segment's OWN current tier's full health (not an upgrade
+## — same tier, just fixed). Cost is WallCatalog.get_repair_cost() — 50% of
+## building that tier from scratch, same fraction upgrade_segment() uses.
 func get_repair_error(segment: WallSegment) -> String:
 	if not segment:
 		return "No such wall segment."
@@ -554,11 +416,9 @@ func get_repair_error(segment: WallSegment) -> String:
 func can_repair_segment(segment: WallSegment) -> bool:
 	return get_repair_error(segment).is_empty()
 
-## Same "pay upfront, finish later" shape BuildingManager.repair_building()
-## now uses — see that function's own doc comment. The segment stays
-## breached (still-red, still passable to a horde) until
-## _on_day_completed() above applies the actual restoration `days` days
-## from now.
+## Pays upfront, finishes later — the segment stays breached (still-red,
+## still passable to a horde) until _on_day_completed() applies the actual
+## restoration `days` days from now.
 func repair_segment(segment: WallSegment) -> bool:
 	var error := get_repair_error(segment)
 	if not error.is_empty():
@@ -571,22 +431,15 @@ func repair_segment(segment: WallSegment) -> bool:
 	repair_started.emit(segment, days)
 	return true
 
-## --- Demolish (user request: same "Demolish" feature as
-## BuildingManager.demolish_building(), see that method's own doc comment
-## for the full "50%, except Energy at 100%" rule) ---------------------------
-##
-## Refunds HALF of what this exact piece would cost to build fresh at its
-## own current tier/length (_cost_for_length() — the same derived-not-stored
-## cost every other wall action here already recomputes on demand rather
-## than tracking cumulative historical spend across tier upgrades), except
-## any ENERGY entry specifically, refunded in FULL. Generalized as a
-## per-resource-type check (unlike BuildingManager's building version,
-## which refunds Energy as a wholly separate top-up) because a wall's own
-## build-cost dict has no structural guarantee against holding an ENERGY
-## entry the way a building's construction_cost does — see
-## BuildingDefinition.daily_upkeep's own doc comment for that guarantee.
-## No WallCatalog tier actually prices ENERGY today, so this is a no-op in
-## practice, but it doesn't hardcode that assumption.
+## Refunds HALF of what this piece would cost to build fresh at its own
+## current tier/length (_cost_for_length() — the same derived-not-stored
+## cost every other wall action here recomputes on demand), except any
+## ENERGY entry, refunded in FULL. Checked per-resource-type (unlike
+## BuildingHealthController's building version, which refunds Energy as a
+## separate top-up) because a wall's build-cost dict has no structural
+## guarantee against holding an ENERGY entry — no WallCatalog tier actually
+## prices ENERGY today, so this is a no-op in practice, but doesn't hardcode
+## that assumption.
 func get_demolish_error(segment: WallSegment) -> String:
 	if not segment:
 		return "No such wall segment."
@@ -608,26 +461,21 @@ func demolish_segment(segment: WallSegment) -> bool:
 	_remove_segment(segment)
 	return true
 
-## Shared erase-and-notify — also purges any queued _pending_repair job for
-## this segment, same "don't leave a dangling job pointing at a piece
-## nothing else tracks anymore" fix BuildingManager.remove_building() just
-## got for the exact same reason.
+## Also purges any queued _pending_repair job for this segment, same
+## "don't leave a dangling job pointing at nothing" fix
+## BuildingManager.remove_building() applies for the same reason.
 func _remove_segment(segment: WallSegment) -> void:
 	_segments.erase(segment)
 	_pending_repair = _pending_repair.filter(func(job: Dictionary) -> bool: return job["segment"] != segment)
 	wall_segment_removed.emit(segment)
 
-## Exposed for SaveLoadManager (Phase 2.8) — WallSegment saves directly
-## (see its own class doc comment for why it needs no separate save-entry
-## wrapper, unlike BuildingInstance).
 func get_save_state() -> Dictionary:
 	return {"segments": _segments.duplicate(), "next_id": _next_id}
 
-## Restoration bypasses _register_freehand_segment() (and so doesn't re-emit
-## wall_segment_placed per segment) — nothing yet reacts to that signal for
-## recompute purposes the way BuildingManager's placement signals drive ZoC/
-## Fog of War, so a plain state replace is enough. Revisit if a future
-## renderer needs a per-segment "just appeared" event on load.
+## Bypasses _register_freehand_segment() (doesn't re-emit wall_segment_placed
+## per segment) — nothing reacts to that signal for recompute purposes the
+## way BuildingManager's placement signals drive ZoC/Fog of War, so a plain
+## state replace is enough.
 func load_save_state(segments: Array[WallSegment], next_id: int) -> void:
 	_segments = segments.duplicate()
 	_next_id = next_id
