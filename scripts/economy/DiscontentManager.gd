@@ -1,21 +1,20 @@
 class_name DiscontentManager
 extends Node
 
-## Colony-wide (well, per-region) unrest tracker (design doc Phase 2.11) — a
-## *population* mechanic, explicitly distinct from Phase 5.7's future
-## per-unit Morale & Veterancy. Framed by the doc as "a colony-economy
-## mechanic", so it lives alongside ResourceManager rather than under
-## /scripts/world despite reading territory data from LogisticsNetwork.
+## Colony-wide (well, per-region) unrest tracker — a *population* mechanic,
+## explicitly distinct from per-unit Morale & Veterancy. "A colony-economy
+## mechanic" (design doc), so it lives alongside ResourceManager rather
+## than under /scripts/world despite reading territory data from
+## LogisticsNetwork.
 ##
-## **Decided scope:** per contiguous Civilian Zone of Control region, not
-## global and not per-hex. A "Civilian Region" is a maximal connected
-## cluster of hexes currently carrying LogisticsNetwork's
-## has_civilian_coverage — hex-adjacency flood fill (HexCoord.neighbors),
-## recomputed whenever ZoC changes (LogisticsNetwork.network_recomputed).
-## Multi-hex settlements (Manchester's 4 hexes, London's 12) share one
-## Discontent value as long as they stay contiguously covered; a region
-## physically split by lost territory splits into two independently-tracked
-## regions.
+## Scope: per contiguous Civilian Zone of Control region, not global and
+## not per-hex. A "Civilian Region" is a maximal connected cluster of
+## hexes currently carrying LogisticsNetwork's has_civilian_coverage —
+## hex-adjacency flood fill (HexCoord.neighbors), recomputed whenever ZoC
+## changes (LogisticsNetwork.network_recomputed). Multi-hex settlements
+## (Manchester's 4 hexes, London's 12) share one Discontent value as long
+## as they stay contiguously covered; a region physically split by lost
+## territory splits into two independently-tracked regions.
 ##
 ## Discontent itself is stored PER HEX (`_discontent_by_hex`), not per a
 ## synthetic region id — every hex in a region is always driven to the same
@@ -31,14 +30,14 @@ extends Node
 ## - Structural (region *membership*): LogisticsNetwork.network_recomputed —
 ##   immediate, since which hexes belong to which region is ZoC's own state.
 ## - Numeric (region *value*): TickManager.day_completed — once per day,
-##   same cadence as BuildingManager's own daily tally, matching the design
-##   doc's economic drivers (overcrowding, shortfalls) which are themselves
-##   daily figures. Applied AFTER BuildingManager's own day_completed
-##   handler runs (this node must be a LATER Main.tscn sibling than
-##   BuildingManager — see Main.tscn) so today's production penalty
-##   (queried by BuildingManager, see get_production_multiplier()) reads
-##   YESTERDAY's Discontent, not a value this same tick is still computing —
-##   the same causality rule Phase 2.10 established for starvation/regrowth.
+##   same cadence as BuildingManager's own daily tally, matching the
+##   design doc's economic drivers (overcrowding, shortfalls) which are
+##   themselves daily figures. Applied AFTER BuildingManager's own
+##   day_completed handler runs (this node must be a LATER Main.tscn
+##   sibling than BuildingManager — see Main.tscn) so today's production
+##   penalty (queried by BuildingManager, see get_production_multiplier())
+##   reads YESTERDAY's Discontent, not a value this same tick is still
+##   computing — the same causality rule starvation/regrowth already uses.
 
 signal region_discontent_changed(hex_coords: Array[Vector2i], discontent: float)
 
@@ -60,14 +59,13 @@ var _pending_shortfall_types: Dictionary = {}       # GameEnums.ResourceType -> 
 var _pending_food_ratio: float = 1.0                # BuildingManager.food_satisfaction_changed's latest report.
 var _pending_casualty_pressure_by_hex: Dictionary = {}  # Vector2i -> float
 
-## Design doc: "exact numbers are a balancing pass, not an architecture
-## decision" applies here just as much as it did to Phase 2.10 — every
+## Exact numbers are a balancing pass, not an architecture decision — every
 ## constant below is a documented placeholder, not a tuned value.
 const OVERCROWDING_CAPACITY_PER_HEX: float = 40.0   ## Region capacity scales with hex count, so a 12-hex London isn't trivially "overcrowded" just for being large — matches multi-hex settlements sharing one Discontent value.
 const OVERCROWDING_PRESSURE_SCALE: float = 0.5      ## Discontent gained per day per 1.0 of overcrowding_ratio above capacity.
-const STARVATION_CASUALTY_PRESSURE_PER_DEATH: float = 0.02  ## Per starved civilian (BuildingManager.civilians_starved) within the region's own hexes that day — the one real "casualties" input available today; combat casualties/incursions (Phase 5.8/5.9) aren't built yet.
-const HUNGER_BAND_PRESSURE: float = 0.05            ## Flat daily pressure, applied to every region equally, while the colony's food ratio sits in Phase 2.10.2's hungry-but-not-starving band (independent of 2.10's own direct production penalty, per the design doc).
-const SHORTFALL_PRESSURE_PER_EVENT: float = 0.05    ## Flat daily pressure per distinct resource type that hit ResourceManager.upkeep_shortfall that day, applied to every region equally (the stockpile is one global pool, Phase 2.2 — Discontent is region-scoped, the economy underneath it deliberately isn't).
+const STARVATION_CASUALTY_PRESSURE_PER_DEATH: float = 0.02  ## Per starved civilian (BuildingManager.civilians_starved) within the region's own hexes that day — the one real "casualties" input available today; combat casualties/incursions aren't built yet.
+const HUNGER_BAND_PRESSURE: float = 0.05            ## Flat daily pressure, applied to every region equally, while the colony's food ratio sits in the hungry-but-not-starving band (independent of BuildingManager's own direct production penalty, per the design doc).
+const SHORTFALL_PRESSURE_PER_EVENT: float = 0.05    ## Flat daily pressure per distinct resource type that hit ResourceManager.upkeep_shortfall that day, applied to every region equally (the stockpile is one global pool — Discontent is region-scoped, the economy underneath it deliberately isn't).
 const RECOVERY_PER_DAY: float = 0.03                ## Passive daily decay toward content when no drivers fire that day.
 const HIGH_DISCONTENT_THRESHOLD: float = 0.7        ## Design doc's "high-Discontent region" — at/above this, buildings in the region take the Consequences production penalty.
 const HIGH_DISCONTENT_PRODUCTION_PENALTY: float = 0.15  ## Flat output cut applied to buildings within a high-Discontent region.
@@ -92,7 +90,7 @@ func get_discontent_at(coord: Vector2i) -> float:
 func is_high_discontent(coord: Vector2i) -> bool:
 	return get_discontent_at(coord) >= HIGH_DISCONTENT_THRESHOLD
 
-## Design doc 2.11.1 Consequences: "production penalty on buildings within a
+## Design doc Consequences: "production penalty on buildings within a
 ## high-Discontent region (queried by BuildingManager at its existing
 ## daily-tally step)". Kept as a single queryable multiplier (mirrors
 ## BuildingManager._production_multiplier()'s own shape) so BuildingManager
@@ -103,17 +101,16 @@ func get_production_multiplier(coord: Vector2i) -> float:
 	return 1.0
 
 ## Every currently-tracked region, each as its own hex list — exposed for a
-## future HUD indicator (Phase 6+) or debug tooling; nothing in this class
-## needs callers to have this today.
+## future HUD indicator or debug tooling; nothing in this class needs
+## callers to have this today.
 func get_regions() -> Array:
 	return _regions.duplicate(true)
 
-## Exposed for SaveLoadManager (Phase 2.8, extending the "future addition to
-## SaveGameData" the design doc flagged before this system existed) — the
-## per-hex Discontent map is the only state worth persisting; _regions
-## itself is recomputed fresh from live ZoC on load (_recompute_regions(),
-## called at the end of load_save_state()), same as ZoC coverage itself
-## never being saved directly.
+## Exposed for SaveLoadManager alongside SaveGameData — the per-hex
+## Discontent map is the only state worth persisting; _regions itself is
+## recomputed fresh from live ZoC on load (_recompute_regions(), called at
+## the end of load_save_state()), same as ZoC coverage itself never being
+## saved directly.
 func get_save_state() -> Dictionary:
 	return {"discontent_by_hex": _discontent_by_hex.duplicate()}
 

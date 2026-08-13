@@ -2,40 +2,37 @@ class_name BuildingInstance
 extends Resource
 
 ## A single placed building: a reference to its BuildingDefinition template,
-## the hex it occupies, an exact position within that hex (Phase 2.5 — for
-## the Tactical view; ZERO/hex-center by default when placed through the
-## plain hex-coordinate API), and a unique id assigned by BuildingManager.
-## Deliberately thin — construction-site placeholder rendering and combat
-## HP/damage state are later-phase concerns, not Phase 2's.
+## the hex it occupies, an exact position within that hex (for the
+## Tactical view; ZERO/hex-center by default when placed through the plain
+## hex-coordinate API), and a unique id assigned by BuildingManager.
 
 @export var definition: BuildingDefinition
 @export var hex_coord: Vector2i = Vector2i.ZERO
 @export var local_position: Vector2 = Vector2.ZERO  ## Offset from hex_coord's center; see BuildingManager.place_building_at_world().
 @export var id: int = 0
 
-## Design doc Phase 2.10.1: population becomes real, mutable, per-instance
-## state instead of just reading definition.population_provided as a fixed
-## number — this is what can actually be lost to starvation (2.10.3) or
-## regrown after a surplus (2.10.4). Seeded from the definition on placement;
-## 0 for any non-housing building, same as population_provided itself.
+## Population is real, mutable, per-instance state instead of just reading
+## definition.population_provided as a fixed number — this is what can
+## actually be lost to starvation or regrown after a surplus. Seeded from
+## the definition on placement; 0 for any non-housing building, same as
+## population_provided itself.
 @export var current_population: int = 0
 
-## Design doc Phase 5.12 ("They Are Billions convention: a destroyed
-## building doesn't disappear — it becomes a Ruins state"). Seeded from
-## definition.get_max_hp() on placement, same -1-sentinel convention
-## current_population uses. At 0, is_ruined flips true (BuildingManager.
-## damage_building()) — the instance stays in BuildingManager's records
-## (never removed) but stops producing/consuming/housing anything.
+## A destroyed building doesn't disappear — it becomes a Ruins state.
+## Seeded from definition.get_max_hp() on placement, same -1-sentinel
+## convention current_population uses. At 0, is_ruined flips true
+## (BuildingHealthController.damage()) — the instance stays in
+## BuildingManager's records (never removed) but stops producing/
+## consuming/housing anything.
 @export var current_hp: float = 0.0
 @export var is_ruined: bool = false
 
-## User report ("buildings should be visible while under construction...")
-## — true from the moment BuildingManager.place_building() registers the
-## instance (immediately, not at completion — see that function's own doc
-## comment) until _process_pending_construction() finishes counting down its
-## build time. A real, selectable, demolishable instance the whole time; this
-## flag is purely "is it still a construction site" for rendering/production
-## purposes, not a gate on whether the instance exists at all.
+## True from the moment BuildingManager.place_building() registers the
+## instance (immediately, not at completion) until
+## BuildingConstructionController.process_day() finishes counting down its
+## build time. A real, selectable, demolishable instance the whole time;
+## this flag is purely "is it still a construction site" for rendering/
+## production purposes, not a gate on whether the instance exists at all.
 @export var is_under_construction: bool = false
 
 func _init(p_definition: BuildingDefinition = null, p_hex_coord: Vector2i = Vector2i.ZERO, p_id: int = 0, p_local_position: Vector2 = Vector2.ZERO, p_current_population: int = -1, p_current_hp: float = -1.0, p_is_ruined: bool = false, p_is_under_construction: bool = false) -> void:

@@ -1,41 +1,39 @@
 class_name AlertTones
 extends RefCounted
 
-## Code-synthesized UI/alert tones (design doc Phase 6.2 cross-reference from
-## Phase 2.5.7's grilling-session decision: "synthesize it in code for now,
-## self contained no dependency"). No audio assets exist anywhere in this
-## project — every tone here is raw PCM data generated at runtime and handed
-## back as a ready-to-play AudioStreamWAV, the same "code-drawn placeholder,
-## swappable for real assets later" convention every `*Visuals.gd` color
-## lookup already follows for graphics. Stateless static utility, same shape
-## as BuildingVisuals/TerrainVisuals: pure functions in, a Resource out,
-## nothing here owns a Node, a Player, or references any manager — a caller
-## builds the stream once (e.g. in _ready()) and assigns it to its own
-## AudioStreamPlayer.
+## Code-synthesized UI/alert tones — "synthesize it in code for now, self
+## contained no dependency" (user feedback). No audio assets exist anywhere
+## in this project — every tone here is raw PCM data generated at runtime
+## and handed back as a ready-to-play AudioStreamWAV, the same "code-drawn
+## placeholder, swappable for real assets later" convention every
+## *Visuals.gd color lookup follows for graphics. Stateless static utility,
+## same shape as BuildingVisuals/TerrainVisuals: pure functions in, a
+## Resource out, nothing here owns a Node, a Player, or references any
+## manager — a caller builds the stream once (e.g. in _ready()) and
+## assigns it to its own AudioStreamPlayer.
 
 const _MIX_RATE := 44100
 const _AMPLITUDE := 0.35  ## Headroom below full scale — this plays alongside everything else, not as a solo alarm.
 const _FADE_FRACTION := 0.3  ## Final fraction of each note that linear-fades to silence, so the cut isn't an audible click.
 
 ## Short, low, two-note descending buzz — the negative/"can't do that"
-## feedback used wherever a player action is rejected. First caller:
-## BuildPlacementController (2.5.7's "can't place while zoomed out" nudge,
-## and BuildingManager.placement_rejected's existing reasons). Deliberately
-## brief and unpleasant rather than a jarring alarm — this fires on ordinary
-## misclicks, not a crisis; compare Phase 6.2's still-unbuilt siren-style
-## alerts for actual threats.
+## feedback used wherever a player action is rejected
+## (BuildPlacementController's "can't place while zoomed out" nudge, and
+## every BuildingManager.placement_rejected reason). Brief and unpleasant
+## rather than a jarring alarm — this fires on ordinary misclicks, not a
+## crisis; compare critical_tone() below for actual threats.
 static func negative_tone() -> AudioStreamWAV:
 	return _build_tone([
 		{"freq": 220.0, "duration": 0.09},
 		{"freq": 155.0, "duration": 0.12},
 	])
 
-## Design doc Phase 6.2's AlertManager — a calmer, level double-beep for
-## GameEnums.EventSeverity.WARNING world events (a unit takes a hit and
-## survives, food dips under 100%, a resource stockpile runs dry).
-## Deliberately distinct from negative_tone() above (a UI-rejection buzz,
-## lower and harsher) and from critical_tone() below (this doesn't escalate
-## in pitch) — a different context should sound different, not just louder.
+## AlertManager's calmer, level double-beep for GameEnums.EventSeverity.WARNING
+## world events (a unit takes a hit and survives, food dips under 100%, a
+## resource stockpile runs dry). Distinct from negative_tone() above (a
+## UI-rejection buzz, lower and harsher) and from critical_tone() below
+## (this doesn't escalate in pitch) — a different context should sound
+## different, not just louder.
 static func warning_tone() -> AudioStreamWAV:
 	return _build_tone([
 		{"freq": 440.0, "duration": 0.1},
@@ -45,8 +43,8 @@ static func warning_tone() -> AudioStreamWAV:
 ## The urgent counterpart for GameEnums.EventSeverity.CRITICAL world events
 ## (a wall breaches, a unit or building is destroyed, territory is lost, a
 ## large horde is spotted, the colony starves) — a three-note ascending
-## alarm, the most insistent tone in this project, matching how much more it
-## costs to miss one of these at 1000x game speed.
+## alarm, the most insistent tone in this project, matching how much more
+## it costs to miss one of these at 1000x game speed.
 static func critical_tone() -> AudioStreamWAV:
 	return _build_tone([
 		{"freq": 330.0, "duration": 0.12},
@@ -54,20 +52,18 @@ static func critical_tone() -> AudioStreamWAV:
 		{"freq": 523.0, "duration": 0.18},
 	])
 
-## Design doc Phase 5.1/6.1's "Nightfall in 04:15" countdown finally has a
-## sound at its own 2-minute warning mark: a slow, low two-toll approximation
-## of a "Church bell toll" (design doc's own example). A code-synthesized
-## square wave, not a sampled bell — same placeholder convention as every
-## other tone here, swappable for real audio once Phase 6.3's art/audio
-## pipeline exists.
+## The Nightfall countdown's own sound at its 2-minute warning mark: a
+## slow, low two-toll approximation of a church bell toll. A code-
+## synthesized square wave, not a sampled bell — same placeholder
+## convention as every other tone here.
 static func sunset_chime() -> AudioStreamWAV:
 	return _build_tone([
 		{"freq": 196.0, "duration": 0.4},
 		{"freq": 196.0, "duration": 0.5},
 	])
 
-## The dawn counterpart — a bright ascending three-note warble approximating
-## a rooster call (design doc's own example), same placeholder convention.
+## The dawn counterpart — a bright ascending three-note warble
+## approximating a rooster call, same placeholder convention.
 static func sunrise_chime() -> AudioStreamWAV:
 	return _build_tone([
 		{"freq": 660.0, "duration": 0.08},

@@ -1,7 +1,7 @@
 class_name StrategicOverlayManager
 extends Node2D
 
-## Strategic-zoom (Phase 2.5) map markers: a small icon over every placed
+## Strategic-zoom map markers: a small icon over every placed
 ## building, a token over every trained unit, a frontier indicator where
 ## secured and contested ground meet, spotted-horde markers, under-attack
 ## alerts, wall segment markers, the Threat Meter, Zone of Control markers,

@@ -1,8 +1,8 @@
 class_name District
 extends Resource
 
-## A single sub-partition of a HexCell (see design doc: "District & Frontline
-## Partitioning"). A hex can hold several of these at once — e.g. a
+## A single sub-partition of a HexCell ("District & Frontline Partitioning"
+## — design doc). A hex can hold several of these at once — e.g. a
 ## settlement hex is Urban Center + Industrial Estate (safe) plus a fringe of
 ## Uncleared Wilderness (contested) — enabling active combat in one part of a
 ## hex while the rest keeps harvesting/building undisturbed.

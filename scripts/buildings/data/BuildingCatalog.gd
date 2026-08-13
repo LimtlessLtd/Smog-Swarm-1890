@@ -90,8 +90,8 @@ static func _church_steeple_watchtower() -> BuildingDefinition:
 	d.requires_settlement = true
 	# Doubles as a lookout post (Military) and a parish church (Civilian) — see class doc.
 	d.zoc_roles = [GameEnums.ZoneOfControlType.MILITARY, GameEnums.ZoneOfControlType.CIVILIAN]
-	d.vision_radius = 2  # Tallest structure in town — a proper watchtower lookout (Phase 2.6).
-	d.lit_at_night = true  # "Watchtower searchlights" (design doc 2.6.4) hold/extend vision after dark.
+	d.vision_radius = 2  # Tallest structure in town — a proper watchtower lookout.
+	d.lit_at_night = true  # "Watchtower searchlights" hold/extend vision after dark.
 	return d
 
 ## Display name shortened per user feedback.
@@ -102,8 +102,8 @@ static func _gas_streetlamp() -> BuildingDefinition:
 	d.daily_upkeep = {GameEnums.ResourceType.ENERGY: 1.0}
 	d.allowed_biomes = [GameEnums.BiomeType.URBAN]
 	d.requires_settlement = true
-	d.vision_radius = 1  # Lights the surrounding street, not just its own hex (Phase 2.6).
-	d.lit_at_night = true  # Literally the design doc 2.6.4 example of a lit source.
+	d.vision_radius = 1  # Lights the surrounding street, not just its own hex.
+	d.lit_at_night = true  # Literally the design doc's example of a lit source.
 	return d
 
 ## Display name shortened per user feedback.
@@ -111,7 +111,7 @@ static func _telegraph_relay_office() -> BuildingDefinition:
 	var d := BuildingDefinition.new(GameEnums.BuildingType.TELEGRAPH_RELAY_OFFICE, "Telegraph Relay")
 	d.category = GameEnums.BuildingCategory.HOUSING_CIVIL
 	d.construction_cost = {GameEnums.ResourceType.WOOD: 20, GameEnums.ResourceType.CAST_IRON: 20}
-	# Knowledge/civic source for the Tech Tree (Phase 2.9.1) — telegraph traffic
+	# Knowledge/civic source for the Tech Tree — telegraph traffic
 	# between settlements is the natural in-fiction source of Research Points.
 	d.daily_output = {GameEnums.ResourceType.RESEARCH_POINTS: 3.0}
 	d.allowed_biomes = [GameEnums.BiomeType.URBAN]
@@ -125,7 +125,7 @@ static func _steam_printing_press() -> BuildingDefinition:
 	d.category = GameEnums.BuildingCategory.HOUSING_CIVIL
 	d.construction_cost = {GameEnums.ResourceType.WOOD: 25, GameEnums.ResourceType.CAST_IRON: 30}
 	d.daily_upkeep = {GameEnums.ResourceType.ENERGY: 2.0}
-	# Knowledge/civic source for the Tech Tree (Phase 2.9.1) — a press turning
+	# Knowledge/civic source for the Tech Tree — a press turning
 	# out journals/pamphlets/technical bulletins is the other natural source.
 	d.daily_output = {GameEnums.ResourceType.RESEARCH_POINTS: 4.0}
 	d.allowed_biomes = [GameEnums.BiomeType.URBAN]
@@ -189,7 +189,7 @@ static func _clay_brickworks() -> BuildingDefinition:
 	# ~day 12, Saltpetre Mill by ~day 6.
 	d.daily_output = {GameEnums.ResourceType.BRICKS: 14.0}
 	d.allowed_biomes = [GameEnums.BiomeType.INDUSTRIAL, GameEnums.BiomeType.URBAN]
-	d.noise_output = 3  # Kilns firing (Phase 5.2's Threat Meter source).
+	d.noise_output = 3  # Kilns firing — a Threat Meter source.
 	return d
 
 static func _charcoal_kiln() -> BuildingDefinition:
@@ -275,7 +275,7 @@ static func _cattle_yard() -> BuildingDefinition:
 	d.soil_fertility_scales_output = true
 	return d
 
-# --- Defense Works (Phase 4.1) ----------------------------------------------
+# --- Defense Works ----------------------------------------------
 
 static func _searchlight_tower() -> BuildingDefinition:
 	var d := BuildingDefinition.new(GameEnums.BuildingType.SEARCHLIGHT_TOWER, "Searchlight Tower")
@@ -283,11 +283,11 @@ static func _searchlight_tower() -> BuildingDefinition:
 	d.construction_cost = {GameEnums.ResourceType.CAST_IRON: 35, GameEnums.ResourceType.BRICKS: 20}
 	d.daily_upkeep = {GameEnums.ResourceType.ENERGY: 3.0}
 	d.zoc_roles = [GameEnums.ZoneOfControlType.MILITARY]
-	d.vision_radius = 2  # Illuminates the perimeter beyond its own hex, same role as the Watchtower (Phase 2.6).
-	d.lit_at_night = true  # "Illuminate perimeter walls during night defense" (design doc 4.1) — holds/extends vision after dark (Phase 2.6.4).
-	# "granting combat bonuses to garrisoned units" (design doc 4.1) still
-	# needs Phase 5.4 (units) and Phase 5.6 (garrison orders) to exist before
-	# there's anything to grant a bonus TO — not implemented, deliberately.
+	d.vision_radius = 2  # Illuminates the perimeter beyond its own hex, same role as the Watchtower.
+	d.lit_at_night = true  # "Illuminate perimeter walls during night defense" — holds/extends vision after dark.
+	# "granting combat bonuses to garrisoned units" still needs the unit and
+	# garrison-order systems to exist before there's anything to grant a
+	# bonus TO — not implemented, deliberately.
 	return d
 
 static func _ditch() -> BuildingDefinition:

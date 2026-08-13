@@ -3,11 +3,10 @@ extends RefCounted
 
 ## Shared placeholder color-by-tier lookup for wall segments — same
 ## "*Visuals.gd" convention BuildingVisuals/TerrainVisuals/FogVisuals
-## already established (a single source of truth so a color choice doesn't
-## silently drift between callers, and so it's swappable for real art
-## later without touching whatever triggers a marker). StrategicOverlayManager's
-## Strategic-zoom wall markers (Phase 2.7.3) are the only consumer today —
-## walls have no dedicated Tactical-zoom visual of their own yet.
+## establish (a single source of truth so a color choice doesn't silently
+## drift between callers, and so it's swappable for real art later without
+## touching whatever triggers a marker). WallMarkerRenderer's Strategic-zoom
+## wall markers are the only consumer today.
 
 static func tier_color(tier: int) -> Color:
 	match tier:
@@ -41,29 +40,29 @@ static func gate_color() -> Color:
 ## scale). Same rescale reasoning as TacticalHexView.BUILDING_HALF_SIZE's own
 ## doc comment: a Strategic-scale line width against a 512-unit hex would be
 ## a hairline, not a wall. Shared (not LocalDetailManager-only) so
-## WallPlacementController's live preview (user request — see that class's
-## own doc comment) renders at the same width the real wall will.
+## WallPlacementController's live preview renders at the same width the
+## real wall will.
 const TACTICAL_WIDTH_SCALE: float = 8.0
 
 ## Line thickness scales with tier — a Concrete wall should visibly read as
 ## sturdier than a Wooden one even before the player checks its HP. A
 ## breached segment renders at half its intact width (WallManager.gd's own
 ## HORDE_MARKER pattern of "still there, but visibly compromised" rather
-## than vanishing outright — same idea Phase 2.7.6's ghosted horde markers
-## already use for "weaker/less current" state).
+## than vanishing outright — same idea HordeMarkerRenderer's own ghosted
+## horde markers already use for "weaker/less current" state).
 static func line_width(tier: int, breached: bool) -> float:
 	var base := 3.0 + float(tier) * 2.0
 	return base * 0.5 if breached else base
 
-## A "legacy inner" wall (WallManager.is_legacy_segment(), Phase 4.1) — still
-## fully functional, but no longer the settlement's outermost defended edge.
+## A "legacy inner" wall (WallManager.is_legacy_segment()) — still fully
+## functional, but no longer the settlement's outermost defended edge.
 ## Renders dimmed via the whole marker's `modulate` rather than a distinct
 ## hue, same "still there, just less current/prominent" idea
-## StrategicOverlayManager's own ghosted horde markers (Phase 2.7.6) already
-## use for a not-currently-primary state — the segment's own tier/breached
-## color already carries every mechanically-relevant fact (tier, HP state);
-## legacy status is purely "how deep into my own territory this ring sits,"
-## a dimmer, not a fourth color to learn.
+## HordeMarkerRenderer's own ghosted horde markers use for a
+## not-currently-primary state — the segment's own tier/breached color
+## already carries every mechanically-relevant fact (tier, HP state);
+## legacy status is purely "how deep into my own territory this ring
+## sits," a dimmer, not a fourth color to learn.
 static func legacy_modulate() -> Color:
 	return Color(1.0, 1.0, 1.0, 0.55)
 
@@ -73,9 +72,9 @@ static func legacy_modulate() -> Color:
 static func outer_modulate() -> Color:
 	return Color(1.0, 1.0, 1.0, 1.0)
 
-## Defense works (Ditch/Oil Pit, Phase 4.1) stack alongside a segment
-## rather than replacing it — a small distinct marker color at the
-## segment's midpoint on top of the line itself, not a second line.
+## Defense works (Ditch/Oil Pit) stack alongside a segment rather than
+## replacing it — a small distinct marker color at the segment's midpoint
+## on top of the line itself, not a second line.
 static func defense_work_color(has_ditch: bool, has_oil_pit: bool) -> Color:
 	if has_ditch and has_oil_pit:
 		return Color(0.45, 0.32, 0.16)  # A muddy brown-orange blend reads as "both".
@@ -84,18 +83,16 @@ static func defense_work_color(has_ditch: bool, has_oil_pit: bool) -> Color:
 	return Color(0.36, 0.30, 0.20)  # Dark earth — a ditch.
 
 ## Lazily-loaded, cached TILEABLE strip texture for an intact wall segment
-## (user request, this pass — see `assets/walls/README.md`) — same
-## `ResourceLoader.exists()`-gated-null pattern every other `*Visuals.gd`
-## here follows. Only for INTACT segments: a breached one keeps rendering
-## as `breached_color()`'s flat alarm-red `Line2D` (unchanged) — a wall
-## that's failed reads better as an obvious flat warning color than a
-## tiled texture, same reasoning `ruin_color()` already gives for a ruined
-## building losing its category color. Applied via `Line2D.texture` +
-## `texture_mode = Line2D.LINE_TEXTURE_TILE` at the call site
-## (StrategicOverlayManager._apply_wall_segment_look()) — `Line2D` tiles a
-## texture along its own length natively, no UV-mapping pitfall the way a
-## `Polygon2D` would have (see TerrainVisuals/HexCellView's own documented
-## bug on that).
+## (see `assets/walls/README.md`) — same `ResourceLoader.exists()`-gated-
+## null pattern every other `*Visuals.gd` follows. Only for INTACT
+## segments: a breached one keeps rendering as `breached_color()`'s flat
+## alarm-red `Line2D` — a wall that's failed reads better as an obvious
+## flat warning color than a tiled texture, same reasoning `ruin_color()`
+## gives for a ruined building losing its category color. Applied via
+## `Line2D.texture` + `texture_mode = Line2D.LINE_TEXTURE_TILE` at the call
+## site (WallMarkerRenderer._apply_look()) — `Line2D` tiles a texture along
+## its own length natively, no UV-mapping pitfall the way a `Polygon2D`
+## would have (see TerrainVisuals/HexCellView's own documented bug on that).
 static var _texture_cache: Dictionary = {}  # int (WallCatalog tier) -> Texture2D (nullable)
 
 static func tier_texture(tier: int) -> Texture2D:
@@ -103,23 +100,20 @@ static func tier_texture(tier: int) -> Texture2D:
 		_texture_cache[tier] = _load_texture(tier)
 	return _texture_cache[tier]
 
-## **Real root cause found (playtest report, AFTER the texture_repeat fix
-## already shipped: "the wall texture still isn't visible, walls are just
-## long textureless lines")**: Line2D's LINE_TEXTURE_TILE mode maps texture
-## PIXELS to world UNITS 1:1 for its UV tiling (u = cumulative local-point
-## distance / texture.get_width()) — completely independent of
-## texture_repeat (that only controls whether u wrapping past 1.0 repeats or
-## clamps, which was the OTHER real bug, already fixed). The wall art is
+## Line2D's LINE_TEXTURE_TILE mode maps texture PIXELS to world UNITS 1:1
+## for its UV tiling (u = cumulative local-point distance /
+## texture.get_width()) — independent of texture_repeat (that only
+## controls whether u wrapping past 1.0 repeats or clamps). The wall art is
 ## 4128px wide (`assets/walls/wall_*.png`), but a placed wall PIECE is at
 ## most `WallCatalog.MAX_SEGMENT_LENGTH_WORLD_UNITS` (~10.26 world units,
 ## freehand walls are chopped into short pieces — see that constant's own
 ## doc comment) long. Fed straight in, a segment's own points only ever
 ## span u ∈ [0, 10.26/4128] ≈ [0, 0.0025] of the texture — a sliver a few
 ## pixels wide, stretched across the whole segment, reads as a near-flat
-## color exactly as reported. Not a tiling-density tuning issue; the
-## segment geometry itself was never long enough in LOCAL-point terms for
-## Line2D's own fixed pixel-to-unit convention to show more than a sliver,
-## regardless of texture_repeat.
+## color. Not a tiling-density tuning issue; the segment geometry itself
+## was never long enough in LOCAL-point terms for Line2D's own fixed
+## pixel-to-unit convention to show more than a sliver, regardless of
+## texture_repeat.
 ##
 ## Fixed the same way a mismatched map-scale-vs-detail-scale problem always
 ## is: render in a coordinate space where the numbers actually work, then

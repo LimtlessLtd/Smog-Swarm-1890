@@ -8,9 +8,9 @@ extends RefCounted
 ## zero code changes elsewhere — exactly the "art lands incrementally"
 ## precedent those two classes already established.
 ##
-## Unlike terrain/buildings (both hand-authored SVG in the end, see todo.md
-## Phase 6.3.0/6.3.0b), unit art is decided to stay AI-generated (Phase
-## 6.3.1, user's explicit call) — hence PNG here, not SVG. PNG sidesteps the
+## Unlike terrain/buildings (both hand-authored SVG in the end — see
+## todo.md), unit art is decided to stay AI-generated (user's explicit
+## call) — hence PNG here, not SVG. PNG sidesteps the
 ## exact bug hand-authored SVG hit twice on this project (Godot's ThorVG
 ## importer silently rasterizes `<pattern>` fills as fully transparent) by
 ## construction: it's raster, there's no vector fill-rule involved at all.
@@ -25,7 +25,7 @@ extends RefCounted
 ## regardless of unit type (see that class's own doc comment) and never
 ## calls this at all. One texture per unit, reused at both fidelity bands
 ## (scaled differently) rather than separate generated assets per band —
-## see todo.md Phase 6.3.2 for why that's a decision, not a shortfall.
+## see todo.md for why that's a decision, not a shortfall.
 
 static var _texture_cache: Dictionary = {}  # GameEnums.UnitType -> Texture2D (nullable)
 

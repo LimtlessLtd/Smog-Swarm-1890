@@ -3,8 +3,8 @@ extends Panel
 
 ## User request: "add options so we can enable and disable the overlays and
 ## add options for making them on the hex tile world view too." A
-## toggleable centered panel — the third to follow `SaveLoadView`
-## (Phase 2.8.3)/`TechTreeView` (Phase 2.9.3)'s own convention — with one
+## toggleable centered panel — the third to follow `SaveLoadView`/
+## `TechTreeView`'s own convention — with one
 ## checkbox per `DisplaySettings` flag: every `StrategicOverlayManager`
 ## marker layer on the Strategic hex-tile world view (buildings, frontier,
 ## walls, units, spotted hordes, under-attack alerts), plus the Threat

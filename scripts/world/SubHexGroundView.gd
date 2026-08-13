@@ -8,49 +8,39 @@ extends Node2D
 ## baked offline by tools/geo_bake/bake_landcover.py) and composites the
 ## SAME 11 hand-authored terrain SVGs TerrainVisuals already provides —
 ## real data drives WHERE each already-styled texture appears within a
-## hex, not new photorealistic art, keeping this visually consistent
-## with the game's established illustrated look. This is the actual,
-## visible answer to "move away from hex-tile-locked mechanics": a
-## single hex can now show a hillside corner, a river cutting through,
-## and open farmland simultaneously instead of one uniform tile.
+## hex, not new photorealistic art, keeping this visually consistent with
+## the game's established illustrated look. A single hex can show a
+## hillside corner, a river cutting through, and open farmland
+## simultaneously instead of one uniform tile.
 ##
-## Deliberately uses Sprite2D (NOT Polygon2D) per sub-cell — sidesteps
-## BOTH of this project's already-documented Polygon2D UV pitfalls by
-## construction, not by care: (1) a hex-fan Polygon2D with an explicit
-## per-corner UV array only samples a HANDFUL of sparse texture points
-## and interpolates between them, it doesn't rasterize/warp a full image
-## into the polygon shape (this is why Strategic's old "paint the whole
-## texture once" ICON mode never worked, see HexCellView's own doc
-## comment); (2) Polygon2D.uv coordinates are in the texture's PIXEL
-## space, not normalized 0..1 (the building-sprite bug, see
-## TacticalHexView.quad_uv()'s own doc comment). Sprite2D with
-## region_enabled/region_rect does genuine GPU rect-sampling instead of
-## either — it isn't a Polygon2D at all, so neither bug class applies.
+## Uses Sprite2D (NOT Polygon2D) per sub-cell — sidesteps both of this
+## project's Polygon2D UV pitfalls by construction: (1) a hex-fan Polygon2D
+## with an explicit per-corner UV array only samples a handful of sparse
+## texture points and interpolates between them, it doesn't rasterize/warp
+## a full image into the polygon shape (see HexCellView's own doc
+## comment); (2) Polygon2D.uv coordinates are in the texture's PIXEL space,
+## not normalized 0..1 (see TacticalHexView.quad_uv()'s own doc comment).
+## Sprite2D with region_enabled/region_rect does genuine GPU rect-sampling
+## instead of either — it isn't a Polygon2D at all, so neither bug class applies.
 ##
 ## Real data drives PLACEMENT only; soil-fertility color variance (lush/
 ## poor/desolate) is inherited from the whole hex's own already-computed
-## HexCell.soil_fertility rather than baked at sub-hex resolution — a
-## deliberate, disclosed simplification (soil-tint granularity was never
-## the actual "move away from hex-tile mechanics" ask; real biome/water/
-## elevation placement is).
+## HexCell.soil_fertility rather than baked at sub-hex resolution — soil-
+## tint granularity was never the actual ask; real biome/water/elevation
+## placement is.
 
-## Bumped 7 -> 11 (user request, playtest round 4, #12: "tactical view
-## terrain tiles are too big... make them smaller and more numerous per hex
-## tile grid") — still odd, so there's a true center sample aligned with the
-## hex's own already-computed majority-vote biome_type, same reasoning as
-## before. More, smaller sub-cells also read as smoother/more "seamless"
-## cross-biome blending at a glance even though _compute_blend() itself is
-## unchanged — a finer grid just means each individual blend seam is
-## shorter and less noticeable.
+## Odd, so there's a true center sample aligned with the hex's own already-
+## computed majority-vote biome_type. More, smaller sub-cells also read as
+## smoother cross-biome blending at a glance even though _compute_blend()
+## itself is unchanged — a finer grid just means each individual blend
+## seam is shorter and less noticeable.
 const _GRID_N: int = 11
-const _GRID_SPAN: float = HexCoord.SUB_HEX_GRID_SPAN  ## Shared with RealTerrainSampler.sample_grid()'s own span (HexCoord.gd) — see that constant's own doc comment for why this exact value, and why a hex-shaped clip mask (below) is what actually keeps it from overhanging into neighboring hexes.
+const _GRID_SPAN: float = HexCoord.SUB_HEX_GRID_SPAN  ## Shared with RealTerrainSampler.sample_grid()'s own span — see that constant's own doc comment for why this exact value, and why a hex-shaped clip mask (below) is what keeps it from overhanging into neighboring hexes.
 
-## Real cross-hex/cross-biome blending (user request: "changes in terrain
-## and across hex borders should blend smoothly... some sort of gradient
-## when moving from one type of terrain to another"). Loaded once, shared
-## by every sub-cell's own ShaderMaterial instance (materials are cheap
-## per-instance wrappers around one shared Shader resource, same "load
-## once, cache" convention every *Visuals.gd lazy-loader already follows).
+## Real cross-hex/cross-biome blending. Loaded once, shared by every
+## sub-cell's own ShaderMaterial instance (materials are cheap per-instance
+## wrappers around one shared Shader resource, same "load once, cache"
+## convention every *Visuals.gd lazy-loader follows).
 static var _blend_shader: Shader = null
 static func _get_blend_shader() -> Shader:
 	if _blend_shader == null:
@@ -77,19 +67,17 @@ func setup(cell: HexCell) -> void:
 		_build_fallback(cell)
 		return
 
-	# **Real bug fix (playtest round 4, #9): "tactical view hexgrids have
-	# overhanging terrain on each corner going over into neighbouring hex
-	# tile grids"** — a SQUARE sample/render grid can never exactly match a
-	# HEXAGONAL footprint; sized to fully cover the hex's own bounding box
-	# (see HexCoord.SUB_HEX_GRID_SPAN's own doc comment), the square's own
-	# four corners necessarily poke past the hex's real circumradius, into
-	# whichever neighbor sits in that direction. `_hex_mask` below is a real
-	# hex-shaped `Polygon2D` (HexCoord.corner_points() — the same six points
-	# every hex-outline draw in this project already uses) with
-	# `clip_children = CLIP_CHILDREN_ONLY`: every sub-cell sprite added as
+	# A SQUARE sample/render grid can never exactly match a HEXAGONAL
+	# footprint; sized to fully cover the hex's own bounding box (see
+	# HexCoord.SUB_HEX_GRID_SPAN's own doc comment), the square's own four
+	# corners necessarily poke past the hex's real circumradius, into
+	# whichever neighbor sits in that direction. `_hex_mask` below is a
+	# real hex-shaped Polygon2D (HexCoord.corner_points() — the same six
+	# points every hex-outline draw in this project uses) with
+	# clip_children = CLIP_CHILDREN_ONLY: every sub-cell sprite added as
 	# ITS child (not this Node2D's directly) gets stencil-clipped to the
-	# true hex shape, so whatever a corner sprite renders past the hex's own
-	# edge is simply never drawn — the mask itself stays invisible
+	# true hex shape, so whatever a corner sprite renders past the hex's
+	# own edge is simply never drawn — the mask itself stays invisible
 	# (CLIP_CHILDREN_ONLY, not _AND_DRAW), it's purely a stencil.
 	var hex_mask := Polygon2D.new()
 	hex_mask.polygon = HexCoord.corner_points(Vector2.ZERO)
@@ -138,20 +126,19 @@ func setup(cell: HexCell) -> void:
 				distinct_textures[TerrainVisuals.biome_color(biome, soil)] = true
 
 	# Fewer than 2 distinct textures across the whole grid (a hex that
-	# real data classified as uniformly one biome) is a perfectly valid
-	# outcome, not a bug — most hexes genuinely are one thing throughout.
+	# real data classified as uniformly one biome) is a valid outcome —
+	# most hexes genuinely are one thing throughout.
 
 ## Examines this sub-cell's 4-connected neighbors (up/down/left/right
 ## within the same grid — cross-hex neighbors one grid-cell over aren't
 ## sampled here, so a blend never reaches past this hex's own footprint)
 ## and returns {} if none differ, or {secondary_texture, direction, weight}
 ## for the DOMINANT differing biome among them (most of the up-to-4
-## neighbors sharing one biome wins; a tie keeps whichever was found
-## first in a fixed scan order — a real but inconsequential tie-break,
-## not a correctness question). direction is in the same local-space
-## convention _build_sub_cell()'s own Vector2(col,row) positioning already
-## uses (+X = right/higher col, +Y = down/higher row), matching the
-## shader's own UV-space dot-product exactly with no extra transform.
+## neighbors sharing one biome wins; a tie keeps whichever was found first
+## in a fixed scan order). direction is in the same local-space convention
+## _build_sub_cell()'s own Vector2(col,row) positioning uses (+X =
+## right/higher col, +Y = down/higher row), matching the shader's own
+## UV-space dot-product exactly with no extra transform.
 func _compute_blend(row: int, col: int, biomes: Array, textures: Array) -> Dictionary:
 	var self_i := row * _GRID_N + col
 	var self_biome = biomes[self_i]
@@ -222,12 +209,9 @@ func _build_sub_cell(texture: Texture2D, biome: GameEnums.BiomeType, soil: GameE
 
 	# No art authored yet for this biome/soil combination (e.g. OCEAN,
 	# deliberately unauthored per TerrainVisuals' own doc comment) — same
-	# flat-color fallback HexCellView already uses. Polygon2D, not
-	# ColorRect — this whole scene lives under Node2D-space TacticalHexView
-	# (positions/scale in world units), and ColorRect is a Control node,
-	# a different tree entirely (caught by a real Godot --import compile
-	# pass: "Cannot return value of type ColorRect because the function
-	# return type is Node2D").
+	# flat-color fallback HexCellView uses. Polygon2D, not ColorRect — this
+	# scene lives under Node2D-space TacticalHexView (positions/scale in
+	# world units), and ColorRect is a Control node, a different tree entirely.
 	var half := cell_size * 0.5
 	var flat := Polygon2D.new()
 	flat.color = TerrainVisuals.biome_color(biome, soil)
@@ -237,9 +221,9 @@ func _build_sub_cell(texture: Texture2D, biome: GameEnums.BiomeType, soil: GameE
 
 ## Graceful degradation if the bake hasn't been run/committed yet
 ## (RealTerrainSampler.is_available() == false) — exactly today's single
-## flat-textured HexCellView, so a fresh clone without the (large,
-## binary) baked terrain_data assets still renders a correct, if
-## data-poor, Tactical view rather than an empty hex.
+## flat-textured HexCellView, so a fresh clone without the (large, binary)
+## baked terrain_data assets still renders a correct, if data-poor,
+## Tactical view rather than an empty hex.
 func _build_fallback(cell: HexCell) -> void:
 	var ground := HexCellView.new()
 	ground.setup(cell)

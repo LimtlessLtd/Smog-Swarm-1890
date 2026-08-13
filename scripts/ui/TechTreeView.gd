@@ -1,26 +1,20 @@
 class_name TechTreeView
 extends Panel
 
-## Design doc Phase 2.9.3's Tech Tree screen — the one piece of Phase 2.9
-## left unbuilt, deliberately, because it was "out of scope exactly how it
-## looks until Phase 6's HUD work is underway" (that bullet's own words).
-## Phase 6's HUD work has been underway for a while now; `TechManager`'s own
-## `get_research_error()`/`can_start_research()` API was written with this
-## exact screen in mind from the start ("mirrors
-## BuildingManager.get_placement_error()'s 'queryable without side effects'
-## pattern so a future Tech Tree screen can preview legality").
+## The Tech Tree screen. TechManager's own get_research_error()/
+## can_start_research() API was written with this exact screen in mind —
+## mirrors BuildingManager.get_placement_error()'s "queryable without side
+## effects" pattern so this screen can preview legality.
 ##
 ## Same "dumb display component, doesn't own logic" convention every other
-## HUD view here follows (see SaveLoadView/UnitPanelView's own doc
-## comments): reads `TechManager` directly for display (a read-only query,
-## same as `UnitPanelView` reading `UnitManager.get_training_error()` for a
-## button's disabled/tooltip state), but the one real mutation — actually
-## starting research — goes out as `research_requested` for `MainHUD` to
-## forward, never called on `TechManager` directly from here.
+## HUD view here follows: reads TechManager directly for display (a
+## read-only query, same as UnitPanelView reading
+## UnitManager.get_training_error() for a button's disabled/tooltip state),
+## but the one real mutation — actually starting research — goes out as
+## research_requested for MainHUD to forward, never called on TechManager
+## directly from here.
 ##
-## Hidden by default, toggled open/closed — the second panel in this HUD to
-## follow that convention after `SaveLoadView` (Phase 2.8.3), not a new
-## pattern.
+## Hidden by default, toggled open/closed — same convention SaveLoadView follows.
 
 signal research_requested(tech_id: StringName)
 signal closed
@@ -58,7 +52,7 @@ func _ready() -> void:
 
 	_scroll = ScrollContainer.new()
 	_scroll.custom_minimum_size = Vector2(0, LIST_HEIGHT)
-	_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED  ## User report: description text was running off the right edge into a horizontal scrollbar instead of wrapping — disabling horizontal scroll forces children to actually respect this container's width, which is what makes autowrap_mode below work at all.
+	_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED  ## Without this, description text runs off the right edge into a horizontal scrollbar instead of wrapping — disabling horizontal scroll forces children to respect this container's width, which is what makes autowrap_mode below work at all.
 	_layout.add_child(_scroll)
 	_list = VBoxContainer.new()
 	_list.add_theme_constant_override("separation", 8)
@@ -162,7 +156,7 @@ func _build_row(definition: TechDefinition) -> Control:
 ## Shown alongside (not instead of) the button's own cost/tooltip — a plain
 ## sentence covering the three states a bare disabled button can't convey by
 ## itself: prerequisites still owed, research_days once it starts, and the
-## Seafaring-specific campaign gate (design doc 2.9.2, decided).
+## Seafaring-specific campaign gate.
 func _status_text(definition: TechDefinition) -> String:
 	if _tech_manager.is_researched(definition.tech_id):
 		return "Researched."

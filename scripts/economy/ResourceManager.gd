@@ -1,7 +1,7 @@
 class_name ResourceManager
 extends Node
 
-## Owns the colony's global resource stockpile (design doc Phase 2.2). A pure
+## Owns the colony's global resource stockpile. A pure
 ## economy ledger — it knows nothing about buildings, hexes or logistics.
 ## BuildingManager pushes daily production/upkeep totals in through
 ## apply_daily_flow(); later systems (combat ammo spend, campaign costs) can
@@ -40,14 +40,14 @@ func get_full_stockpile() -> Dictionary:
 func get_storage_cap(resource_type: GameEnums.ResourceType) -> float:
 	return _storage_caps.get(resource_type, INF)
 
-## Exposed for SaveLoadManager (Phase 2.8) alongside get_full_stockpile() —
+## Exposed for SaveLoadManager alongside get_full_stockpile() —
 ## caps drift from their STARTING_STOCKPILE default via add_storage_cap()
 ## (e.g. a Grain Silo's storage_bonus), so they need saving just like the
 ## stockpile itself.
 func get_full_storage_caps() -> Dictionary:
 	return _storage_caps.duplicate()
 
-## Restores stockpile + caps from a save (Phase 2.8.2), replacing whatever
+## Restores stockpile + caps from a save, replacing whatever
 ## _ready() seeded from STARTING_STOCKPILE.
 func load_state(stockpile: Dictionary, storage_caps: Dictionary) -> void:
 	_stockpile = stockpile.duplicate()
@@ -58,7 +58,7 @@ func set_storage_cap(resource_type: GameEnums.ResourceType, cap: float) -> void:
 	_storage_caps[resource_type] = cap
 	_stockpile[resource_type] = minf(get_amount(resource_type), cap)
 	# A cap change is a meaningful change to anything watching resources_changed
-	# (e.g. Phase 6.1's resource bar shows "amount/cap") even when the
+	# (e.g. the resource bar shows "amount/cap") even when the
 	# stockpile amount itself doesn't move.
 	resources_changed.emit(get_full_stockpile())
 
@@ -86,8 +86,8 @@ func add(resource_type: GameEnums.ResourceType, amount: float) -> void:
 	resources_changed.emit(get_full_stockpile())
 
 ## An unconditional decrement — distinct from spend(), which enforces
-## can_afford() and refuses the WHOLE transaction if it isn't. Building
-## Phase 2.2's Energy grid-allocation ledger needs this: a power PRODUCER
+## can_afford() and refuses the WHOLE transaction if it isn't. The Energy
+## grid-allocation ledger needs this: a power PRODUCER
 ## ruining while its capacity is still allocated to live consumers should
 ## show as a real deficit (a negative stockpile) — the same honest "you're
 ## short" signal any other resource running low already gives, not
@@ -104,8 +104,8 @@ func remove(resource_type: GameEnums.ResourceType, amount: float) -> void:
 ## TickManager.day_completed) with the totals every placed building consumed
 ## and produced that day. Upkeep is applied first; a resource that can't
 ## fully cover its upkeep drains to zero and reports `upkeep_shortfall`
-## rather than going negative — Phase 5 can hang morale/combat penalties off
-## that signal once it exists.
+## rather than going negative — future morale/combat systems can hang
+## penalties off that signal once they exist.
 func apply_daily_flow(consumed: Dictionary, produced: Dictionary) -> void:
 	for resource_type in consumed:
 		var have := get_amount(resource_type)

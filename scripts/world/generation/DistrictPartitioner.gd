@@ -1,11 +1,11 @@
 class_name DistrictPartitioner
 extends RefCounted
 
-## Assigns each HexCell its sub-district breakdown (see design doc: "District
-## & Frontline Partitioning"). Phase 1 baseline rules are intentionally
-## simple — settlement hexes get a safe civic/industrial core plus a
-## contested wilderness fringe, everything else starts fully contested — and
-## are meant to be driven by real combat/clearing systems from Phase 3+.
+## Assigns each HexCell its sub-district breakdown ("District & Frontline
+## Partitioning" — design doc). Baseline rules are intentionally simple —
+## settlement hexes get a safe civic/industrial core plus a contested
+## wilderness fringe, everything else starts fully contested — and are
+## meant to be driven by real combat/clearing systems once those exist.
 
 func partition_cell(cell: HexCell) -> void:
 	cell.districts.clear()

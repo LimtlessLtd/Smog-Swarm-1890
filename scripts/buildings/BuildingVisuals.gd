@@ -3,20 +3,17 @@ extends RefCounted
 
 ## Shared placeholder color-by-category lookup for anything that draws a
 ## building as a plain colored shape before real art exists — TacticalHexView's
-## close-up building boxes and StrategicOverlayManager's zoomed-out building
-## icons both call this, so a given category reads as the same color in both
-## views instead of two copy-pasted match blocks silently drifting apart.
+## close-up building boxes and BuildingMarkerRenderer's zoomed-out building
+## icons both call this, so a given category reads as the same color in
+## both views instead of two copy-pasted match blocks silently drifting apart.
 ##
-## Phase 6.3's real building art landed (same supersede-with-hand-authored-SVG
-## call the user already made for terrain, 6.3.0): building_texture() below is
-## the buildings equivalent of TerrainVisuals.terrain_texture() — additive,
-## not a replacement. category_color()/ruin_color() are untouched and stay
-## the fallback (StrategicOverlayManager's zoomed-out triangle marker is a
-## symbolic map glyph, not a spot to show sprite detail at that scale — Phase
-## 2.5.5 already decided Strategic's icon rendering doesn't consult fidelity
-## at all, and the same "stay abstract" call applies here) and what
-## TacticalHexView itself falls back to for any building type with no SVG
-## authored yet.
+## building_texture() below is the buildings equivalent of
+## TerrainVisuals.terrain_texture() — additive, not a replacement.
+## category_color()/ruin_color() stay the fallback (the Strategic-zoom
+## triangle marker is a symbolic map glyph, not a spot to show sprite
+## detail at that scale — Strategic's icon rendering doesn't consult
+## fidelity at all) and what TacticalHexView itself falls back to for any
+## building type with no SVG authored yet.
 
 static func category_color(category: GameEnums.BuildingCategory) -> Color:
 	match category:
@@ -29,36 +26,35 @@ static func category_color(category: GameEnums.BuildingCategory) -> Color:
 		_:
 			return Color(0.5, 0.5, 0.5)
 
-## Design doc Phase 5.12: a ruined building's color — deliberately the SAME
-## drab grey-brown regardless of what category it used to be (rubble
-## doesn't read as "industrial" or "civic" anymore), shared between
-## TacticalHexView's close-up rubble shape and StrategicOverlayManager's
-## icon so a ruin reads the same way in both views, same reasoning
-## category_color() itself already gives for intact buildings.
+## A ruined building's color — the SAME drab grey-brown regardless of what
+## category it used to be (rubble doesn't read as "industrial" or "civic"
+## anymore), shared between TacticalHexView's close-up rubble shape and
+## BuildingMarkerRenderer's icon so a ruin reads the same way in both
+## views, same reasoning category_color() gives for intact buildings.
 static func ruin_color() -> Color:
 	return Color(0.4, 0.37, 0.34)
 
-## User request ("buildings should be visible while under construction (tint
-## them black or gray while under construction)") — a flat dark grey,
-## deliberately distinct from ruin_color()'s warmer rubble tone so a
-## half-built structure never reads as an already-destroyed one. Shared
-## between TacticalHexView (multiplied into `modulate`, over whatever real
+## "Buildings should be visible while under construction (tint them black
+## or gray while under construction)" (user feedback) — a flat dark grey,
+## distinct from ruin_color()'s warmer rubble tone so a half-built
+## structure never reads as an already-destroyed one. Shared between
+## TacticalHexView (multiplied into modulate, over whatever real
 ## sprite/category color the finished building will use) and
-## StrategicOverlayManager (assigned directly to its flat icon `color`, same
-## split ruin_color() already has between the two call sites).
+## BuildingMarkerRenderer (assigned directly to its flat icon color, same
+## split ruin_color() has between the two call sites).
 static func construction_color() -> Color:
 	return Color(0.32, 0.32, 0.32)
 
 ## Lazily-loaded, cached (same "build once, cache" convention TerrainVisuals'
 ## own terrain_texture() and BuildingCatalog/UnitCatalog's _ensure_built()
-## already use) — the real sprite for a building type, or null if no SVG has
-## been authored yet at assets/buildings/<key>.svg. ResourceLoader.exists()
-## before load() means an unauthored type fails cleanly to null (no console
-## error spam) rather than throwing, same reasoning as TerrainVisuals — this
-## is what lets art land incrementally with zero code changes needed
-## elsewhere. Never called for a ruin — TacticalHexView keeps drawing ruins as
-## the jagged code-drawn silhouette (ruin_color() above), unchanged; a
-## collapsed building doesn't have "art" the way a standing one does.
+## use) — the real sprite for a building type, or null if no SVG has been
+## authored yet at assets/buildings/<key>.svg. ResourceLoader.exists()
+## before load() means an unauthored type fails cleanly to null (no
+## console error spam) rather than throwing — this is what lets art land
+## incrementally with zero code changes needed elsewhere. Never called for
+## a ruin — TacticalHexView keeps drawing ruins as the jagged code-drawn
+## silhouette (ruin_color() above); a collapsed building doesn't have
+## "art" the way a standing one does.
 static var _texture_cache: Dictionary = {}  # GameEnums.BuildingType -> Texture2D (nullable)
 
 static func building_texture(building_type: GameEnums.BuildingType) -> Texture2D:
@@ -73,13 +69,10 @@ static func _texture_key(building_type: GameEnums.BuildingType) -> String:
 			return "terraced_tenement"
 		GameEnums.BuildingType.WORKHOUSE:
 			return "workhouse"
-		# User request (playtest round 5): use the real "Watchtower.png" AI-art
-		# asset (assets/buildings/watchtower.png — a separate, newer file,
-		# NOT a same-named .png next to the original hand-authored
-		# church_steeple_watchtower.svg) instead of that old SVG placeholder.
-		# `_load_texture()`'s own .png-then-.svg fallback means this key
-		# change alone is enough — watchtower.png exists, watchtower.svg
-		# doesn't, so the PNG wins with no other code changes needed.
+		# Uses the real "watchtower.png" AI-art asset (a separate, newer
+		# file, not a same-named .png next to the original hand-authored
+		# church_steeple_watchtower.svg) — _load_texture()'s own
+		# .png-then-.svg fallback means this key alone is enough.
 		GameEnums.BuildingType.CHURCH_STEEPLE_WATCHTOWER:
 			return "watchtower"
 		GameEnums.BuildingType.GAS_STREETLAMP:
@@ -117,17 +110,12 @@ static func _texture_key(building_type: GameEnums.BuildingType) -> String:
 		_:  # DITCH/OIL_PIT never reach here — placed via WallManager, never rendered as a BuildingInstance box (see WallManager's own doc comment).
 			return ""
 
-## User request (this pass): real AI-generated building art (see
-## `assets/buildings/README.md`) is meant to eventually supersede the
-## hand-drawn SVGs the same way those superseded the original flat-color
-## placeholders — checked FIRST, not instead. A `.png` at this building's
-## key wins if present; otherwise this falls through to the existing `.svg`
-## exactly as before this pass; otherwise `null` (category_color() fallback,
-## unchanged). No building loses its art the moment this shipped — every one
-## of the 18 already-authored SVGs keeps rendering exactly as it does today
-## until a nicer PNG actually replaces it, one building at a time, same
-## "art lands incrementally, zero further code changes" contract every
-## other `*Visuals.gd` in this project already follows.
+## Real AI-generated building art (see assets/buildings/README.md)
+## supersedes the hand-drawn SVGs, checked FIRST. A .png at this building's
+## key wins if present; otherwise falls through to the existing .svg;
+## otherwise null (category_color() fallback) — art lands incrementally,
+## one building at a time, zero further code changes needed, same
+## contract every other *Visuals.gd in this project follows.
 static func _load_texture(building_type: GameEnums.BuildingType) -> Texture2D:
 	var key := _texture_key(building_type)
 	if key.is_empty():

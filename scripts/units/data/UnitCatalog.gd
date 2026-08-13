@@ -1,10 +1,10 @@
 class_name UnitCatalog
 extends RefCounted
 
-## Static seed data for the design doc's decided 18-unit roster (Phase 5.4)
-## — plays the same "single source of truth, built lazily and cached" role
-## for units that BuildingCatalog plays for buildings, kept separate from
-## UnitManager (the runtime system that trains/tracks instances).
+## Static seed data for the 18-unit roster — plays the same "single source
+## of truth, built lazily and cached" role for units that BuildingCatalog
+## plays for buildings, kept separate from UnitManager (the runtime system
+## that trains/tracks instances).
 ##
 ## get_definition() is expected to be called on every training attempt (and
 ## by CombatEngine on every attack resolution), so definitions are built
@@ -47,7 +47,7 @@ static func _build_definitions() -> Array[UnitDefinition]:
 		# curve underneath, not a small residual number; it genuinely cannot
 		# fight. move_speed_multiplier 1.6 is the payoff — fast reconnaissance,
 		# not combat, same "does something special" framing every SPECIAL unit
-		# below gets. vision_radius 2 (Phase 2.6.2) is the other half of that
+		# below gets. vision_radius 2 is the other half of that
 		# same payoff now that units are vision sources at all — matches
 		# Church Steeple Watchtower's own "proper lookout" radius
 		# (BuildingCatalog), the closest existing precedent for "sees
@@ -86,7 +86,7 @@ static func _build_definitions() -> Array[UnitDefinition]:
 		# curve since the charge itself, not raw damage, is this unit's real
 		# value. Still mounted (move_speed_multiplier), same as Outrider/Chasseur.
 		_unit(GameEnums.UnitType.DRAGOON, "Dragoon", 3, GameEnums.UnitRole.SPECIAL, false, GameEnums.UnitAbility.CHARGE_KNOCKBACK, 1.0, 1.0, 1.3),
-		# --- Tier 4 (unit_tier_4) — grounded heavy engineering, not battle-mechs (design doc, decided). ---
+		# --- Tier 4 (unit_tier_4) — grounded heavy engineering, not battle-mechs (design doc). ---
 		# Traction Ram: "a rugged, heavy agricultural-industrial engine
 		# designed to slow-roll and crush obstacles under its immense weight"
 		# (assets/units/README.md) — the same knockback a Dragoon's charge
@@ -164,7 +164,7 @@ static func _build_definitions() -> Array[UnitDefinition]:
 ## a unit whose identity includes a genuine mechanic, not just a stat
 ## lean — most MELEE/RANGED units below still pass none of these, leaving
 ## all four at their neutral default (NONE/1.0/1.0/1.0).
-## `vision_radius` (Phase 2.6.2, added this pass) follows the same
+## `vision_radius` follows the same
 ## "reserved for a unit whose identity calls for it" restraint — 0 (own hex
 ## only, same contract as BuildingDefinition.vision_radius) for every unit
 ## below except Outrider, whose own call site explains the one deliberate

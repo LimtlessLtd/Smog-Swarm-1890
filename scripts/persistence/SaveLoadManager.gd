@@ -5,24 +5,20 @@ extends Node
 ## LogisticsNetwork / FogOfWarManager / TechManager / DiscontentManager /
 ## WallManager / ReclamationManager / HordeManager / UnitManager /
 ## TerritoryController / TickManager into a single SaveGameData Resource and
-## back again (design doc Phase 2.8.2).
-## Wired as a Main.tscn sibling via exported NodePaths, same pattern as
-## LogisticsNetwork/FogOfWarManager — it owns none of that state, only
-## reads and restores it.
+## back again. Wired as a Main.tscn sibling via exported NodePaths, same
+## pattern as LogisticsNetwork/FogOfWarManager — it owns none of that
+## state, only reads and restores it.
 ##
-## **Decided (design doc 2.8.3):** saves are grouped by a player-named
-## Campaign, with multiple manual save slots per campaign and multiple
-## independent campaigns coexisting on disk. This class only knows how to
-## list/read/write one campaign+slot at a time; the actual Save/Load UI is
-## out of scope until Phase 6's HUD work — nothing here depends on it
-## existing, a future screen just calls into this the same way a headless
-## test does.
+## Saves are grouped by a player-named Campaign, with multiple manual save
+## slots per campaign and multiple independent campaigns coexisting on
+## disk. This class only knows how to list/read/write one campaign+slot at
+## a time; a Save/Load UI screen just calls into this the same way a
+## headless test does.
 ##
-## "Persistent background" (design doc, Phase 2.8 header) describes what
-## BackgroundExecutionManager already does DURING a play session — it does
-## NOT mean the colony simulates while the application is closed. There is
-## deliberately no elapsed-time/catch-up math here: closing the game pauses
-## everything exactly where it was, and loading resumes there, nothing more.
+## No elapsed-time/catch-up math: closing the game pauses everything
+## exactly where it was, and loading resumes there, nothing more —
+## BackgroundExecutionManager's own background-simulation handling only
+## covers DURING a play session, not while the application is closed.
 
 signal game_saved(campaign_name: String, slot_name: String)
 signal game_loaded(campaign_name: String, slot_name: String)
@@ -212,39 +208,32 @@ func _build_save_data(campaign_name: String, slot_name: String) -> SaveGameData:
 	data.speed_index = tick_state.speed_index
 	return data
 
-## Restoration order matters here even though every manager's recompute() is
-## individually idempotent: terrain reclamation FIRST (a hex's
-## terrain_feature/biome_type need to already reflect any past draining
-## before anything else queries them — see ReclamationManager's own doc
-## comment for why this is the one bit of terrain state saved at all), then
-## TerritoryController (Phase 5.8 — a hex's District.is_contested state
-## needs to already reflect any past territorial loss before LogisticsNetwork
-## reads it, same "terrain-like state that doesn't regenerate from the seed"
-## reasoning ReclamationManager's own ordering already follows — see that
-## class's own doc comment), then buildings (LogisticsNetwork/FogOfWarManager
-## both react to building_placed signals and recompute against whatever they
-## currently know, including the just-restored territory state), then supply
-## lines (so LogisticsNetwork's own recompute sees the full restored
-## building set), then DiscontentManager (its region
-## flood-fill, Phase 2.11, needs LogisticsNetwork's ZoC coverage already
-## recomputed against the restored buildings/supply lines above), then
-## WallManager (no dependency on the others, just grouped here), **then units
-## (Phase 2.6.2, moved here from after FogOfWarManager — adversarial review
-## finding, fixed 2026-08-10: units are a fog vision source now too, so
-## load_save_entries()'s per-unit unit_trained emit needs to land BEFORE the
-## authoritative fog load for the exact same reason buildings already do,
-## not after it)**, and FogOfWarManager LAST — its saved fog_state is
-## authoritative and deliberately overrides whatever transient VISIBLE-only
-## recomputes ran during the steps before it (see
-## FogOfWarManager.load_save_state()'s own doc comment). Sequencing units
-## before fog also sidesteps a second, independent hazard the same review
-## caught: TickManager.load_save_state() (below, restores the saved day/
-## night clock) still runs even later, so ANY recompute triggered during
-## this function reads whatever day/night phase was live before the load,
-## not the save's own — harmless for a step whose transient recompute gets
-## overridden by fog's authoritative load right after it, but would have
-## been a real (if narrow, self-healing) bug for units specifically had they
-## stayed sequenced after fog.
+## Restoration order matters here even though every manager's recompute()
+## is individually idempotent: terrain reclamation FIRST (a hex's
+## terrain_feature/biome_type must already reflect any past draining before
+## anything else queries them — see ReclamationManager's own doc comment),
+## then TerritoryController (a hex's District.is_contested state must
+## already reflect any past territorial loss before LogisticsNetwork reads
+## it), then buildings (LogisticsNetwork/FogOfWarManager both react to
+## building_placed signals and recompute against whatever they currently
+## know, including the just-restored territory state), then supply lines
+## (so LogisticsNetwork's own recompute sees the full restored building
+## set), then DiscontentManager (its region flood-fill needs
+## LogisticsNetwork's ZoC coverage already recomputed against the restored
+## buildings/supply lines above), then WallManager (no dependency on the
+## others), then units (units are a fog vision source too, so
+## load_save_entries()'s per-unit unit_trained emit must land BEFORE the
+## authoritative fog load for the same reason buildings do), and
+## FogOfWarManager LAST — its saved fog_state is authoritative and
+## deliberately overrides whatever transient VISIBLE-only recomputes ran
+## during the steps before it (see FogOfWarManager.load_save_state()'s own
+## doc comment). Sequencing units before fog also matters because
+## TickManager.load_save_state() (below, restores the saved day/night
+## clock) runs even later — any recompute triggered before it reads
+## whatever day/night phase was live before the load, not the save's own;
+## harmless for a step whose transient recompute gets overridden by fog's
+## authoritative load right after it, but would be a real bug for units
+## specifically if they were sequenced after fog instead.
 func _apply_save_data(data: SaveGameData) -> void:
 	if _resource_manager:
 		_resource_manager.load_state(data.resource_stockpile, data.resource_storage_caps)

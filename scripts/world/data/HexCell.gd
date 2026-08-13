@@ -19,11 +19,11 @@ func _init(p_coord: Vector2i = Vector2i.ZERO) -> void:
 	coord = p_coord
 
 ## Marshes, peat bogs and steep escarpments are natural barriers/chokepoints
-## until reclaimed (drained or bridged — Phase 4.2). Open OCEAN (design doc,
-## user request: map now represents the whole UK+Ireland) is impassable too,
-## on the same "not walkable, needs a future system to cross" footing —
-## unlike a marsh, nothing reclaims it; Phase 7.5's Naval Logistics/ships
-## are the only thing that will ever let a unit or horde reach across it.
+## until reclaimed (drained or bridged). Open OCEAN — the map represents the
+## whole UK+Ireland — is impassable too, on the same "not walkable, needs a
+## future system to cross" footing; unlike a marsh, nothing reclaims it,
+## only a future Naval Logistics/ships system will let a unit or horde
+## cross it.
 func is_passable() -> bool:
 	return terrain_feature != GameEnums.TerrainFeature.MARSH and terrain_feature != GameEnums.TerrainFeature.PEAT_BOG and biome_type != GameEnums.BiomeType.OCEAN
 
@@ -40,14 +40,14 @@ func get_safe_districts() -> Array[District]:
 			result.append(district)
 	return result
 
-## Design doc Phase 2.12.2, decided: "reduces, does not block" — dense local
-## vegetation shrinks how far a vision source SITTING on this hex can see,
-## explicitly no hard occlusion/stealth. Scoped to the biomes that actually
-## carry dense tree/bush/reed cover in LocalDetailGenerator's own per-biome
-## prop table (Phase 2.5.2) — Moorland's tree/bush mix and Wetland's reed
-## beds, not Highland (its props are rocks, not vegetation) or the sparser,
-## tilled Farmland. Returns hex-rings to subtract from a vision_radius, not
-## a hard cap — see FogOfWarManager._compute_visible_set()'s own caller.
+## "Reduces, does not block" — dense local vegetation shrinks how far a
+## vision source sitting on this hex can see; no hard occlusion/stealth.
+## Scoped to the biomes that carry dense tree/bush/reed cover in
+## LocalDetailGenerator's own per-biome prop table — Moorland's tree/bush
+## mix and Wetland's reed beds, not Highland (its props are rocks, not
+## vegetation) or the sparser, tilled Farmland. Returns hex-rings to
+## subtract from a vision_radius, not a hard cap — see
+## FogOfWarManager._compute_visible_set()'s own caller.
 func get_vision_penalty() -> int:
 	match biome_type:
 		GameEnums.BiomeType.MOORLAND, GameEnums.BiomeType.WETLAND:

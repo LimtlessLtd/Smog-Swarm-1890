@@ -1,53 +1,47 @@
 class_name BuildPlacementController
 extends Node2D
 
-## Turns a build-menu selection (Phase 6.1's BuildMenuView) into an actual
-## placed building — the missing link the design doc calls out:
-## BuildingManager.place_building_at_world() has existed since Phase 2.5 but
-## nothing has ever called it. Owns the "currently arming a building type"
-## state and the ghost preview; BuildMenuView/MainHUD know nothing about
-## hexes or world positions, they just tell this "the player wants to place
-## a Coal Pithead" via begin_placement().
+## Turns a build-menu selection into an actual placed building —
+## BuildingManager.place_building_at_world() had no caller until this
+## class existed. Owns the "currently arming a building type" state and
+## the ghost preview; BuildMenuView/MainHUD know nothing about hexes or
+## world positions, they just tell this "the player wants to place a Coal
+## Pithead" via begin_placement().
 ##
 ## Parented as a HexGridMap/StrategicOverlayManager sibling under WorldRoot
 ## (same reasoning as StrategicOverlayManager: shares the same coordinate
-## space, including whatever rotation/scale CameraController applies for the
-## isometric perspective toggle) so the ghost stays aligned with the grid in
-## both perspectives without this class needing to know about that trick.
-## Added last among WorldRoot's children in Main.tscn so the ghost draws on
-## top of buildings/fog/markers by plain sibling order.
+## space, including whatever rotation/scale CameraController applies for
+## the isometric perspective toggle) so the ghost stays aligned with the
+## grid in both perspectives. Added last among WorldRoot's children in
+## Main.tscn so the ghost draws on top of buildings/fog/markers by plain
+## sibling order.
 ##
-## **Real building-sized preview (user report: "no indicator showing me
-## where the building will be placed or how big it will be... usually in
-## RTS games they put the building icon on the mouse and make it like 80%
-## transparent").** `_ghost_building` is the actual building box at
+## Real building-sized preview, per user feedback ("no indicator showing
+## me where the building will be placed or how big it will be... usually
+## in RTS games they put the building icon on the mouse and make it like
+## 80% transparent"). `_ghost_building` is the actual building box at
 ## TacticalHexView.BUILDING_HALF_SIZE — same texture where one's authored,
 ## same fallback category color otherwise — at partial opacity, and it
 ## tracks the raw cursor position exactly rather than snapping to the hex
-## center: place_building_at_world() itself places at the exact clicked
-## world position (Phase 2.5's free positioning within a hex), so a
-## hex-snapped preview would have been showing the wrong spot. The hex
-## outline (`_ghost_outline`) still shows which hex will register the
-## placement, now offset to stay aligned with the hex under the cursor
-## rather than moving with it.
+## center: place_building_at_world() places at the exact clicked world
+## position, so a hex-snapped preview would show the wrong spot. The hex
+## outline (_ghost_outline) still shows which hex will register the
+## placement, offset to stay aligned with the hex under the cursor rather
+## than moving with it.
 ##
-## Accessibility (design doc: "every color-coded state paired with a
-## distinct shape/icon, never color alone"): green/red for placeable/
-## blocked is carried by the building preview's own tint, but that alone
-## would fail anyone who can't distinguish the two tints at low opacity —
-## `_ghost_indicator` (small hexagon vs. diamond, unchanged shape pairing
-## from before this pass) is a fixed badge near the box's corner so the
+## Accessibility: green/red for placeable/blocked is carried by the
+## building preview's own tint, but that alone would fail anyone who can't
+## distinguish the two tints at low opacity — _ghost_indicator (small
+## hexagon vs. diamond) is a fixed badge near the box's corner so the
 ## shape signal survives independent of how the color reads.
 ##
-## Phase 2.5.7 (grilling session): placement is restricted to Tactical zoom
-## (CameraController.is_tactical_zoom(), the existing hard-cut threshold —
-## no separate stricter one). Selecting a building type while zoomed out
-## stays armed (_is_placing/_pending_type unchanged, so zooming in mid-
-## selection just works) but is inert: no ghost preview, and a click plays
-## AlertTones.negative_tone() instead of placing anything. The same tone
-## also now backs every pre-existing BuildingManager.placement_rejected
-## reason (occupied hex, insufficient resources, etc.) — this is the
-## project's first audio of any kind (design doc Phase 6.2 cross-reference).
+## Placement is restricted to Tactical zoom (CameraController.is_tactical_zoom(),
+## the existing hard-cut threshold). Selecting a building type while
+## zoomed out stays armed (_is_placing/_pending_type unchanged, so zooming
+## in mid-selection just works) but is inert: no ghost preview, and a
+## click plays AlertTones.negative_tone() instead of placing anything. The
+## same tone backs every BuildingManager.placement_rejected reason
+## (occupied hex, insufficient resources, etc.).
 
 signal placement_started(building_type: GameEnums.BuildingType)
 signal placement_ended
@@ -55,11 +49,11 @@ signal placement_ended
 const _VALID_COLOR := Color(0.20, 0.75, 0.30, 0.85)
 const _BLOCKED_COLOR := Color(0.80, 0.20, 0.15, 0.85)
 const _INDICATOR_RADIUS := 10.0
-const _GHOST_BUILDING_ALPHA := 0.55  ## "Like 80% transparent" per the user's own RTS reference — landed on 55% opacity (45% transparent) after actually looking at it: 80%+ transparent made the preview nearly invisible against textured terrain, the exact problem this whole feature exists to fix. Tinted green/red on top (see _update_ghost()), not a neutral white — the color signal needs to read at a glance, not just the shape.
+const _GHOST_BUILDING_ALPHA := 0.55  ## Landed on 55% opacity (45% transparent) after actually looking at it: 80%+ transparent made the preview nearly invisible against textured terrain, the exact problem this feature exists to fix. Tinted green/red on top (see _update_ghost()), not a neutral white — the color signal needs to read at a glance, not just the shape.
 
 @export var hex_grid_map_path: NodePath
 @export var building_manager_path: NodePath
-@export var camera_path: NodePath  ## Optional — omitting it leaves placement always-allowed (e.g. a headless self-test with no camera in the tree), same fallback LocalDetailManager/StrategicOverlayManager already use for this NodePath.
+@export var camera_path: NodePath  ## Optional — omitting it leaves placement always-allowed (e.g. a headless self-test with no camera in the tree).
 
 var _hex_grid_map: HexGridMap
 var _building_manager: BuildingManager
@@ -70,7 +64,7 @@ var _pending_type: GameEnums.BuildingType = GameEnums.BuildingType.TERRACED_TENE
 
 var _ghost_outline: Line2D
 var _ghost_building: Polygon2D  ## The actual building footprint at its real size/texture, semi-transparent, tracking the cursor exactly.
-var _ghost_building_outline: Line2D  ## Same reasoning as TacticalHexView's own building outline (see that class's doc comment): a semi-transparent fill alone reads poorly against similarly-toned terrain, an outline doesn't.
+var _ghost_building_outline: Line2D  ## Same reasoning as TacticalHexView's own building outline: a semi-transparent fill alone reads poorly against similarly-toned terrain, an outline doesn't.
 var _ghost_indicator: Polygon2D  ## Small hexagon (valid) or diamond (blocked) — the shape half of the color pairing.
 var _reject_player: AudioStreamPlayer
 
@@ -138,13 +132,13 @@ func _unhandled_input(event: InputEvent) -> void:
 		cancel_placement()
 
 ## Public so a headless self-test can drive placement directly without
-## fighting Godot's input-event simulation pipeline — this is the exact same
-## call the real mouse-click path above makes.
+## fighting Godot's input-event simulation pipeline — this is the exact
+## same call the real mouse-click path above makes.
 func _attempt_placement(world_pos: Vector2) -> void:
 	if not _building_manager:
 		return
 	if not _is_tactical_zoom():
-		_reject_player.play()  # 2.5.7: zoomed out — inert by design, no BuildingManager call at all.
+		_reject_player.play()  # Zoomed out — inert by design, no BuildingManager call at all.
 		return
 	var accepted := _building_manager.place_building_at_world(_pending_type, world_pos)
 	if not accepted:
@@ -191,11 +185,8 @@ func _update_ghost(world_pos: Vector2) -> void:
 	var texture := BuildingVisuals.building_texture(_pending_type)
 	if texture:
 		_ghost_building.texture = texture
-		# Real bug fixed (see TacticalHexView.quad_uv()'s own doc comment):
-		# Polygon2D.uv is texture-PIXEL-space, not normalized 0..1 - this
-		# unit-square array only ever sampled a 1x1-pixel transparent
-		# corner, rendering the ghost preview invisible exactly like the
-		# real building box was. Reuse the same shared fix.
+		# Polygon2D.uv is texture-PIXEL-space, not normalized 0..1 — see
+		# TacticalHexView.quad_uv()'s own doc comment. Reuses the same fix.
 		_ghost_building.uv = TacticalHexView.quad_uv(texture)
 		_ghost_building.texture_repeat = CanvasItem.TEXTURE_REPEAT_DISABLED
 	else:
