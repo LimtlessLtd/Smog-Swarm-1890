@@ -1,48 +1,38 @@
 extends Node
 
 ## Autoload singleton (see project.godot [autoload]); registered there under
-## the name "TimeCycleManager" — no `class_name` here, same reasoning as
+## the name "TimeCycleManager" — no class_name here, same reasoning as
 ## TickManager/BackgroundExecutionManager (an autoload's registered name
 ## already is its global identifier).
 ##
-## Design doc Phase 5.1's Day/Night simulation layer, built directly on top
-## of TickManager's own generic day-length/speed foundation per that
-## script's own doc comment ("Phase 5.1 owns the actual Day/Night visual
-## phase split within that day and should extend this rather than replace
-## it"). Purely derived state: TickManager.current_day/elapsed_in_day is the
-## only thing that actually needs saving (already handled by
-## TickManager.get_save_state()/SaveLoadManager), so this autoload has no
-## save state of its own — same relationship LogisticsNetwork's Zone of
-## Control coverage has to the supply lines it's derived from.
+## The Day/Night simulation layer, built directly on top of TickManager's
+## own generic day-length/speed foundation. Purely derived state:
+## TickManager.current_day/elapsed_in_day is the only thing that actually
+## needs saving (already handled by TickManager.get_save_state()/
+## SaveLoadManager), so this autoload has no save state of its own — same
+## relationship LogisticsNetwork's Zone of Control coverage has to the
+## supply lines it's derived from.
 ##
 ## The 40-minute day (TickManager.DAY_LENGTH_SECONDS) splits evenly into a
-## 20-minute Day phase followed by a 20-minute Night phase, matching the
-## design doc's own numbers exactly.
+## 20-minute Day phase followed by a 20-minute Night phase.
 ##
-## Implemented here now:
+## Implemented here:
 ##   - GameEnums.DayPhase state + phase_changed/day_phase_started/
 ##     night_phase_started signals.
 ##   - get_seconds_until_next_phase()/get_seconds_until_nightfall(), feeding
-##     Phase 6.1's "Nightfall in 04:15" HUD countdown.
+##     the HUD's "Nightfall in 04:15" countdown.
 ##   - A Victorian calendar date (campaign day 1 = 1 January 1890), advancing
-##     with TickManager.current_day — feeds Phase 6.1's HUD and gives the
-##     "how long since Manchester's quarantine ended" framing the design doc
-##     asks for a concrete date to hang off.
-##   - FogOfWarManager's night vision contraction hook (design doc 2.6.4):
-##     phase_changed is what FogOfWarManager listens to and recomputes
-##     against; the actual radius math lives there, not here.
+##     with TickManager.current_day.
+##   - FogOfWarManager's night vision contraction hook: phase_changed is
+##     what FogOfWarManager listens to and recomputes against; the actual
+##     radius math lives there, not here.
 ##
-## Deliberately NOT wired here yet — blocked on a system that doesn't exist,
-## same "not implemented, deliberately" convention as every other deferral
-## already in todo.md:
-##   - Night's 2x sewer eruption rate: Phase 3's sewer system doesn't exist
-##     yet.
+## Not wired here: night's 2x sewer eruption rate — the sewer system
+## doesn't exist yet.
 ##
-## Everything else this comment used to list as blocked here is real now,
-## just not wired through THIS class — each lives in the manager that owns
-## the thing it modifies (managers own their own balancing constants, the
-## same pattern every Day/Night multiplier in this project already follows;
-## this class only owns deriving the phase itself, not applying it):
+## Every other Day/Night multiplier lives in the manager that owns the
+## thing it modifies (managers own their own balancing constants; this
+## class only owns deriving the phase itself, not applying it):
 ##   - "+20% Day construction/resource-gather speed" — BuildingManager.
 ##     DAY_NIGHT_AVERAGE_PRODUCTION_MULTIPLIER (a flat +10% once-daily
 ##     average, mathematically identical to a true +20%-Day/+0%-Night split
@@ -60,9 +50,9 @@ signal phase_changed(phase: GameEnums.DayPhase)
 signal day_phase_started
 signal night_phase_started
 
-## The campaign's own fixed epoch (design doc: "January 1st 1890" — the day
-## Manchester lifted its self-imposed quarantine). TickManager.current_day
-## is 1-based and starts at 1, so day 1 IS 1 Jan 1890 with no offset needed.
+## The campaign's own fixed epoch — 1 January 1890, the day Manchester
+## lifted its self-imposed quarantine. TickManager.current_day is 1-based
+## and starts at 1, so day 1 IS 1 Jan 1890 with no offset needed.
 const CAMPAIGN_START_YEAR: int = 1890
 const CAMPAIGN_START_MONTH_INDEX: int = 0  # January, 0-based into MONTH_NAMES.
 const DAYS_PER_MONTH: Array[int] = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]  # 1890 wasn't a leap year, and no campaign runs anywhere near 4 in-fiction years.
@@ -105,7 +95,7 @@ func is_night() -> bool:
 
 ## Seconds remaining (already speed-scaled, same as TickManager.elapsed_in_day
 ## itself — Engine.time_scale affects the delta both accumulate from) until
-## the current phase flips. Phase 6.1's countdown clock reads this directly.
+## the current phase flips. The HUD's countdown clock reads this directly.
 func get_seconds_until_next_phase() -> float:
 	var half := TickManager.DAY_LENGTH_SECONDS / 2.0
 	var elapsed := TickManager.elapsed_in_day
