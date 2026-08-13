@@ -4,108 +4,85 @@ extends RefCounted
 ## Pointy-top axial hex coordinate math. Pure static utility — no state.
 ## Reference algorithms: https://www.redblobgames.com/grids/hexagons/
 ##
-## Each hex represents a ~5x5 mile macro-region (see design overview), but
-## that scale is a gameplay/world-building fact, not a literal miles-per-unit
-## conversion — the pixel radius below (HEX_SIZE) is still a placeholder
-## visual scale until real art defines tile dimensions.
+## Each hex represents a ~5x5 mile macro-region, but that scale is a
+## gameplay/world-building fact, not a literal miles-per-unit conversion —
+## the pixel radius below (HEX_SIZE) is a placeholder visual scale until
+## real art defines tile dimensions.
 ##
-## Phase 2.5.6 (grilling session — "25 square miles is a big place"):
-## increased 8x from the original 64.0 so a hydrated hex's own local space
-## (Phase 2.5 Tactical view — props, buildings, and Phase 2.5.4's future
-## squads/zombies) has genuine room to spread out and read as spatially
-## distinct, and enough room to actually pan across at close zoom instead of
-## the whole hex fitting inside one small diorama. Chosen as a straight
-## world-space scale multiplier rather than a dual-coordinate-space/
-## floating-origin rearchitecture: every system that places or reads a world
-## position already goes through this class (axial_to_world/world_to_axial),
-## so a single constant change keeps Strategic click/render math, the
-## minimap, fog of war and every marker system automatically consistent —
-## nothing about them needed to change. CameraController's zoom-related
+## HEX_SIZE was increased 8x from the original 64.0 so a hydrated hex's own
+## local space (Tactical view — props, buildings, squads/zombies) has room
+## to spread out and read as spatially distinct, and room to actually pan
+## across at close zoom. Chosen as a straight world-space scale multiplier
+## rather than a dual-coordinate-space/floating-origin rearchitecture: every
+## system that places or reads a world position already goes through this
+## class (axial_to_world/world_to_axial), so a single constant change keeps
+## Strategic click/render math, the minimap, fog of war and every marker
+## system automatically consistent. CameraController's zoom-related
 ## constants (min_zoom/max_zoom/tactical_zoom_threshold/zoom_step) and
 ## Main.tscn's starting camera zoom were all scaled by 1/8 alongside this
-## (Camera2D's visible world width is viewport/zoom.x — see
-## CameraController's own zoom-direction doc comment — so a bigger world
+## (Camera2D's visible world width is viewport/zoom.x, so a bigger world
 ## needs SMALLER zoom values to keep framing the same fraction of it),
-## pan_speed was scaled by 8x^2 = 64x to compensate (see its own doc comment
-## on CameraController), and Main.tscn's starting camera *position* was
-## scaled by the same 8x as HEX_SIZE itself (position is a world coordinate,
-## not a zoom value — axial_to_world scales linearly with HEX_SIZE, so any
-## previously-correct position stays correct after a uniform multiply).
-## Together these preserve the exact same Strategic-view experience (same
-## relative pan speed, same fraction of the map visible at a given zoom
-## level) even though the world-space numbers underneath got bigger.
-## Verified safe against float precision AT THE TIME: the original 40x28
-## hex map (just England's Manchester-Midlands-London corridor) spanned
-## roughly 48,000x21,500 world units at its extremes, comfortably under the
+## pan_speed was scaled by 8x^2 = 64x to compensate, and Main.tscn's
+## starting camera *position* was scaled by the same 8x as HEX_SIZE itself
+## (position is a world coordinate, not a zoom value — axial_to_world
+## scales linearly with HEX_SIZE, so any previously-correct position stays
+## correct after a uniform multiply).
+##
+## Float precision risk, disclosed and still open: the original 40x28 hex
+## map (England's Manchester-Midlands-London corridor) spanned roughly
+## 48,000x21,500 world units at its extremes, comfortably under the
 ## ~100,000 unit range where single-precision float jitter typically starts
-## to show. **That's no longer true, and got LARGER across two follow-up
-## corrections, not smaller.** The map now spans the whole UK and Ireland
-## (design doc, user request — see BritishGeographyData's own doc comment
-## for the full history: hand-authored approximation, then a re-bake from
-## real Natural Earth coastline data, then a second correction once the
-## first re-bake turned out not to honor the game's own "~25 sq mi/hex"
-## scale constant). At the CURRENT correct scale, `MAP_BOUNDS` itself (154x179
-## hexes, padded ocean margin included — what actually matters for float
-## jitter, since the camera can pan into that margin) spans roughly
-## 214,600x136,700 world units — well past the ~100,000 unit range this
-## exact comment already flagged as the trigger for "revisit with a real
-## floating-origin camera rebase instead of pushing this constant further,"
-## and larger than either of the two prior (now-superseded) figures this
-## comment used to cite. **Deliberately NOT done here** — a floating-origin
-## rebase is a genuinely separate architecture change (every system that
-## reads a world position would need to rebase against a moving reference
-## point, not just this one constant), and its actual necessity can't be
-## confirmed without seeing real rendered jitter at the map's far extremes.
-## A live screenshot pass (user request, an earlier round of this same
-## overall map-scale work) DID confirm the map renders/scrolls correctly at
-## every zoom level tested, including panning well out toward the ocean
-## margin, with no visible jitter — but that was against a smaller
-## landmass than the current one, and hasn't been repeated since this
-## latest scale correction grew the grid further. Flagged honestly as a
-## real, disclosed follow-up risk that keeps growing rather than shrinking,
-## not silently left for someone to rediscover — see todo.md's own note
-## under the map-expansion entry.
+## to show. The map now spans the whole UK and Ireland; at the current
+## scale, MAP_BOUNDS (154x179 hexes, padded ocean margin included — what
+## matters for jitter, since the camera can pan into that margin) spans
+## roughly 214,600x136,700 world units — past the ~100,000 unit range that
+## would call for a real floating-origin camera rebase instead of pushing
+## this constant further. NOT done here — a floating-origin rebase is a
+## separate architecture change (every system that reads a world position
+## would need to rebase against a moving reference point), and its actual
+## necessity can't be confirmed without seeing real rendered jitter at the
+## map's far extremes. A live screenshot pass confirmed the map
+## renders/scrolls correctly at every zoom level tested, including panning
+## toward the ocean margin, with no visible jitter — but that was against a
+## smaller landmass than the current one, and hasn't been repeated since
+## the latest scale correction grew the grid further. See todo.md's own
+## note under the map-expansion entry.
 const HEX_SIZE: float = 512.0
 
-## Real-world scale conversion (design doc: each hex is ~25 sq mi/~5mi
-## across) — HEX_SIZE above IS a hex's real circumradius, so this is just
-## that ratio against the circumradius' real value in meters. Solving a
-## pointy-top hex's area formula (`area = 3*sqrt(3)/2 * r^2`) for `r` with
-## area=25 sq mi gives a real circumradius of ~3.1020161 mi (~4992.21 m,
-## 1609.34 m/mi). `sqrt(3)` can't be called in a GDScript `const`
-## initializer (same constraint `MovementStepper.BASE_MOVE_SPEED`'s own
-## doc comment documents), so the derived ratio is hardcoded here with the
-## derivation spelled out rather than computed live. **Shared here, not
-## re-derived per call site** — both `TacticalHexView.BUILDING_HALF_SIZE`
-## (real building footprint) and `WallCatalog.MAX_SEGMENT_LENGTH_WORLD_UNITS`
-## (the 100m-max wall-segment spec) need the exact same real-world/world-unit
-## conversion; a second hand-copied derivation would risk silently drifting
-## from this one the moment either constant is ever revisited.
+## Real-world scale conversion (each hex is ~25 sq mi/~5mi across) —
+## HEX_SIZE above IS a hex's real circumradius, so this is that ratio
+## against the circumradius' real value in meters. Solving a pointy-top
+## hex's area formula (area = 3*sqrt(3)/2 * r^2) for r with area=25 sq mi
+## gives a real circumradius of ~3.1020161 mi (~4992.21 m, 1609.34 m/mi).
+## sqrt(3) can't be called in a GDScript const initializer (same
+## constraint MovementStepper.BASE_MOVE_SPEED's own doc comment
+## documents), so the derived ratio is hardcoded here with the derivation
+## spelled out. Shared here, not re-derived per call site — both
+## TacticalHexView.BUILDING_HALF_SIZE (real building footprint) and
+## WallCatalog.MAX_SEGMENT_LENGTH_WORLD_UNITS (the 100m-max wall-segment
+## spec) need the exact same real-world/world-unit conversion.
 const WORLD_UNITS_PER_REAL_METER: float = 0.1025599
 
 ## Real-world sampling/rendering footprint shared by RealTerrainSampler.
 ## sample_grid() and SubHexGroundView's own sub-cell grid — a single source
-## of truth so the two can't silently drift the way they used to (both
-## previously hardcoded their own separate "HEX_SIZE * 1.6" literal).
-## **Real bug fix (playtest round 4: "tactical view hexgrids have
-## overhanging terrain on each corner going over into neighbouring hex tile
-## grids")** — 1.6x HEX_SIZE (819.2) is SMALLER than a pointy-top hex's own
-## bounding box at this circumradius (887 wide x 1024 tall — see
-## corner_points()'s own vertex layout), so the old square sample/render
-## grid under-covered a hex's own top/bottom vertices; that gap only looked
+## of truth so the two can't silently drift (both previously hardcoded
+## their own separate "HEX_SIZE * 1.6" literal).
+##
+## 1.6x HEX_SIZE (819.2) is SMALLER than a pointy-top hex's own bounding
+## box at this circumradius (887 wide x 1024 tall — see corner_points()'s
+## own vertex layout), so a square sample/render grid at that span
+## under-covers a hex's own top/bottom vertices; that gap only looks
 ## "filled" because each NEIGHBORING hex's own square grid — whose corners
 ## sit at half_span*sqrt(2) ≈ 579 world units from center, past HEX_SIZE's
-## own 512 circumradius — spilled over the shared edge into it. Two bugs
-## masking each other: an under-covering grid on the one hand, an
-## over-hanging one on the other, netting out to "looks about right, but
-## the overhang is real and visible at the corners" exactly as reported.
-## 2.0x HEX_SIZE is the smallest span whose square fully CIRCUMSCRIBES the
-## hex's own bounding box in both dimensions, so paired with
-## SubHexGroundView's new hex-shaped clip mask (its own doc comment has the
-## full mechanism), the grid now truly covers the whole hex with zero gaps,
-## and the clip mask removes whatever the square's own corners still poke
-## past the hex's real boundary — instead of leaving a real hole there the
-## way a smaller, unclipped span would.
+## own 512 circumradius — spills over the shared edge into it. Two effects
+## masking each other: an under-covering grid on one hand, an overhanging
+## one on the other, netting out to "looks about right, but the overhang is
+## real and visible at the corners." 2.0x HEX_SIZE is the smallest span
+## whose square fully CIRCUMSCRIBES the hex's own bounding box in both
+## dimensions, so paired with SubHexGroundView's hex-shaped clip mask (see
+## that class's own doc comment), the grid truly covers the whole hex with
+## zero gaps, and the clip mask removes whatever the square's own corners
+## still poke past the hex's real boundary.
 const SUB_HEX_GRID_SPAN: float = HEX_SIZE * 2.0
 
 const NEIGHBOR_DIRECTIONS: Array[Vector2i] = [
@@ -178,35 +155,6 @@ static func corner_points(center: Vector2) -> PackedVector2Array:
 		var angle_rad := deg_to_rad(60.0 * i - 30.0)
 		points.append(center + Vector2(HEX_SIZE * cos(angle_rad), HEX_SIZE * sin(angle_rad)))
 	return points
-
-## **Removed (real bug found — see HexCellView.gd's own doc comment):**
-## `corner_uvs()` used to map a hex's 6 corners onto a texture's 4 corners
-## for Polygon2D's explicit `uv` array (the Strategic "paint the whole
-## texture once as a map icon" look). Confirmed, not just suspected — a
-## Polygon2D only samples a texture AT each vertex's own UV coordinate and
-## linearly interpolates those samples across its (fan-triangulated)
-## interior; it does not warp/rasterize the source image into the polygon's
-## screen shape the way a masked sprite would. With only 6 sample points
-## confined to a texture's edges, most hand-drawn detail (concentrated away
-## from the edges, by construction, in every one of this project's own
-## seamlessly-tiling SVGs) never gets sampled at all — verified by sampling
-## every one of `urban.svg`'s 6 corner-UV texels directly and finding 4 of
-## the 6 landed on nearly-identical tones, which is exactly why Strategic
-## hexes were rendering as a near-flat blob instead of visible art. Fixed by
-## rendering Strategic ground the same tiled way Tactical already correctly
-## does — see `HexCellView._redraw()`.
-
-## **Removed (user request, continuous movement — see MovementStepper.gd's
-## own doc comment for the real replacement):** `entry_local_position()`
-## used to give a moving entity (UnitInstance/Horde) a fixed in-hex offset
-## the instant it hex-stepped, biased toward whichever edge it walked in
-## from — a deterministic stand-in for real motion, back when an entity
-## snapped from hex to hex once every `MOVE_INTERVAL_SECONDS` rather than
-## walking continuously. `local_position` (still the same field, same
-## "offset from hex_coord's center" contract `BuildingInstance.local_position`
-## established) is now written every frame by `MovementStepper.advance_toward_hex()`
-## instead, so there's no single "entry point" left to compute — an entity's
-## position is wherever continuous travel has actually carried it to.
 
 static func _axial_to_cube(coord: Vector2i) -> Vector3:
 	var x := float(coord.x)
