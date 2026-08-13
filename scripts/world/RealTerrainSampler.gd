@@ -6,22 +6,20 @@ extends RefCounted
 ## res://assets/terrain_data/landcover.png + elevation.png). Same lazy-
 ## load/cache convention as TerrainVisuals/BuildingVisuals/PropVisuals.
 ##
-## Deliberately does NOT recompute BritishGeographyData's existing
-## coastline/named-feature data — that bake's own lon/lat<->hex transform
-## was lost (never committed, see tools/geo_bake/geo_projection.py's own
-## doc comment) and re-deriving it exactly is neither possible nor
-## necessary. This class instead answers "what does real open geographic
-## data say about the biome/elevation at THIS EXISTING hex position,"
-## using a freshly-fit affine (also in geo_projection.py, ported here)
-## calibrated against the 17 named anchors' real-world coordinates. A few
-## hex-radii of calibration slack is fine for this purpose — it only
-## needs to land on roughly the right real region, not pixel-exact,
-## since real land-cover data itself varies smoothly at a much broader
-## scale than that.
+## Does NOT recompute BritishGeographyData's existing coastline/named-
+## feature data — that bake's own lon/lat<->hex transform was never
+## committed (see tools/geo_bake/geo_projection.py's own doc comment) and
+## re-deriving it exactly is neither possible nor necessary. This class
+## instead answers "what does real open geographic data say about the
+## biome/elevation at THIS EXISTING hex position," using a freshly-fit
+## affine (also in geo_projection.py, ported here) calibrated against the
+## 17 named anchors' real-world coordinates. A few hex-radii of calibration
+## slack is fine — it only needs to land on roughly the right real region,
+## since real land-cover data varies smoothly at a much broader scale than that.
 ##
-## Wire format (landcover.png), deliberately decoupled from
-## GameEnums.BiomeType's raw enum ordinals — those have been reordered
-## before and must never silently corrupt baked data if reordered again:
+## Wire format (landcover.png), decoupled from GameEnums.BiomeType's raw
+## enum ordinals — those have been reordered before and must never silently
+## corrupt baked data if reordered again:
 ##   R = biome code (0=MOORLAND,1=FARMLAND,2=URBAN,3=INDUSTRIAL,
 ##                    4=WETLAND,5=WATERWAY,6=HIGHLAND)
 ##   G = terrain_feature code (0=NONE,1=RIVER,2=CANAL,3=MARSH,
@@ -29,47 +27,38 @@ extends RefCounted
 ##   B = reserved, always 0
 ## elevation.png: Terrarium RGB encoding of real elevation in metres
 ##   (elevation_m = R*256 + G + B/256 - 32768), same scheme the source
-##   AWS/Mapzen Terrain Tiles ship in — no reason to invent a different one.
+##   AWS/Mapzen Terrain Tiles ship in.
 ##
 ## Image.load_from_file() (NOT load()/ResourceLoader) is used deliberately
-## — it bypasses Godot's texture-import/compression pipeline entirely,
-## which cannot be verified from this dev environment (no Godot editor/
-## CLI available) and must not be allowed to lossily mangle classification
-## data that depends on exact byte values.
+## — it bypasses Godot's texture-import/compression pipeline, which cannot
+## be verified from this dev environment and must not be allowed to lossily
+## mangle classification data that depends on exact byte values.
 
 ## Must match tools/geo_bake/bake_landcover.py's WORLD_UNITS_PER_PIXEL
-## exactly — a documented cross-reference, same "shared derivation, don't
-## hand-copy" convention HexCoord.WORLD_UNITS_PER_REAL_METER already
-## established (it's a plain literal, not derived from HEX_SIZE, because
-## it's an independent bake-resolution choice, not a geometric identity).
+## exactly — a plain literal, not derived from HEX_SIZE, since it's an
+## independent bake-resolution choice, not a geometric identity.
 const WORLD_UNITS_PER_PIXEL: float = 90.0
 
 ## Real elevation (metres) mapped to HexCell.elevation's documented
 ## 0.0..1.0 "sea level .. highest peaks" scale. 1000m comfortably covers
 ## real English/Welsh terrain (Cross Fell ~893m) with room for Scottish
-## Highlands data now potentially in-bounds; clamped above that rather
-## than rescaling the whole game's elevation scale for a few outlier
-## summits most play will never reach (Scotland/Wales are hard-gated
-## content, Phase 7.2.1).
+## Highlands data; clamped above that rather than rescaling the whole
+## game's elevation scale for a few outlier summits most play won't reach
+## (Scotland/Wales are hard-gated content).
 const ELEVATION_METRES_AT_SCALE_TOP: float = 1000.0
 
 const _LANDCOVER_PATH: String = "res://assets/terrain_data/landcover.png"
 const _ELEVATION_PATH: String = "res://assets/terrain_data/elevation.png"
 
-## Deliberate, disclosed scope reduction: the baked rasters cover only the
-## actually-PLAYABLE core corridor (Manchester/Midlands/London, comfortably
-## covering every named-anchor calibration point with margin) — NOT the
-## full BritishGeographyData.MAP_BOUNDS, most of which is Wales/Scotland/
-## Ireland (hard-gated, zero authored content, unreachable in the current
-## build — Phase 7.2.1). Must match tools/geo_bake/bake_landcover.py's
-## CORRIDOR_Q/CORRIDOR_R exactly — documented cross-reference, same
-## "shared derivation, don't hand-copy" convention this file's other
-## constants already follow. A hex outside this range has no baked data
-## at all — sample_at()/majority_biome() return {} for it (NOT clamped to
-## the nearest edge pixel, which would silently substitute wrong data),
-## and HexMapGenerator/SubHexGroundView both already treat an empty
-## result as "fall back to the old flat default," so nothing regresses
-## for the locked regions.
+## The baked rasters cover only the actually-playable core corridor
+## (Manchester/Midlands/London), NOT the full BritishGeographyData.MAP_BOUNDS,
+## most of which is Wales/Scotland/Ireland (hard-gated, unreachable in the
+## current build). Must match tools/geo_bake/bake_landcover.py's
+## CORRIDOR_Q/CORRIDOR_R exactly. A hex outside this range has no baked
+## data at all — sample_at()/majority_biome() return {} for it (NOT
+## clamped to the nearest edge pixel, which would silently substitute
+## wrong data); HexMapGenerator/SubHexGroundView both treat an empty result
+## as "fall back to the flat default."
 const _CORRIDOR_Q: Vector2i = Vector2i(55, 105)
 const _CORRIDOR_R: Vector2i = Vector2i(85, 160)
 
@@ -81,12 +70,11 @@ const _BIOME_BY_CODE: Array[GameEnums.BiomeType] = [
 	GameEnums.BiomeType.WETLAND,
 	GameEnums.BiomeType.WATERWAY,
 	GameEnums.BiomeType.HIGHLAND,
-	# Granularity pass (2026-08-11): appended at indices 7/8 to match
-	# bake_landcover.py's own append-only _BIOME_CODE dict exactly — a
-	# raster baked before this pass simply never contains these codes
-	# (falls back to MOORLAND/FARMLAND as it always did), a raster baked
-	# after it can use them. Either way this array must stay index-aligned
-	# with the Python dict, not with GameEnums.BiomeType's own ordinals.
+	# Appended at indices 7/8 to match bake_landcover.py's own append-only
+	# _BIOME_CODE dict exactly — a raster baked before this addition
+	# doesn't contain these codes (falls back to MOORLAND/FARMLAND). This
+	# array must stay index-aligned with the Python dict, not with
+	# GameEnums.BiomeType's own ordinals.
 	GameEnums.BiomeType.WOODLAND,
 	GameEnums.BiomeType.HEATHLAND,
 ]
@@ -127,10 +115,9 @@ static func _ensure_loaded() -> void:
 
 ## Same corner-based extent calculation as bake_landcover.py's own
 ## world_extent_corners(_CORRIDOR_Q, _CORRIDOR_R) — the min corner of the
-## baked corridor (NOT the full MAP_BOUNDS — see _CORRIDOR_Q/_CORRIDOR_R's
-## own doc comment) under HexCoord.axial_to_world(). Computed once,
-## cached; deliberately DERIVED rather than a hand-copied literal, so it
-## can never drift out of sync if the corridor range itself ever changes.
+## baked corridor (NOT the full MAP_BOUNDS) under HexCoord.axial_to_world().
+## Computed once, cached; derived rather than a hand-copied literal, so it
+## can't drift out of sync if the corridor range ever changes.
 static func _ensure_origin() -> void:
 	if _origin_computed:
 		return
@@ -144,11 +131,10 @@ static func _ensure_origin() -> void:
 			min_y = minf(min_y, world.y)
 	_raster_origin_world = Vector2(min_x, min_y)
 
-## Returns null (not a clamped-to-edge Vector2i) if world_pos falls
-## outside the baked raster's actual coverage — the caller must treat
-## that as "no data," never silently sample the nearest edge pixel as if
-## it were real data for a completely different, potentially very
-## distant, real-world location.
+## Returns null (not a clamped-to-edge Vector2i) if world_pos falls outside
+## the baked raster's actual coverage — the caller must treat that as "no
+## data," never silently sample the nearest edge pixel as if it were real
+## data for a distant, differently-classified real-world location.
 static func _pixel_for_world(world_pos: Vector2, image: Image) -> Variant:
 	_ensure_origin()
 	var px := int((world_pos.x - _raster_origin_world.x) / WORLD_UNITS_PER_PIXEL)
@@ -189,14 +175,13 @@ static func sample_at(world_pos: Vector2) -> Dictionary:
 	}
 
 ## Samples an n x n grid centred on a hex's world position, spanning its
-## own real-world footprint (HexCoord.HEX_SIZE radius). Returns an Array
-## of n*n Dictionaries (sample_at()'s own shape), row-major. Prefers a
-## fine per-hex tile when one has been baked for `coord` (see the "Fine
-## per-hex tiles" section below) — this is SubHexGroundView's own call
-## site, i.e. the ONE consumer that's already gated to only exist for
-## Tactical-hydrated/nearby hexes (LocalDetailManager's existing
+## own real-world footprint (HexCoord.HEX_SIZE radius). Returns an Array of
+## n*n Dictionaries (sample_at()'s own shape), row-major. Prefers a fine
+## per-hex tile when one has been baked for `coord` (see "Fine per-hex
+## tiles" below) — this is SubHexGroundView's own call site, gated to only
+## exist for Tactical-hydrated/nearby hexes (LocalDetailManager's existing
 ## proximity system), so fine detail streams in "only when you're nearby"
-## for free, riding on that existing mechanism rather than a new one.
+## for free, riding on that existing mechanism.
 static func sample_grid(coord: Vector2i, n: int) -> Array:
 	var center := HexCoord.axial_to_world(coord)
 	var result: Array = []
@@ -204,7 +189,7 @@ static func sample_grid(coord: Vector2i, n: int) -> Array:
 	if n <= 1:
 		result.append(_sample_fine(coord, center) if use_fine else sample_at(center))
 		return result
-	var span := HexCoord.SUB_HEX_GRID_SPAN  # Shared with SubHexGroundView's own render grid — see that constant's own doc comment (HexCoord.gd) for why this exact value.
+	var span := HexCoord.SUB_HEX_GRID_SPAN  # Shared with SubHexGroundView's own render grid — see that constant's own doc comment (HexCoord.gd).
 	var step := span / float(n - 1)
 	var start := -span * 0.5
 	for row in range(n):
@@ -214,42 +199,32 @@ static func sample_grid(coord: Vector2i, n: int) -> Array:
 			result.append(_sample_fine(coord, world_pos) if use_fine else sample_at(world_pos))
 	return result
 
-## --- Fine per-hex tiles (playtest round 6, user request: "fine detail
-## everywhere but it's only rendered when you're nearby based on the
-## current tactical view system") -----------------------------------
+## --- Fine per-hex tiles -----------------------------------------------
 ##
 ## One small PNG per hex coordinate (res://assets/terrain_data/fine/
-## <q>_<r>.png), baked at a MUCH finer WORLD_UNITS_PER_PIXEL_FINE than the
-## single whole-corridor landcover.png above — genuinely resolves
-## individual street blocks/field boundaries instead of an 877m/pixel
-## blur. Keyed directly by hex coordinate (not an arbitrary world-space
-## tile grid) because the thing that already decides "which hexes are
-## worth this extra detail right now" is LocalDetailManager's existing
-## Tactical-hydration radius (DETAIL_RADIUS — a handful of hexes around
-## the camera) — this rides on that existing system instead of building a
-## second proximity tracker, exactly matching the user's own framing.
-## Every fine tile covers the same HexCoord.SUB_HEX_GRID_SPAN square
-## sample_grid() already samples across, so swapping which raster answers
-## a given sample is transparent to every caller.
+## <q>_<r>.png), baked at a much finer WORLD_UNITS_PER_PIXEL_FINE than the
+## single whole-corridor landcover.png — resolves individual street
+## blocks/field boundaries instead of an 877m/pixel blur. Keyed directly by
+## hex coordinate (not an arbitrary world-space tile grid) because the
+## thing that already decides "which hexes are worth this extra detail
+## right now" is LocalDetailManager's existing Tactical-hydration radius
+## (DETAIL_RADIUS) — this rides on that existing system instead of a second
+## proximity tracker. Every fine tile covers the same
+## HexCoord.SUB_HEX_GRID_SPAN square sample_grid() already samples across,
+## so swapping which raster answers a given sample is transparent to every caller.
 ##
 ## A hex with no baked fine tile yet (the overwhelming majority — only a
-## demo radius around the starting settlement is baked this round, see
+## demo radius around the starting settlement is baked, see
 ## tools/geo_bake/bake_fine_tiles.py's own doc comment) falls back to the
-## existing coarse landcover.png exactly as before — nothing regresses,
-## coverage only ever gets BETTER as more fine tiles are baked later, same
-## "art/data lands incrementally, zero further code changes needed" contract
-## every other lazy-loaded asset in this project already follows.
-## Deliberately does NOT bake/read a fine elevation tile — elevation
-## varies smoothly enough at this scale that the coarse elevation.png
-## (already sampled by sample_at() below) is unaffected by this whole
-## section; only biome/terrain_feature get the fine treatment.
-const WORLD_UNITS_PER_PIXEL_FINE: float = 1024.0 / 96.0  ## ~10.7 world units/pixel (~104 real metres) — must match tools/geo_bake/bake_fine_tiles.py's own FINE_TILE_PIXELS/HexCoord.SUB_HEX_GRID_SPAN-derived constant exactly, same documented cross-reference convention as WORLD_UNITS_PER_PIXEL above.
+## existing coarse landcover.png — nothing regresses, coverage only gets
+## better as more fine tiles are baked later. Does NOT bake/read a fine
+## elevation tile — elevation varies smoothly enough at this scale that the
+## coarse elevation.png is unaffected; only biome/terrain_feature get the
+## fine treatment.
+const WORLD_UNITS_PER_PIXEL_FINE: float = 1024.0 / 96.0  ## ~10.7 world units/pixel (~104 real metres) — must match tools/geo_bake/bake_fine_tiles.py's own FINE_TILE_PIXELS/HexCoord.SUB_HEX_GRID_SPAN-derived constant exactly.
 const _FINE_TILE_DIR: String = "res://assets/terrain_data/fine"
 
-## Vector2i (hex coord) -> Image, or null once confirmed no tile exists —
-## caching the miss too means a hex with no fine tile is only ever checked
-## on disk once, not on every single sub-hex sample.
-static var _fine_tile_cache: Dictionary = {}
+static var _fine_tile_cache: Dictionary = {}  ## Vector2i (hex coord) -> Image, or null once confirmed no tile exists — caching the miss too means a hex with no fine tile is only checked on disk once.
 
 static func _fine_tile_for(coord: Vector2i) -> Image:
 	if _fine_tile_cache.has(coord):
@@ -264,10 +239,9 @@ static func _fine_tile_for(coord: Vector2i) -> Image:
 	return image
 
 ## Same {} "no data here" contract as sample_at() — the caller
-## (sample_grid() above) only ever calls this once it's already confirmed
-## a tile exists for `coord`, but a specific `world_pos` can still fall
-## just outside this tile's own pixel bounds (rounding at the very edge of
-## the sampled span) and correctly reports empty rather than reading
+## (sample_grid()) only calls this once it's confirmed a tile exists for
+## `coord`, but a specific world_pos can still fall just outside this
+## tile's own pixel bounds and correctly reports empty rather than reading
 ## garbage from an adjacent, differently-classified hex's data.
 static func _sample_fine(coord: Vector2i, world_pos: Vector2) -> Dictionary:
 	var image := _fine_tile_for(coord)
@@ -310,11 +284,11 @@ static func majority_biome(coord: Vector2i) -> Dictionary:
 		counts[biome] = counts.get(biome, 0) + 1
 		elevation_sum += sample["elevation"]
 		elevation_count += 1
-		# Real river/canal geometry deliberately does NOT get to flip this
-		# hex's own biome_type to WATERWAY from a plurality vote (see
-		## HexMapGenerator's own doc comment) — but Milestone 2's sub-hex
-		# rendering still needs to know a river crosses here, so track it
-		# separately rather than discarding it.
+		# Real river/canal geometry does NOT get to flip this hex's own
+		# biome_type to WATERWAY from a plurality vote (see
+		# HexMapGenerator's own doc comment) — but sub-hex rendering still
+		# needs to know a river crosses here, so track it separately
+		# rather than discarding it.
 		var feature: GameEnums.TerrainFeature = sample["terrain_feature"]
 		if feature == GameEnums.TerrainFeature.RIVER or feature == GameEnums.TerrainFeature.CANAL:
 			water_feature_present = true

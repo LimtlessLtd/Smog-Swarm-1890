@@ -1,58 +1,42 @@
 class_name BuildMenuView
 extends PanelContainer
 
-## Build menu (design doc Phase 6.1 — "the actual UI for
-## BuildingManager.place_building_at_world(), built in Phase 2.5, never
-## called by anything since"). One card per BuildingCatalog definition,
-## grouped into a column per category; clicking one arms placement mode by
-## emitting building_selected. This view only knows about *selecting* a
-## type — it has no idea what a hex or a world position is;
-## BuildPlacementController (Phase 6.1, `/scripts/world`) is what turns a
-## selection into an actual placed building.
+## Build menu — the UI for BuildingManager.place_building_at_world(). One
+## card per BuildingCatalog definition, grouped into a column per category;
+## clicking one arms placement mode by emitting building_selected. This
+## view only knows about *selecting* a type — it has no idea what a hex or
+## a world position is; BuildPlacementController is what turns a selection
+## into an actual placed building.
 ##
-## **All categories visible at once, no tabs (user request, playtest round
-## 4: "too many clicks having to scroll to the right tab, just display all
-## the tabs all the time")** — the previous `TabContainer` (one category
-## hidden behind another until clicked) is gone; every category is now its
-## own always-visible column (header + a row of building cards) inside one
-## horizontally-scrolling strip. Nothing is hidden behind a click anymore —
-## "scrolling" sideways to reach a category some categories to the right
-## replaces "clicking a tab", which is the actual complaint (extra clicks),
-## not scrolling itself.
+## All categories visible at once, no tabs — every category is its own
+## always-visible column (header + a row of building cards) inside one
+## horizontally-scrolling strip, per user feedback ("too many clicks having
+## to scroll to the right tab, just display all the tabs all the time").
 ##
-## **Cards, not bare-text buttons (user request: "display the pictures of
-## the building... how much each building costs, the upkeep it requires,
-## and what it actually does")** — each card shows the building's real art
-## (BuildingVisuals.building_texture(), same texture TacticalHexView
-## renders), its name, and a compact cost/upkeep/effect summary, all
-## visible without hovering (a tooltip was the OLD cost-only convention;
-## this pass makes the same information a first-class part of the card
-## instead of hiding it behind a hover).
+## Cards, not bare-text buttons — per user feedback ("display the pictures
+## of the building... how much each building costs, the upkeep it
+## requires, and what it actually does"), each card shows the building's
+## real art (BuildingVisuals.building_texture(), same texture
+## TacticalHexView renders), its name, and a compact cost/upkeep/effect
+## summary, all visible without hovering.
 ##
-## **Merged into one bottom bar with the minimap (user request, #5)** — this
-## view no longer positions or sizes itself (MainHUD._build_bottom_bar()
-## does, sizing it to SIZE_EXPAND_FILL alongside a fixed-width MinimapView
-## in the same row) or draws its own background via a bare `Control`
-## (that never actually rendered anything — see the dark-background note
-## below); it now extends `PanelContainer` so `HUDStyles.style_panel()`
-## genuinely draws a background, same fix `ResourceBarView` needed for the
-## same reason (only `Panel`/`PanelContainer` actually draw a `"panel"`
-## theme stylebox — a plain `Control` silently ignores one).
+## Merged into one bottom bar with the minimap — this view doesn't position
+## or size itself (MainHUD._build_bottom_bar() does, sizing it to
+## SIZE_EXPAND_FILL alongside a fixed-width MinimapView in the same row);
+## extends PanelContainer so HUDStyles.style_panel() actually draws a
+## background (only Panel/PanelContainer draw a "panel" theme stylebox — a
+## plain Control silently ignores one).
 
 signal building_selected(building_type: GameEnums.BuildingType)
-## Real bug fixed (player report: walls "are not free hand to place/draw"
-## — a project-wide grep confirmed there was never ANY placement UI for
-## walls at all, not merely a hex-locked one; every wall a player has ever
-## seen was the free starting perimeter). A fourth column, own signal rather
-## than reusing building_selected — arming WallPlacementController's
-## click-DRAG flow is a different shape from BuildPlacementController's
-## click-to-place one, not a building type.
+## A fourth column, own signal rather than reusing building_selected —
+## arming WallPlacementController's click-DRAG flow is a different shape
+## from BuildPlacementController's click-to-place one, not a building type.
 signal wall_placement_selected(is_gate: bool)
 
-## DEFENSE_WORKS deliberately excluded from this list — user request,
-## playtest round 5: "Defense Works & Walls should be combined into one
-## category" — it's folded into the dedicated `_build_defense_and_walls_column()`
-## below instead of getting its own generic column.
+## DEFENSE_WORKS excluded from this list — folded into
+## _build_defense_and_walls_column() instead of getting its own generic
+## column, per user feedback ("Defense Works & Walls should be combined
+## into one category").
 const CATEGORY_ORDER: Array[GameEnums.BuildingCategory] = [
 	GameEnums.BuildingCategory.HOUSING_CIVIL,
 	GameEnums.BuildingCategory.INDUSTRY_EXTRACTION,
@@ -62,34 +46,24 @@ const CATEGORY_ORDER: Array[GameEnums.BuildingCategory] = [
 ## Ditch/Oil Pit are DEFENSE_WORKS BuildingCatalog entries but are placed
 ## via WallManager.add_defense_work() on an existing wall segment, not
 ## BuildingManager.place_building_at_world() like everything else this menu
-## arms — see WallManager's own class doc comment ("deliberately NOT placed
-## through BuildingManager.place_building()"). Excluded here so clicking one
-## can't arm a placement flow that was never built to handle it.
+## arms. Excluded here so clicking one can't arm a placement flow that was
+## never built to handle it.
 const _EXCLUDED_FROM_MENU: Array[GameEnums.BuildingType] = [
 	GameEnums.BuildingType.DITCH,
 	GameEnums.BuildingType.OIL_PIT,
 ]
 
-## An earlier pass (playtest round 6: "reduce the size of the building
-## cards... reduce the size of the text... its currently very large")
-## shrunk these from HUDStyles.build_card()'s own defaults (132/44, tuned
-## for UnitPanelView's roomier top-left panel, unaffected by this change
-## since it doesn't pass these explicitly) down to 92/28/11/9 — but that
-## went far enough that a card's autowrapped icon+name+details column
-## regularly exceeded MainHUD.BOTTOM_BAR_HEIGHT's own (also-shrunk) 130px,
-## clipping text off the bottom of the screen (next playtest round's own
-## report: "make each building card... large enough so the text fits...
-## some of them currently go off the bottom of the screen"). Settled on a
-## middle ground here — noticeably more compact than the original
-## 132/44/15/13, but wide/tall enough that a typical multi-clause details
-## string ("+3 Bricks/day; Houses 6 population; Trains: Melee, Ranged")
-## wraps to 2-3 lines instead of 4-5. MainHUD.BOTTOM_BAR_HEIGHT (see that
-## file's own doc comment) was raised to match — verified together via an
-## actual live screenshot, not just this arithmetic, since autowrap line
-## count is a real-font-metrics question static reasoning can't settle on
-## its own (same lesson the minimap-hiding regression a few rounds back
-## already taught this project once).
-const _CARD_WIDTH: float = 128.0  ## Widened again alongside MainHUD.BOTTOM_BAR_HEIGHT — see that constant's own doc comment for the live-testing history that found 112 still wrapped Garrison's 2-resource cost line ("90 Bricks, 25 Cast Iron") across 2 lines by itself.
+## Card size settled after two rounds of user feedback: an early pass
+## shrunk cards down to 92/28/11/9 ("reduce the size of the building
+## cards... its currently very large"), which then clipped multi-clause
+## details text off the bottom of the screen ("make each building card...
+## large enough so the text fits"). This is the middle ground — wide/tall
+## enough that a typical details string ("+3 Bricks/day; Houses 6
+## population; Trains: Melee, Ranged") wraps to 2-3 lines instead of 4-5.
+## MainHUD.BOTTOM_BAR_HEIGHT was raised to match, verified together via a
+## live screenshot (autowrap line count is a real-font-metrics question,
+## not something static reasoning settles on its own).
+const _CARD_WIDTH: float = 128.0
 const _CARD_ICON_SIZE: float = 32.0
 const _CARD_NAME_FONT_SIZE: int = 12
 const _CARD_DETAILS_FONT_SIZE: int = 10
@@ -101,21 +75,19 @@ func _ready() -> void:
 
 	var scroll := ScrollContainer.new()
 	scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO  ## The whole point of this rework — sideways scrolling replaces tab-clicking, see class doc.
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO  ## Sideways scrolling replaces tab-clicking — see class doc.
 	add_child(scroll)
 
 	var columns := HBoxContainer.new()
 	columns.add_theme_constant_override("separation", 16)
-	# User request (playtest round 6: "make sure that it lines up with the
-	# mini map") — with vertical scrolling disabled, ScrollContainer would
-	# otherwise stretch `columns` to fill the FULL bar height and then
-	# top-align its (now much shorter, since the round-6 card shrink) real
-	# content inside that — leaving a visibly empty gap below the cards
-	# while MinimapView (SIZE_SHRINK_CENTER, MainHUD's own
-	# _build_bottom_bar()) sits vertically centered in the same row.
-	# SHRINK_CENTER here makes `columns` request only its own real content
-	# height and center within the leftover space instead, the same
-	# vertical anchor the minimap already uses.
+	# With vertical scrolling disabled, ScrollContainer would otherwise
+	# stretch `columns` to fill the full bar height and top-align its
+	# (shorter, post-shrink) real content inside that, leaving a visibly
+	# empty gap below the cards while MinimapView (SIZE_SHRINK_CENTER)
+	# sits vertically centered in the same row. SHRINK_CENTER here makes
+	# `columns` request only its own real content height and center within
+	# the leftover space, the same vertical anchor the minimap uses —
+	# "make sure that it lines up with the mini map" (user feedback).
 	columns.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	scroll.add_child(columns)
 
@@ -147,19 +119,17 @@ func _build_category_column(category: GameEnums.BuildingCategory, definitions: A
 
 ## Defense Works (BuildingCatalog's DEFENSE_WORKS category — Searchlight
 ## Tower today) and Walls (a wholly separate placement flow, WallManager,
-## never a BuildingCatalog category at all) merged into ONE column (user
-## request, playtest round 5: "Defense Works & Walls should be combined
-## into one category... red and white") — same shared red/white
-## `category_card_colors("defense_walls")` regardless of which of the two
-## underlying systems a given card actually arms. Wall cards are
-## deliberately just two, not a per-tier list — see the wall_placement_selected
-## signal's own doc comment for why (WallManager.place_wall_line() only
-## ever places fresh Wooden segments; upgrade_segment(), reached by
-## selecting an existing wall, is still the only way to a Brick/Concrete
-## tier). "Gate" is the same Wooden segment/cost, just intrinsically weaker
-## (WallSegment.is_gate's own doc comment) — a deliberate weak point the
-## player places on purpose, not a difference the build menu needs to
-## price separately.
+## never a BuildingCatalog category at all) merged into ONE column, per
+## user feedback ("Defense Works & Walls should be combined into one
+## category... red and white") — same shared red/white
+## category_card_colors("defense_walls") regardless of which underlying
+## system a given card arms. Wall cards are just two, not a per-tier list:
+## WallManager.place_wall_line() only places fresh Wooden segments —
+## upgrade_segment(), reached by selecting an existing wall, is the only
+## way to a Brick/Concrete tier. "Gate" is the same Wooden segment/cost,
+## just intrinsically weaker (WallSegment.is_gate's own doc comment) — a
+## deliberate weak point the player places on purpose, not a difference
+## this menu needs to price separately.
 func _build_defense_and_walls_column() -> Control:
 	var column := VBoxContainer.new()
 	column.add_theme_constant_override("separation", 6)
@@ -201,10 +171,10 @@ func _build_building_card(definition: BuildingDefinition, colors: Dictionary = {
 		true, _CARD_WIDTH, _CARD_ICON_SIZE, colors, _CARD_NAME_FONT_SIZE, _CARD_DETAILS_FONT_SIZE,
 	)
 
-## "how much each building costs, the upkeep it requires, and what it
-## actually does e.g. how much of x does it produce daily, does it produce
-## units and if so what kind" (user request) — one compact multi-line
-## string covering all three asks per building.
+## Covers cost, upkeep, and effect (production/training/housing) per user
+## feedback ("how much each building costs, the upkeep it requires, and
+## what it actually does e.g. how much of x does it produce daily, does it
+## produce units and if so what kind") in one compact multi-line string.
 func _describe_building(definition: BuildingDefinition) -> String:
 	var lines: Array[String] = []
 	lines.append("Cost: %s" % HUDStyles.format_resource_dict(definition.construction_cost))
@@ -214,13 +184,12 @@ func _describe_building(definition: BuildingDefinition) -> String:
 	lines.append(_describe_effect(definition))
 	return "\n".join(lines)
 
-## The "what it actually does" line — production (resource amounts),
-## training (and what kind of units), and housing all read directly off the
-## same BuildingDefinition fields the rest of the game already simulates
-## from, so this can't silently drift out of sync with real behavior. Falls
-## back to a plain structural description for the handful of buildings with
-## none of the above (Town Hall, Watchtower, Ammo Dump, ...) so a card is
-## never left with a blank third line.
+## The "what it actually does" line — production/training/housing all read
+## directly off the same BuildingDefinition fields the rest of the game
+## simulates from, so this can't drift out of sync with real behavior.
+## Falls back to a plain structural description for buildings with none of
+## the above (Town Hall, Watchtower, Ammo Dump, ...) so a card is never
+## left with a blank third line.
 func _describe_effect(definition: BuildingDefinition) -> String:
 	var parts: Array[String] = []
 	for resource_type in definition.daily_output:
@@ -241,26 +210,19 @@ func _describe_effect(definition: BuildingDefinition) -> String:
 		return "Extends vision"
 	return "Support structure"
 
-## "does it produce units and if so what kind" (user request) — a compact
-## ROLE summary (Melee/Ranged/Special), not every individual unit's own
-## display name. **Real bug fix (playtest round 5: "the mini map no longer
-## appears anywhere"):** the original version joined ALL ~18
-## `UnitCatalog.get_all_definitions()` display names into one line — for
-## Garrison specifically (today's only `can_train_units` building) that
-## single wrapped Label came out ~580px tall (confirmed via a live debug
-## print), which forced the WHOLE bottom bar — build menu AND the minimap
-## sharing the same row — far past its intended `BOTTOM_BAR_HEIGHT`,
-## silently squeezing the minimap out of any renderable space (a Control's
-## `size` can never go below its own computed minimum). The full roster is
-## still genuinely visible, per-unit, with real art/cost/upkeep, the moment
-## a `can_train_units` building is actually selected (`UnitPanelView`'s own
-## training grid) — this card only needs to answer "what KIND", which a
-## short role list does without the runaway height. Every `can_train_units`
-## building trains off the SAME UnitCatalog roster today (UnitManager.
-## train_unit() takes no building-specific filter — see UnitPanelView's own
-## training-button loop, which iterates get_all_definitions() the identical
-## way), so this is genuinely accurate for Garrison and any future
-## can_train_units building alike, not a Garrison-specific guess.
+## A compact ROLE summary (Melee/Ranged/Special), not every individual
+## unit's own display name — joining all ~18 UnitCatalog.get_all_definitions()
+## display names into one line for Garrison used to render a ~580px-tall
+## wrapped Label, forcing the whole bottom bar (build menu AND minimap
+## sharing the same row) past its intended BOTTOM_BAR_HEIGHT and squeezing
+## the minimap out of any renderable space (a Control's size can never go
+## below its own computed minimum). The full roster is still visible,
+## per-unit, with real art/cost/upkeep, the moment a can_train_units
+## building is selected (UnitPanelView's own training grid) — this card
+## only needs to answer "what KIND". Every can_train_units building trains
+## off the SAME UnitCatalog roster today (UnitManager.train_unit() takes no
+## building-specific filter), so this is accurate for Garrison and any
+## future can_train_units building alike.
 func _trainable_unit_roles() -> String:
 	var role_names: Array[String] = []
 	for unit_definition in UnitCatalog.get_all_definitions():
@@ -290,11 +252,10 @@ func _visible_definitions(category: GameEnums.BuildingCategory) -> Array[Buildin
 func _on_building_button_pressed(building_type: GameEnums.BuildingType) -> void:
 	building_selected.emit(building_type)
 
-## Maps to the string keys HUDStyles.category_card_colors() actually
-## understands — kept as its own small function (not folded into
-## _category_name()) since the two mappings could diverge in principle
-## (a future category might want a display name but reuse another
-## category's color scheme) even though today they're 1:1.
+## Maps to the string keys HUDStyles.category_card_colors() understands —
+## kept separate from _category_name() since the two mappings could
+## diverge in principle (a future category might want a display name but
+## reuse another category's color scheme) even though today they're 1:1.
 func _category_color_key(category: GameEnums.BuildingCategory) -> String:
 	match category:
 		GameEnums.BuildingCategory.HOUSING_CIVIL:
