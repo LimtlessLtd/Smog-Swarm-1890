@@ -1,10 +1,10 @@
 class_name UnitCatalog
 extends RefCounted
 
-## Static seed data for the design doc's decided 18-unit roster (Phase 5.4)
-## — plays the same "single source of truth, built lazily and cached" role
-## for units that BuildingCatalog plays for buildings, kept separate from
-## UnitManager (the runtime system that trains/tracks instances).
+## Static seed data for the 18-unit roster — plays the same "single source
+## of truth, built lazily and cached" role for units that BuildingCatalog
+## plays for buildings, kept separate from UnitManager (the runtime system
+## that trains/tracks instances).
 ##
 ## get_definition() is expected to be called on every training attempt (and
 ## by CombatEngine on every attack resolution), so definitions are built

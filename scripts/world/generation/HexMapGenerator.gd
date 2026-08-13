@@ -3,10 +3,8 @@ extends RefCounted
 
 ## Builds the full HexCell grid in five passes:
 ##   1. Landmass     — every hex in bounds defaults to OCEAN; hexes inside
-##                      BritishGeographyData's landmass silhouette (design
-##                      doc, user request: "ensure our hex tile map is
-##                      representative of the entire UK and Ireland") get
-##                      a REAL biome/elevation instead, sampled from open
+##                      BritishGeographyData's landmass silhouette get a
+##                      REAL biome/elevation instead, sampled from open
 ##                      geographic data (RealTerrainSampler — OpenStreetMap
 ##                      land-cover + AWS/Mapzen elevation, baked offline by
 ##                      tools/geo_bake/bake_landcover.py) via
