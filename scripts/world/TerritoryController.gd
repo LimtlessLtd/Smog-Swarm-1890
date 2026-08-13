@@ -1,38 +1,33 @@
 class_name TerritoryController
 extends Node
 
-## Design doc Phase 5.8: the missing mechanism that lets a District's
-## is_contested flag flip during actual play — DistrictPartitioner (Phase 1)
-## only ever sets it once, at map generation, and nothing since has ever
-## changed it.
+## The mechanism that lets a District's is_contested flag flip during
+## actual play — DistrictPartitioner only ever sets it once, at map
+## generation.
 ##
-## **Loss trigger, decided here:** a hex's safe (non-`UNCLEARED_WILDERNESS`)
-## districts flip to contested the moment a `BuildingInstance` ON THAT HEX
-## is ruined (Phase 5.12's `BuildingManager.building_ruined`) while at least
-## one `Horde` currently occupies the hex. "A zombie assault overwhelms
-## whatever's defending it" (design doc) made concrete: an actual building
-## being destroyed IS the overwhelm event, not merely an undefended horde
-## passing through — ties Loss directly to Building Ruins rather than a
-## vaguer "no unit present" instant-flip, which would make territory
-## flicker contested on every momentary undefended visit that never
-## actually cost the player anything.
+## Loss trigger: a hex's safe (non-UNCLEARED_WILDERNESS) districts flip to
+## contested the moment a BuildingInstance ON THAT HEX is ruined
+## (BuildingManager.building_ruined) while at least one Horde currently
+## occupies the hex — an actual building being destroyed IS the overwhelm
+## event, not merely an undefended horde passing through, so territory
+## doesn't flicker contested on every momentary undefended visit that
+## never actually cost the player anything.
 ##
-## **Recapture trigger, decided here:** a hex this controller flipped
-## reverts to safe once no `Horde` occupies it any longer — "once the
-## player clears it of zombies" (design doc) is the literal, sole
-## condition; no rebuild/repair requirement. Checked off `HordeManager.
-## horde_moved` (the hex a horde just LEFT may now be clear) and
-## `horde_removed` (a horde destroyed while sitting on a previously-lost hex).
+## Recapture trigger: a hex this controller flipped reverts to safe once no
+## Horde occupies it any longer — no rebuild/repair requirement. Checked
+## off HordeManager.horde_moved (the hex a horde just LEFT may now be
+## clear) and horde_removed (a horde destroyed while sitting on a
+## previously-lost hex).
 ##
-## Losing/regaining a safe district changes what `LogisticsNetwork.
-## _has_secured_ground()` sees (`HexCell.get_safe_districts()`) —
-## `district_state_changed` is a plain signal `LogisticsNetwork` itself
+## Losing/regaining a safe district changes what
+## LogisticsNetwork._has_secured_ground() sees (HexCell.get_safe_districts())
+## — district_state_changed is a plain signal LogisticsNetwork itself
 ## subscribes to and recomputes off, the same "recompute on the signal"
-## precedent every other manager here already follows, rather than this
-## class reaching into `LogisticsNetwork`'s recompute() directly.
+## precedent every other manager here follows, rather than this class
+## reaching into LogisticsNetwork's recompute() directly.
 ##
-## Only ever flips districts it itself flipped (`_lost_hexes` bookkeeping)
-## — a hex that started fully wild with no safe district to begin with is
+## Only ever flips districts it itself flipped (_lost_hexes bookkeeping) —
+## a hex that started fully wild with no safe district to begin with is
 ## never touched, and recapture never has to guess which districts "should"
 ## be safe again versus were already correctly safe/contested for some
 ## other reason.
@@ -119,12 +114,11 @@ func _flip_to_safe(coord: Vector2i) -> void:
 	district_state_changed.emit(coord, false)
 	territory_recaptured.emit(coord)
 
-## Exposed for SaveLoadManager (Phase 2.8) — see ReclamationManager's own
-## doc comment for the precedent: Phase 2.8.1's "terrain regenerates
-## byte-identically from a fixed seed, no saving needed" baseline doesn't
-## hold once this class can mutate a live HexCell's district state, so
-## which hexes are territorially lost is the one piece of district state
-## that actually needs persisting.
+## Exposed for SaveLoadManager — see ReclamationManager's own doc comment
+## for the precedent: "terrain regenerates byte-identically from a fixed
+## seed, no saving needed" doesn't hold once this class can mutate a live
+## HexCell's district state, so which hexes are territorially lost is the
+## one piece of district state that actually needs persisting.
 func get_save_state() -> Dictionary:
 	var result: Array[Vector2i] = []
 	result.assign(_lost_hexes.keys())

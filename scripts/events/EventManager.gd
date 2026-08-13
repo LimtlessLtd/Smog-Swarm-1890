@@ -1,54 +1,50 @@
 class_name EventManager
 extends Node
 
-## Design doc Phase 6.2's shared event queue — "typed event records (source
-## hex, category, severity, message)" that every alert source registers
-## against instead of each downstream consumer (AlertManager's audio/
-## auto-pause, MainHUD's toast, StrategicOverlayManager's pulsing
-## under-attack marker — Phase 2.7.5) wiring its own bespoke signal to every
-## individual source. Sits ABOVE BuildingManager/WallManager/
-## CombatCoordinator/TerritoryController/ResourceManager/
+## Shared event queue — typed event records (source hex, category,
+## severity, message) that every alert source registers against instead of
+## each downstream consumer (AlertManager's audio/auto-pause, MainHUD's
+## toast, AttackAlertRenderer's pulsing under-attack marker) wiring its own
+## bespoke signal to every individual source. Sits ABOVE BuildingManager/
+## WallManager/CombatCoordinator/TerritoryController/ResourceManager/
 ## StrategicOverlayManager, the same "orchestration layer reads from many,
-## referenced by none of them" role CombatCoordinator/FogOfWarManager
-## already play over what THEY sit above — none of the six managers below
-## know this class exists.
+## referenced by none of them" role CombatCoordinator/FogOfWarManager play
+## over what THEY sit above — none of the six managers below know this
+## class exists.
 ##
-## Wired sources today, matching design doc Phase 6.2/2.7.5 exactly:
+## Wired sources:
 ##   - WallManager.wall_segment_breached -> COMBAT/CRITICAL.
 ##   - CombatCoordinator.engagement_resolved -> COMBAT/CRITICAL if the unit
-##     was destroyed, COMBAT/WARNING otherwise — "if a unit is under attack".
+##     was destroyed, COMBAT/WARNING otherwise.
 ##   - BuildingManager.building_ruined -> COMBAT/CRITICAL.
 ##   - TerritoryController.territory_lost -> TERRITORY/CRITICAL;
 ##     territory_recaptured -> TERRITORY/INFO (good news doesn't need to
 ##     interrupt play — see AlertManager's own doc comment on what INFO
 ##     means for auto-pause).
 ##   - StrategicOverlayManager.horde_spotted -> COMBAT/CRITICAL, but only
-##     for hordes StrategicOverlayManager already deemed marker-worthy
-##     (size >= HORDE_MARKER_MIN_SIZE, Phase 2.7.6/5.10's own threshold) —
-##     reusing that filter for free rather than re-deriving "is this horde
+##     for hordes already deemed marker-worthy (size >= HordeMarkerRenderer.MIN_SIZE)
+##     — reusing that filter rather than re-deriving "is this horde
 ##     dangerous enough to interrupt play" a second time here.
 ##   - BuildingManager.food_satisfaction_changed -> ECONOMY event on
-##     crossing INTO a worse band (100% / 75% / 50%, Phase 2.10.2's own
-##     thresholds), not re-raised every day it stays there; the tracker
-##     resets once satisfaction recovers back to >= 100%, so a future
-##     decline can raise again.
+##     crossing INTO a worse band (100% / 75% / 50%), not re-raised every
+##     day it stays there; the tracker resets once satisfaction recovers
+##     back to >= 100%, so a future decline can raise again.
 ##   - ResourceManager.upkeep_shortfall -> ECONOMY/WARNING on the transition
 ##     INTO shortfall for that resource type (not re-raised every day it
 ##     stays short); ResourceManager.resources_changed clears the tracked
 ##     flag once that resource's stockpile rises back above zero.
 ##
 ## GameEnums.EventCategory.UNREST/NARRATIVE exist as documented, unused
-## hooks for Phase 2.11's Discontent and Phase 7.2's still-nonexistent
-## CampaignManager — see that enum's own doc comment.
+## hooks for Discontent and a future CampaignManager — see that enum's own
+## doc comment.
 
 signal event_raised(event: GameEvent)
 
 const MAX_HISTORY: int = 50
 
-## Phase 2.10.2's own thresholds, mirrored here rather than re-derived from
-## BuildingManager — crossing DOWN into a worse band raises an event;
-## recovering to >= 1.0 resets the tracker so a future decline can raise
-## again.
+## Mirrored here rather than re-derived from BuildingManager — crossing
+## DOWN into a worse band raises an event; recovering to >= 1.0 resets the
+## tracker so a future decline can raise again.
 const FOOD_BAND_HUNGRY: float = 1.0
 const FOOD_BAND_SEVERE: float = 0.75
 const FOOD_BAND_STARVING: float = 0.5

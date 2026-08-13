@@ -1,13 +1,13 @@
 class_name MainMenuView
 extends Control
 
-## Boot-screen title menu (playtest round 6, user request: "There should be
-## a 'Main Menu' that has all the save/load functionality on it, it should
-## also have all the display options... it should also have options for
-## 'New Game' and 'Exit'.") — `project.godot`'s new `run/main_scene`
-## (MainMenu.tscn, a single Control node with this script; every child
-## built in code, same "no editor session to lay out a Control tree by
-## hand" convention MainHUD's own header comment already documents).
+## Boot-screen title menu — "There should be a 'Main Menu' that has all the
+## save/load functionality on it, it should also have all the display
+## options... it should also have options for 'New Game' and 'Exit'" (user
+## feedback). `project.godot`'s `run/main_scene` (MainMenu.tscn, a single
+## Control node with this script; every child built in code, same "no
+## editor session to lay out a Control tree by hand" convention MainHUD's
+## own header comment documents).
 ##
 ## Owns a private, UNWIRED SaveLoadManager purely for
 ## get_campaign_names()/get_slot_names() (plain `user://saves` directory
