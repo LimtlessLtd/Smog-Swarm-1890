@@ -1,4 +1,4 @@
-# Technical Specifications & Game Design Document: The Smog & The Swarm (1890s-1920s Era Post-Zombie Apocalypse Industrial Revolution British Empire) - v4.4
+# Technical Specifications & Game Design Document: The Smog & The Swarm (1890s-1920s Era Post-Zombie Apocalypse Industrial Revolution British Empire) - v4.5
 
 ---
 
@@ -225,17 +225,17 @@ The map covers the British Isles (Ireland and Great Britain) using a two-tier 2D
 
 Rather than using complex 3D terrain meshes, height is managed via discrete 2D integer flags (`height_level` 0 to 4) assigned to map coordinates:
 
-* **Level 0 — Sea-level:** The lowest level possible, sea level should be applied to everywhere the sea biome is present, it is the lowest possible elevation.
+* **Level 0 — Sea-level:** The lowest level possible, sea level should be applied everywhere the sea biome is present.
 * **Level 1 — Lowland:** Standard baseline elevation. No vision or range modifiers.
 * **Level 2 — Hill:** Minor elevated terrain.
-  * **Combat Bonus:** +15% Range and Line of Sight (LoS) for ranged units targeting Level 0 or 1.
+  * **Combat Bonus:** +15% Weapon Firing Range and +15% Line of Sight (LoS) targeting Level 0 or 1.
   * **Movement:** Standard biome rules apply.
 * **Level 3 — Highland:** Major elevated terrain.
-  * **Combat Bonus:** +25% Range and Line of Sight (LoS) for ranged units targeting Level 0, 1 or 2.
+  * **Combat Bonus:** +25% Weapon Firing Range and +25% Line of Sight (LoS) targeting Level 0, 1, or 2.
   * **LoS Block:** Occludes vision to lower elevation tiles directly behind it.
 * **Level 4 — Mountain:** Extreme peak elevation.
   * **Passability:** **IMPASSABLE** for all ground units, vehicles, and zombies.
-  * **LoS Block:** Completely blocks all Line of Sight and projectable vision across its boundary.
+  * **LoS Block:** Completely opaque; blocks all Line of Sight and projectable vision across its boundary regardless of viewer elevation.
 
 ---
 
@@ -256,7 +256,7 @@ Map generation uses real-world open geospatial data, pre-processed and "baked" i
 #### Input Sources
 * **Topography (Elevation):** NASA SRTM / Copernicus DEM (30m elevation data converted into 0–4 integer elevation masks and vector cliff boundaries).
 * **Land Cover (Biomes):** CORINE Land Cover / Copernicus land use data (historical forest, wetland, moorland distributions).
-* **Hydrology & Infrastructure:** OpenStreetMap (OSM) vector data (natural river channels, coastlines, historical road/rail routes). Applied last so rivers, coastlines, roads, rails and canals are formed correctly on top of the map and not overwritten by other sweeps.
+* **Hydrology & Infrastructure:** OpenStreetMap (OSM) vector data (natural river channels, coastlines, historical road/rail routes). Applied last so rivers, coastlines, roads, rails, and canals are formed correctly on top of the map and not overwritten by other sweeps.
 * **Geology (Resource Nodes):** British Geological Survey (BGS) & Geological Survey Ireland (GSI) spatial data (coal seams, iron ore veins, limestone deposits).
 
 #### Baking Process
@@ -273,9 +273,9 @@ Map generation uses real-world open geospatial data, pre-processed and "baked" i
 Vision uses a **2D Symmetric Shadowcasting** algorithm calculated from the unit's tile origin out to its maximum Vision Radius.
 
 #### Elevation Interaction
-* **Height Advantage (+1 Tile Radius per level):** Units on a higher `height_level` gain +1 tile vision radius per elevation level above the target tile.
+* **Vision Advantage (+1 Tile Radius per level):** Units on a higher `height_level` gain +1 tile vision radius per elevation level above the target tile. (Note: Percentage range bonuses apply specifically to weapon firing distances as defined in Sec 5).
 * **Occlusion Rules:**
-  * **Level 3 (Mountain):** Completely opaque. Blocks all LoS, rays, and vision fields regardless of viewer elevation.
+  * **Level 4 (Mountain):** Completely opaque. Blocks all LoS, rays, and vision fields regardless of viewer elevation.
   * **Level N Obstacle:** Occludes all tiles behind it that have an elevation lower than Level N, unless the viewer is on an elevation higher than Level N.
 * **Biome Vision Modifiers:**
   * **Woodland:** 50% Vision Penetration. Vision range looking into or through Woodland is reduced by 50%.
@@ -322,7 +322,7 @@ Each action emits an acoustic impulse with a specific base radius (`R_sound` in 
 #### Sound Attenuation Rules
 * **Open Terrain / Waterways:** Sound travels at 100% nominal distance.
 * **Woodland / Structures / Walls:** Dampens sound propagation by -2 tiles per obstacle tile traversed.
-* **Elevation Barriers (Level 2/3):** Level 3 Mountains block sound completely. Level 2 Highlands reduce sound propagation radius by 50%.
+* **Elevation Barriers (Level 2/3):** Level 4 Mountains block sound completely. Level 2/3 Highlands reduce sound propagation radius by 50%.
 
 ---
 
@@ -350,7 +350,10 @@ Zombies process sensory inputs through a prioritized 4-state behavioral logic tr
 
 * **State 4: Swarm Vector (Horde Cascading)**
   * **Base Behavior:** Broadcasts a 3-tile radial Pheromone Pulse every 1.0 second.
-  * **Cascade Effect:** Any Idle or Investigating zombies touching this pulse immediately force-transition to **Aggro / Chase** targeting the same location, initiating a chain-reaction horde surge.
+  * **Cascade Attenuation Rules:**
+    * **Line-of-Sight Check:** Pulse only triggers nearby zombies if unblocked by Level 4 Mountain terrain or solid fortifications.
+    * **Hop Depth Limit:** Pheromone pulse cascade depth is capped at **3 max hops** (originating zombie -> Hop 1 -> Hop 2 -> Hop 3) to prevent runaway map-wide loops.
+    * **Cooldown:** Each zombie has a 5.0-second cooldown on triggering or re-broadcasting a Swarm Vector pulse.
 
 ---
 
@@ -359,7 +362,7 @@ Zombies process sensory inputs through a prioritized 4-state behavioral logic tr
 To handle thousands of active zombies and pathing/perception calls at high performance:
 
 #### Spatial Hash Grid & Bitmask Layers
-* **Spatial Partitioning:** The tactical view map is divided into 16 x 16 tile spatial hash buckets to instantly retrieve units and sound events within perception queries.
+* **Spatial Partitioning:** The tactical view map is divided into 16 x 16 tile spatial hash buckets (160m × 160m) to instantly retrieve units and sound events within perception queries.
 * **Light & Sound Grid (Bitfield Matrix):**
   * Light and Noise levels are calculated on a coarse grid overlaid on the tile map.
   * `LightMap[x][y]` stores a single `uint8` illumination value (0-255).
@@ -370,8 +373,9 @@ To optimize CPU usage during large horde events:
 * **Distance-Based Ticking:**
   * **Off-screen / Far (>50 tiles from player):** AI state evaluated once every 2.0s.
   * **Mid-range (20-50 tiles):** AI state evaluated once every 0.5s.
-  * **Combat Range (<20 tiles):** AI state evaluated every frame (16ms / 60Hz).
+  * **Combat Range (<20 tiles):** AI state evaluated every frame (16ms / 60Hz). Fits within 1-2 spatial hash bucket queries.
 
+---
 
 ## 7. Technical Glossary & Spatial Specifications
 
@@ -387,19 +391,20 @@ To eliminate ambiguity between macro strategy and micro tactics, spatial dimensi
 * **Tactical Tile (Operational View Cell):**
   * **Dimensions:** Uniform 10 m x 10 m square grid cell.
   * **Scale Conversion:** 1 Strategic Hex ≈ 500 x 500 Tactical Tiles in bounding area.
+  * **Movement Velocity:** Unit movement rates use floating-point sub-tile velocities (tiles/sec) rather than integer steps (e.g., standard infantry walking at ~5 km/h translates to ~0.14 tiles/sec) to ensure smooth interpolation.
   * **Purpose:** Fundamental atomic unit for pathfinding, building placement, weapon ranges, collision detection, and LoS shadowcasting.
 
 ---
 
 ### Core Technical Definitions
 
-* **Tile:** The atomic 10 m x 10 m square grid coordinate (x, y) in Tactical View. All unit speeds, vision radii, explosion effects, and building footprints are measured in integers or floats of Tiles (e.g., 1 Tile/sec = 36 km/h).
+* **Tile:** The atomic 10 m x 10 m square grid coordinate (x, y) in Tactical View. All unit speeds, vision radii, explosion effects, and building footprints are measured in tiles.
 
 * **Splatmap / Biome Weightmap:** A resolution-independent 2D texture array mapping normalized float values (0.0 to 1.0) for each biome type per coordinate. Used to render smooth visual transitions and compute exact weighted movement penalties at sub-tile resolution.
 
-* **Logical Height Level (`height_level`):** An integer byte flag (0, 1, 2, or 3) assigned per 10 m x 10 m tile. Controls vision occlusion, range bonuses, and passability without requiring 3D mesh height calculations.
+* **Logical Height Level (`height_level`):** An integer byte flag (`uint8`: 0, 1, 2, 3, or 4) assigned per 10 m x 10 m tile. Controls vision occlusion, range bonuses, and passability without requiring 3D mesh height calculations.
 
-* **Zone of Control (ZoC):** A strategic and tactical supply aura centered on key infrastructure. Graphically represented on the World View as a 5 km x 5 km area. Unlocks local building placement and seamlessly connects resources to global logistics pools.
+* **Zone of Control (ZoC):** A strategic and tactical supply aura centered on key infrastructure. Graphically represented on the World View as a 5 km x 5 km circle area. Unlocks local building placement and seamlessly connects resources to global logistics pools.
 
 * **Symmetric Shadowcasting:** A grid-based 2D Line of Sight (LoS) algorithm that casts light rays outward from a tile center to determine visible vs. occluded tiles in O(N) time, where N is the number of tiles in the vision radius.
 
@@ -409,4 +414,4 @@ To eliminate ambiguity between macro strategy and micro tactics, spatial dimensi
 
 * **Spatial Hash Bucket:** A 16 x 16 Tile grid partition (160 m x 160 m) used by the engine to chunk entity spatial data, allowing rapid proximity queries without iterating over every unit on the map.
 
-* **Pheromone Pulse:** A recurring 3-Tile radial event broadcasted by active *Aggro* zombies that forces adjacent *Idle* or *Investigating* zombies to immediately acquire the same target vector.
+* **Pheromone Pulse:** A recurring 3-Tile radial event broadcasted by active *Aggro* zombies that forces adjacent *Idle* or *Investigating* zombies to acquire the target vector (bounded by a 3-hop cascade depth limit and 5s cooldown).
