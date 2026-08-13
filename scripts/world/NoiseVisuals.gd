@@ -1,8 +1,8 @@
 class_name NoiseVisuals
 extends RefCounted
 
-## Shared placeholder color/intensity lookup for the Threat Meter (design
-## doc Phase 6.1) — same "*Visuals.gd" convention `BuildingVisuals`/
+## Shared placeholder color/intensity lookup for the Threat Meter — same
+## "*Visuals.gd" convention `BuildingVisuals`/
 ## `TerrainVisuals`/`FogVisuals`/`WallVisuals` already established, so a
 ## color choice doesn't silently drift between the Threat Meter's two
 ## surfaces: `StrategicOverlayManager`'s world-view markers and

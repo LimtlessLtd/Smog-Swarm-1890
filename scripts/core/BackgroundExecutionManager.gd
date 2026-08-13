@@ -6,10 +6,9 @@ extends Node
 ## singletons already provide a global identifier and Godot forbids a script
 ## class_name from shadowing it.
 ##
-## "The Smog & The Swarm" is designed to keep simulating while the player has
-## tabbed away — this is the one piece of Phase 1.1 responsible for making
-## that cheap: it throttles the render framerate while the window is
-## unfocused/minimized, and deliberately touches nothing else (no
+## "The Smog & The Swarm" is designed to keep simulating while the player
+## has tabbed away — this throttles the render framerate while the window
+## is unfocused/minimized, and deliberately touches nothing else (no
 ## `get_tree().paused`, no bus muting), so simulation ticks and audio keep
 ## running exactly as they would in the foreground.
 

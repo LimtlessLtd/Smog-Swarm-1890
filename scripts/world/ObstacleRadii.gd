@@ -1,15 +1,14 @@
 class_name ObstacleRadii
 extends RefCounted
 
-## Design doc, user request (local obstacle avoidance for continuous
-## movement) — neither `PropInstance` (scripts/world/data/PropInstance.gd)
-## nor `BuildingInstance` (scripts/buildings/data/BuildingInstance.gd) has
-## a collision-radius field of its own (props are placed for pure visual
-## scatter, buildings for placement/ZoC/combat — neither needed a physical
-## footprint before now). Same "shared lookup, swappable later" convention
-## as `BuildingVisuals`/`TerrainVisuals`/`FogVisuals` — placeholder
-## balancing numbers, not an architecture decision, same framing as every
-## other constant table in this project. Consumed by `MovementStepper`'s
+## Local obstacle avoidance for continuous movement — neither `PropInstance`
+## (scripts/world/data/PropInstance.gd) nor `BuildingInstance`
+## (scripts/buildings/data/BuildingInstance.gd) has a collision-radius
+## field of its own (props are placed for pure visual scatter, buildings
+## for placement/ZoC/combat — neither needed a physical footprint before
+## now). Same "shared lookup, swappable later" convention as
+## `BuildingVisuals`/`TerrainVisuals`/`FogVisuals` — placeholder balancing
+## numbers, not an architecture decision. Consumed by `MovementStepper`'s
 ## callers (`UnitOrderController`/`HordeManager`) when gathering obstacles
 ## for `steer_around_obstacles()`.
 
@@ -26,20 +25,15 @@ const PROP_RADIUS: Dictionary = {
 }
 
 ## Bounding circle of `TacticalHexView.BUILDING_HALF_SIZE`'s real-scale
-## building box (half-extent 5.128 -> center-to-corner half-diagonal
-## ~7.25), rounded up for clearance. **This constant had silently drifted
-## out of sync with the real box size across TWO prior building-box resizes
-## before this one (10 -> 35 -> 70, this comment still describing the
-## original 10) — re-synced now, not just for this pass's own resize.**
-## One flat radius for every building type — today's placement footprint
-## doesn't vary by category, so neither does this.
+## building box, rounded up for clearance. One flat radius for every
+## building type — placement footprint doesn't vary by category.
 ##
-## **Re-synced again (user report: "increase the size of the buildings by
-## 4x")** — TacticalHexView.BUILDING_SIZE_MULTIPLIER scaled the box itself
-## 4x (half-extent 5.128 -> 20.512, half-diagonal ~7.25 -> ~29.0); this
-## constant is the exact same "rounded up for clearance" relationship
-## re-applied at the new size, not a fresh guess, so it doesn't repeat the
-## drift this doc comment already warns about.
+## Re-synced per user report "increase the size of the buildings by 4x" —
+## TacticalHexView.BUILDING_SIZE_MULTIPLIER scaled the box itself 4x
+## (half-extent 5.128 -> 20.512, half-diagonal ~7.25 -> ~29.0); this
+## constant is the same "rounded up for clearance" relationship re-applied
+## at the new size. Keep this synced to BUILDING_HALF_SIZE on any future
+## building-box resize — it has drifted out of sync before.
 const BUILDING_RADIUS: float = 30.0
 
 ## `.get(prop_type, ...)` with a sane fallback so a future GameEnums.PropType

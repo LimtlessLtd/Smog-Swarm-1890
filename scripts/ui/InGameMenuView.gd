@@ -1,16 +1,15 @@
 class_name InGameMenuView
 extends Panel
 
-## In-game pause/menu hub (playtest round 6, user request: "There should
-## be a 'Main Menu' that has all the save/load functionality on it... put
-## [display options] as options on the main menu... remove them from the
-## main screen") — replaces MainHUD's old always-visible top-right
-## "Quick Save"/"Quick Load"/"Browse Saves..."/"Display..." buttons with a
-## single "Menu" button that opens this hub instead. Deliberately a dumb
-## signal-emitting view, same convention as SaveLoadView/DisplayOptionsView
-## — MainHUD still owns the actual Save/Load/Display panels and the scene
-## changes (Quit to Main Menu / Exit), this class just asks for them.
-## Fourth centered toggleable panel to follow SaveLoadView's own
+## In-game pause/menu hub. "There should be a 'Main Menu' that has all the
+## save/load functionality on it... put [display options] as options on
+## the main menu... remove them from the main screen" (user request) —
+## replaces MainHUD's old always-visible top-right "Quick Save"/"Quick
+## Load"/"Browse Saves..."/"Display..." buttons with a single "Menu" button
+## that opens this hub instead. A dumb signal-emitting view, same
+## convention as SaveLoadView/DisplayOptionsView — MainHUD still owns the
+## actual Save/Load/Display panels and the scene changes (Quit to Main
+## Menu / Exit), this class just asks for them. Follows SaveLoadView's own
 ## established shape (get_content_min_size()/open()/close()).
 
 signal save_load_requested

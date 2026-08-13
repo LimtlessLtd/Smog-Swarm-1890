@@ -1,21 +1,21 @@
 class_name ReclamationManager
 extends Node
 
-## Victorian Infrastructure Reclamation (design doc Phase 4.2) — the swamp/
+## Victorian Infrastructure Reclamation — the swamp/
 ## peat-bog-draining half specifically. The "rebuild destroyed stone
 ## bridges, steam railways, and canal locks to restore interrupted supply
 ## routes" half doesn't need new state: SupplyLineSegment's own doc comment
 ## already calls out that reclaiming a severed line "just flips is_severed
-## back off" — LogisticsNetwork.restore_segment_between() (Phase 2.3)
+## back off" — LogisticsNetwork.restore_segment_between()
 ## already does exactly that. This class adds the missing piece: a
 ## resource-costed player action wrapping it (repair_supply_line() below),
 ## since restore_segment_between() itself is a free instant toggle meant for
 ## other systems (e.g. a future "cleared the zombies off this segment"
 ## trigger), not a costed reconstruction action.
 ##
-## Wall fortification/siege-survival cascade logic (the rest of design doc
-## 4.2) is entirely Phase 5's job (combat, hordes, garrisoned units) — none
-## of that exists yet, so it isn't attempted here.
+## Wall fortification/siege-survival cascade logic (the rest of the design
+## doc's Reclamation section) depends on combat, hordes, and garrisoned
+## units — none of that exists yet, so it isn't attempted here.
 
 signal swamp_drained(coord: Vector2i)
 signal drain_rejected(coord: Vector2i, reason: String)
@@ -30,17 +30,17 @@ var _hex_grid_map: HexGridMap
 var _resource_manager: ResourceManager
 var _logistics_network: LogisticsNetwork
 
-## Design doc 2.8.1's "terrain does not need saving, fixed noise seeds
-## regenerate it byte-identically" stopped being entirely true the moment
-## this class could mutate a live HexCell — a drained swamp needs to STAY
+## The "terrain does not need saving, fixed noise seeds regenerate it
+## byte-identically" rule stopped being entirely true the moment this
+## class could mutate a live HexCell — a drained swamp needs to STAY
 ## drained across a full app close/reopen (a fresh boot regenerates
 ## pristine terrain from the seed before any save is loaded), so which
-## hexes were drained is the one piece of terrain state this phase actually
-## needs to persist. See get_save_state()/load_save_state().
+## hexes were drained is the one piece of terrain state this system
+## actually needs to persist. See get_save_state()/load_save_state().
 var _drained_hexes: Dictionary = {}  # Vector2i -> true
 
-## Design doc: exact numbers are a balancing pass, not an architecture
-## decision — same framing as every other placeholder constant table in
+## Exact numbers are a balancing pass, not an architecture decision — same
+## framing as every other placeholder constant table in
 ## this project. Draining a Fenland basin is real Victorian civil
 ## engineering, priced as a deliberate, weighty investment (compare to a
 ## Tenant Farm's 30 Wood) rather than a casual one.
@@ -155,7 +155,7 @@ func repair_supply_line(hex_a: Vector2i, hex_b: Vector2i) -> bool:
 	supply_line_repaired.emit(hex_a, hex_b)
 	return true
 
-## Exposed for SaveLoadManager (Phase 2.8) — see _drained_hexes' own doc
+## Exposed for SaveLoadManager — see _drained_hexes' own doc
 ## comment for why this is the one piece of terrain state that needs
 ## persisting. Supply line repairs need no equivalent: they just flip
 ## SupplyLineSegment.is_severed on an existing segment, and that field is

@@ -1,16 +1,16 @@
 class_name DayPhaseView
 extends HBoxContainer
 
-## The day counter + Victorian calendar date (TimeCycleManager, Phase 5.1) +
-## Day/Night phase countdown clock ("Nightfall in 04:15") — split out of
-## `TimeControlsView` (user request, playtest round 5: "messages at the top
-## of the screen overlap on the date and day/night countdown... move the
-## date and day/night countdown to the bottom right please above where the
-## minimap is"). `TimeControlsView` keeps the speed buttons in their
-## existing top-right spot; this view is everything ELSE it used to show,
-## now living bottom-right, stacked directly above `MinimapView` in
-## `MainHUD`'s own bottom-right corner instead of sharing a crowded top-right
-## row with the mode/recon label strip above the resource bar.
+## The day counter + Victorian calendar date (TimeCycleManager) + Day/Night
+## phase countdown clock ("Nightfall in 04:15") — split out of
+## `TimeControlsView`. "Messages at the top of the screen overlap on the
+## date and day/night countdown... move the date and day/night countdown to
+## the bottom right please above where the minimap is" (user request).
+## `TimeControlsView` keeps the speed buttons in their existing top-right
+## spot; this view is everything else it used to show, now living
+## bottom-right, stacked directly above `MinimapView` in `MainHUD`'s own
+## bottom-right corner instead of sharing the top-right row with the
+## mode/recon label strip above the resource bar.
 
 const COUNTDOWN_REFRESH_SECONDS: float = 1.0  ## No need to update a mm:ss label every single frame.
 

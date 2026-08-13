@@ -1,13 +1,14 @@
 class_name PropVisuals
 extends RefCounted
 
-## Lazily-loaded, cached lookup for real prop-species art (user request,
-## this pass — see `assets/props/README.md`) — same `ResourceLoader.exists()`
-## -gated-null pattern every other `*Visuals.gd` in this project follows.
-## Only consulted at MEDIUM/HIGH Tactical fidelity — LOW's uniform blob
-## (`TacticalHexView._low_fidelity_blob()`) stays 100% procedural regardless
-## of art, same "LOW never differentiates by type" call this project already
-## made for units (`TacticalEntityLayer`) and now zombies (`ZombieVisuals`).
+## Lazily-loaded, cached lookup for real prop-species art (see
+## `assets/props/README.md`) — same `ResourceLoader.exists()`-gated-null
+## pattern every other `*Visuals.gd` in this project follows. Only
+## consulted at MEDIUM/HIGH Tactical fidelity — LOW's uniform blob
+## (`TacticalHexView._low_fidelity_blob()`) stays 100% procedural
+## regardless of art, same "LOW never differentiates by type" call this
+## project already made for units (`TacticalEntityLayer`) and zombies
+## (`ZombieVisuals`).
 
 static var _texture_cache: Dictionary = {}  # GameEnums.PropType -> Texture2D (nullable)
 

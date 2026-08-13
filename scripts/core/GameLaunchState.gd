@@ -1,16 +1,17 @@
 extends Node
 
-## Tiny cross-scene handoff (playtest round 6, "There should be a Main
-## Menu that has all the save/load functionality on it") — MainMenuView's
-## boot screen lives in its own scene (MainMenu.tscn, now the project's
-## `run/main_scene`) with no live gameplay systems to load INTO yet, so
+## Tiny cross-scene handoff. "There should be a Main Menu that has all the
+## save/load functionality on it" (user request) — MainMenuView's boot
+## screen lives in its own scene (MainMenu.tscn, the project's
+## `run/main_scene`) with no live gameplay systems to load into yet, so
 ## "Continue"/"Load" there can't call SaveLoadManager.load_game() directly
-## the way the in-game menu's own Save/Load screen does. Instead it records
-## which campaign/slot the player picked here, changes scene to
+## the way the in-game menu's own Save/Load screen does. Instead it
+## records which campaign/slot the player picked here, changes scene to
 ## Main.tscn, and Main.gd's own `_ready()` (guaranteed to run after every
-## sibling manager's `_ready()` — see that script's existing camera-recenter
-## logic for why that ordering matters) consumes it and performs the real
-## load once every manager SaveLoadManager needs actually exists.
+## sibling manager's `_ready()` — see that script's existing
+## camera-recenter logic for why that ordering matters) consumes it and
+## performs the real load once every manager SaveLoadManager needs
+## actually exists.
 ##
 ## Autoload (project.godot), same "tiny piece of state nothing else already
 ## owns" role DisplaySettings already plays — this is genuinely

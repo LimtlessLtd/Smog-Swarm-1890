@@ -1,12 +1,10 @@
 class_name TechManager
 extends Node
 
-## Runtime owner of a campaign's Tech Tree progress (design doc Phase 2.9).
-## Resolves an existing gap noted elsewhere in the doc: Phase 4.1 already
-## assumes wall tiers unlock somehow, and Phase 5.4's unit tiers need the
-## same kind of gate — this is that gate. Wired as a Main.tscn sibling via
-## an exported NodePath, same pattern as every other manager
-## (BuildingManager/LogisticsNetwork/FogOfWarManager/...).
+## Runtime owner of a campaign's Tech Tree progress — gates wall-tier and
+## unit-tier unlocks, which both assume a research gate exists somewhere.
+## Wired as a Main.tscn sibling via an exported NodePath, same pattern as
+## every other manager (BuildingManager/LogisticsNetwork/FogOfWarManager/...).
 ##
 ## The tech *tree* itself (what each node costs/unlocks/requires) lives in
 ## TechCatalog — this class only tracks which nodes a campaign has actually
@@ -31,12 +29,12 @@ var _researched: Dictionary = {}  # StringName -> true
 var _active_tech_id: StringName = &""
 var _days_remaining: int = 0
 
-## Phase 7.2's CampaignManager doesn't exist yet, so Seafaring's extra gate
-## (design doc 2.9.2, decided) is wired here as a plain settable flag rather
-## than a live query against territory state — see TechDefinition's own doc
-## comment. Defaults false, which correctly keeps Seafaring locked until a
-## future CampaignManager calls set_wales_and_scotland_retaken(true) once
-## Phase 5.8's recapture state actually exists to check.
+## No CampaignManager exists yet, so Seafaring's extra gate is wired here
+## as a plain settable flag rather than a live query against territory
+## state — see TechDefinition's own doc comment. Defaults false, which
+## correctly keeps Seafaring locked until a future CampaignManager calls
+## set_wales_and_scotland_retaken(true) once recapture state actually
+## exists to check.
 var _wales_and_scotland_retaken: bool = false
 
 func _ready() -> void:
@@ -44,8 +42,8 @@ func _ready() -> void:
 		_resource_manager = get_node(resource_manager_path)
 	TickManager.day_completed.connect(_on_day_completed)
 
-## Exposed for a future CampaignManager (Phase 7.2) to call once Wales and
-## Scotland are both fully retaken (Phase 5.8) — see class doc comment.
+## Exposed for a future CampaignManager to call once Wales and
+## Scotland are both fully retaken — see class doc comment.
 func set_wales_and_scotland_retaken(value: bool) -> void:
 	_wales_and_scotland_retaken = value
 
@@ -63,7 +61,7 @@ func get_active_tech() -> StringName:
 func get_days_remaining() -> int:
 	return _days_remaining
 
-## Whether unit Tier `tier`'s roster (Phase 5.4) is unlocked. Tier 0 is the
+## Whether unit Tier `tier`'s roster is unlocked. Tier 0 is the
 ## free starting roster (design doc: "this *is* the 'Free Ammo' tier") and is
 ## always considered unlocked, with no tech node to check.
 func is_unit_tier_unlocked(tier: int) -> bool:
@@ -71,7 +69,7 @@ func is_unit_tier_unlocked(tier: int) -> bool:
 		return true
 	return is_researched(StringName("unit_tier_%d" % tier))
 
-## Whether wall Tier `tier` (Phase 4.1; 0=Wooden, 1=Brick, 2=Concrete) is
+## Whether wall Tier `tier` (0=Wooden, 1=Brick, 2=Concrete) is
 ## unlocked. Wooden is the baseline and always unlocked, with no tech node
 ## to check — mirrors is_unit_tier_unlocked()'s tier-0 rule.
 func is_wall_tier_unlocked(tier: int) -> bool:
@@ -85,7 +83,7 @@ func is_wall_tier_unlocked(tier: int) -> bool:
 ## Returns "" if `tech_id` can legally start research right now, or a
 ## human-readable rejection reason otherwise — mirrors
 ## BuildingManager.get_placement_error()'s "queryable without side effects"
-## pattern so a future Tech Tree screen (Phase 2.9.3) can preview legality.
+## pattern so a future Tech Tree screen can preview legality.
 func get_research_error(tech_id: StringName) -> String:
 	var definition := TechCatalog.get_definition(tech_id)
 	if not definition:
@@ -145,11 +143,9 @@ func _on_day_completed(_day_number: int) -> void:
 	_days_remaining = 0
 	tech_researched.emit(finished_id)
 
-## Exposed for SaveLoadManager (Phase 2.8, extending the "future addition to
-## SaveGameData" the design doc flagged before this system existed) —
-## researched set, in-progress node, and its remaining days are the only
-## state this class owns; TechCatalog itself is static seed data, same as
-## BuildingCatalog, and never needs saving.
+## Exposed for SaveLoadManager — researched set, in-progress node, and its
+## remaining days are the only state this class owns; TechCatalog itself
+## is static seed data, same as BuildingCatalog, and never needs saving.
 func get_save_state() -> Dictionary:
 	return {
 		"researched": get_researched_techs(),

@@ -4,7 +4,7 @@ extends Resource
 ## Computed (not authored) per-hex snapshot of Zone of Control coverage —
 ## rebuilt from scratch by LogisticsNetwork.recompute() whenever buildings or
 ## supply lines change. `military_coverage` is a 0..1 fraction of the hex's
-## area (design doc: aura covers 66% of a tile); `has_civilian_coverage` is a
+## area (aura covers 66% of a tile); `has_civilian_coverage` is a
 ## flat bool since Civilian ZoC always covers the entire hex once granted.
 
 @export var coord: Vector2i = Vector2i.ZERO

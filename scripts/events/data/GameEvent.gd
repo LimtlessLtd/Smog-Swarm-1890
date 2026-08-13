@@ -1,11 +1,11 @@
 class_name GameEvent
 extends RefCounted
 
-## A single typed event record (design doc Phase 6.2's EventManager) — the
-## shared shape every alert source (combat, territory, economy today;
-## Phase 2.11's Discontent and Phase 7.2's narrative beats once those exist)
-## raises through EventManager.raise_event() instead of each downstream
-## consumer (AlertManager's audio/auto-pause, MainHUD's toast,
+## A single typed event record — the shared shape every alert source
+## (combat, territory, economy today; DiscontentManager and future
+## narrative-beat systems once those exist) raises through
+## EventManager.raise_event() instead of each downstream consumer
+## (AlertManager's audio/auto-pause, MainHUD's toast,
 ## StrategicOverlayManager's pulsing under-attack marker) wiring its own
 ## bespoke signal to every individual source.
 ##

@@ -23,15 +23,14 @@ func generate_map() -> void:
 	var generator := HexMapGenerator.new()
 	_cells = generator.generate()
 	for coord in _cells:
-		# Design doc, user request: the map now spans the whole UK+Ireland
-		# bounding box, most of which is open OCEAN — a real HexCellView per
-		# ocean hex (a Polygon2D/textured ground node) would be pure waste,
-		# there's nothing to render there beyond "not land" (CoastlineOutlineView
-		# draws that boundary separately, once, not per-hex). Cuts total
-		# spawned view count roughly to the actual landmass, not the full
-		# bounding rectangle. HexCell DATA still exists for every hex in
-		# bounds either way (get_cell()/has_cell() work the same) — only the
-		# VISUAL is skipped.
+		# The map spans the whole UK+Ireland bounding box, most of which is
+		# open OCEAN — a real HexCellView per ocean hex (a Polygon2D/textured
+		# ground node) would be pure waste, there's nothing to render there
+		# beyond "not land" (CoastlineOutlineView draws that boundary
+		# separately, once, not per-hex). Cuts total spawned view count
+		# roughly to the actual landmass, not the full bounding rectangle.
+		# HexCell DATA still exists for every hex in bounds either way
+		# (get_cell()/has_cell() work the same) — only the VISUAL is skipped.
 		if _cells[coord].biome_type != GameEnums.BiomeType.OCEAN:
 			_spawn_view(_cells[coord])
 	generation_completed.emit(_cells.size())
@@ -64,8 +63,8 @@ func get_all_cells() -> Array[HexCell]:
 	return result
 
 ## The rendered HexCellView for `coord`, or null if nothing generated there.
-## Lets a sibling system (FogOfWarManager, Phase 2.6) push a per-hex visual
-## update directly rather than HexGridMap needing to know about fog itself.
+## Lets a sibling system (FogOfWarManager) push a per-hex visual update
+## directly rather than HexGridMap needing to know about fog itself.
 func get_view(coord: Vector2i) -> HexCellView:
 	return _views.get(coord)
 

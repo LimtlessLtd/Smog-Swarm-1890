@@ -1,7 +1,7 @@
 class_name LocalDetailGenerator
 extends RefCounted
 
-## Procedural prop scatter for one hex's Tactical view (Phase 2.5). Purely
+## Procedural prop scatter for one hex's Tactical view. Purely
 ## cosmetic dressing — biome/soil/district data (HexMapGenerator's job) is
 ## untouched by this. Deterministic and coordinate-seeded rather than
 ## world-seeded like HexMapGenerator's FastNoiseLite passes, because this
@@ -11,7 +11,7 @@ extends RefCounted
 ## sampling a shared noise field would be.
 
 ## Props per hex by biome; 0 means that biome gets no scatter at all (open
-## water, city streets, industrial ground). Bumped ~5x (Phase 2.5.6) from
+## water, city streets, industrial ground). Bumped ~5x from
 ## the original 14/6/8/10 alongside HexCoord.HEX_SIZE's 8x increase — a flat
 ## per-hex count spread over the new, much larger _SCATTER_RADIUS would
 ## otherwise look emptied-out (area grows with radius squared, so an
@@ -34,7 +34,7 @@ const _PROP_COUNT_BY_BIOME: Dictionary = {
 	GameEnums.BiomeType.HEATHLAND: 55,  ## Low shrub cover — denser than tilled Farmland, sparser than a full forest canopy.
 }
 
-const _SCATTER_RADIUS: float = HexCoord.HEX_SIZE * 0.85  ## Stay inside the hex's own outline. Scales automatically with Phase 2.5.6's HEX_SIZE increase.
+const _SCATTER_RADIUS: float = HexCoord.HEX_SIZE * 0.85  ## Stay inside the hex's own outline. Scales automatically with HexCoord.HEX_SIZE.
 
 ## Real bug fixed (player report: terrain props "that have a right way up
 ## (like trees)... are placed in a random rotation, meaning many trees are

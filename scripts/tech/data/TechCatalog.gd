@@ -1,29 +1,29 @@
 class_name TechCatalog
 extends RefCounted
 
-## Static seed data for the Tech Tree (design doc Phase 2.9.2) — the same
+## Static seed data for the Tech Tree — the same
 ## "single source of truth, built lazily and cached" role BuildingCatalog
 ## plays for the building tree, kept separate from TechManager (the runtime
 ## system that tracks what a given campaign has actually researched).
 ##
-## **Decided scope (design doc 2.9.2):** a simple prerequisite chain, not a
+## **Decided scope:** a simple prerequisite chain, not a
 ## wide branching web. Two chains exist right now, each gating content this
 ## doc already promises elsewhere but has no unlock mechanism for yet:
-## - Wall tiers (Phase 4.1): Wooden is the baseline (no tech needed), then
+## - Wall tiers: Wooden is the baseline (no tech needed), then
 ##   Brick -> Concrete, one node each.
-## - Unit tiers (Phase 5.4): Tier 0 is the baseline (no tech needed — it's
+## - Unit tiers: Tier 0 is the baseline (no tech needed — it's
 ##   the "Free Ammo" starting tier), then Tiers 1-5 each gate all 3 roles of
 ##   that tier at once, one node per tier, strictly linear.
 ## Seafaring stands alone (no tech prerequisite) but carries its own
 ## campaign-state gate — see TechDefinition.requires_wales_and_scotland_retaken.
 ##
 ## "Advanced building variant" and "individual per-unit upgrade nodes"
-## (design doc 2.9.2) are deliberately not represented here yet: no such
+## are deliberately not represented here yet: no such
 ## variant building or trained unit exists anywhere in the project to
 ## actually unlock. GameEnums.TechUnlockType.BUILDING_VARIANT exists as a
 ## documented hook for the former; the latter is explicitly a *smaller,
-## separate* node per the design doc, layered on once Phase 5.4 exists, not
-## something to invent placeholder entries for now.
+## separate* node per the design doc, layered on once the unit-tier system
+## grows, not something to invent placeholder entries for now.
 
 static var _definitions_by_id: Dictionary = {}  # StringName -> TechDefinition
 
@@ -54,7 +54,7 @@ static func _build_definitions() -> Array[TechDefinition]:
 		_seafaring(),
 	]
 
-# --- Wall tiers (feeds Phase 4.1) -------------------------------------------
+# --- Wall tiers -------------------------------------------------------------
 
 static func _brick_walls() -> TechDefinition:
 	var d := TechDefinition.new(&"brick_walls", "Brick Walls")
@@ -75,7 +75,7 @@ static func _concrete_walls() -> TechDefinition:
 	d.unlock_value = 2
 	return d
 
-# --- Unit tiers (feeds Phase 5.4) -------------------------------------------
+# --- Unit tiers ---------------------------------------------------------------
 
 ## Builds one linear-chain unit-tier node (`unit_tier_<n>`), prerequisite on
 ## the previous tier's node (tier 1 has no tech prerequisite — Tier 0 is the
@@ -93,7 +93,7 @@ static func _unit_tier(tier: int, tier_display_name: String, research_points_cos
 	d.unlock_value = tier
 	return d
 
-# --- Seafaring (feeds Phase 7.5, gates Phase 7.5's Ireland unlock) ---------
+# --- Seafaring (gates the Ireland unlock) -----------------------------------
 
 static func _seafaring() -> TechDefinition:
 	var d := TechDefinition.new(&"seafaring", "Seafaring")

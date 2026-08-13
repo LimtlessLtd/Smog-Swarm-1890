@@ -1,17 +1,17 @@
 class_name TimeControlsView
 extends HBoxContainer
 
-## Top-right HUD strip (design doc Phase 6.1): the 0x/5x/20x/50x/100x/1000x
-## speed buttons. Pure UI over TickManager (an autoload, globally accessible
-## — no NodePath needed) with no simulation logic of its own.
+## Top-right HUD strip: the 0x/5x/20x/50x/100x/1000x speed buttons. Pure UI
+## over TickManager (an autoload, globally accessible — no NodePath
+## needed) with no simulation logic of its own.
 ##
-## **Date + Day/Night phase countdown moved OUT to `DayPhaseView` (user
-## request, playtest round 5: "messages at the top of the screen overlap on
-## the date and day/night countdown... move [them] to the bottom right...
-## above where the minimap is")** — this view used to show both; the date/
-## countdown reading now lives bottom-right instead, next to nothing else
-## that could overlap it. This view keeps only the speed buttons, in their
-## existing top-right spot, and is correspondingly narrower than before.
+## Date + Day/Night phase countdown moved out to `DayPhaseView`. "Messages
+## at the top of the screen overlap on the date and day/night countdown...
+## move [them] to the bottom right... above where the minimap is" (user
+## request) — this view used to show both; the date/countdown reading now
+## lives bottom-right instead, next to nothing else that could overlap it.
+## This view keeps only the speed buttons, in their existing top-right
+## spot, and is correspondingly narrower than before.
 
 const SPEED_LABELS: Array[String] = ["0x", "5x", "20x", "50x", "100x", "1000x"]  ## Must stay index-parallel with TickManager.SPEED_MULTIPLIERS.
 

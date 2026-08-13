@@ -1,13 +1,12 @@
 class_name ZoneOfControlVisuals
 extends RefCounted
 
-## Shared color/shape lookup for Zone of Control markers (design doc Phase
-## 2.3) — visualized for the first time this pass (user request: "there
-## should be UI options to display zones of control on the hex tile map
-## and the tactical view too"). Same "*Visuals.gd" convention every other
-## lookup class here follows, shared between `StrategicOverlayManager`'s
-## world-view markers and `TacticalHexView`'s own copy so a color choice
-## can't drift between the two.
+## Shared color/shape lookup for Zone of Control markers. "There should be
+## UI options to display zones of control on the hex tile map and the
+## tactical view too" (user request). Same "*Visuals.gd" convention every
+## other lookup class here follows, shared between
+## `StrategicOverlayManager`'s world-view markers and `TacticalHexView`'s
+## own copy so a color choice can't drift between the two.
 ##
 ## Military and Civilian ZoC get genuinely different SHAPES, not just
 ## colors (this project's own "never color alone" accessibility rule):

@@ -1,11 +1,10 @@
 class_name FogVisuals
 extends RefCounted
 
-## Shared UNSEEN/EXPLORED/VISIBLE -> Node2D.modulate lookup (design doc Phase
-## 2.6.3), so the Strategic view (HexCellView) and the Tactical view
-## (TacticalHexView) render fog state identically instead of two copies
-## drifting apart — same role BuildingVisuals.category_color() plays for
-## building colors.
+## Shared UNSEEN/EXPLORED/VISIBLE -> Node2D.modulate lookup, so the
+## Strategic view (HexCellView) and the Tactical view (TacticalHexView)
+## render fog state identically instead of two copies drifting apart —
+## same role BuildingVisuals.category_color() plays for building colors.
 
 static func tint_color(state: GameEnums.FogState) -> Color:
 	match state:

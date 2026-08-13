@@ -96,8 +96,8 @@ func set_save_enabled(enabled: bool) -> void:
 	_save_button.visible = enabled
 
 ## Re-scans disk for campaigns/slots every time — cheap (a directory
-## listing, Phase 2.8's own `get_campaign_names()`/`get_slot_names()`), and
-## means a save made just now (or by hand-editing `user://saves/`) always
+## listing, via `get_campaign_names()`/`get_slot_names()`), and means a
+## save made just now (or by hand-editing `user://saves/`) always
 ## shows up next time this opens rather than needing its own live-refresh
 ## wiring for a rarely-open dialog.
 func open() -> void:

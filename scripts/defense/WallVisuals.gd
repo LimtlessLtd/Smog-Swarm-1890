@@ -48,8 +48,8 @@ const TACTICAL_WIDTH_SCALE: float = 8.0
 ## sturdier than a Wooden one even before the player checks its HP. A
 ## breached segment renders at half its intact width (WallManager.gd's own
 ## HORDE_MARKER pattern of "still there, but visibly compromised" rather
-## than vanishing outright — same idea Phase 2.7.6's ghosted horde markers
-## already use for "weaker/less current" state).
+## than vanishing outright — same idea HordeMarkerRenderer's own ghosted
+## horde markers already use for "weaker/less current" state).
 static func line_width(tier: int, breached: bool) -> float:
 	var base := 3.0 + float(tier) * 2.0
 	return base * 0.5 if breached else base
@@ -72,9 +72,9 @@ static func legacy_modulate() -> Color:
 static func outer_modulate() -> Color:
 	return Color(1.0, 1.0, 1.0, 1.0)
 
-## Defense works (Ditch/Oil Pit, Phase 4.1) stack alongside a segment
-## rather than replacing it — a small distinct marker color at the
-## segment's midpoint on top of the line itself, not a second line.
+## Defense works (Ditch/Oil Pit) stack alongside a segment rather than
+## replacing it — a small distinct marker color at the segment's midpoint
+## on top of the line itself, not a second line.
 static func defense_work_color(has_ditch: bool, has_oil_pit: bool) -> Color:
 	if has_ditch and has_oil_pit:
 		return Color(0.45, 0.32, 0.16)  # A muddy brown-orange blend reads as "both".

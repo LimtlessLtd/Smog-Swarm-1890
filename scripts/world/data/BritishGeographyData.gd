@@ -68,15 +68,15 @@ extends RefCounted
 ## instead of hand-placed anchors), then the SCALE (calibrated to the game's
 ## own stated miles-per-hex instead of fit to a leftover grid size).
 ##
-## **2026-08-10 addendum: what's INSIDE this coastline is now real data too.**
-## The `_LAND_RLE`/`MAP_BOUNDS`/`_build_features()` data below is UNCHANGED
-## by this pass — this file's own lon/lat<->hex transform was never
-## committed as code (only this prose description survives, see step 2-3
-## above), so re-deriving it exactly isn't possible, and there was no need
-## to: every hex's *biome/soil/elevation* (previously "default MOORLAND
-## except 17 hand-placed named features") now comes from
-## `RealTerrainSampler` (`scripts/world/RealTerrainSampler.gd`), sampling
-## two whole-map-aligned rasters baked from OpenStreetMap land-cover/water
+## What's INSIDE this coastline is real data too. The
+## `_LAND_RLE`/`MAP_BOUNDS`/`_build_features()` data below is unchanged —
+## this file's own lon/lat<->hex transform was never committed as code
+## (only this prose description survives, see step 2-3 above), so
+## re-deriving it exactly isn't possible, and there was no need to: every
+## hex's *biome/soil/elevation* (previously "default MOORLAND except 17
+## hand-placed named features") now comes from `RealTerrainSampler`
+## (`scripts/world/RealTerrainSampler.gd`), sampling two whole-map-aligned
+## rasters baked from OpenStreetMap land-cover/water
 ## data + AWS/Mapzen SRTM-derived elevation — see
 ## `tools/geo_bake/bake_landcover.py` (an actually-committed, reproducible
 ## script this time, unlike the coastline bake above). That script fits its

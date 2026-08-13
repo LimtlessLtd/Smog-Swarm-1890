@@ -2,9 +2,9 @@ class_name SupplyLineSegment
 extends Resource
 
 ## One edge of the logistics graph — a road, railway or canal link between
-## two adjacent hexes (design doc Phase 2.3). Severed segments (zombies
+## two adjacent hexes. Severed segments (zombies
 ## cutting the line) stop supply from flowing through them without deleting
-## the segment itself, so reclaiming/repairing it later (Phase 4.2) just
+## the segment itself, so reclaiming/repairing it later just
 ## flips `is_severed` back off.
 
 @export var line_type: GameEnums.SupplyLineType = GameEnums.SupplyLineType.ROAD

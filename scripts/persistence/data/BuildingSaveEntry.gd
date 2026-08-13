@@ -1,13 +1,13 @@
 class_name BuildingSaveEntry
 extends Resource
 
-## One placed building's saveable footprint (design doc Phase 2.8.1) —
+## One placed building's saveable footprint —
 ## deliberately NOT a full BuildingInstance snapshot. building_type +
 ## hex_coord + local_position + id are persisted so BuildingManager can
 ## re-look-up the live BuildingDefinition from BuildingCatalog by type on
 ## load instead of saving (and potentially staling) a definition copy, per
-## the design doc's explicit decision. current_population (Phase 2.10.1) and
-## current_hp/is_ruined (Phase 5.12) are the exceptions saved alongside them
+## the design doc's explicit decision. current_population and
+## current_hp/is_ruined are the exceptions saved alongside them
 ## — genuinely mutable per-instance state (starvation deaths, surplus
 ## regrowth, siege damage) that can't be re-derived from the definition's
 ## fixed population_provided/get_max_hp() baselines once play has moved it.

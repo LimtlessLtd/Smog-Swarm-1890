@@ -3,31 +3,30 @@ extends Node2D
 
 ## Turns a wall-tier selection into an actual drawn wall — the missing link
 ## this project never had at all: WallManager.place_wall_line() (née
-## place_segment()) has existed since Phase 4.1 but nothing in the UI/input
-## layer ever called it. Confirmed directly this pass, not assumed: a
-## project-wide grep found ZERO call sites for wall placement anywhere
-## outside WallManager's own seed_starting_defenses() — every wall segment
-## a player has ever seen in this game was the free starting perimeter,
-## never something they placed themselves. Player report ("walls are not
-## free hand to place/draw") presupposed a placement mechanism that just
-## didn't exist yet, not merely a hex-locked one.
+## place_segment()) existed but nothing in the UI/input layer ever called
+## it. Confirmed directly, not assumed: a project-wide grep found ZERO call
+## sites for wall placement anywhere outside WallManager's own
+## seed_starting_defenses() — every wall segment a player has ever seen in
+## this game was the free starting perimeter, never something they placed
+## themselves. Player report ("walls are not free hand to place/draw")
+## presupposed a placement mechanism that just didn't exist yet, not
+## merely a hex-locked one.
 ##
 ## Mirrors BuildPlacementController's own shape (arm a type, ghost preview,
 ## Tactical-zoom-only, right-click/Esc to cancel).
 ##
-## **Reworked to a click-click chain (playtest report — items 3/4/5 of a
-## follow-up bug list), replacing the original press-drag-release model**:
+## Click-click chain, replacing an original press-drag-release model:
 ## left-click sets an anchor point; every subsequent mouse motion updates a
-## live preview (now rendered with the REAL tileable wall texture — see
-## _update_preview()'s own doc comment — not just a flat color line, item 3);
-## the next left-click commits that segment via WallManager.place_wall_line()
-## AND becomes the anchor for the next one automatically (item 4 — no
-## re-click/Shift-hold needed to keep chaining, unlike the old model); only a
-## right-click (or Esc) exits placement mode entirely. New endpoints snap to
-## any nearby EXISTING wall endpoint (item 5 — closes accidental sub-pixel
-## gaps a zombie could otherwise squeeze through) unless Alt is held, which
-## disables snapping for as long as it's held; an on-screen hint reflects
-## the live snap state so the player always knows which mode they're in.
+## live preview (rendered with the real tileable wall texture — see
+## _update_preview()'s own doc comment — not just a flat color line); the
+## next left-click commits that segment via WallManager.place_wall_line()
+## AND becomes the anchor for the next one automatically (no re-click/
+## Shift-hold needed to keep chaining); only a right-click (or Esc) exits
+## placement mode entirely. New endpoints snap to any nearby EXISTING wall
+## endpoint (closes accidental sub-pixel gaps a zombie could otherwise
+## squeeze through) unless Alt is held, which disables snapping for as
+## long as it's held; an on-screen hint reflects the live snap state so
+## the player always knows which mode they're in.
 ##
 ## Parented as a HexGridMap/BuildPlacementController sibling under
 ## WorldRoot, same coordinate-space reasoning as that class's own doc
@@ -66,7 +65,7 @@ var _wall_manager: WallManager
 var _camera: CameraController
 
 var _is_placing: bool = false
-## Design doc precedent kept intact (WallManager.place_segment()'s own old
+## Precedent kept intact (WallManager.place_segment()'s own old
 ## doc comment: "Every fresh segment starts at Wooden tier... upgrade_segment()
 ## is the only way to advance it from there") — fresh placement stays
 ## Wooden-only, same as before this rework; place_wall_line() itself
