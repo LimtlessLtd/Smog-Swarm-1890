@@ -1,98 +1,70 @@
 class_name UnitManager
 extends Node
 
-## Runtime owner of every trained UnitInstance (design doc Phase 5.4) — the
-## "unit lifecycle" half of that phase: validating training against cost
-## (ResourceManager) and the currently unlocked tier
-## (TechManager.is_unit_tier_unlocked(), already built and waiting for
-## exactly this — see that method's own doc comment), and draining daily
+## Runtime owner of every trained UnitInstance — the "unit lifecycle" half:
+## validating training against cost (ResourceManager) and the currently
+## unlocked tier (TechManager.is_unit_tier_unlocked()), and draining daily
 ## Gunpowder upkeep (TickManager.day_completed). Mirrors BuildingManager's
 ## own place/validate/tally-upkeep shape, minus everything specific to
 ## buildings (daily output, Food/population, Discontent) — units don't
 ## produce a daily yield or house civilians, they're trained once and then
 ## just cost upkeep until lost.
 ##
-## Deliberately holds no reference to, and is never referenced by,
-## CombatEngine (the "resolve an attack" half of Phase 5.4) — CombatEngine
-## takes whichever UnitInstance a future caller (Phase 5.6's orders, Phase
-## 5.10's siege handoff) passes it directly; it never asks UnitManager for
-## one itself, and UnitManager never calls into CombatEngine. Two separate
-## concerns, two separate files, zero coupling between them — the same
-## "owns neither, only reads/computes from what's passed in" discipline
-## HexPathfinder and LogisticsNetwork already follow elsewhere in this
-## project, applied here to keep "who exists" and "what happens when they
-## fight" from becoming one tangled class.
+## Holds no reference to, and is never referenced by, CombatEngine (the
+## "resolve an attack" half) — CombatEngine takes whichever UnitInstance a
+## caller (orders, siege handoff) passes it directly; it never asks
+## UnitManager for one, and UnitManager never calls into CombatEngine. Two
+## separate concerns, zero coupling — the same "owns neither, only reads/
+## computes from what's passed in" discipline HexPathfinder and
+## LogisticsNetwork follow elsewhere.
 ##
 ## Trained at any building with BuildingDefinition.can_train_units — in
-## practice just the Garrison today (the design doc's own "Barracks" is this
-## same building; no separate BuildingType exists for it — see Phase 2.3's
-## "Unlocks major wall fortifications and Barracks for unit recruitment").
-## **Training now takes real time** (user report, superseding this class's
-## earlier "instant once paid" decision): resources are spent immediately on
-## a validated request, but the unit itself isn't registered — and
-## unit_trained doesn't fire — until _process_pending_training() below
-## finishes counting down _training_days(), mirroring
-## BuildingManager.place_building()'s own queue exactly (see that function's
-## doc comment for the full reasoning, including the still-open save/load gap).
+## practice just the Garrison today. Training takes real time: resources are
+## spent immediately on a validated request, but the unit itself isn't
+## registered — and unit_trained doesn't fire — until
+## _process_pending_training() finishes counting down _training_days(),
+## mirroring BuildingManager.place_building()'s own queue exactly.
 ##
-## Phase 5.6's Retrain order lives here too (a lifecycle operation — it
-## swaps `UnitInstance.definition` and rescales HP, the same kind of thing
-## train_unit()/remove_unit() already do) even though the rest of 5.6
-## (movement/patrol/garrison/rally-point automation) lives in the new
-## sibling UnitOrderController. Rally points themselves (also 5.6) are
-## tracked here rather than there: a rally point is per-TRAINING-BUILDING
-## configuration, set once and read every time train_unit() runs, which
-## fits this class's existing "who exists and how they came to" role better
-## than UnitOrderController's per-tick movement loop.
+## The Retrain order lives here too (a lifecycle operation — it swaps
+## UnitInstance.definition and rescales HP, the same kind of thing
+## train_unit()/remove_unit() do) even though the rest of order handling
+## (movement/patrol/garrison/rally-point automation) lives in the sibling
+## UnitOrderController. Rally points are tracked here rather than there: a
+## rally point is per-TRAINING-BUILDING configuration, set once and read
+## every time train_unit() runs, which fits this class's "who exists and
+## how they came to be" role better than UnitOrderController's per-tick
+## movement loop.
 ##
-## Combat HP loss/death is real now too (CombatCoordinator, Phase
-## 5.4/5.9/5.10's live combat trigger, calls CombatEngine and — on a unit
-## reaching 0 HP — remove_unit() below), but that whole path lives outside
-## this class: UnitManager itself still never references CombatEngine or
-## CombatCoordinator, same separation-of-concerns split described above.
+## Combat HP loss/death: CombatCoordinator calls CombatEngine and, on a unit
+## reaching 0 HP, remove_unit() below — but that whole path lives outside
+## this class; UnitManager itself still never references CombatEngine or
+## CombatCoordinator.
 ##
-## Deliberately NOT here yet, each blocked on a system that doesn't exist:
-##   - Morale/veterancy (Phase 5.7).
-##   - Starvation exemption bookkeeping (design doc, decided: units are
-##     exempt) — moot for now since nothing feeds them Food upkeep at all;
-##     see UnitDefinition's own doc comment on why Food isn't modeled here.
+## Not implemented yet: Morale/veterancy is a separate system
+## (UnitMorale). Starvation exemption is moot — nothing feeds units Food
+## upkeep at all (units are exempt by design; see UnitDefinition's own doc
+## comment on why Food isn't modeled here).
 
 signal unit_trained(instance: UnitInstance)
 signal unit_removed(instance: UnitInstance)
 signal training_rejected(unit_type: GameEnums.UnitType, coord: Vector2i, reason: String)
 signal unit_retrained(instance: UnitInstance)
 signal retrain_rejected(instance: UnitInstance, new_type: GameEnums.UnitType, reason: String)
-## User report ("training units... should take some amount of time") —
-## unit_trained/unit_retrained (above) now only fire once a queued job
-## actually finishes; these fire the moment it's accepted and paid for.
-signal training_started(unit_type: GameEnums.UnitType, coord: Vector2i, days: int)
+signal training_started(unit_type: GameEnums.UnitType, coord: Vector2i, days: int)  ## unit_trained/unit_retrained (above) only fire once a queued job finishes; these fire the moment it's accepted and paid for.
 signal retrain_started(instance: UnitInstance, new_type: GameEnums.UnitType, days: int)
 
-## Design doc: "50% of that unit's normal training cost (exact % subject to
-## balancing later)" — a placeholder number, not an architecture decision,
-## same framing as every other balancing constant in this project.
-const RETRAIN_COST_FRACTION: float = 0.5
+const RETRAIN_COST_FRACTION: float = 0.5  ## 50% of the target unit's normal training cost.
 
-## User report ("training units... should take some amount of time") —
-## tier-derived duration, same "placeholder balancing number" framing
-## RETRAIN_COST_FRACTION above already uses. Tier is already this project's
-## own proxy for "how advanced a unit is" (T0 Melee/Ranged/Special through
-## T5), so it doubles as a training-time proxy too rather than inventing a
-## second per-unit cost field just for this.
-const _TRAINING_DAYS_PER_TIER: int = 1
+const _TRAINING_DAYS_PER_TIER: int = 1  ## Tier is this project's own proxy for "how advanced a unit is", doubling as a training-time proxy too rather than a second per-unit cost field.
 const _MAX_TRAINING_DAYS: int = 4
-const _RETRAIN_DAYS_FRACTION: float = 0.5  ## Same halving RETRAIN_COST_FRACTION already applies to resource cost — retraining an existing veteran is faster than training a recruit from nothing, not just cheaper.
+const _RETRAIN_DAYS_FRACTION: float = 0.5  ## Same halving RETRAIN_COST_FRACTION applies to resource cost — retraining an existing veteran is faster than training a recruit, not just cheaper.
 
 @export var hex_grid_map_path: NodePath
 @export var building_manager_path: NodePath
 @export var resource_manager_path: NodePath
-@export var tech_manager_path: NodePath  ## Optional — unset gracefully treats every tier as unlocked, same "optional manager reference" convention DiscontentManager/TechManager references use elsewhere.
+@export var tech_manager_path: NodePath  ## Optional — unset treats every tier as unlocked.
 
-## Training-building hex -> rally point hex (design doc 5.6: "rally point
-## on newly-trained units"). Independent of which units currently exist —
-## read by train_unit() every time a fresh unit is registered, not tied to
-## any single unit's lifetime.
-var _rally_points: Dictionary = {}  # Vector2i -> Vector2i
+var _rally_points: Dictionary = {}  # Vector2i (training-building hex) -> Vector2i (rally hex). Independent of which units currently exist — read by train_unit() every time a fresh unit is registered.
 
 var _hex_grid_map: HexGridMap
 var _building_manager: BuildingManager
@@ -100,13 +72,9 @@ var _resource_manager: ResourceManager
 var _tech_manager: TechManager
 var _instances: Array[UnitInstance] = []
 var _next_id: int = 1
-## Paid-for training/retraining not yet finished — see train_unit()/
-## retrain_unit() for how an entry is added, _process_pending_training()/
-## _process_pending_retrain() for how it's ticked down and completed.
+## Paid-for training/retraining not yet finished.
 ## training: {unit_type, coord, days_remaining}
 ## retrain: {instance, new_type, days_remaining}
-## Same known gap as BuildingManager's own equivalent queues: not yet part
-## of the save/load round trip (flagged there, not repeated per-file).
 var _pending_training: Array[Dictionary] = []
 var _pending_retrain: Array[Dictionary] = []
 
@@ -124,15 +92,10 @@ func _ready() -> void:
 func get_all_units() -> Array[UnitInstance]:
 	return _instances.duplicate()
 
-## User request (playtest round 5): "there should be a visible unit
-## building queue so that we can see how long is remaining on units under
-## construction and how many units of what types we have under
-## construction." Exposes the SAME `_pending_training` entries
-## `_process_pending_training()` itself ticks down and completes — a UI
-## reading this can't drift from what's actually queued. Duplicated (same
-## "caller gets its own copy" convention `get_all_units()` above already
-## follows) so a caller can't accidentally mutate the real queue by editing
-## what it reads.
+## Exposes the SAME _pending_training entries _process_pending_training()
+## itself ticks down and completes — a UI reading this can't drift from
+## what's actually queued. Duplicated (same "caller gets its own copy"
+## convention get_all_units() follows) so a caller can't mutate the real queue.
 func get_pending_training() -> Array[Dictionary]:
 	return _pending_training.duplicate(true)
 
@@ -143,14 +106,11 @@ func get_units_at(coord: Vector2i) -> Array[UnitInstance]:
 			result.append(instance)
 	return result
 
-## Exposed for SaveLoadManager (Phase 2.8) — the next id a freshly-trained
-## unit would get, mirrors BuildingManager.get_next_id().
 func get_next_id() -> int:
 	return _next_id
 
 ## Returns "" if `unit_type` can legally be trained at `coord` right now, or
-## a human-readable rejection reason otherwise — mirrors
-## BuildingManager.get_placement_error()'s "queryable without side effects" pattern.
+## a rejection reason otherwise.
 func get_training_error(unit_type: GameEnums.UnitType, coord: Vector2i) -> String:
 	var definition := UnitCatalog.get_definition(unit_type)
 	if not definition:
@@ -172,12 +132,8 @@ func get_training_error(unit_type: GameEnums.UnitType, coord: Vector2i) -> Strin
 func can_train_unit(unit_type: GameEnums.UnitType, coord: Vector2i) -> bool:
 	return get_training_error(unit_type, coord).is_empty()
 
-## Returns `true` once the request is validated, paid for, and queued — NOT
-## once the unit actually exists. See this class's own doc comment on why
-## training now takes real time; the one real caller
-## (UnitCommandController.train_at_selected_building()) never read the
-## returned UnitInstance anyway, so `bool` (accepted or not) is all this
-## needs to report now.
+## Returns true once the request is validated, paid for, and queued — NOT
+## once the unit actually exists.
 func train_unit(unit_type: GameEnums.UnitType, coord: Vector2i) -> bool:
 	var error := get_training_error(unit_type, coord)
 	if not error.is_empty():
@@ -193,9 +149,7 @@ func train_unit(unit_type: GameEnums.UnitType, coord: Vector2i) -> bool:
 	training_started.emit(unit_type, coord, days)
 	return true
 
-## Ticks every queued job down by one day, completing (spawning the real
-## unit / applying the retrain) anything that reaches zero — mirrors
-## BuildingManager._process_pending_construction()'s own shape exactly.
+## Mirrors BuildingConstructionController's own shape exactly.
 func _process_pending_training() -> void:
 	var still_pending: Array[Dictionary] = []
 	for job in _pending_training:
@@ -211,41 +165,28 @@ func _complete_training(unit_type: GameEnums.UnitType, coord: Vector2i) -> void:
 	var training_building := _get_training_building(coord)
 	var spawn_position := _spawn_local_position(coord, training_building.local_position if training_building else Vector2.ZERO)
 	var instance := _register_instance(definition, coord, _next_id, true, -1.0, GameEnums.UnitOrderType.HOLD, Vector2i.ZERO, [], 0, spawn_position)
-	# Design doc 5.6: "rally point on newly-trained units" — a fresh unit
-	# with no rally point registered for its training building just stays
-	# put (order defaults to HOLD, see UnitInstance). UnitOrderController's
-	# own movement tick (not called from here — see this class's own doc
-	# comment on why) picks the MOVE order up the next time it runs.
+	# A fresh unit with no rally point registered for its training building
+	# just stays put (order defaults to HOLD). UnitOrderController's own
+	# movement tick picks the MOVE order up the next time it runs.
 	if _rally_points.has(coord):
 		instance.order = GameEnums.UnitOrderType.MOVE
 		instance.move_target = _rally_points[coord]
 
-## Spawn clearance outside a training building's own footprint (user
-## report: newly-trained units were rendering stacked exactly on top of the
-## Garrison) — just past TacticalHexView.BUILDING_HALF_SIZE's own value so a
-## fresh unit doesn't visually overlap the building it just came from.
-## Deliberately NOT full pathfinding-aware "nearest walkable point" (this
-## project's Phase 5.5 shared pathfinder is a real, larger, still-unbuilt
-## system) — a deterministic ring around the training building is a
-## reasonable, self-contained approximation for where an "outside the front
-## door" spawn should land, same scope as _resolved_building_position()'s
-## own ring fallback in TacticalHexView for stacked buildings.
+## Spawn clearance outside a training building's own footprint — just past
+## TacticalHexView.BUILDING_HALF_SIZE's own value so a fresh unit doesn't
+## visually overlap the building it just came from. Not full pathfinding-
+## aware "nearest walkable point" — a deterministic ring around the
+## training building is a self-contained approximation, same scope as
+## _resolved_building_position()'s own ring fallback in TacticalHexView.
 ##
-## **Drift risk, re-checked this pass (was flagged as a real but not-yet-
-## verified risk in prior session notes, not an active bug):** this is a
-## hand-copied literal, not a real reference into
-## `TacticalHexView.BUILDING_HALF_SIZE` — the same "can silently drift out
-## of sync across a future building-box resize" shape `ObstacleRadii.
-## BUILDING_RADIUS`'s own doc comment already disclaims (that constant hand-
-## copies the same source of truth for the same reason: this project avoids
-## const-referencing across class_name scripts). Verified numerically
-## against the CURRENT value (`BUILDING_HALF_SIZE` = 20.512, half-diagonal
-## ≈ 29.0 post-4x-bump) — 60.0 still clears with a healthy ~2x margin, so
-## there is no live bug today. Still hand-copied, so it can drift again the
-## next time `BUILDING_HALF_SIZE` is resized — re-check this constant
-## whenever that one changes, same as `ObstacleRadii.BUILDING_RADIUS`.
+## `_SPAWN_CLEARANCE` is a hand-copied literal, not a real reference into
+## TacticalHexView.BUILDING_HALF_SIZE — same shape ObstacleRadii.BUILDING_RADIUS
+## uses for the same reason (this project avoids const-referencing across
+## class_name scripts here). Verified numerically against the current value
+## (BUILDING_HALF_SIZE = 20.512, half-diagonal ≈ 29.0) — 60.0 clears with a
+## ~2x margin. Re-check this constant whenever BUILDING_HALF_SIZE changes.
 const _SPAWN_CLEARANCE: float = 60.0
-const _SPAWN_RING_STEP: float = 24.0  ## Extra radius per already-occupied spawn slot, so several units trained in a row fan out around the building instead of stacking on each other.
+const _SPAWN_RING_STEP: float = 24.0  ## Extra radius per already-occupied spawn slot, so several units trained in a row fan out instead of stacking.
 const _SPAWN_RING_SLOTS: int = 6
 
 func _spawn_local_position(coord: Vector2i, training_building_position: Vector2) -> Vector2:
@@ -274,16 +215,14 @@ func has_rally_point(building_coord: Vector2i) -> bool:
 func get_rally_point(building_coord: Vector2i) -> Vector2i:
 	return _rally_points.get(building_coord, building_coord)
 
-## Design doc Phase 5.4/5.6's Retrain order: converts `instance` in-place to
-## `new_type` — same role, a strictly higher tier, unlocked, for
-## RETRAIN_COST_FRACTION of `new_type`'s own training cost. Instant (no
-## duration), usable anywhere including mid-battle (design doc, decided) —
-## this just swaps `definition` and rescales `current_hp`, no cooldown or
-## queue of any kind.
+## Converts `instance` in-place to `new_type` — same role, a strictly
+## higher tier, unlocked, for RETRAIN_COST_FRACTION of `new_type`'s own
+## training cost. Instant (no duration), usable anywhere including
+## mid-battle — this just swaps `definition` and rescales `current_hp`, no
+## cooldown or queue of any kind.
 ##
 ## Returns "" if `instance` can legally retrain into `new_type` right now,
-## or a human-readable rejection reason otherwise — same
-## "queryable without side effects" pattern as get_training_error().
+## or a rejection reason otherwise.
 func get_retrain_error(instance: UnitInstance, new_type: GameEnums.UnitType) -> String:
 	var new_definition := UnitCatalog.get_definition(new_type)
 	if not new_definition:
@@ -303,11 +242,11 @@ func get_retrain_error(instance: UnitInstance, new_type: GameEnums.UnitType) -> 
 func can_retrain_unit(instance: UnitInstance, new_type: GameEnums.UnitType) -> bool:
 	return get_retrain_error(instance, new_type).is_empty()
 
-## Same "pay upfront, finish later" shape train_unit() now uses. The unit
-## keeps fighting/holding/whatever its current order is while retraining is
-## in progress (there's no "unavailable" state to model — it just isn't yet
-## the new type); unit_retrained fires, and the definition/HP actually
-## swap, once _process_pending_retrain() below finishes counting down.
+## Same "pay upfront, finish later" shape train_unit() uses. The unit keeps
+## fighting/holding/whatever its current order is while retraining is in
+## progress — there's no "unavailable" state to model, it just isn't yet
+## the new type; unit_retrained fires, and the definition/HP actually swap,
+## once _process_pending_retrain() finishes counting down.
 func retrain_unit(instance: UnitInstance, new_type: GameEnums.UnitType) -> bool:
 	var error := get_retrain_error(instance, new_type)
 	if not error.is_empty():
@@ -352,8 +291,8 @@ func _retrain_cost(new_definition: UnitDefinition) -> Dictionary:
 	return cost
 
 ## Shared instance-bookkeeping between a fresh train_unit() (already
-## validated/paid above) and load_save_state() (restoring units already paid
-## for in a previous session) — same split BuildingManager.place_building()/
+## validated/paid) and load_save_state() (restoring units already paid for
+## in a previous session) — same split BuildingManager.place_building()/
 ## load_save_entries() use around _register_instance().
 func _register_instance(definition: UnitDefinition, coord: Vector2i, id: int, advance_next_id: bool, current_hp: float = -1.0, order: GameEnums.UnitOrderType = GameEnums.UnitOrderType.HOLD, move_target: Vector2i = Vector2i.ZERO, patrol_waypoints: Array[Vector2i] = [], kill_count: int = 0, local_position: Vector2 = Vector2.ZERO, move_target_local: Vector2 = Vector2.ZERO, patrol_waypoint_locals: Array[Vector2] = []) -> UnitInstance:
 	var instance := UnitInstance.new(definition, coord, id, current_hp)
@@ -370,17 +309,12 @@ func _register_instance(definition: UnitDefinition, coord: Vector2i, id: int, ad
 	unit_trained.emit(instance)
 	return instance
 
-## Found alongside a user report that UnitPanelView's training panel was
-## popping up for buildings that can't actually train anyone: this
-## VALIDATION check had the exact same bug (any Military-ZoC building —
-## Watchtower, Ammo Dump, Searchlight Tower too, not just Garrison — used
-## to pass here for lookout/logistics/illumination reasons unrelated to
-## training) it was just never caught because the only training-capable
-## building anyone had actually placed in testing was a Garrison. Gated on
-## BuildingDefinition.can_train_units now, same flag/fix as
-## UnitCommandController._has_training_building(). Returns the instance
-## (not just a bool) so train_unit() can also read its local_position for
-## _spawn_local_position() below, rather than a second near-identical query.
+## Gated on BuildingDefinition.can_train_units — an earlier version of this
+## check accepted any Military-ZoC building (Watchtower, Ammo Dump,
+## Searchlight Tower too, not just Garrison) for unrelated lookout/
+## logistics/illumination reasons. Returns the instance (not just a bool)
+## so train_unit() can also read its local_position for
+## _spawn_local_position(), rather than a second near-identical query.
 func _get_training_building(coord: Vector2i) -> BuildingInstance:
 	if not _building_manager:
 		return null
@@ -389,12 +323,11 @@ func _get_training_building(coord: Vector2i) -> BuildingInstance:
 			return instance
 	return null
 
-## User report (playtest round 6): "you shouldn't be able to build units
-## from a garrison that is under construction" — a construction site (or a
-## ruined shell) that WOULD train units once complete/repaired shouldn't be
-## silently indistinguishable from "no training building here at all";
-## used by get_training_error() to give the real reason rather than the
-## generic "can only be trained at a building that trains units" message.
+## A construction site (or a ruined shell) that WOULD train units once
+## complete/repaired shouldn't be indistinguishable from "no training
+## building here at all" — used by get_training_error() to give the real
+## reason rather than the generic "can only be trained at a building that
+## trains units" message.
 func _has_incomplete_training_building(coord: Vector2i) -> bool:
 	if not _building_manager:
 		return false
@@ -406,12 +339,9 @@ func _has_incomplete_training_building(coord: Vector2i) -> bool:
 ## Daily Gunpowder upkeep tally (UnitDefinition.daily_upkeep, only nonzero
 ## for requires_gunpowder units) — ResourceManager.apply_daily_flow() with
 ## an empty `produced` dict, since units generate no daily output of their
-## own. Clamps at 0 (not negative) and emits ResourceManager's own
-## upkeep_shortfall the same way a building's unpaid upkeep would; nothing
-## about the Gunpowder-depletion combat penalty (UnitDefinition's own doc
-## comment) is computed here — that's CombatEngine's job at attack time,
-## reading the stockpile fresh rather than caching a "shortfall happened"
-## flag from today's tally.
+## own. Nothing about the Gunpowder-depletion combat penalty is computed
+## here — that's CombatEngine's job at attack time, reading the stockpile
+## fresh rather than caching a "shortfall happened" flag from today's tally.
 func _on_day_completed(_day_number: int) -> void:
 	_process_pending_training()
 	_process_pending_retrain()
@@ -424,19 +354,16 @@ func _on_day_completed(_day_number: int) -> void:
 	if not consumed.is_empty():
 		_resource_manager.apply_daily_flow(consumed, {})
 
-## Exposed for SaveLoadManager (Phase 2.8) — mirrors
-## BuildingManager.get_save_entries()'s shape via UnitSaveEntry.
 func get_save_entries() -> Array[UnitSaveEntry]:
 	var result: Array[UnitSaveEntry] = []
 	for instance in _instances:
 		result.append(UnitSaveEntry.new(instance.definition.unit_type, instance.hex_coord, instance.id, instance.current_hp, instance.order, instance.move_target, instance.patrol_waypoints, instance.kill_count, instance.local_position, instance.move_target_local, instance.patrol_waypoint_locals))
 	return result
 
-## Restores trained units from a save (Phase 2.8.2): clears whatever is
-## currently tracked, then recreates each entry via _register_instance()
-## directly — bypassing train_unit()'s cost/validation, since these units
-## already exist and were already paid for. Mirrors
-## BuildingManager.load_save_entries() exactly. In-flight movement paths
+## Restores trained units from a save: clears whatever is currently
+## tracked, then recreates each entry via _register_instance() directly —
+## bypassing train_unit()'s cost/validation, since these units already
+## exist and were already paid for. In-flight movement paths
 ## (UnitInstance.path) aren't restored — UnitOrderController replans from
 ## scratch the first time it ticks a MOVE/ATTACK_MOVE/PATROL unit after load.
 func load_save_entries(entries: Array[UnitSaveEntry], next_id: int) -> void:
@@ -447,9 +374,6 @@ func load_save_entries(entries: Array[UnitSaveEntry], next_id: int) -> void:
 			_register_instance(definition, entry.hex_coord, entry.id, false, entry.current_hp, entry.order, entry.move_target, entry.patrol_waypoints, entry.kill_count, entry.local_position, entry.move_target_local, entry.patrol_waypoint_locals)
 	_next_id = next_id
 
-## Exposed for SaveLoadManager (Phase 2.8) — rally-point configuration
-## (Phase 5.6), independent of unit instances themselves; see _rally_points'
-## own doc comment.
 func get_rally_points_save_state() -> Dictionary:
 	return _rally_points.duplicate()
 
