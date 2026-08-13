@@ -1,52 +1,36 @@
 class_name UnitCommandController
 extends Node2D
 
-## Turns clicks on the map into unit selection and RTS order issuing (design
-## doc Phase 5.6's "standard RTS order set") — the same missing link
-## BuildPlacementController fills for buildings: UnitManager.train_unit()
-## and UnitOrderController.issue_*_order() have existed since Phase 5.4/5.6,
-## but nothing in the input/HUD layer has ever called them
-## (UnitOrderController's own doc comment: "no UI calls these yet — Phase
-## 6+"). This is that Phase 6 piece.
+## Turns clicks on the map into unit selection and RTS order issuing — the
+## same missing link BuildPlacementController fills for buildings:
+## UnitManager.train_unit() and UnitOrderController.issue_*_order() have no
+## caller anywhere else in the input/HUD layer.
 ##
-## Left-click selects whatever's on a hex: a friendly unit first (mirrors
-## the design doc's "click a unit to command it" RTS convention), else the
+## Left-click selects whatever's on a hex: a friendly unit first, else the
 ## nearest wall segment if the click landed close to one, else the nearest
-## building on that hex (any type, not just training ones — see below).
-## Right-click issues a Move order to the currently selected unit —
-## standard RTS shorthand, and the natural counterpart to left-click-to-
-## select. Escape deselects (and cancels an in-progress patrol recording
-## first, same "cancel the more specific mode first" precedent
-## BuildPlacementController already sets for Shift-click chaining vs. a
-## plain click).
+## building on that hex (any type, not just training ones). Right-click
+## issues a Move order to the currently selected unit. Escape deselects
+## (and cancels an in-progress patrol recording first, same "cancel the more
+## specific mode first" precedent BuildPlacementController sets for
+## Shift-click chaining vs. a plain click).
 ##
-## **Real bug fixed (player report: "How do I select a wall to repair it?
-## Same goes for all the buildings.") — selection used to be building-
-## specific and training-only.** `_select_at()` only ever emitted
-## `building_selected(coord)` for a hex holding a Garrison (or any other
-## `can_train_units` building), so every non-training building (Town Hall,
-## Foundry, a damaged/ruined Workhouse, ...) was completely unselectable —
-## and walls had no hit-testing at all, anywhere, ever. Now: ANY building
-## on the clicked hex is selectable (picked by proximity to the exact click
-## position when several share a hex via `local_position`, same
-## disambiguation `TacticalHexView._resolved_building_position()` already
-## has to solve for rendering), and a click within `_WALL_CLICK_TOLERANCE`
-## world units of a wall segment's own line (`hex_a` center to `hex_b`
-## center — the same geometry `LocalDetailManager`'s Tactical wall layer
-## already renders) selects that segment instead. `UnitPanelView` reads
-## `get_selected_building()`/`get_selected_wall()` to show a Repair button.
+## ANY building on the clicked hex is selectable (picked by proximity to the
+## exact click position when several share a hex via local_position, same
+## disambiguation TacticalHexView._resolved_building_position() solves for
+## rendering), and a click within _WALL_CLICK_TOLERANCE world units of a
+## wall segment's own line (hex_a center to hex_b center) selects that
+## segment instead. UnitPanelView reads get_selected_building()/
+## get_selected_wall() to show a Repair button.
 ##
-## UnitPanelView (Phase 6.1's HUD) is the only thing that reads this
-## controller's selection/patrol-recording state and calls its order
-## methods — this class never touches a Control node itself, same "world
-## input layer stays UI-agnostic" split BuildPlacementController/MainHUD
-## already keep.
+## UnitPanelView is the only thing that reads this controller's selection/
+## patrol-recording state and calls its order methods — this class never
+## touches a Control node itself, same "world input layer stays UI-agnostic"
+## split BuildPlacementController/MainHUD keep.
 ##
 ## Parented as a HexGridMap/StrategicOverlayManager/BuildPlacementController
-## sibling under WorldRoot for the same reason BuildPlacementController is:
-## shares the same coordinate space (including whatever transform
-## CameraController applies for the isometric perspective toggle), so
-## hex-from-click math doesn't need to special-case either view mode.
+## sibling under WorldRoot: shares the same coordinate space (including
+## CameraController's isometric transform), so hex-from-click math doesn't
+## need to special-case either view mode.
 
 signal unit_selected(instance: UnitInstance)
 signal building_instance_selected(instance: BuildingInstance)
@@ -58,27 +42,16 @@ const _SELECTION_RING_RADIUS := 16.0
 const _SELECTION_RING_COLOR := Color(1.0, 0.9, 0.2, 0.9)
 const _PATROL_PREVIEW_COLOR := Color(0.9, 0.85, 0.2, 0.9)
 const _WALL_HIGHLIGHT_COLOR := Color(1.0, 0.9, 0.2, 0.9)  ## Same gold as _SELECTION_RING_COLOR — one shared "this is selected" language regardless of what kind of thing it is.
-## Max distance (world units) from a wall segment's own line (hex_a center
-## to hex_b center) a click is still considered "on" that segment. Loose
-## enough to forgive an imprecise click at Tactical zoom without being so
-## loose it steals clicks clearly meant for a nearby building instead —
-## small relative to HexCoord.HEX_SIZE (512).
-const _WALL_CLICK_TOLERANCE := 24.0
-## Max distance (world units) from a unit's own REAL rendered position (see
-## _closest_unit_within_tolerance()'s own doc comment for why this is a real
-## position, not a hex-bucket match) a click still counts as "on" that unit.
-## Loose enough to cover a whole squad's visual scatter cluster
-## (TacticalEntityLayer.FIGURE_SPREAD, 20.0, plus per-figure jitter) without
-## reaching so far it steals a click clearly meant for a nearby building.
-const _UNIT_CLICK_TOLERANCE := 40.0
+const _WALL_CLICK_TOLERANCE := 24.0  ## Max distance (world units) from a wall segment's own line (hex_a center to hex_b center) a click still counts as "on" it. Small relative to HexCoord.HEX_SIZE (512).
+const _UNIT_CLICK_TOLERANCE := 40.0  ## Max distance (world units) from a unit's own real rendered position a click still counts as "on" it. Covers a whole squad's visual scatter cluster (TacticalEntityLayer.FIGURE_SPREAD, 20.0, plus jitter).
 
 @export var hex_grid_map_path: NodePath
 @export var unit_manager_path: NodePath
 @export var unit_order_controller_path: NodePath
 @export var building_manager_path: NodePath
 @export var wall_manager_path: NodePath
-@export var build_placement_controller_path: NodePath  ## Optional — while build placement mode is active, this controller yields input to it entirely rather than fighting over the same click (one input mode at a time).
-@export var wall_placement_controller_path: NodePath  ## Optional — same yield-input reasoning as build_placement_controller_path above, for WallPlacementController's own click-drag mode.
+@export var build_placement_controller_path: NodePath  ## Optional — while build placement mode is active, this controller yields input to it entirely.
+@export var wall_placement_controller_path: NodePath  ## Optional — same yield-input reasoning, for WallPlacementController's own click-drag mode.
 
 var _hex_grid_map: HexGridMap
 var _unit_manager: UnitManager
@@ -93,7 +66,7 @@ var _selected_building: BuildingInstance
 var _selected_wall: WallSegment
 var _is_recording_patrol: bool = false
 var _patrol_waypoints: Array[Vector2i] = []
-var _patrol_waypoint_locals: Array[Vector2] = []  ## Index-aligned with _patrol_waypoints — playtest round 5, see UnitInstance.patrol_waypoint_locals' own doc comment.
+var _patrol_waypoint_locals: Array[Vector2] = []  ## Index-aligned with _patrol_waypoints — see UnitInstance.patrol_waypoint_locals' own doc comment.
 
 var _selection_ring: Line2D
 var _wall_highlight: Line2D
@@ -127,10 +100,10 @@ func _ready() -> void:
 	_selection_ring.visible = false
 	add_child(_selection_ring)
 
-	## Two-point line rather than a ring — a wall segment IS a line
-	## (its own point_a to point_b), so its selection highlight traces
-	## that same shape instead of reusing the unit/building ring, which
-	## would misleadingly imply a single point rather than a whole span.
+	# Two-point line rather than a ring — a wall segment IS a line (its own
+	# point_a to point_b), so its selection highlight traces that shape
+	# instead of reusing the unit/building ring, which would misleadingly
+	# imply a single point rather than a whole span.
 	_wall_highlight = Line2D.new()
 	_wall_highlight.width = 10.0
 	_wall_highlight.default_color = _WALL_HIGHLIGHT_COLOR
@@ -181,12 +154,10 @@ func _on_left_click(world_pos: Vector2) -> void:
 		return
 	_select_at(coord, world_pos)
 
-## User request (playtest round 5): "a selected unit should immediately
-## move to where the user has right clicked" — the exact clicked point
-## (world_pos - the hex's own center), not just whichever hex it resolves
-## to. See UnitInstance.move_target_local's own doc comment for how this
-## reaches the actual movement math untouched for every hex the path merely
-## passes through along the way.
+## A selected unit moves to the exact clicked point (world_pos minus the
+## hex's own center), not just whichever hex it resolves to — see
+## UnitInstance.move_target_local's own doc comment for how this reaches
+## the movement math untouched for every hex the path merely passes through.
 func _on_right_click(world_pos: Vector2) -> void:
 	if not _hex_grid_map:
 		return
@@ -222,16 +193,13 @@ func _select_unit(instance: UnitInstance) -> void:
 	_selected_unit = instance
 	_selected_building = null
 	_selected_wall = null
-	# Adversarial-review fix: reset back to the unit-scoped radius in case
-	# the previous selection was a (much bigger) building — see
-	# _select_building()'s own comment on why that one uses a different
-	# radius from this shared ring.
+	# Reset back to the unit-scoped radius in case the previous selection
+	# was a (much bigger) building — see _select_building()'s own comment on
+	# why that one uses a different radius from this shared ring.
 	_selection_ring.points = _ring_points(_SELECTION_RING_RADIUS)
-	# Bug fix: the ring used to snap to the unit's HEX CENTER (whichever
-	# coord the click happened to resolve to), not the unit's own real,
-	# continuously-moving position — same "use the real world position, not
-	# a hex-bucket proxy for it" fix _closest_unit_within_tolerance() applies
-	# to hit-testing itself, applied here to the ring's placement too.
+	# The ring uses the unit's own real, continuously-moving position, not
+	# its hex center — same "use the real world position, not a hex-bucket
+	# proxy" fix _closest_unit_within_tolerance() applies to hit-testing.
 	_selection_ring.position = HexCoord.axial_to_world(instance.hex_coord) + instance.local_position
 	_selection_ring.visible = true
 	_wall_highlight.visible = false
@@ -241,13 +209,10 @@ func _select_building(instance: BuildingInstance) -> void:
 	_selected_unit = null
 	_selected_building = instance
 	_selected_wall = null
-	# Adversarial-review fix (this pass's own verification step): a flat
-	# _SELECTION_RING_RADIUS was sized for a unit's own token circle and
-	# never rescaled alongside TacticalHexView.BUILDING_HALF_SIZE's 4x bump
-	# — it now renders inside a building's box instead of around it.
-	# TacticalHexView.BUILDING_SELECTION_RING_RADIUS is derived from that
-	# same box size, so this stays in sync automatically the next time
-	# BUILDING_HALF_SIZE changes rather than needing a second manual fix.
+	# TacticalHexView.BUILDING_SELECTION_RING_RADIUS is derived from
+	# BUILDING_HALF_SIZE, so this ring stays sized to the building's box
+	# (rather than the unit-scoped _SELECTION_RING_RADIUS, which would
+	# render inside the box) automatically if that box size ever changes.
 	_selection_ring.points = _ring_points(TacticalHexView.BUILDING_SELECTION_RING_RADIUS)
 	_selection_ring.position = HexCoord.axial_to_world(instance.hex_coord) + instance.local_position
 	_selection_ring.visible = true
@@ -264,22 +229,15 @@ func _select_wall(segment: WallSegment) -> void:
 	wall_segment_selected.emit(segment)
 
 ## Closest of possibly-several buildings sharing one hex (real sub-hex
-## `local_position`, e.g. the starting Town Hall + Cast Iron Foundry) to
-## where the player actually clicked — the same disambiguation
-## `TacticalHexView._resolved_building_position()` already has to solve for
-## rendering, applied here to picking rather than drawing.
-##
-## **Bug fix (playtest report): clicking anywhere on a building's hex used
-## to select it, even nowhere near the actual sprite** — the old version of
-## this function had no rejection distance at all, only proximity-based
-## disambiguation between buildings that already shared a hex. Buildings
-## render as a real `TacticalHexView.BUILDING_HALF_SIZE`-sided box, so a
-## click whose offset from a building's own origin exceeds that box on
-## either axis is outside its sprite and no longer counts — same AABB
-## reasoning `_closest_wall_within_tolerance()` already applies via a
-## distance tolerance for walls. Returns null (not a fallback guess) when
-## nothing on the hex was actually clicked, matching wall selection's own
-## "null means try the next candidate, then clear_selection()" contract.
+## local_position, e.g. the starting Town Hall + Cast Iron Foundry) to
+## where the player actually clicked — same disambiguation
+## TacticalHexView._resolved_building_position() solves for rendering,
+## applied here to picking. Buildings render as a real
+## TacticalHexView.BUILDING_HALF_SIZE-sided box, so a click whose offset
+## from a building's own origin exceeds that box on either axis is outside
+## its sprite and doesn't count. Returns null when nothing on the hex was
+## actually clicked, matching wall selection's own "null means try the next
+## candidate, then clear_selection()" contract.
 func _closest_building_within_bounds(buildings: Array[BuildingInstance], world_pos: Vector2) -> BuildingInstance:
 	var closest: BuildingInstance = null
 	var closest_dist: float = INF
@@ -295,32 +253,30 @@ func _closest_building_within_bounds(buildings: Array[BuildingInstance], world_p
 	return closest
 
 ## Nearest wall segment whose own line (hex_a center to hex_b center, the
-## same geometry it actually renders as) the click landed within
+## same geometry it renders as) the click landed within
 ## _WALL_CLICK_TOLERANCE of — null if nothing is close enough. A flat scan
-## over every segment rather than a spatial index: this project's wall
-## counts are small (individually-placed defensive chokepoints, not a
-## per-tile grid), same "small enough to just scan" reasoning
-## StrategicOverlayManager's own marker refresh already relies on.
-## **Real bug fixed (player report: "I am unable to select my units and give
-## them orders")** — the old code called `_unit_manager.get_units_at(coord)`,
-## an exact hex-bucket match against `UnitInstance.hex_coord`. Since Phase
-## 5.5's continuous movement, `hex_coord` stays the unit's SOURCE hex for the
-## unit's entire crossing and only flips to the destination hex at the exact
-## moment it finishes arriving (MovementStepper.advance_toward_hex()'s own
-## doc comment: "when false they're still the original hex_coord" — never
-## updated early) — but the unit's actual RENDERED position moves smoothly
-## the whole time, and `world_to_coord()` (used to turn a click into `coord`
-## in the first place) rounds to whichever hex center is nearer, which
-## flips to the destination hex at the crossing's own MIDPOINT, well before
-## the unit itself "arrives" there. For the entire second half of any
-## crossing — which is also where the unit is visually closest to wherever
-## the player is actually clicking — `get_units_at(coord)` looked in the
-## wrong bucket entirely and silently found nothing. Fixed the same way
-## building/wall selection already are: match against each unit's own REAL
-## world position (`HexCoord.axial_to_world(hex_coord) + local_position`,
-## exactly what TacticalEntityLayer renders it at) within a flat click
-## tolerance, not a hex-bucket lookup at all — correct regardless of which
-## hex a mid-transit unit happens to be registered under.
+## over every segment rather than a spatial index: wall counts are small
+## (individually-placed defensive chokepoints, not a per-tile grid).
+func _closest_wall_within_tolerance(world_pos: Vector2) -> WallSegment:
+	var closest: WallSegment = null
+	var closest_dist: float = _WALL_CLICK_TOLERANCE
+	for segment in _wall_manager.get_segments():
+		var dist: float = _distance_to_segment(world_pos, segment.point_a, segment.point_b)
+		if dist <= closest_dist:
+			closest = segment
+			closest_dist = dist
+	return closest
+
+## Matches against each unit's own REAL world position
+## (HexCoord.axial_to_world(hex_coord) + local_position, exactly what
+## TacticalEntityLayer renders it at) within a flat click tolerance, not a
+## hex-bucket lookup. hex_coord stays a unit's SOURCE hex for its entire
+## crossing under continuous movement and only flips to the destination hex
+## once it finishes arriving (MovementStepper.advance_toward_hex()'s own
+## doc comment), while world_to_coord() rounds a click to whichever hex
+## center is nearer — which flips at the crossing's MIDPOINT, well before
+## the unit "arrives" there. A hex-bucket match against get_units_at(coord)
+## would silently miss the unit for the entire second half of any crossing.
 func _closest_unit_within_tolerance(world_pos: Vector2) -> UnitInstance:
 	var closest: UnitInstance = null
 	var closest_dist: float = _UNIT_CLICK_TOLERANCE * _UNIT_CLICK_TOLERANCE
@@ -329,16 +285,6 @@ func _closest_unit_within_tolerance(world_pos: Vector2) -> UnitInstance:
 		var dist: float = world_pos.distance_squared_to(origin)
 		if dist <= closest_dist:
 			closest = instance
-			closest_dist = dist
-	return closest
-
-func _closest_wall_within_tolerance(world_pos: Vector2) -> WallSegment:
-	var closest: WallSegment = null
-	var closest_dist: float = _WALL_CLICK_TOLERANCE
-	for segment in _wall_manager.get_segments():
-		var dist: float = _distance_to_segment(world_pos, segment.point_a, segment.point_b)
-		if dist <= closest_dist:
-			closest = segment
 			closest_dist = dist
 	return closest
 
@@ -359,9 +305,8 @@ func get_selected_wall() -> WallSegment:
 	return _selected_wall
 
 ## Thin query wrappers so UnitPanelView (which never calls BuildingManager/
-## WallManager directly, same "dumb display, controller owns the actual
-## call" split every other UnitPanelView method already keeps) can gate
-## and label its own Repair button without a manager reference of its own.
+## WallManager directly) can gate and label its own Repair button without a
+## manager reference of its own.
 func get_selected_building_repair_error() -> String:
 	if _selected_building and _building_manager:
 		return _building_manager.get_repair_error(_selected_building)
@@ -382,8 +327,6 @@ func repair_selected_wall() -> bool:
 		return _wall_manager.repair_segment(_selected_wall)
 	return false
 
-## Demolish (user request) — same "thin query wrapper" shape as the repair
-## pair above, one for each of the two demolishable selection kinds.
 func get_selected_building_demolish_error() -> String:
 	if _selected_building and _building_manager:
 		return _building_manager.get_demolish_error(_selected_building)
@@ -443,9 +386,9 @@ func _cancel_patrol_recording() -> void:
 	_update_patrol_preview()
 	patrol_recording_changed.emit(false, 0)
 
-## Draws through the exact clicked points (playtest round 5) rather than
-## each waypoint's own hex center — the preview line, and the eventual
-## patrol route it becomes, are now drawn from the identical positions.
+## Draws through the exact clicked points, not each waypoint's own hex
+## center — the preview line, and the eventual patrol route it becomes, are
+## drawn from identical positions.
 func _update_patrol_preview() -> void:
 	var points := PackedVector2Array()
 	for i in range(_patrol_waypoints.size()):
@@ -465,45 +408,30 @@ func _on_unit_removed(instance: UnitInstance) -> void:
 		clear_selection()
 
 ## Buildings don't disappear on ruin (BuildingInstance.is_ruined, still
-## selectable so its Repair button reaches it) — only a genuine
-## destroy_ruin() removal invalidates the instance out from under a stale
-## selection, matching _on_unit_removed's own reasoning above.
+## selectable so its Repair button reaches it) — only a genuine removal
+## invalidates the instance out from under a stale selection.
 func _on_building_removed(instance: BuildingInstance) -> void:
 	if _selected_building == instance:
 		clear_selection()
 
-## Demolish (user request) — walls are now removable for the first time;
-## mirrors _on_building_removed()'s own "don't leave a selection pointing
-## at something that no longer exists" guard exactly.
 func _on_wall_segment_removed(segment: WallSegment) -> void:
 	if _selected_wall == segment:
 		clear_selection()
 
-## Real bug fix (playtest round 5: "the selection circle around the unit
-## should follow the unit as it moves") — the old version only re-positioned
-## the ring on UnitOrderController.unit_moved, which fires once per whole
-## HEX BOUNDARY crossed, not continuously; between crossings (most of any
-## given move, under Phase 5.5's continuous movement) the ring stayed
-## visually frozen at the unit's LAST hex while the unit itself smoothly
-## walked away from it. A plain per-frame `_process()` read of the unit's
-## own real, continuously-updated `hex_coord + local_position` (the exact
-## position TacticalEntityLayer itself renders the unit at) replaces that
-## discrete signal-driven update entirely — cheap (one Vector2 add) and
-## correct regardless of how far a unit moves in a single frame at high
-## TickManager speed.
+## A plain per-frame _process() read of the unit's own real, continuously-
+## updated hex_coord + local_position (the exact position TacticalEntityLayer
+## renders the unit at) — not a discrete update on UnitOrderController.unit_moved,
+## which only fires once per whole hex boundary crossed. Between crossings
+## (most of any given move, under continuous movement), the ring needs to
+## track the unit's real position, not sit frozen at its last hex.
 func _process(_delta: float) -> void:
 	if _selected_unit:
 		_selection_ring.position = HexCoord.axial_to_world(_selected_unit.hex_coord) + _selected_unit.local_position
 
-## User request (playtest round 5): "a selected unit should display any
-## move commands it is currently obeying" — UnitPanelView has no direct
-## reference to UnitOrderController (this controller owns that, same "world
-## input layer stays UI-agnostic" split this class's own doc comment
-## already establishes), so an order change reaches it by re-emitting the
-## SAME unit_selected signal a fresh selection already uses — UnitPanelView
-## re-renders identically either way, it doesn't need to know WHY. Only for
-## the currently selected unit; every other unit's order changing is
-## irrelevant to what's on screen right now.
+## UnitPanelView has no direct reference to UnitOrderController (this
+## controller owns that), so an order change reaches it by re-emitting the
+## SAME unit_selected signal a fresh selection uses — UnitPanelView
+## re-renders identically either way. Only for the currently selected unit.
 func _on_unit_order_issued(instance: UnitInstance, _order: GameEnums.UnitOrderType) -> void:
 	if instance == _selected_unit:
 		unit_selected.emit(instance)
