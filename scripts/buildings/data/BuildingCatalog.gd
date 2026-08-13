@@ -1,15 +1,14 @@
 class_name BuildingCatalog
 extends RefCounted
 
-## Static seed data for the authentic 19th-century building tree (design doc
-## Phase 2.1) — plays the same "single source of truth" role for buildings
-## that BritishGeographyData plays for the hex grid, kept separate from
-## BuildingManager (the runtime system that places/tracks instances).
+## Static seed data for the 19th-century building tree — plays the same
+## "single source of truth" role for buildings that BritishGeographyData
+## plays for the hex grid, kept separate from BuildingManager (the runtime
+## system that places/tracks instances).
 ##
-## Town Hall and Garrison are not named in the Phase 2.1 checklist, but 2.3
-## requires Civilian ZoC from "Town Halls" and Military ZoC from "Garrisons"
-## as a source — they're added here under Housing & Civil (civic seat /
-## militia HQ) so those Zone of Control roles have a building to come from.
+## Town Hall and Garrison are added under Housing & Civil (civic seat /
+## militia HQ) so ZoneOfControlType.CIVILIAN/MILITARY have a source building
+## to come from.
 ##
 ## Unlike BritishGeographyData (built once per map generation),
 ## get_definition() is expected to be called on every placement attempt, so
@@ -52,19 +51,17 @@ static func _build_definitions() -> Array[BuildingDefinition]:
 		_clay_brickworks(), _charcoal_kiln(), _coal_pithead(),
 		_cast_iron_foundry(), _saltpetre_powder_mill(), _forward_ammo_dump(),
 		_tenant_farm(), _grain_silo(),
-		# _cattle_yard() deliberately omitted (user request, playtest round 4:
-		# "Remove Cattle Yard for now") — the function itself stays below,
-		# unreferenced, so re-adding it later is a one-line change, same
-		# "art/data lands incrementally" precedent every other *Catalog here
-		# already follows for not-yet-ready content.
 		_searchlight_tower(), _ditch(), _oil_pit(),
 	]
+	# _cattle_yard() deliberately omitted: "Remove Cattle Yard for now"
+	# (user feedback) — the function stays below, unreferenced, so
+	# re-adding it later is a one-line change.
 
 # --- Housing & Civil -------------------------------------------------------
 
-## Display name shortened (user request, playtest round 4: "terraced tenement
-## can simply be called 'Houses'") — BuildingType.TERRACED_TENEMENT (the
-## enum/save-data identifier) is untouched, only the player-facing string.
+## Display name only — "terraced tenement can simply be called 'Houses'"
+## (user feedback). BuildingType.TERRACED_TENEMENT (the enum/save-data
+## identifier) is untouched.
 static func _terraced_tenement() -> BuildingDefinition:
 	var d := BuildingDefinition.new(GameEnums.BuildingType.TERRACED_TENEMENT, "Houses")
 	d.category = GameEnums.BuildingCategory.HOUSING_CIVIL
@@ -83,10 +80,8 @@ static func _workhouse() -> BuildingDefinition:
 	d.requires_settlement = true
 	return d
 
-## Display name shortened (user request, playtest round 4: "'Church steeple
-## watchtower' should just be called 'Watchtower'") — BuildingType stays
-## CHURCH_STEEPLE_WATCHTOWER (the enum/save-data/texture-key identifier),
-## only the player-facing string changes.
+## Display name only — "'Church steeple watchtower' should just be called
+## 'Watchtower'" (user feedback). BuildingType stays CHURCH_STEEPLE_WATCHTOWER.
 static func _church_steeple_watchtower() -> BuildingDefinition:
 	var d := BuildingDefinition.new(GameEnums.BuildingType.CHURCH_STEEPLE_WATCHTOWER, "Watchtower")
 	d.category = GameEnums.BuildingCategory.HOUSING_CIVIL
@@ -99,7 +94,7 @@ static func _church_steeple_watchtower() -> BuildingDefinition:
 	d.lit_at_night = true  # "Watchtower searchlights" (design doc 2.6.4) hold/extend vision after dark.
 	return d
 
-## Display name shortened (user request, playtest round 4).
+## Display name shortened per user feedback.
 static func _gas_streetlamp() -> BuildingDefinition:
 	var d := BuildingDefinition.new(GameEnums.BuildingType.GAS_STREETLAMP, "Streetlamp")
 	d.category = GameEnums.BuildingCategory.HOUSING_CIVIL
@@ -111,7 +106,7 @@ static func _gas_streetlamp() -> BuildingDefinition:
 	d.lit_at_night = true  # Literally the design doc 2.6.4 example of a lit source.
 	return d
 
-## Display name shortened (user request, playtest round 4).
+## Display name shortened per user feedback.
 static func _telegraph_relay_office() -> BuildingDefinition:
 	var d := BuildingDefinition.new(GameEnums.BuildingType.TELEGRAPH_RELAY_OFFICE, "Telegraph Relay")
 	d.category = GameEnums.BuildingCategory.HOUSING_CIVIL
@@ -124,7 +119,7 @@ static func _telegraph_relay_office() -> BuildingDefinition:
 	d.zoc_roles = [GameEnums.ZoneOfControlType.CIVILIAN]
 	return d
 
-## Display name shortened (user request, playtest round 4).
+## Display name shortened per user feedback.
 static func _steam_printing_press() -> BuildingDefinition:
 	var d := BuildingDefinition.new(GameEnums.BuildingType.STEAM_PRINTING_PRESS, "Printing Press")
 	d.category = GameEnums.BuildingCategory.HOUSING_CIVIL
@@ -144,18 +139,10 @@ static func _town_hall() -> BuildingDefinition:
 	d.allowed_biomes = [GameEnums.BiomeType.URBAN]
 	d.requires_settlement = true
 	d.zoc_roles = [GameEnums.ZoneOfControlType.CIVILIAN]
-	# Without this, a brand-new colony's ONLY vision source is whatever
-	# building it just placed, radius 0 = its own single hex — since Town
-	# Hall is also BuildingManager.seed_starting_buildings()'s free opening
-	# move (the very first thing on the map), that made turn one show
-	# literally one hex of a country-sized map and nothing else, everywhere
-	# else pitch-black UNSEEN (found by actually playing, not just the
-	# headless logic tests — same discovery process as the original Phase
-	# 6.1 HUD layout bug). A modest radius here — smaller than the dedicated
-	# Watchtower lookout's 2 — means a fresh capital can at least see its own
-	# immediate neighborhood at game start, while the wider "cities as
-	# beacons in a dead world" darkness the design doc is built around still
-	# holds everywhere the player hasn't built or explored.
+	# Without this, a brand-new colony's ONLY vision source is radius 0 (its
+	# own single hex) — Town Hall is BuildingManager.seed_starting_buildings()'s
+	# free opening move, so turn one would show one hex of a country-sized
+	# map and nothing else. Smaller than the dedicated Watchtower lookout's 2.
 	d.vision_radius = 1
 	return d
 
@@ -172,23 +159,14 @@ static func _garrison() -> BuildingDefinition:
 
 # --- Industry & Extraction --------------------------------------------------
 
-## Economy-balance pass (user request, "add a timber camp please and balance
-## it"): the ONLY Wood producer in the whole tree. Every other raw
-## construction material (Bricks/Cast Iron/Gunpowder) already had a
-## dedicated extractor building; Wood never did — a real gap in the original
-## Phase 2.1 checklist, found by simulating a realistic opening and watching
-## Wood run to zero (150 starting, no income anywhere, and Charcoal Kiln
-## actively drains 10/day on top) with no way back up. Deliberately does NOT
-## cost Wood itself (unlike Clay Brickworks, which happily spends Wood to
-## build something that makes Bricks) — it's the resource's own bootstrap,
-## so it shouldn't compete with itself for the stockpile a fresh colony is
-## trying to grow. Output (10/day) is set a notch above Clay Brickworks'
-## own 8/day for Bricks: Wood is asked for by more buildings than any other
-## single resource in the tree, so its base producer earns a slightly
-## higher rate, not the same one. FARMLAND/MOORLAND/HIGHLAND (deliberately
-## excluding URBAN/INDUSTRIAL, unlike Clay Brickworks/Cast Iron Foundry) —
-## this is timber cut from actual wild land, not a refinery that could sit
-## on any city plot.
+## "Add a timber camp please and balance it" (user feedback) — the ONLY Wood
+## producer in the tree; every other raw construction material had a
+## dedicated extractor already, Wood never did (simulating a realistic
+## opening showed Wood running to zero with no income anywhere). Doesn't
+## cost Wood itself (unlike Clay Brickworks, which spends Wood to make
+## Bricks) — it's the resource's own bootstrap. FARMLAND/MOORLAND/HIGHLAND
+## only (excluding URBAN/INDUSTRIAL, unlike Clay Brickworks/Cast Iron
+## Foundry) — timber cut from wild land, not a refinery.
 static func _timber_camp() -> BuildingDefinition:
 	var d := BuildingDefinition.new(GameEnums.BuildingType.TIMBER_CAMP, "Timber Camp")
 	d.category = GameEnums.BuildingCategory.INDUSTRY_EXTRACTION
@@ -198,22 +176,17 @@ static func _timber_camp() -> BuildingDefinition:
 	d.noise_output = 2  # Axes/saws/cartage — quieter than a kiln or foundry, louder than nothing.
 	return d
 
-## Display name shortened (user request, playtest round 4).
+## Display name shortened per user feedback.
 static func _clay_brickworks() -> BuildingDefinition:
 	var d := BuildingDefinition.new(GameEnums.BuildingType.CLAY_BRICKWORKS, "Brickworks")
 	d.category = GameEnums.BuildingCategory.INDUSTRY_EXTRACTION
 	d.construction_cost = {GameEnums.ResourceType.WOOD: 50}
-	# Economy-balance pass (user request, "raise output of brickworks"):
-	# raised 8 -> 14/day. Bricks is the single most Brick-hungry early
-	# bottleneck in the whole tree — Workhouse (80), Garrison (90),
-	# Saltpetre Mill (60), Church Watchtower (100) all draw on the same
-	# 100-unit starting stock, and at the old 8/day a realistic opening
-	# build order never actually reaches an affordable Garrison within a
-	# full simulated month (found by the same simulation that caught the
-	# Wood/Cast-Iron gaps this pass's earlier work fixed). 14/day clears
-	# that same opening's Garrison purchase by ~day 12 and Saltpetre Mill
-	# by ~day 6 — a real early-game milestone, not an instant one, but no
-	# longer an unreachable one either.
+	# "Raise output of brickworks" (user feedback): 8 -> 14/day. Bricks was
+	# the tightest early bottleneck — Workhouse (80), Garrison (90),
+	# Saltpetre Mill (60), Church Watchtower (100) all draw the same
+	# 100-unit starting stock; at 8/day a realistic opening never reached an
+	# affordable Garrison within a simulated month. At 14/day: Garrison by
+	# ~day 12, Saltpetre Mill by ~day 6.
 	d.daily_output = {GameEnums.ResourceType.BRICKS: 14.0}
 	d.allowed_biomes = [GameEnums.BiomeType.INDUSTRIAL, GameEnums.BiomeType.URBAN]
 	d.noise_output = 3  # Kilns firing (Phase 5.2's Threat Meter source).
@@ -229,7 +202,7 @@ static func _charcoal_kiln() -> BuildingDefinition:
 	d.noise_output = 3
 	return d
 
-## Display name shortened (user request, playtest round 4).
+## Display name shortened per user feedback.
 static func _coal_pithead() -> BuildingDefinition:
 	var d := BuildingDefinition.new(GameEnums.BuildingType.COAL_PITHEAD, "Coal Pit")
 	d.category = GameEnums.BuildingCategory.INDUSTRY_EXTRACTION
@@ -239,7 +212,7 @@ static func _coal_pithead() -> BuildingDefinition:
 	d.noise_output = 5  # Winding gear/heavy machinery — louder than a surface kiln.
 	return d
 
-## Display name shortened (user request, playtest round 4).
+## Display name shortened per user feedback.
 static func _cast_iron_foundry() -> BuildingDefinition:
 	var d := BuildingDefinition.new(GameEnums.BuildingType.CAST_IRON_FOUNDRY, "Iron Foundry")
 	d.category = GameEnums.BuildingCategory.INDUSTRY_EXTRACTION
@@ -250,7 +223,7 @@ static func _cast_iron_foundry() -> BuildingDefinition:
 	d.noise_output = 6  # Hammering/casting — the loudest single source in the tree today.
 	return d
 
-## Display name shortened (user request, playtest round 4).
+## Display name shortened per user feedback.
 static func _saltpetre_powder_mill() -> BuildingDefinition:
 	var d := BuildingDefinition.new(GameEnums.BuildingType.SALTPETRE_POWDER_MILL, "Gunpowder Mill")
 	d.category = GameEnums.BuildingCategory.INDUSTRY_EXTRACTION
@@ -273,7 +246,7 @@ static func _forward_ammo_dump() -> BuildingDefinition:
 
 # --- Agriculture -------------------------------------------------------------
 
-## Display name shortened (user request, playtest round 4).
+## Display name shortened per user feedback.
 static func _tenant_farm() -> BuildingDefinition:
 	var d := BuildingDefinition.new(GameEnums.BuildingType.TENANT_FARM, "Farm")
 	d.category = GameEnums.BuildingCategory.AGRICULTURE

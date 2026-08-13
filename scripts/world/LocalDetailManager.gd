@@ -1,24 +1,24 @@
 class_name LocalDetailManager
 extends Node2D
 
-## Orchestrates the Strategic <-> Tactical hard-cut zoom switch (Phase 2.5).
-## Listens for CameraController crossing its tactical_zoom_threshold, then
-## hydrates a small neighborhood of hexes around wherever the camera is
-## centered into full TacticalHexView detail — and only for hexes that
-## qualify as settled/frontier (see _hex_qualifies_for_detail); distant
-## unclaimed wilderness stays an abstract HexCellView tile even at max zoom,
-## which is what keeps this affordable for a map the size of Great Britain.
+## Orchestrates the Strategic <-> Tactical hard-cut zoom switch. Listens for
+## CameraController crossing its tactical_zoom_threshold, then hydrates a
+## small neighborhood of hexes around wherever the camera is centered into
+## full TacticalHexView detail — and only for hexes that qualify as settled/
+## frontier (see _hex_qualifies_for_detail); distant unclaimed wilderness
+## stays an abstract HexCellView tile even at max zoom, which is what keeps
+## this affordable for a map the size of Great Britain.
 ##
 ## Parented as a sibling of HexGridMap under WorldRoot (not under Main like
-## the other Phase 2 systems) specifically so its spawned TacticalHexViews
-## share HexGridMap's local coordinate space and render on top of it by
-## plain sibling draw order — added after HexGridMap in Main.tscn.
+## other systems) specifically so its spawned TacticalHexViews share
+## HexGridMap's local coordinate space and render on top of it by plain
+## sibling draw order — added after HexGridMap in Main.tscn.
 ##
-## Phase 2.5.5: also tracks CameraController's internal Tactical fidelity
-## band (GameEnums.TacticalFidelity) and pushes it to every hydrated
-## TacticalHexView (see _on_fidelity_changed()) — a hex hydrating fresh
-## picks up whatever band is current at that moment, an already-hydrated
-## one updates live as the camera zooms deeper within Tactical view.
+## Also tracks CameraController's internal Tactical fidelity band
+## (GameEnums.TacticalFidelity) and pushes it to every hydrated
+## TacticalHexView — a hex hydrating fresh picks up whatever band is
+## current, an already-hydrated one updates live as the camera zooms
+## deeper within Tactical view.
 
 const DETAIL_RADIUS: int = 1  ## Hex disk radius hydrated around the camera; 1 = center + its 6 neighbors.
 
@@ -27,17 +27,8 @@ const DETAIL_RADIUS: int = 1  ## Hex disk radius hydrated around the camera; 1 =
 @export var logistics_network_path: NodePath
 @export var camera_path: NodePath
 @export var fog_of_war_path: NodePath
-## Optional — Tactical-zoom wall rendering (user report: "I can't see the
-## walls on the maps"). Unset means walls simply don't render up close,
-## same "gracefully skip it" convention as every other optional dependency
-## here; StrategicOverlayManager's own thin markers are unaffected either way.
-@export var wall_manager_path: NodePath
-## Optional — selection-highlight sync (user report: "make a nicer selection
-## highlight on the building itself... change the image colour to blue").
-## Unset means TacticalHexView's per-building tint just never lights up,
-## same "gracefully skip it" convention as every other optional dependency
-## here.
-@export var unit_command_controller_path: NodePath
+@export var wall_manager_path: NodePath  ## Optional — Tactical-zoom wall rendering. Unset means walls don't render up close; StrategicOverlayManager's own thin markers are unaffected.
+@export var unit_command_controller_path: NodePath  ## Optional — selection-highlight sync. Unset means TacticalHexView's per-building tint never lights up.
 
 var _hex_grid_map: HexGridMap
 var _building_manager: BuildingManager
@@ -46,13 +37,10 @@ var _camera: CameraController
 var _fog_of_war: FogOfWarManager
 var _wall_manager: WallManager
 var _unit_command_controller: UnitCommandController
-## Cached copy of `_unit_command_controller.get_selected_building()` as of
-## the last _process() poll — see _process()'s own doc comment for why this
-## is polled rather than signal-driven.
-var _selected_building: BuildingInstance
+var _selected_building: BuildingInstance  ## Cached copy of _unit_command_controller.get_selected_building() as of the last _process() poll — see _process()'s own doc comment for why this is polled, not signal-driven.
 
 var _is_tactical_mode: bool = false
-var _fidelity: GameEnums.TacticalFidelity = GameEnums.TacticalFidelity.HIGH  ## Phase 2.5.5 — pushed to every hydrated TacticalHexView; see _on_fidelity_changed().
+var _fidelity: GameEnums.TacticalFidelity = GameEnums.TacticalFidelity.HIGH  ## Pushed to every hydrated TacticalHexView; see _on_fidelity_changed().
 var _last_centered_coord: Vector2i = Vector2i.ZERO
 var _tactical_views: Dictionary = {}  # Vector2i -> TacticalHexView
 var _wall_layer: Node2D
@@ -66,13 +54,11 @@ func _ready() -> void:
 		_building_manager.building_placed.connect(_on_buildings_changed)
 		_building_manager.building_removed.connect(_on_buildings_changed)
 		_building_manager.building_ruined.connect(_on_building_ruined)
-		# Bug fix (user report: "buildings should be visible while under
-		# construction") — building_placed now fires the moment construction
-		# STARTS (see BuildingManager.place_building()'s own doc comment), so
-		# the hex already re-hydrates with the correct grey tint at that
-		# point; this is the matching hook for when it FINISHES, so the tint
-		# drops off without needing a second building_placed emission (which
-		# would double-fire every other building_placed listener too).
+		# building_placed fires the moment construction STARTS, so the hex
+		# already re-hydrates with the grey construction tint at that point;
+		# this is the matching hook for when it FINISHES, so the tint drops
+		# off without a second building_placed emission (which would
+		# double-fire every other building_placed listener too).
 		_building_manager.building_construction_completed.connect(_on_buildings_changed)
 	if logistics_network_path != NodePath():
 		_logistics_network = get_node(logistics_network_path)
@@ -91,44 +77,17 @@ func _ready() -> void:
 	_wall_layer = Node2D.new()
 	_wall_layer.name = "TacticalWallLayer"
 	_wall_layer.visible = false  # Only ever shown while _is_tactical_mode — see _on_tactical_mode_changed().
-	# Real bug found and fixed (user report: "I can't see walls rendering"):
-	# this layer is created here in _ready(), before any hex ever hydrates,
-	# which made it permanently the FIRST child of this node — every
-	# TacticalHexView _hydrate_hex() adds afterward becomes a LATER sibling,
-	# and Godot draws later siblings on top of earlier ones at equal
-	# z_index. TacticalHexView's own ground (SubHexGroundView, or its
-	# HexCellView fallback) is a fully opaque fill covering the whole hex,
-	# so it drew directly over every wall line sitting behind it — walls
-	# were rendered, just permanently hidden under the ground of any
-	# hydrated hex they crossed. This was already latent before today's
-	# real-sub-hex-terrain pass (same add-order problem existed against the
-	# old flat HexCellView ground too), but stayed mostly unnoticed because
-	# that ground was an exact hex-fan polygon with a thin anti-aliasing
-	# seam right at each hex's own edge, letting slivers of the
-	# (8x-Tactical-scaled) wall line peek through at hex boundaries.
-	# SubHexGroundView's sub-cell grid deliberately overlaps its neighbors
-	# (_GRID_SPAN = HexCoord.SUB_HEX_GRID_SPAN, see that constant's own doc
-	# comment — a later pass replaced the original 1.6x-HEX_SIZE span with a
-	# fully-covering 2.0x one plus a hex-shaped clip mask, but the same
-	# "no gap at the seam" property held even before that fix)
-	# specifically to eliminate seams between adjacent hexes' sub-hex
-	# samples — which also sealed the one gap that used to let a wall show
-	# through at all, making the bug total instead of partial.
-	# **Fixed via re-parenting (_hydrate_hex()'s own move_child() call),
-	# deliberately NOT via a positive z_index.** z_index is a GLOBAL sort
-	# key across the whole 2D scene, not scoped to this node's own
-	# children — a positive z_index here would also out-rank
-	# TacticalEntityLayer/UnitCommandController's selection ring/
-	# BuildPlacementController's ghost preview, every one of them a
-	# *separate*, LATER sibling of LocalDetailManager under WorldRoot,
-	# specifically ordered that way (see this class's own header comment)
-	# so units/zombies/UI always draw on top of terrain. Bumping z_index
-	# would have fixed walls-vs-ground at the cost of quietly burying every
-	# unit/zombie that ever crosses a wall line underneath it instead —
-	# trading one invisibility bug for a subtler one. Re-parenting keeps
-	# this layer at the SAME z_index (0) as everything else, so it only
-	# ever wins the plain sibling-order tiebreak against its own
-	# TacticalHexView siblings, never against a different node entirely.
+	# Kept as the LAST child of this node (_hydrate_hex()'s own move_child()
+	# call re-enforces this on every hydration) rather than given a positive
+	# z_index: z_index is a GLOBAL sort key across the whole 2D scene, not
+	# scoped to this node's own children — a positive z_index here would
+	# also out-rank TacticalEntityLayer/UnitCommandController's selection
+	# ring/BuildPlacementController's ghost preview, every one a separate,
+	# LATER sibling of LocalDetailManager under WorldRoot deliberately
+	# ordered so units/zombies/UI draw on top of terrain. Re-parenting keeps
+	# this layer at the SAME z_index (0) as everything else, so it only ever
+	# wins the plain sibling-order tiebreak against its own TacticalHexView
+	# siblings, never against a different node entirely.
 	add_child(_wall_layer)
 	if wall_manager_path != NodePath():
 		_wall_manager = get_node(wall_manager_path)
@@ -141,19 +100,14 @@ func _ready() -> void:
 			_on_wall_segment_placed(segment)
 
 ## Selection-highlight sync is polled here rather than signal-driven:
-## UnitCommandController only emits `building_instance_selected` when a
-## building becomes selected and `selection_cleared` when nothing is
+## UnitCommandController only emits building_instance_selected when a
+## building becomes selected and selection_cleared when nothing is
 ## selected — selecting a UNIT or a WALL instead also silently clears
-## `_selected_building` internally (see UnitCommandController._select_unit()/
-## _select_wall()) without emitting either of those two signals. Comparing
-## `get_selected_building()` against the last-known value here catches all
-## three cases uniformly with one check instead of wiring up
-## unit_selected/wall_segment_selected/building_instance_selected/
-## selection_cleared just to detect "a building WAS selected, now isn't".
-## Runs every frame regardless of tactical mode (unlike the hydration
-## refresh below) so `_selected_building` stays correct even while zoomed
-## out — see _apply_selected_building_change()'s own doc comment for why
-## that matters.
+## _selected_building internally without emitting either signal. Comparing
+## get_selected_building() against the last-known value catches all three
+## cases uniformly with one check. Runs every frame regardless of tactical
+## mode (unlike the hydration refresh below) so _selected_building stays
+## correct even while zoomed out.
 func _process(_delta: float) -> void:
 	if _unit_command_controller:
 		var selected := _unit_command_controller.get_selected_building()
@@ -168,13 +122,11 @@ func _process(_delta: float) -> void:
 		_last_centered_coord = centered_coord
 		_refresh_hydrated_neighborhood(centered_coord)
 
-## Pushes the tint change to whichever hydrated TacticalHexView actually
-## owns each building — a no-op for a hex that isn't currently hydrated
-## (selecting a building necessarily means its hex WAS hydrated at click
-## time, but nothing stops the camera panning away, dehydrating it, while
-## the selection itself persists; `_selected_building` above stays correct
-## regardless so the highlight reappears correctly if that hex rehydrates,
-## see _hydrate_hex()'s own setup() call).
+## Pushes the tint change to whichever hydrated TacticalHexView owns each
+## building — a no-op for a hex that isn't currently hydrated (selecting a
+## building means its hex WAS hydrated at click time, but the camera can
+## pan away and dehydrate it while the selection persists; _selected_building
+## stays correct regardless so the highlight reappears if that hex rehydrates).
 func _apply_selected_building_change(previous: BuildingInstance, current: BuildingInstance) -> void:
 	if previous:
 		var previous_view: TacticalHexView = _tactical_views.get(previous.hex_coord)
@@ -187,7 +139,7 @@ func _apply_selected_building_change(previous: BuildingInstance, current: Buildi
 
 func _on_tactical_mode_changed(is_tactical: bool) -> void:
 	_is_tactical_mode = is_tactical
-	_wall_layer.visible = is_tactical  ## Strategic keeps its own thin StrategicOverlayManager markers; this thicker layer is Tactical-only, same hard-cut precedent CameraController's own zoom threshold already sets everywhere else.
+	_wall_layer.visible = is_tactical  ## Strategic keeps its own thin StrategicOverlayManager markers; this thicker layer is Tactical-only.
 	if not is_tactical:
 		_dehydrate_all()
 		return
@@ -199,8 +151,8 @@ func _hex_qualifies_for_detail(coord: Vector2i) -> bool:
 	var cell := _hex_grid_map.get_cell(coord)
 	if not cell:
 		return false
-	# Fog of War (Phase 2.6): an UNSEEN hex has nothing known to draw, at any
-	# zoom — it must be at least EXPLORED before Tactical detail hydrates.
+	# An UNSEEN hex has nothing known to draw, at any zoom — it must be at
+	# least EXPLORED before Tactical detail hydrates.
 	if _fog_of_war and not _fog_of_war.is_at_least_explored(coord):
 		return false
 	if cell.is_settlement:
@@ -213,15 +165,12 @@ func _hex_qualifies_for_detail(coord: Vector2i) -> bool:
 			return true
 	return false
 
-## Design doc, user request (local obstacle avoidance): props only exist as
-## live `PropInstance` objects while their hex is hydrated — this returns
-## `[]` for a dehydrated/unqualified/off-map hex rather than an error,
-## exactly like `_hex_qualifies_for_detail()`'s own "distant wilderness
-## just doesn't have detail" contract. `MovementStepper`'s callers
-## (`UnitOrderController`/`HordeManager`) use this to gather steering
-## obstacles — meaning prop avoidance only ever applies near the camera
-## (where a hex is actually hydrated), which is also the only place a
-## player can actually see it happen.
+## Props only exist as live PropInstance objects while their hex is
+## hydrated — returns [] for a dehydrated/unqualified/off-map hex rather
+## than an error. MovementStepper's callers (UnitOrderController/
+## HordeManager) use this to gather steering obstacles — prop avoidance
+## only applies near the camera, which is also the only place a player can
+## actually see it happen.
 func get_props_at(coord: Vector2i) -> Array[PropInstance]:
 	var view: TacticalHexView = _tactical_views.get(coord)
 	return view.get_props() if view else []
@@ -257,10 +206,9 @@ func _hydrate_hex(coord: Vector2i) -> void:
 	var view := TacticalHexView.new()
 	view.setup(cell, LocalDetailGenerator.generate(cell), buildings, fog_state, _fidelity, zoc_state, _selected_building)
 	add_child(view)
-	# Keep _wall_layer as the LAST child of THIS node (see its own doc
-	# comment in _ready()) — add_child() above always appends, which would
-	# otherwise push _wall_layer back behind this freshly-hydrated hex's
-	# own ground/buildings again on every single hydration.
+	# Keep _wall_layer as the LAST child of THIS node — add_child() above
+	# always appends, which would otherwise push _wall_layer back behind
+	# this freshly-hydrated hex's own ground/buildings on every hydration.
 	move_child(_wall_layer, get_child_count() - 1)
 	_tactical_views[coord] = view
 
@@ -275,10 +223,10 @@ func _dehydrate_all() -> void:
 		_dehydrate_hex(coord)
 
 ## Placing/removing a building can change what an already-hydrated hex looks
-## like, or whether it should be hydrated at all (newly/no-longer qualifies).
-## _refresh_hydrated_neighborhood() alone only adds/removes hexes it doesn't
-## already have a view for, so an already-hydrated hex's stale view needs an
-## explicit tear-down first to actually pick up the change.
+## like, or whether it should be hydrated at all. _refresh_hydrated_neighborhood()
+## alone only adds/removes hexes it doesn't already have a view for, so an
+## already-hydrated hex's stale view needs an explicit tear-down first to
+## pick up the change.
 func _on_buildings_changed(instance: BuildingInstance) -> void:
 	if not _is_tactical_mode:
 		return
@@ -286,20 +234,18 @@ func _on_buildings_changed(instance: BuildingInstance) -> void:
 		_dehydrate_hex(instance.hex_coord)
 	_refresh_hydrated_neighborhood(_last_centered_coord)
 
-## Phase 5.12: a ruin doesn't change WHICH buildings exist at a hex, only
-## how one of them looks — the same dehydrate/rehydrate _on_buildings_changed()
-## already does is a valid (if slightly heavier-handed) way to pick that up,
-## reusing that exact method rather than duplicating its body.
+## A ruin doesn't change WHICH buildings exist at a hex, only how one of
+## them looks — the same dehydrate/rehydrate _on_buildings_changed() does is
+## a valid (if heavier-handed) way to pick that up.
 func _on_building_ruined(instance: BuildingInstance, _lost_population: int) -> void:
 	_on_buildings_changed(instance)
 
-## Zone of Control (Phase 2.3): a ZoC change can flip an already-hydrated
-## hex's own overlay without that hex newly qualifying/disqualifying for
-## detail at all (e.g. a Garrison two hexes away extends Military coverage
-## in here — MILITARY_AURA_RADIUS, user request) — push the new state to
-## every currently-hydrated view directly, same "update live" precedent
-## _on_fog_state_changed() already sets, rather than relying solely on
-## _refresh_hydrated_neighborhood()'s own add/remove-only pass below.
+## A ZoC change can flip an already-hydrated hex's own overlay without that
+## hex newly qualifying/disqualifying for detail at all (e.g. a Garrison
+## two hexes away extending Military coverage in here) — push the new state
+## to every currently-hydrated view directly, same "update live" precedent
+## _on_fog_state_changed() sets, rather than relying solely on
+## _refresh_hydrated_neighborhood()'s own add/remove-only pass.
 func _on_network_recomputed() -> void:
 	if _logistics_network:
 		for coord in _tactical_views:
@@ -307,39 +253,37 @@ func _on_network_recomputed() -> void:
 	if _is_tactical_mode:
 		_refresh_hydrated_neighborhood(_last_centered_coord)
 
-## Phase 2.5.5: pushes the new band to every currently-hydrated hex in
-## place (TacticalHexView.set_fidelity() itself no-ops/skips a redraw if
-## nothing actually changed) — no dehydrate/rehydrate needed, same "update
-## live" precedent _on_fog_state_changed() already sets for fog.
+## Pushes the new band to every currently-hydrated hex in place
+## (TacticalHexView.set_fidelity() no-ops/skips a redraw if nothing
+## changed) — no dehydrate/rehydrate needed, same "update live" precedent
+## _on_fog_state_changed() sets for fog.
 func _on_fidelity_changed(fidelity: GameEnums.TacticalFidelity) -> void:
 	_fidelity = fidelity
 	for view: TacticalHexView in _tactical_views.values():
 		view.set_fidelity(fidelity)
 
-## Fog of War (Phase 2.6): an already-hydrated hex just needs its dimming
-## updated live (EXPLORED <-> VISIBLE); a newly-EXPLORED hex that wasn't
-## hydrated before (was UNSEEN, blocked by _hex_qualifies_for_detail) may
-## now qualify, so the neighborhood still needs a refresh either way.
+## An already-hydrated hex just needs its dimming updated live (EXPLORED
+## <-> VISIBLE); a newly-EXPLORED hex that wasn't hydrated before (was
+## UNSEEN, blocked by _hex_qualifies_for_detail) may now qualify, so the
+## neighborhood still needs a refresh either way.
 func _on_fog_state_changed(coord: Vector2i, state: GameEnums.FogState) -> void:
 	if _tactical_views.has(coord):
 		_tactical_views[coord].set_fog_state(state)
 	if _is_tactical_mode:
 		_refresh_hydrated_neighborhood(_last_centered_coord)
 
-## --- Tactical-zoom wall rendering (user report: walls were invisible) ------
+## --- Tactical-zoom wall rendering -------------------------------------------
 ##
-## Mirrors StrategicOverlayManager's own wall-marker shape (a Line2D from
-## hex_a's world center to hex_b's, recolored in place on
-## placed/upgraded/breached/repaired) almost exactly — same geometry is
-## correct at any zoom, a wall really does run between two hex centers
-## through their shared edge. The only real difference is
-## WALL_TACTICAL_WIDTH_SCALE: WallVisuals.line_width() was tuned to read at
-## Strategic's zoomed-way-out scale, which is a hairline against a 512-unit
-## Tactical hex — see that constant's own doc comment. No fog-of-war/
-## hydration gating (matching StrategicOverlayManager's own precedent for
-## walls specifically — "a wall is always the player's own construction,
-## same as a building; there's nothing to spot about your own perimeter"):
-## _wall_layer's visibility alone (Tactical-mode-only) is enough gating.
+## Mirrors WallMarkerRenderer's own shape (a Line2D from hex_a's world
+## center to hex_b's, recolored in place on placed/upgraded/breached/
+## repaired) — same geometry is correct at any zoom, a wall runs between two
+## hex centers through their shared edge. The only real difference is
+## TACTICAL_WIDTH_SCALE: WallVisuals.line_width() is tuned to read at
+## Strategic's zoomed-way-out scale, a hairline against a 512-unit Tactical
+## hex. No fog-of-war/hydration gating (matching StrategicOverlayManager's
+## own precedent for walls — a wall is always the player's own construction,
+## nothing to spot about your own perimeter): _wall_layer's own visibility
+## (Tactical-mode-only) is enough gating.
 func _on_wall_segment_placed(segment: WallSegment) -> void:
 	var marker := _build_wall_marker(segment)
 	_wall_layer.add_child(marker)
@@ -350,9 +294,6 @@ func _on_wall_segment_state_changed(segment: WallSegment) -> void:
 	if marker:
 		_apply_wall_segment_look(marker, segment)
 
-## User request (Demolish) — the first time a Tactical-zoom wall marker has
-## ever needed to disappear rather than just recolor in place; mirrors
-## _dehydrate_hex()'s own "queue_free() + erase from the map" shape.
 func _on_wall_segment_removed(segment: WallSegment) -> void:
 	var marker: Line2D = _wall_markers.get(segment.id)
 	if marker:
@@ -364,27 +305,11 @@ func _build_wall_marker(segment: WallSegment) -> Line2D:
 	_apply_wall_segment_look(body, segment)
 	return body
 
-## **Real root cause found (playtest report: "wall textures are not applied
-## nor repeated across the length of the wall") — texture was previously
-## disabled entirely here (`body.texture = null`), on the theory that
-## `WallVisuals.tier_texture()`'s tile size was authored for
-## StrategicOverlayManager's much shorter marker line and would "tile far
-## more times than designed and read as noise" at Tactical's longer,
-## 8x-wider segments. That diagnosis predates the freehand wall rework:
-## Tactical segments are now short (<=WallCatalog.MAX_SEGMENT_LENGTH_WORLD_UNITS,
-## ~10 world units) chopped pieces, the same geometry Strategic's own
-## per-piece markers already use — not "a full hex-center-to-hex-center
-## distance at real world scale" the old comment assumed.
-## The actual cause: `Line2D.texture_mode = LINE_TEXTURE_TILE` only tiles
-## when the node's own `texture_repeat` is ENABLED or MIRROR (Godot's own
-## Line2D docs state this explicitly) — neither this function nor
-## StrategicOverlayManager's equivalent ever set it, so it sat at the
-## project's default (Disabled) the whole time. With repeat disabled, the
-## GPU sampler clamps to the texture's edge pixels instead of repeating,
-## which is what actually read as "not applied nor repeated" — texture
-## assigned but never actually tiling. Fixed here (and in
-## StrategicOverlayManager, same latent bug, not previously reported) by
-## setting texture_repeat explicitly rather than stripping the texture.
+## Line2D.texture_mode = LINE_TEXTURE_TILE only tiles when the node's own
+## texture_repeat is ENABLED or MIRROR — neither this function nor
+## StrategicOverlayManager's equivalent set it, so it sat at the project
+## default (Disabled), clamping to the texture's edge pixels instead of
+## repeating.
 func _apply_wall_segment_look(body: Line2D, segment: WallSegment) -> void:
 	var breached := segment.is_breached()
 	var texture := WallVisuals.tier_texture(segment.tier) if not breached else null
@@ -392,12 +317,10 @@ func _apply_wall_segment_look(body: Line2D, segment: WallSegment) -> void:
 	body.texture_mode = Line2D.LINE_TEXTURE_TILE
 	body.texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
 	body.default_color = Color.WHITE if texture else (WallVisuals.breached_color() if breached else (WallVisuals.gate_color() if segment.is_gate else WallVisuals.tier_color(segment.tier)))
-	# Real root cause of "wall texture still isn't visible" (playtest report,
-	# after the texture_repeat fix already shipped) — see
-	# WallVisuals.UV_SCALE's own doc comment: the raw segment length is far
-	# too short in LOCAL-point terms for Line2D's own pixel-to-unit UV tiling
-	# to show more than a sliver of a 4128px-wide texture. This sets
-	# points/position/scale/width together so the fix and the segment's
+	# See WallVisuals.UV_SCALE's own doc comment: the raw segment length is
+	# too short in LOCAL-point terms for Line2D's own pixel-to-unit UV
+	# tiling to show more than a sliver of a 4128px-wide texture. Sets
+	# points/position/scale/width together so this and the segment's
 	# freehand placement geometry can't drift apart.
 	WallVisuals.apply_line_geometry(body, segment.point_a, segment.point_b, WallVisuals.line_width(segment.tier, breached) * WallVisuals.TACTICAL_WIDTH_SCALE)
 	var is_legacy := _wall_manager != null and _wall_manager.is_legacy_segment(segment)

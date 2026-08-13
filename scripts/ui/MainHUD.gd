@@ -1,44 +1,34 @@
 class_name MainHUD
 extends CanvasLayer
 
-## Root HUD coordinator — the essential slice of design doc Phase 6.1:
-## resource display, the build/placement menu, unit training/orders panel,
-## time controls, and the Strategic-layer minimap (shown only during
-## Tactical zoom — see MinimapView's own doc comment for why). **The
-## per-sector Threat Meter is implemented now too** — drawn on the minimap
-## itself (MinimapView's own doc comment has the full mechanism), fed by
-## the Phase 5.2 `NoiseManager` system this HUD's own optional
-## `noise_manager_path` wires through.
+## Root HUD composition root: resource display, build/placement menu, unit
+## training/orders panel, time controls, and the Strategic-layer minimap
+## (Tactical zoom only — see MinimapView). Owns no game logic itself: wires
+## the dumb display components (ResourceBarView / TimeControlsView /
+## BuildMenuView / UnitPanelView / MinimapView / ...) to the systems they
+## read from, forwards BuildMenuView's selection into BuildPlacementController
+## and UnitPanelView's button presses into UnitCommandController. Every
+## child Control is built in code, not scene-authored — there's no art pass
+## to wait for and no editor session in this workflow to lay out a Control
+## tree by hand.
 ##
-## Owns no game logic itself: only wires the dumb display components
-## (ResourceBarView / TimeControlsView / BuildMenuView / UnitPanelView) to
-## the systems they read from, and forwards BuildMenuView's selection into
-## BuildPlacementController and UnitPanelView's button presses into
-## UnitCommandController (which owns the actual map-click selection/order
-## input — see its own doc comment). Every child Control is built in code rather
-## than scene-authored, matching HexCellView/StrategicOverlayManager's
-## "code-drawn placeholder" convention — there's no art pass to wait for
-## before wiring this up, and no editor session in this workflow to lay out
-## a Control tree by hand anyway.
+## This class resolves every NodePath export (below) and constructs the
+## child views, but four cross-cutting concerns are extracted into their own
+## collaborators under scripts/ui/hud/ rather than living as a flat pile of
+## handlers here: HUDToastRouter (toast display mechanics), HUDPlacementFeedback
+## (building/wall placement mode text + construction/repair/rejection
+## toasts — the largest cluster), HUDReconTracker (the Reconnaissance
+## countdown label), HUDPanelSwitcher (mutual exclusion between the four
+## centered panels). Each depends only on the manager(s) it actually needs.
+## Tech/save-load/unit-training toasts stay as one-line handlers here — each
+## already touches exactly one manager and doesn't warrant its own file. See
+## todo.md's "Technical Debt" section for why this split happened.
 ##
-## `SaveLoadView` (Phase 2.8.3, a real campaign/slot browser) and
-## `DisplayOptionsView` (user request — "add options so we can enable and
-## disable the overlays"), letting the player toggle every
-## `StrategicOverlayManager` marker layer AND the Threat Meter's two
-## surfaces independently via the `DisplaySettings` autoload, are both
-## reached through a single "Menu" button now (`InGameMenuView`, playtest
-## round 6 — "There should be a 'Main Menu' that has all the save/load
-## functionality on it... remove [display options] from the main screen")
-## instead of their own dedicated always-visible buttons; the same Menu
-## also offers Resume/Quit to Main Menu/Exit to Desktop. Phase 2.9.3's Tech
-## Tree screen (`TechTreeView`, a "Tech Tree..." button) keeps its own
-## dedicated button, unaffected by this — all four centered panels close
-## each other on open so they never visibly stack.
-##
-## Phase 5.3's Reconnaissance countdown (`_recon_label`) is a single status
-## row, not a separate view class — deliberately as minimal as `_mode_label`
-## already is for the same "one line of text, blank when nothing relevant"
-## shape, not worth a fourth dumb-display-component class for one Label.
+## `SaveLoadView`, `DisplayOptionsView`, `TechTreeView`, and `InGameMenuView`
+## are the four centered toggleable panels (HUDPanelSwitcher). Reconnaissance
+## countdown (`_recon_label`, HUDReconTracker) is a single status row, not a
+## dedicated view class — same "one line of text, blank when nothing
+## relevant" shape as `_mode_label`.
 
 @export var resource_manager_path: NodePath
 @export var building_manager_path: NodePath
@@ -49,51 +39,34 @@ extends CanvasLayer
 @export var hex_grid_map_path: NodePath
 @export var fog_of_war_manager_path: NodePath
 @export var camera_path: NodePath
-@export var event_manager_path: NodePath  ## Optional — Phase 6.2's EventManager; without it, world events simply show no toast (AlertManager's own audio/auto-pause is unaffected either way).
-@export var tech_manager_path: NodePath   ## Optional — Phase 2.9.3's Tech Tree screen; unset means the panel/button simply do nothing.
-@export var horde_manager_path: NodePath  ## Optional — Phase 5.3's Reconnaissance countdown; unset means that HUD row stays permanently empty.
-@export var noise_manager_path: NodePath  ## Optional — Phase 6.1's Threat Meter (drawn on the minimap); unset means no threat markers, everything else about the minimap is unaffected.
-@export var wall_manager_path: NodePath   ## Optional — feeds UnitPanelView's wall-repair toast/live-refresh; unset means a selected wall's Repair button still works (UnitCommandController owns the actual call) but the panel won't live-refresh mid-repair and no toast fires.
-@export var wall_placement_controller_path: NodePath  ## Optional — arms WallPlacementController from BuildMenuView's new Walls tab; unset means that tab's buttons simply do nothing (same "gracefully skip it" convention as every other optional MainHUD dependency).
-
-const TOAST_SECONDS := 3.0
-const RECON_REFRESH_SECONDS := 1.0  ## Matches TimeControlsView's own "refreshed once a second" cadence — no need to recompute an ETA every frame.
+@export var event_manager_path: NodePath  ## Optional — without it, world events show no toast (AlertManager's own audio/auto-pause is unaffected).
+@export var tech_manager_path: NodePath   ## Optional — unset means the Tech Tree panel/button do nothing.
+@export var horde_manager_path: NodePath  ## Optional — unset means the Reconnaissance row stays permanently empty.
+@export var noise_manager_path: NodePath  ## Optional — unset means no Threat Meter markers on the minimap; everything else about it is unaffected.
+@export var wall_manager_path: NodePath   ## Optional — feeds UnitPanelView's wall-repair toast/live-refresh; unset means a selected wall's Repair button still works (UnitCommandController owns the call) but no live-refresh/toast.
+@export var wall_placement_controller_path: NodePath  ## Optional — arms WallPlacementController from BuildMenuView's Walls tab; unset means that tab's buttons do nothing.
 
 const MARGIN := 8.0
 const ROW_HEIGHT := 32.0
-const TIME_CONTROLS_WIDTH := 420.0  ## Speed buttons only now (playtest round 5 — the date/phase countdown moved to DayPhaseView, bottom-right) — self-corrects to the real measured width regardless (see _place_top_right()'s own doc comment), this is just the single-frame fallback.
-const DAY_PHASE_VIEW_WIDTH := 260.0  ## Fallback width for the new bottom-right date/countdown strip — see DAY_PHASE_VIEW's own placement helper.
+const TIME_CONTROLS_WIDTH := 420.0  ## Fallback only — _place_top_right() self-corrects to the real measured width.
+const DAY_PHASE_VIEW_WIDTH := 260.0
 const SAVE_LOAD_WIDTH := 220.0
 const TECH_BAR_WIDTH := 150.0
-## User request, playtest round 4 ("incorporate [the build menu] into some
-## main menu bar at the bottom of the screen with the mini map on the right
-## hand side"): one full-width bottom strip now holds BuildMenuView
-## (SIZE_EXPAND_FILL — see _build_bottom_bar()) and MinimapView side by side,
-## replacing their old separate bottom-left/bottom-right placements.
-## Shrunk 190 -> 130 in an earlier pass, then raised again here (playtest
-## round 6 follow-up: "make each building card... large enough so the text
-## fits... some of them currently go off the bottom of the screen") once
-## 130 turned out too short for BuildMenuView's own (also revisited)
-## _CARD_WIDTH/_CARD_ICON_SIZE/font sizes — see that file's own doc
-## comment for the shared history. Tall enough for a card's icon + name +
-## a 2-3 line cost/upkeep/effect block without clipping, verified together
-## via an actual live screenshot, not just arithmetic.
-const BOTTOM_BAR_HEIGHT := 224.0  ## Raised again after live-testing the 172 value — Garrison's card (2-resource cost + upkeep + "Trains: ..." all on one card, this tree's longest) still clipped its last line off the bottom of the real screen. See BuildMenuView's own doc comment for the same live-testing history.
-## Height now matches BOTTOM_BAR_HEIGHT exactly (playtest round 6: "the
-## minimap... should sit flush with the building menu so the UX is
-## better") — paired with `size_flags_vertical = SIZE_FILL` at the one
-## call site below instead of the old SIZE_SHRINK_CENTER, so the minimap's
-## own rect exactly fills the bar's full height (top AND bottom edges
-## flush against the build-menu card column) rather than floating centered
-## with a visible gap above/below whenever its own height fell short of
-## the bar's. Width picked independently — wide enough to read the map at
-## a glance, not derived from the old aspect ratio.
+## One full-width bottom strip holds BuildMenuView (SIZE_EXPAND_FILL) and
+## MinimapView side by side. Height verified against a live screenshot: tall
+## enough for a building card's icon + name + 2-3 line cost/upkeep/effect
+## block without clipping (Garrison's card — 2-resource cost + upkeep +
+## "Trains: ..." — is this tree's longest).
+const BOTTOM_BAR_HEIGHT := 224.0
+## Matches BOTTOM_BAR_HEIGHT exactly, paired with size_flags_vertical =
+## SIZE_FILL at the minimap's own call site, so its rect exactly fills the
+## bar's full height instead of floating centered with a gap.
 const MINIMAP_SIZE := Vector2(200.0, 224.0)
-const UNIT_PANEL_SIZE := Vector2(320.0, 320.0)  ## Widened/heightened (playtest round 4, #8) for the new 2-column training/retrain card grid (HUDStyles.build_card()) — the old text-only button list fit 260x260, real icon+cost+upkeep cards need more room.
+const UNIT_PANEL_SIZE := Vector2(320.0, 320.0)
 const SAVE_LOAD_VIEW_SIZE := Vector2(320.0, 320.0)
 const TECH_TREE_VIEW_SIZE := Vector2(380.0, 360.0)
 const DISPLAY_OPTIONS_VIEW_SIZE := Vector2(320.0, 300.0)
-const IN_GAME_MENU_VIEW_SIZE := Vector2(240.0, 260.0)  ## Fallback only — get_content_min_size() resizes this to its real 5-button content, same as every other centered panel here.
+const IN_GAME_MENU_VIEW_SIZE := Vector2(240.0, 260.0)  ## Fallback only — get_content_min_size() resizes this to its real content.
 
 var _building_manager: BuildingManager
 var _save_load_manager: SaveLoadManager
@@ -104,13 +77,14 @@ var _tech_manager: TechManager
 var _tech_tree_view: TechTreeView
 var _display_options_view: DisplayOptionsView
 var _in_game_menu_view: InGameMenuView
+var _panel_switcher: HUDPanelSwitcher
 var _horde_manager: HordeManager
 var _fog_of_war_manager: FogOfWarManager
 
 var _mode_label: Label
 var _recon_label: Label
-var _toast_label: Label
-var _toast_timer: Timer
+var _toast: HUDToastRouter
+var _placement_feedback: HUDPlacementFeedback
 var _wall_manager: WallManager
 var _wall_placement_controller: WallPlacementController
 
@@ -120,21 +94,10 @@ func _ready() -> void:
 		resource_manager = get_node(resource_manager_path)
 	if building_manager_path != NodePath():
 		_building_manager = get_node(building_manager_path)
-		_building_manager.placement_rejected.connect(_on_placement_rejected)
-		# User report: building/repair now take real time (BuildingManager's
-		# own doc comment) — without a toast at the moment a click is
-		# accepted, spending resources with nothing else visibly happening
-		# would read as broken, not "in progress."
-		_building_manager.construction_started.connect(_on_construction_started)
-		_building_manager.repair_started.connect(_on_building_repair_started)
 	if wall_manager_path != NodePath():
 		_wall_manager = get_node(wall_manager_path)
-		_wall_manager.repair_started.connect(_on_wall_repair_started)
-		_wall_manager.placement_rejected.connect(_on_wall_placement_rejected)
 	if wall_placement_controller_path != NodePath():
 		_wall_placement_controller = get_node(wall_placement_controller_path)
-		_wall_placement_controller.placement_started.connect(_on_wall_placement_started)
-		_wall_placement_controller.placement_ended.connect(_on_placement_ended)  ## Reused directly — it only ever clears _mode_label, doesn't care what was being placed, same as buildings.
 	if save_load_manager_path != NodePath():
 		_save_load_manager = get_node(save_load_manager_path)
 		_save_load_manager.game_saved.connect(_on_game_saved)
@@ -142,8 +105,6 @@ func _ready() -> void:
 		_save_load_manager.load_failed.connect(_on_load_failed)
 	if build_placement_controller_path != NodePath():
 		_build_placement_controller = get_node(build_placement_controller_path)
-		_build_placement_controller.placement_started.connect(_on_placement_started)
-		_build_placement_controller.placement_ended.connect(_on_placement_ended)
 	if event_manager_path != NodePath():
 		var event_manager: EventManager = get_node(event_manager_path)
 		event_manager.event_raised.connect(_on_event_raised)
@@ -181,12 +142,28 @@ func _ready() -> void:
 	_build_tech_tree_view()
 	_build_display_options_view()
 	_build_in_game_menu_view()
+	_panel_switcher = HUDPanelSwitcher.new(_save_load_view, _tech_tree_view, _display_options_view, _in_game_menu_view)
 	_build_mode_label()
 	_build_recon_label()
 	_build_bottom_bar(hex_grid_map, _fog_of_war_manager, camera, noise_manager)
 	_build_day_phase_view()
 	_build_unit_panel(unit_manager, _wall_manager)
+	# _build_toast() must stay LAST among the node-adding calls above: the
+	# toast panel needs to draw on top of the bottom bar/build menu cards it
+	# visually overlaps, and CanvasLayer siblings draw in add_child() order —
+	# adding it earlier would bury it under later panels (found by actually
+	# running the game, not the headless tests alone).
 	_build_toast()
+
+	_placement_feedback = HUDPlacementFeedback.new(_mode_label, _toast)
+	if _building_manager:
+		_placement_feedback.wire_building_manager(_building_manager)
+	if _wall_manager:
+		_placement_feedback.wire_wall_manager(_wall_manager)
+	if _build_placement_controller:
+		_placement_feedback.wire_build_placement_controller(_build_placement_controller)
+	if _wall_placement_controller:
+		_placement_feedback.wire_wall_placement_controller(_wall_placement_controller)
 
 func _build_resource_bar(resource_manager: ResourceManager) -> void:
 	var resource_bar := ResourceBarView.new()
@@ -200,52 +177,26 @@ func _build_time_controls() -> void:
 	var time_controls := TimeControlsView.new()
 	time_controls.name = "TimeControls"
 	add_child(time_controls)
-	# Row 1, not 0: ResourceBarView (row 0) is a full-width top-wide strip
-	# whose resource chips can run most of the screen's width (8 resource
-	# types), and TimeControlsView (Phase 5.1) is wide enough now (date +
-	# phase countdown + speed buttons, TIME_CONTROLS_WIDTH) that sharing row
-	# 0 with it visibly overlapped the resource bar's own text — caught by
-	# actually playing, not just the headless logic tests, same as the
-	# original Phase 6.1 HUD layout bug. Row 1 (top-right) is clear of the
-	# full-width resource bar above it.
-	_place_top_right(time_controls, TIME_CONTROLS_WIDTH, 1)
+	_place_top_right(time_controls, TIME_CONTROLS_WIDTH, 1)  # Row 1: row 0 is the full-width resource bar.
 
-## User request, playtest round 5: "messages at the top of the screen
-## overlap on the date and day/night countdown... move the date and
-## day/night countdown to the bottom right please above where the minimap
-## is." Bottom-right corner, directly above the bottom bar (build menu +
-## minimap) — the one spot that reads as "above the minimap" and is clear
-## of every top-strip element (resource bar/mode label/recon label) that
-## used to crowd it.
 func _build_day_phase_view() -> void:
 	var day_phase_view := DayPhaseView.new()
 	day_phase_view.name = "DayPhaseView"
 	add_child(day_phase_view)
 	_place_above_bottom_bar_right(day_phase_view, DAY_PHASE_VIEW_WIDTH)
 
-## User report (playtest round 6): "There should be a 'Main Menu' that has
-## all the save/load functionality on it, it should also have all the
-## display options (remove them from the main screen...)" — replaces the
-## old always-visible "Quick Save"/"Quick Load"/"Browse Saves..." row with
-## one "Menu" button that opens InGameMenuView (Resume/Save-Load/Display
-## Options/Quit to Main Menu/Exit), same row-stacking slot (row 2) the old
-## bar occupied.
 func _build_menu_bar() -> void:
 	var bar := HBoxContainer.new()
 	bar.name = "MenuBar"
 	add_child(bar)
-	_place_top_right(bar, SAVE_LOAD_WIDTH, 2)  # Row 2: stacks below TimeControlsView in the same corner.
+	_place_top_right(bar, SAVE_LOAD_WIDTH, 2)  # Row 2: stacks below TimeControlsView.
 
 	var menu_button := Button.new()
 	menu_button.text = "Menu"
-	menu_button.pressed.connect(_on_menu_pressed)
+	menu_button.pressed.connect(func() -> void: _panel_switcher.open_menu())
 	HUDStyles.style_button(menu_button)
 	bar.add_child(menu_button)
 
-## Phase 2.8.3's actual Save/Load UI — centered, hidden until opened from
-## InGameMenuView's "Save / Load..." button (see SaveLoadView's own doc
-## comment for why it's the first toggleable panel in this HUD rather than
-## another always-visible corner view).
 func _build_save_load_view() -> void:
 	_save_load_view = SaveLoadView.new()
 	_save_load_view.name = "SaveLoadView"
@@ -256,25 +207,18 @@ func _build_save_load_view() -> void:
 	_save_load_view.save_requested.connect(_on_save_load_view_save_requested)
 	_save_load_view.load_requested.connect(_on_save_load_view_load_requested)
 
-## Design doc Phase 2.9.3's Tech Tree screen — a single "Tech Tree..."
-## button, row 3 (stacks below MenuBar in the same corner). Gracefully
-## no-ops if tech_manager_path wasn't wired, same convention as everything
-## else here.
 func _build_tech_bar() -> void:
 	var bar := HBoxContainer.new()
 	bar.name = "TechBar"
 	add_child(bar)
-	_place_top_right(bar, TECH_BAR_WIDTH, 3)  # Row 3: stacks below MenuBar in the same corner.
+	_place_top_right(bar, TECH_BAR_WIDTH, 3)  # Row 3: stacks below MenuBar.
 
 	var tech_button := Button.new()
 	tech_button.text = "Tech Tree..."
-	tech_button.pressed.connect(_on_tech_tree_pressed)
+	tech_button.pressed.connect(func() -> void: _panel_switcher.open_tech_tree())
 	HUDStyles.style_button(tech_button)
 	bar.add_child(tech_button)
 
-## Centered, hidden until "Tech Tree..." opens it — same toggleable-panel
-## convention SaveLoadView (Phase 2.8.3) already established; this is the
-## second panel here to follow it, not a new pattern.
 func _build_tech_tree_view() -> void:
 	_tech_tree_view = TechTreeView.new()
 	_tech_tree_view.name = "TechTreeView"
@@ -284,27 +228,19 @@ func _build_tech_tree_view() -> void:
 		_tech_tree_view.setup(_tech_manager)
 	_tech_tree_view.research_requested.connect(_on_research_requested)
 
-## Centered, hidden until opened from InGameMenuView's "Display Options..."
-## button (playtest round 6 — used to have its own dedicated "Display..."
-## row button, removed as part of consolidating save/load/display under
-## one Menu). No `setup()` call needed — DisplayOptionsView reads/writes
-## the DisplaySettings autoload directly, see its own doc comment for why
-## that's a deliberate exception to this HUD's usual pattern.
 func _build_display_options_view() -> void:
 	_display_options_view = DisplayOptionsView.new()
 	_display_options_view.name = "DisplayOptionsView"
 	add_child(_display_options_view)
 	_place_center(_display_options_view, DISPLAY_OPTIONS_VIEW_SIZE)
 
-## Playtest round 6's own new hub panel (see InGameMenuView's own doc
-## comment) — the fourth centered toggleable panel here, same convention.
 func _build_in_game_menu_view() -> void:
 	_in_game_menu_view = InGameMenuView.new()
 	_in_game_menu_view.name = "InGameMenuView"
 	add_child(_in_game_menu_view)
 	_place_center(_in_game_menu_view, IN_GAME_MENU_VIEW_SIZE)
-	_in_game_menu_view.save_load_requested.connect(_on_browse_saves_pressed)
-	_in_game_menu_view.display_options_requested.connect(_on_display_options_pressed)
+	_in_game_menu_view.save_load_requested.connect(func() -> void: _panel_switcher.open_save_load())
+	_in_game_menu_view.display_options_requested.connect(func() -> void: _panel_switcher.open_display_options())
 	_in_game_menu_view.resume_requested.connect(_on_in_game_menu_resume)
 	_in_game_menu_view.quit_to_menu_requested.connect(_on_in_game_menu_quit_to_menu)
 	_in_game_menu_view.exit_requested.connect(_on_in_game_menu_exit)
@@ -319,15 +255,6 @@ func _build_mode_label() -> void:
 	_mode_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	HUDStyles.style_label(_mode_label, true)
 
-## Design doc Phase 5.3 (Reconnaissance & Early Warning): "horde countdown
-## timers... not just an abstract warning." Row 2, same top-wide strip as
-## the resource bar/mode label above it — empty text (same "blank when
-## nothing relevant" convention _mode_label already uses) whenever no
-## ATTRACTED horde is currently within observed range. "Observed range" is
-## this HUD's own interpretation of the design doc's "high ground
-## observation posts & telegraph alerts" — Fog of War VISIBLE, reusing
-## existing vision sources rather than inventing a new observation-post
-## mechanic (every building already projects vision, Phase 2.6).
 func _build_recon_label() -> void:
 	_recon_label = Label.new()
 	_recon_label.name = "ReconLabel"
@@ -336,68 +263,19 @@ func _build_recon_label() -> void:
 	_recon_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_recon_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	HUDStyles.style_label(_recon_label)
+	HUDReconTracker.new(self, _recon_label, _horde_manager, _fog_of_war_manager)
 
-	var timer := Timer.new()
-	timer.wait_time = RECON_REFRESH_SECONDS
-	timer.autostart = true
-	add_child(timer)
-	timer.timeout.connect(_refresh_recon_label)
-	_refresh_recon_label()
-
-## Finds the soonest-arriving currently-observed ATTRACTED horde (if any)
-## and shows its ETA — deliberately just the single most urgent one, not a
-## scrolling list, matching this row's own "one line of status text" shape
-## (same as _mode_label above it). Not gated on
-## StrategicOverlayManager.HORDE_MARKER_MIN_SIZE (Phase 5.10's size>=100
-## Strategic-marker threshold) on purpose: early warning is exactly the
-## case where a smaller, not-yet-marker-worthy horde still matters.
-func _refresh_recon_label() -> void:
-	if not _horde_manager or not _fog_of_war_manager:
-		_recon_label.text = ""
-		return
-	var best_eta := INF
-	var best_horde: Horde = null
-	for horde in _horde_manager.get_all_hordes():
-		if horde.state != GameEnums.HordeState.ATTRACTED:
-			continue
-		if not _fog_of_war_manager.is_visible(horde.hex_coord):
-			continue
-		var eta := _horde_manager.get_eta_seconds(horde)
-		if eta < best_eta:
-			best_eta = eta
-			best_horde = horde
-	if not best_horde:
-		_recon_label.text = ""
-		return
-	_recon_label.text = "⚠ Horde approaching (%d) — ETA %s" % [best_horde.size, _format_eta(best_eta)]
-
-func _format_eta(seconds: float) -> String:
-	var total := int(roundf(seconds))
-	return "%02d:%02d" % [total / 60, total % 60]
-
-## User request, playtest round 4 (#5): "incorporate [the build menu] into
-## some main menu bar at the bottom of the screen with the mini map on the
-## right hand side" — one full-width bottom row now holds both, replacing
-## their old separate bottom-left (build menu)/bottom-right (minimap)
-## placements. `noise_manager` (optional, Phase 6.1's Threat Meter) is the
-## minimap's own fourth optional input — see MinimapView's own doc comment
-## for what it draws.
 func _build_bottom_bar(hex_grid_map: HexGridMap, fog_of_war_manager: FogOfWarManager, camera: CameraController, noise_manager: NoiseManager) -> void:
 	var bar := HBoxContainer.new()
 	bar.name = "BottomBar"
 	bar.add_theme_constant_override("separation", MARGIN)
-	# User report (playtest round 6): "while hovering your mouse over the
-	# bottom menu, you shouldn't be able to zoom in or out" — scrolling
-	# through building cards and drifting into a gap between cards (or onto
-	# the minimap) used to leak the wheel event through to
-	# CameraController._handle_zoom_input() (an _unhandled_input listener),
-	# since nothing at this outer row level explicitly claimed it.
-	# MOUSE_FILTER_STOP here "physically blocks any mouse input events from
+	# MOUSE_FILTER_STOP "physically blocks any mouse input events from
 	# reaching any other Control node behind it, INCLUDING THE VIEWPORT"
-	# (Godot's own Control.mouse_filter docs) — covers the whole bar's
-	# rect (build menu AND minimap AND the gaps between/around them) in one
-	# place, rather than relying on every child control's own filter to
-	# happen to add up to full coverage.
+	# (Control.mouse_filter docs) — without it, scrolling through building
+	# cards and drifting into a gap between cards (or onto the minimap)
+	# leaks the wheel event through to CameraController's own zoom input,
+	# covering the whole bar's rect in one place rather than relying on
+	# every child control's own filter to add up to full coverage.
 	bar.mouse_filter = Control.MOUSE_FILTER_STOP
 	add_child(bar)
 	_place_bottom_wide_row(bar, BOTTOM_BAR_HEIGHT)
@@ -415,13 +293,6 @@ func _build_bottom_bar(hex_grid_map: HexGridMap, fog_of_war_manager: FogOfWarMan
 	bar.add_child(minimap)
 	minimap.setup(hex_grid_map, _building_manager, fog_of_war_manager, camera, MINIMAP_SIZE, noise_manager)
 
-## UnitPanelView (Phase 6.1's unit training/orders counterpart to the Build
-## Menu) — top-left corner, the one spot nothing else in this HUD claims
-## (top-wide strip: resource bar/mode label; top-right: time controls/
-## save-load; bottom strip: build menu + minimap; bottom-wide: toast).
-## Gracefully empty if unit_command_controller_path wasn't wired,
-## same "unset gracefully skips it" convention every other optional MainHUD
-## dependency already follows.
 func _build_unit_panel(unit_manager: UnitManager, wall_manager: WallManager) -> void:
 	var unit_panel := UnitPanelView.new()
 	unit_panel.name = "UnitPanel"
@@ -430,42 +301,8 @@ func _build_unit_panel(unit_manager: UnitManager, wall_manager: WallManager) -> 
 	if _unit_command_controller:
 		unit_panel.setup(_unit_command_controller, unit_manager, _building_manager, wall_manager)
 
-## **Real bug fix (found live testing playtest round 5's own Garrison
-## placement — a rejection toast never appeared to explain why a click
-## seemed to do nothing):** `_place_bottom_wide()` pins to the screen's
-## very bottom edge, which used to be empty space before #5's bottom-bar
-## merge — now it's exactly where the build menu + minimap sit. The toast
-## was still drawing on top (added last in `_ready()`, so it wins z-order),
-## but as bare, unstyled white text directly over a busy row of building
-## cards it was effectively invisible. Moved to its own full-width strip
-## just ABOVE the bottom bar (same spot `DayPhaseView` shares the right
-## portion of), wrapped in a real `PanelContainer` (a bare `Label`, same as
-## `ResourceBarView`/`BuildMenuView` before their own dark-background fixes,
-## never actually draws a `"panel"` theme stylebox) so a toast has a real
-## dark backing and reads as a toast again — hidden via the wrapper's own
-## `visible`, not just empty text, so it doesn't leave a dark empty box
-## floating over the map between messages.
-var _toast_panel: PanelContainer
 func _build_toast() -> void:
-	_toast_panel = PanelContainer.new()
-	_toast_panel.name = "ToastPanel"
-	add_child(_toast_panel)
-	_place_above_bottom_bar_wide(_toast_panel)
-	HUDStyles.style_panel(_toast_panel)
-	_toast_panel.visible = false
-
-	_toast_label = Label.new()
-	_toast_label.name = "ToastLabel"
-	_toast_panel.add_child(_toast_label)
-	HUDStyles.style_label(_toast_label, true)
-	_toast_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_toast_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-
-	_toast_timer = Timer.new()
-	_toast_timer.one_shot = true
-	_toast_timer.wait_time = TOAST_SECONDS
-	add_child(_toast_timer)
-	_toast_timer.timeout.connect(_on_toast_timeout)
+	_toast = HUDToastRouter.new(self, _place_above_bottom_bar_wide)
 
 ## --- Layout helpers ---------------------------------------------------
 ##
@@ -473,12 +310,11 @@ func _build_toast() -> void:
 ## PRESET_MODE_MINSIZE, ...): that mode sizes offsets off
 ## get_combined_minimum_size() at the moment of the call, which for these
 ## code-built Controls (an HBoxContainer/ScrollContainer whose children were
-## *just* added this same frame) can still read as the Control's initial
-## (0, 0) rect — every bottom/right-anchored element ended up positioned
-## just past the edge of the screen instead of inside it (caught by actually
-## running the game and looking at it, not just the headless logic tests —
-## see the Phase 6.1 commit). These compute every offset from an explicit
-## size instead, so they can't go stale.
+## just added this same frame) can still read as the Control's initial
+## (0, 0) rect — every bottom/right-anchored element ends up positioned just
+## past the edge of the screen instead of inside it (found by actually
+## running the game, not the headless logic tests alone). These compute
+## every offset from an explicit size instead, so they can't go stale.
 
 ## Full-width strip pinned to the top, `row` rows down (0 = topmost) at a
 ## fixed ROW_HEIGHT each.
@@ -492,34 +328,16 @@ func _place_top_wide(control: Control, row: int) -> void:
 	control.offset_top = MARGIN + row * (ROW_HEIGHT + MARGIN)
 	control.offset_bottom = control.offset_top + ROW_HEIGHT
 
-## Full-width strip pinned to the bottom edge.
-func _place_bottom_wide(control: Control) -> void:
-	control.anchor_left = 0.0
-	control.anchor_right = 1.0
-	control.anchor_top = 1.0
-	control.anchor_bottom = 1.0
-	control.offset_left = MARGIN
-	control.offset_right = -MARGIN
-	control.offset_bottom = -MARGIN
-	control.offset_top = -MARGIN - ROW_HEIGHT
-
 ## Strip pinned to the top-right corner, `row` rows down — self-sizes to its
-## own content's real width rather than trusting a hand-picked constant.
-## `fallback_width` only matters for the single frame before that
-## measurement lands (children don't exist to measure yet at the moment
-## this is called from _build_*()); immediately after, a one-shot deferred
-## pass re-measures get_combined_minimum_size() and re-anchors to it. This
-## is the actual fix for the family of "TimeControlsView's speed buttons /
-## SaveLoadBar's Browse Saves button ran off the right edge of a 1920px
-## screen" bugs a real playtest caught — TIME_CONTROLS_WIDTH/SAVE_LOAD_WIDTH
-## were both hand-picked guesses that fell behind the first time a button
-## got added or re-labelled; auto-sizing can't go stale the same way.
+## own content's real width. `fallback_width` only matters for the single
+## frame before that measurement lands (children don't exist to measure yet
+## at the moment this is called from _build_*()); a one-shot deferred pass
+## then re-measures get_combined_minimum_size() and re-anchors to it.
 ##
 ## Deferred via `get_tree().process_frame` (a full frame later), not
-## `call_deferred` alone — `call_deferred` still fires within the SAME
-## frame's deferred-call flush, which is exactly the timing this class's own
-## header comment already documents as too early for
-## get_combined_minimum_size() to be valid right after `add_child()`.
+## `call_deferred` alone — `call_deferred` still fires within the same
+## frame's deferred-call flush, before get_combined_minimum_size() is valid
+## right after add_child().
 func _place_top_right(control: Control, fallback_width: float, row: int) -> void:
 	control.anchor_left = 1.0
 	control.anchor_right = 1.0
@@ -529,18 +347,14 @@ func _place_top_right(control: Control, fallback_width: float, row: int) -> void
 	control.offset_left = -MARGIN - fallback_width
 	control.offset_top = MARGIN + row * (ROW_HEIGHT + MARGIN)
 	control.offset_bottom = control.offset_top + ROW_HEIGHT
-	# A fresh lambda per call, NOT `_resize_top_right.bind(control)` on a
-	# shared named method: four separate rows (TimeControls/SaveLoadBar/
-	# TechBar/DisplayBar) all resolving through the same method+signal
-	# within the same _ready() frame first threw "already connected"
-	# (Godot's connect() dedupes by (object, method), ignoring the bound
-	# argument), and even with CONNECT_REFERENCE_COUNTED added to silence
-	# that, only the FIRST of the four ever actually fired — confirmed by
-	# an actual windowed screenshot (1000x button fixed, Browse Saves
-	# still clipped) after a --headless run alone reported zero errors,
-	# not by reasoning about it. Each `func():` literal below is its own
-	# distinct Callable even though the source is identical, so none of
-	# this dedup logic ever engages in the first place.
+	# A fresh lambda per call, not a shared bound method: connecting multiple
+	# rows through one shared method+signal within the same _ready() frame
+	# hits Godot's connect() dedupe-by-(object,method) — only the first
+	# connection actually fires even with CONNECT_REFERENCE_COUNTED, since it
+	# dedupes on the method identity, not the bound argument. Confirmed via
+	# an actual windowed screenshot, not by reasoning about it. Each
+	# `func():` literal below is its own distinct Callable, so the dedupe
+	# never engages.
 	get_tree().process_frame.connect(func() -> void:
 		if not is_instance_valid(control):
 			return
@@ -550,10 +364,8 @@ func _place_top_right(control: Control, fallback_width: float, row: int) -> void
 	, CONNECT_ONE_SHOT)
 
 ## Bottom-right corner, directly above the bottom bar (build menu + minimap)
-## — DayPhaseView's own spot (user request, playtest round 5). Same
-## self-measuring real-width correction _place_top_right() already uses
-## (see that function's own doc comment for why a fresh lambda per call,
-## not a shared bound method).
+## — DayPhaseView's own spot. Same self-measuring correction as
+## _place_top_right() (see that function's own note on the fresh-lambda dedupe issue).
 func _place_above_bottom_bar_right(control: Control, fallback_width: float) -> void:
 	control.anchor_left = 1.0
 	control.anchor_right = 1.0
@@ -571,13 +383,9 @@ func _place_above_bottom_bar_right(control: Control, fallback_width: float) -> v
 			control.offset_left = control.offset_right - real_width
 	, CONNECT_ONE_SHOT)
 
-## Full-width strip above the bottom bar — the toast's own spot (see
-## `_build_toast()`'s own doc comment for why it moved here). ONE ROW
-## higher than `_place_above_bottom_bar_right()`'s own row (DayPhaseView's
-## spot), not the same one — a full-width strip at that same row would sit
-## directly behind/in front of DayPhaseView's right-aligned panel every
-## time a toast is showing, needlessly covering the date/countdown for as
-## long as the toast is up.
+## Full-width strip above the bottom bar — the toast's own spot. One row
+## higher than _place_above_bottom_bar_right()'s row (DayPhaseView's spot),
+## not the same one, so a shown toast doesn't cover the date/countdown.
 func _place_above_bottom_bar_wide(control: Control) -> void:
 	control.anchor_left = 0.0
 	control.anchor_right = 1.0
@@ -588,9 +396,8 @@ func _place_above_bottom_bar_wide(control: Control) -> void:
 	control.offset_bottom = -MARGIN - BOTTOM_BAR_HEIGHT - MARGIN - ROW_HEIGHT - MARGIN
 	control.offset_top = control.offset_bottom - ROW_HEIGHT
 
-## Fixed-`size` rect pinned to the top-left corner, below the top-wide
-## resource bar/mode label strip (2 rows tall) — UnitPanelView's own spot,
-## the one corner nothing else in this HUD claims.
+## Fixed-`size` rect pinned to the top-left corner, below the top-wide strip
+## (2 rows tall) — UnitPanelView's own spot, the one corner nothing else here claims.
 func _place_top_left(control: Control, size: Vector2) -> void:
 	control.anchor_left = 0.0
 	control.anchor_right = 0.0
@@ -602,10 +409,7 @@ func _place_top_left(control: Control, size: Vector2) -> void:
 	control.offset_bottom = control.offset_top + size.y
 
 ## Full-width strip pinned to the bottom edge, `height` tall — the build
-## menu + minimap row's own spot (user request #5). Same shape as
-## _place_bottom_wide() above but with a caller-supplied height instead of
-## the fixed ROW_HEIGHT — this row is much taller than a single text row
-## (BuildMenuView's own building cards).
+## menu + minimap row's own spot.
 func _place_bottom_wide_row(control: Control, height: float) -> void:
 	control.anchor_left = 0.0
 	control.anchor_right = 1.0
@@ -616,31 +420,19 @@ func _place_bottom_wide_row(control: Control, height: float) -> void:
 	control.offset_bottom = -MARGIN
 	control.offset_top = -MARGIN - height
 
-## Rect centered on screen — SaveLoadView's own spot, the first HUD element
-## here that isn't pinned to a corner/edge (it's a toggleable dialog, not an
-## always-visible panel like everything above). Self-sizes to real content
-## the same way _place_top_right() does (see that function's own doc
-## comment) whenever `control` exposes get_content_min_size()
-## (DisplayOptionsView/SaveLoadView/TechTreeView all do) — this is what
-## actually fixes "Close renders past the bottom of the panel" for the
-## first two: DISPLAY_OPTIONS_VIEW_SIZE/SAVE_LOAD_VIEW_SIZE were both
-## hand-picked guesses that fell behind the real content (an extra
-## checkbox, a taller list); auto-sizing can't go stale the same way.
-## `fallback_size` only matters for the single frame before that
-## measurement lands.
-## Vertical nudge for every centered dialog (SaveLoadView/TechTreeView/
-## DisplayOptionsView) — real regression found by actually running the game
-## after #5's bottom-bar merge (not just the headless import check): a
-## screen-centered dialog anchored to the full viewport can be tall enough
-## (DisplayOptionsView's own 10 checkboxes + Close button) that its bottom
-## portion, INCLUDING its Close button, renders directly behind the new
-## full-width bottom bar — later in MainHUD's own child order, so it draws
-## on top and eats the click too, not just the pixels. The old bottom-LEFT-
-## only build menu never reached far enough right to cover a horizontally-
-## centered dialog; the new full-width one always does. Shifting every
-## centered dialog's own center point up by half the bottom bar's footprint
-## keeps it centered in the space actually free of other HUD chrome, above
-## the bar, rather than the raw screen center.
+## Rect centered on screen — SaveLoadView's own spot, the first element here
+## that isn't pinned to a corner/edge (a toggleable dialog, not an
+## always-visible panel). Self-sizes to real content the same way
+## _place_top_right() does, whenever `control` exposes get_content_min_size()
+## (DisplayOptionsView/SaveLoadView/TechTreeView all do). `fallback_size`
+## only matters for the single frame before that measurement lands.
+##
+## CENTER_VERTICAL_BIAS shifts every centered dialog's center point up by
+## half the bottom bar's footprint: a screen-centered dialog anchored to the
+## full viewport can be tall enough that its bottom portion (including its
+## Close button) renders behind the full-width bottom bar — later in
+## MainHUD's own child order, so it draws on top and eats the click too, not
+## just the pixels.
 const CENTER_VERTICAL_BIAS := (BOTTOM_BAR_HEIGHT + MARGIN) / 2.0
 
 func _place_center(control: Control, fallback_size: Vector2) -> void:
@@ -653,11 +445,6 @@ func _place_center(control: Control, fallback_size: Vector2) -> void:
 	control.offset_top = -fallback_size.y / 2.0 - CENTER_VERTICAL_BIAS
 	control.offset_bottom = fallback_size.y / 2.0 - CENTER_VERTICAL_BIAS
 	if control.has_method("get_content_min_size"):
-		# A fresh lambda per call, not a shared bound method — see
-		# _place_top_right()'s own note on why (three panels here —
-		# SaveLoadView/TechTreeView/DisplayOptionsView — resolving through
-		# one shared method+signal hit the exact same "only the first one
-		# actually fires" problem).
 		get_tree().process_frame.connect(func() -> void:
 			if not is_instance_valid(control):
 				return
@@ -666,9 +453,7 @@ func _place_center(control: Control, fallback_size: Vector2) -> void:
 				return
 			# HUDStyles.make_panel_stylebox()'s own content_margin_* (10
 			# left/right, 8 top/bottom) — the panel background needs to
-			# extend that far past the inner layout on every side, or
-			# content would render flush against (or outside) the panel's
-			# own border.
+			# extend that far past the inner layout on every side.
 			var size := content + Vector2(20.0, 16.0)
 			control.offset_left = -size.x / 2.0
 			control.offset_right = size.x / 2.0
@@ -676,22 +461,15 @@ func _place_center(control: Control, fallback_size: Vector2) -> void:
 			control.offset_bottom = size.y / 2.0 - CENTER_VERTICAL_BIAS
 		, CONNECT_ONE_SHOT)
 
-## User request (playtest round 5): "if you click on a building you cannot
-## afford to build yet, it should display an error saying how much more
-## resources you need before being able to build that building." Checked
-## HERE, not inside BuildMenuView itself — that view stays the same "dumb
-## selector with no idea what a hex/resource state is" its own class doc
-## comment already establishes (BuildPlacementController/BuildingManager
-## are MainHUD's job to consult, same split every other selection signal
-## here already keeps). An unaffordable building never arms placement mode
-## at all — clicking the map afterward with nothing armed is a clear no-op
-## rather than a placement attempt doomed to fail (and re-show basically
-## the same rejection) the moment a hex is clicked.
+## Checked here, not inside BuildMenuView itself — that view stays a "dumb
+## selector with no idea what a hex/resource state is" (BuildPlacementController/
+## BuildingManager are MainHUD's job to consult). An unaffordable building
+## never arms placement mode at all.
 func _on_building_selected(building_type: GameEnums.BuildingType) -> void:
 	if _building_manager:
 		var error := _building_manager.get_affordability_error(building_type)
 		if not error.is_empty():
-			_show_toast(error)
+			_toast.show(error)
 			return
 	if _build_placement_controller:
 		_build_placement_controller.begin_placement(building_type)
@@ -700,75 +478,26 @@ func _on_wall_placement_selected(is_gate: bool) -> void:
 	if _wall_placement_controller:
 		_wall_placement_controller.begin_placement(is_gate)
 
-func _on_placement_started(building_type: GameEnums.BuildingType) -> void:
-	var definition := BuildingCatalog.get_definition(building_type)
-	var display_name := definition.display_name if definition else "building"
-	_mode_label.text = "Placing: %s — click the map (Shift-click for more, Right-click/Esc to cancel)" % display_name
-
-func _on_placement_ended() -> void:
-	_mode_label.text = ""
-
-func _on_placement_rejected(_building_type: GameEnums.BuildingType, _coord: Vector2i, reason: String) -> void:
-	_show_toast(reason)
-
-func _on_wall_placement_started(_tier: int) -> void:
-	_mode_label.text = "Placing wall — click and drag along the map (Shift-drag for more, Right-click/Esc to cancel)"
-
-func _on_wall_placement_rejected(_hex_a: Vector2i, _hex_b: Vector2i, reason: String) -> void:
-	_show_toast(reason)
-
-func _on_construction_started(building_type: GameEnums.BuildingType, _coord: Vector2i, days: int) -> void:
-	var definition := BuildingCatalog.get_definition(building_type)
-	var display_name := definition.display_name if definition else "Building"
-	_show_toast("%s under construction — ready in %d day%s." % [display_name, days, "" if days == 1 else "s"])
-
-func _on_building_repair_started(instance: BuildingInstance, days: int) -> void:
-	var display_name := instance.definition.display_name if instance and instance.definition else "Building"
-	_show_toast("Repairing %s — ready in %d day%s." % [display_name, days, "" if days == 1 else "s"])
-
-func _on_wall_repair_started(_segment: WallSegment, days: int) -> void:
-	_show_toast("Repairing wall segment — ready in %d day%s." % [days, "" if days == 1 else "s"])
-
 func _on_training_started(unit_type: GameEnums.UnitType, _coord: Vector2i, days: int) -> void:
 	var definition := UnitCatalog.get_definition(unit_type)
 	var display_name := definition.display_name if definition else "Unit"
-	_show_toast("Training %s — ready in %d day%s." % [display_name, days, "" if days == 1 else "s"])
+	_toast.show("Training %s — ready in %d day%s." % [display_name, days, "" if days == 1 else "s"])
 
 func _on_retrain_started(_instance: UnitInstance, new_type: GameEnums.UnitType, days: int) -> void:
 	var definition := UnitCatalog.get_definition(new_type)
 	var display_name := definition.display_name if definition else "unit"
-	_show_toast("Retraining into %s — ready in %d day%s." % [display_name, days, "" if days == 1 else "s"])
-
-func _on_menu_pressed() -> void:
-	_save_load_view.close()
-	_tech_tree_view.close()
-	_display_options_view.close()
-	_in_game_menu_view.open()
+	_toast.show("Retraining into %s — ready in %d day%s." % [display_name, days, "" if days == 1 else "s"])
 
 func _on_in_game_menu_resume() -> void:
 	_in_game_menu_view.close()
 
-## Playtest round 6: "Main Menu... options for New Game and Exit" — the
-## in-game equivalent, reachable via Menu -> Quit to Main Menu rather than
-## only at boot. Godot frees the whole current scene tree on
-## change_scene_to_file() (MainHUD included), so there's nothing else to
-## tear down here first.
+## Godot frees the whole current scene tree on change_scene_to_file()
+## (MainHUD included), so there's nothing else to tear down here first.
 func _on_in_game_menu_quit_to_menu() -> void:
 	get_tree().change_scene_to_file("res://scenes/main/MainMenu.tscn")
 
 func _on_in_game_menu_exit() -> void:
 	get_tree().quit()
-
-## Each of the four centered panels (SaveLoadView/TechTreeView/
-## DisplayOptionsView/InGameMenuView) shares the same screen position —
-## closing the other three before opening this one keeps them from
-## visibly stacking on top of each other. Harmless to call close() on an
-## already-closed panel (it's just a redundant visible = false).
-func _on_browse_saves_pressed() -> void:
-	_tech_tree_view.close()
-	_display_options_view.close()
-	_in_game_menu_view.close()
-	_save_load_view.open()
 
 func _on_save_load_view_save_requested(campaign_name: String, slot_name: String) -> void:
 	if _save_load_manager:
@@ -779,25 +508,13 @@ func _on_save_load_view_load_requested(campaign_name: String, slot_name: String)
 		_save_load_manager.load_game(campaign_name, slot_name)
 
 func _on_game_saved(_campaign_name: String, _slot_name: String) -> void:
-	_show_toast("Game saved.")
+	_toast.show("Game saved.")
 
 func _on_game_loaded(_campaign_name: String, _slot_name: String) -> void:
-	_show_toast("Game loaded.")
+	_toast.show("Game loaded.")
 
 func _on_load_failed(_campaign_name: String, _slot_name: String, reason: String) -> void:
-	_show_toast("Load failed: %s" % reason)
-
-func _on_tech_tree_pressed() -> void:
-	_save_load_view.close()
-	_display_options_view.close()
-	_in_game_menu_view.close()
-	_tech_tree_view.open()
-
-func _on_display_options_pressed() -> void:
-	_save_load_view.close()
-	_tech_tree_view.close()
-	_in_game_menu_view.close()
-	_display_options_view.open()
+	_toast.show("Load failed: %s" % reason)
 
 func _on_research_requested(tech_id: StringName) -> void:
 	if _tech_manager:
@@ -805,26 +522,15 @@ func _on_research_requested(tech_id: StringName) -> void:
 
 func _on_tech_researched(tech_id: StringName) -> void:
 	var definition := TechCatalog.get_definition(tech_id)
-	_show_toast("%s researched." % (definition.display_name if definition else String(tech_id)))
+	_toast.show("%s researched." % (definition.display_name if definition else String(tech_id)))
 
 func _on_research_rejected(_tech_id: StringName, reason: String) -> void:
-	_show_toast(reason)
+	_toast.show(reason)
 
-## Design doc Phase 6.2 — an independent second listener on EventManager.
-## event_raised alongside AlertManager's own audio/auto-pause; see
-## AlertManager's own doc comment for why that's not a coincidence. A
-## CRITICAL/WARNING event pauses the game via AlertManager in the same
-## frame, and _toast_timer's own countdown is Engine.time_scale-scaled like
-## everything else here, so the toast naturally stays up for as long as the
-## game stays paused rather than ticking away unread.
+## An independent second listener on EventManager.event_raised alongside
+## AlertManager's own audio/auto-pause. A CRITICAL/WARNING event pauses the
+## game via AlertManager in the same frame, and the toast timer is
+## Engine.time_scale-scaled like everything else here, so the toast stays up
+## for as long as the game stays paused rather than ticking away unread.
 func _on_event_raised(event: GameEvent) -> void:
-	_show_toast(event.message)
-
-func _show_toast(text: String) -> void:
-	_toast_label.text = text
-	_toast_panel.visible = true
-	_toast_timer.start()
-
-func _on_toast_timeout() -> void:
-	_toast_label.text = ""
-	_toast_panel.visible = false
+	_toast.show(event.message)
