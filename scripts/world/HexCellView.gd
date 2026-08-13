@@ -7,36 +7,33 @@ extends Node2D
 ## back to the original flat TerrainVisuals.biome_color() fill, so art can
 ## land one biome at a time with zero code changes here.
 ##
-## **Real bug found and fixed (both Strategic AND Tactical now render the
-## same way):** this class used to have two "GroundMode" looks — an ICON
-## mode for Strategic zoom using an explicit 6-point `uv` array (one UV per
-## hex corner, meant to paint the whole texture once as a map symbol) and a
-## TILED mode for Tactical zoom using Godot's auto-generated per-vertex UV +
-## texture_repeat. **ICON mode never actually worked**: a `Polygon2D` only
-## SAMPLES a texture at each vertex's own UV coordinate and linearly
-## interpolates those few samples across its interior — it does not
-## warp/rasterize the source image into the polygon's screen shape. With
-## only 6 sample points, all confined to a normalized [0,1] hex-corner
-## mapping (i.e. the texture's own edges), most of a hand-drawn tile's real
-## detail — concentrated away from the edges in every one of this project's
-## seamlessly-tiling SVGs, by construction — never got sampled at all,
-## rendering every Strategic hex as a near-flat blob instead of visible art
-## (confirmed directly: 4 of `urban.svg`'s 6 corner-UV texels landed on
-## nearly-identical tones). Fixed by using the SAME tiled draw parameters
-## Tactical zoom already used correctly for every ground tile, Strategic
-## included — `GroundMode`/`HexCoord.corner_uvs()` are gone; there's only
-## one way to draw ground now. A Strategic hex's much smaller on-screen
-## footprint just means more of those repeats are visible in fewer pixels —
-## reads as a genuinely varied, textured surface instead of a flat color.
+## Both Strategic AND Tactical render the same way now: this class used to
+## have two "GroundMode" looks — an ICON mode for Strategic zoom using an
+## explicit 6-point uv array (one UV per hex corner, meant to paint the
+## whole texture once as a map symbol) and a TILED mode for Tactical zoom
+## using Godot's auto-generated per-vertex UV + texture_repeat. ICON mode
+## never worked: a Polygon2D only SAMPLES a texture at each vertex's own UV
+## coordinate and linearly interpolates those few samples across its
+## interior — it does not warp/rasterize the source image into the
+## polygon's screen shape. With only 6 sample points, all confined to a
+## normalized [0,1] hex-corner mapping (the texture's own edges), most of a
+## hand-drawn tile's real detail — concentrated away from the edges in
+## every one of this project's seamlessly-tiling SVGs, by construction —
+## never got sampled at all, rendering every Strategic hex as a near-flat
+## blob instead of visible art (confirmed directly: 4 of urban.svg's 6
+## corner-UV texels landed on nearly-identical tones). Fixed by using the
+## SAME tiled draw parameters Tactical zoom already used correctly for
+## every ground tile, Strategic included — GroundMode/HexCoord.corner_uvs()
+## are gone; there's only one way to draw ground now. A Strategic hex's
+## much smaller on-screen footprint just means more repeats are visible in
+## fewer pixels — reads as a genuinely varied, textured surface instead of
+## a flat color.
 ##
 ## Fog tinting (set_fog_state(), below) composes identically over either a
-## flat-color or a textured hex — `modulate` multiplies whatever the node
+## flat-color or a textured hex — modulate multiplies whatever the node
 ## already rendered, independent of how that came to be.
 
-## World units per texture repeat — a quarter of HexCoord.HEX_SIZE, so a
-## hex's true-scale footprint shows several repeats rather than one giant
-## stretched copy. Pure visual-density tuning, no gameplay meaning.
-const GROUND_TILE_SIZE: float = 128.0
+const GROUND_TILE_SIZE: float = 128.0  ## World units per texture repeat — a quarter of HexCoord.HEX_SIZE, so a hex's true-scale footprint shows several repeats rather than one giant stretched copy.
 
 var cell: HexCell
 
@@ -62,16 +59,16 @@ func setup(p_cell: HexCell) -> void:
 	if is_inside_tree():
 		_redraw()
 
-## Fog of War (Phase 2.6): tints the whole tile rather than touching the
-## underlying biome/soil color, so FogOfWarManager can push updates here
-## without this view needing to know anything about fog logic.
+## Tints the whole tile rather than touching the underlying biome/soil
+## color, so FogOfWarManager can push updates here without this view
+## needing to know anything about fog logic.
 func set_fog_state(state: GameEnums.FogState) -> void:
 	modulate = FogVisuals.tint_color(state)
 
 ## Re-draws against whatever `cell`'s fields currently hold — for a system
-## that mutates a live HexCell after it was first spawned (Phase 4.2's
-## ReclamationManager changing terrain_feature/biome_type/soil_fertility on
-## drain) rather than HexGridMap regenerating the map from scratch.
+## that mutates a live HexCell after it was first spawned
+## (ReclamationManager changing terrain_feature/biome_type/soil_fertility
+## on drain) rather than HexGridMap regenerating the map from scratch.
 func refresh() -> void:
 	if cell and is_inside_tree():
 		_redraw()

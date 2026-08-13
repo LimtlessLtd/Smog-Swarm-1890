@@ -4,7 +4,7 @@ extends RefCounted
 ## Shared display metadata for GameEnums.ResourceType — human-readable name
 ## and a stable left-to-right ordering, the same "single shared lookup"
 ## pattern as BuildingVisuals.category_color()/FogVisuals.tint_color() so
-## the resource bar and the build menu's cost text (Phase 6.1) agree.
+## the resource bar and the build menu's cost text agree.
 
 static func display_name(resource_type: GameEnums.ResourceType) -> String:
 	match resource_type:
@@ -28,8 +28,8 @@ static func display_name(resource_type: GameEnums.ResourceType) -> String:
 			return "Unknown"
 
 ## GameEnums.ResourceType's own declaration order (upkeep resources first,
-## then the Phase 2.9 Tech Tree's progression currency, then construction
-## materials) — used anywhere resources are listed so every UI element reads
+## then the Tech Tree's progression currency, then construction materials)
+## — used anywhere resources are listed so every UI element reads
 ## left-to-right the same way.
 static func display_order() -> Array[GameEnums.ResourceType]:
 	return [
@@ -43,12 +43,11 @@ static func display_order() -> Array[GameEnums.ResourceType]:
 		GameEnums.ResourceType.REINFORCED_CONCRETE,
 	]
 
-## Lazily-loaded, cached icon for the resource bar (user request, this pass
-## — see `assets/icons/README.md`) — same `ResourceLoader.exists()`-gated-
-## null pattern every other `*Visuals.gd` in this project already follows.
-## `null` (no icon authored yet) is a legitimate, expected steady state, not
-## an error — `ResourceBarView` falls back to text-only exactly as it does
-## today for any resource with no icon yet.
+## Lazily-loaded, cached icon for the resource bar (see assets/icons/README.md)
+## — same ResourceLoader.exists()-gated-null pattern every other *Visuals.gd
+## in this project follows. null (no icon authored yet) is a legitimate,
+## expected steady state, not an error — ResourceBarView falls back to
+## text-only for any resource with no icon yet.
 static var _icon_cache: Dictionary = {}  # GameEnums.ResourceType -> Texture2D (nullable)
 
 static func icon(resource_type: GameEnums.ResourceType) -> Texture2D:
