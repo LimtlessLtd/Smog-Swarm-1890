@@ -2,21 +2,19 @@ class_name TerrainVisuals
 extends RefCounted
 
 ## Shared placeholder biome/soil -> Color lookup, extracted from
-## HexCellView (its own doc comment already called this the thing to "swap
-## ... for a tile-texture lookup once [real art assets] do") so a second
-## renderer can agree with it instead of drifting into a copy — same role
-## BuildingVisuals.category_color()/FogVisuals.tint_color() already play for
-## building/fog colors. TacticalHexView never needed this split (it
-## composes a real HexCellView for its own ground rather than redrawing
-## biome color itself), but Phase 6.1's minimap does: it draws hex terrain
-## at a scale far too small to spawn a full HexCellView per tile.
+## HexCellView so a second renderer can agree with it instead of drifting
+## into a copy — same role BuildingVisuals.category_color()/
+## FogVisuals.tint_color() play for building/fog colors. TacticalHexView
+## never needed this split (it composes a real HexCellView for its own
+## ground rather than redrawing biome color itself), but MinimapView does:
+## it draws hex terrain at a scale far too small to spawn a full
+## HexCellView per tile.
 ##
-## "Real art" landed: terrain_texture() below is exactly the swap the doc
-## comment above was pointing at — but ADDITIVE, not a replacement.
-## biome_color()/soil_color() are untouched and MinimapView keeps calling
-## them directly, unchanged: its dots are 2-3 minimap-pixels, far too small
-## for texture detail to read at all. terrain_texture() is the new seam
-## HexCellView (Strategic + Tactical alike, same tiled draw path) reads instead.
+## terrain_texture() below is additive over biome_color()/soil_color(), not
+## a replacement. MinimapView keeps calling the color functions directly,
+## unchanged: its dots are 2-3 minimap-pixels, far too small for texture
+## detail to read at all. terrain_texture() is the seam HexCellView
+## (Strategic + Tactical alike, same tiled draw path) reads instead.
 
 static func biome_color(biome: GameEnums.BiomeType, soil: GameEnums.SoilFertility) -> Color:
 	match biome:
@@ -33,7 +31,7 @@ static func biome_color(biome: GameEnums.BiomeType, soil: GameEnums.SoilFertilit
 		GameEnums.BiomeType.OCEAN:
 			return Color(0.10, 0.18, 0.28)  ## Deeper/darker than WATERWAY's river-blue — open sea, not a fordable river.
 		GameEnums.BiomeType.WOODLAND:
-			return Color(0.20, 0.34, 0.16)  ## Real-data granularity pass — deep forest canopy green, distinctly darker/denser than Moorland's open grass.
+			return Color(0.20, 0.34, 0.16)  ## Deep forest canopy green, distinctly darker/denser than Moorland's open grass.
 		GameEnums.BiomeType.HEATHLAND:
 			return Color(0.44, 0.34, 0.42)  ## Heather/gorse purple-brown, distinct from Moorland's green and Farmland's soil-driven palette.
 		GameEnums.BiomeType.FARMLAND, GameEnums.BiomeType.MOORLAND:
@@ -57,18 +55,16 @@ static func soil_color(soil: GameEnums.SoilFertility) -> Color:
 ## biome/soil combination, or null if no SVG has been authored yet at
 ## assets/terrain/<key>.svg. ResourceLoader.exists() before load() means an
 ## unauthored biome fails cleanly to null (no console error spam) rather
-## than throwing — this is what let art land one file at a time with zero
+## than throwing — this is what lets art land one file at a time with zero
 ## code changes needed in between: HexCellView already falls back to
 ## biome_color() whenever this returns null.
 static var _texture_cache: Dictionary = {}  # String key -> Texture2D (nullable)
 
-## `terrain_feature` (playtest round 6, user report: "display rivers
-## better so that a user can actually determine where they are and where
-## they go") — optional, defaults to NONE so every pre-existing caller
-## keeps its old behavior untouched. Only WATERWAY branches on it: a River
-## and a Canal used to resolve to the exact same "waterway" texture despite
+## `terrain_feature` — optional, defaults to NONE so every pre-existing
+## caller keeps its old behavior. Only WATERWAY branches on it: a River and
+## a Canal used to resolve to the exact same "waterway" texture despite
 ## HexCell.terrain_feature already distinguishing them (RIVER vs CANAL) —
-## now a Canal reads as visibly man-made (straight banks/towpath,
+## a Canal reads as visibly man-made (straight banks/towpath,
 ## assets/terrain/canal.svg) instead of identical to a natural river.
 static func terrain_texture(biome: GameEnums.BiomeType, soil: GameEnums.SoilFertility, terrain_feature: GameEnums.TerrainFeature = GameEnums.TerrainFeature.NONE) -> Texture2D:
 	var key := _texture_key(biome, soil, terrain_feature)
@@ -90,7 +86,7 @@ static func _texture_key(biome: GameEnums.BiomeType, soil: GameEnums.SoilFertili
 		GameEnums.BiomeType.WETLAND:
 			return "wetland"
 		GameEnums.BiomeType.OCEAN:
-			return "ocean"  ## No assets/terrain/ocean.svg authored — deliberately falls back to biome_color()'s flat OCEAN color below, same "art lands incrementally" contract every other biome already follows. Explicit case so it does NOT fall into the "_:" MOORLAND bucket, which WOULD resolve to a real, wrong texture.
+			return "ocean"  ## No assets/terrain/ocean.svg authored — falls back to biome_color()'s flat OCEAN color, same "art lands incrementally" contract every other biome follows. Explicit case so it does NOT fall into the "_:" MOORLAND bucket, which WOULD resolve to a real, wrong texture.
 		GameEnums.BiomeType.WOODLAND:
 			return "woodland"
 		GameEnums.BiomeType.HEATHLAND:
@@ -101,8 +97,8 @@ static func _texture_key(biome: GameEnums.BiomeType, soil: GameEnums.SoilFertili
 			return "moorland_%s" % _soil_key(soil)
 
 ## NOT_ARABLE never actually reaches here — FARMLAND/MOORLAND never carry
-## that soil rating (see HexMapGenerator) — so it deliberately falls into
-## the same bucket as POOR rather than needing its own art.
+## that soil rating (see HexMapGenerator) — so it falls into the same
+## bucket as POOR rather than needing its own art.
 static func _soil_key(soil: GameEnums.SoilFertility) -> String:
 	match soil:
 		GameEnums.SoilFertility.LUSH:

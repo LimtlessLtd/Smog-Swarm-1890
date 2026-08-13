@@ -1,42 +1,32 @@
 class_name ResourceBarView
 extends PanelContainer
 
-## Top HUD strip (design doc Phase 6.1): one entry per GameEnums.ResourceType,
-## live-updated off ResourceManager.resources_changed. Deliberately dumb — it
-## only formats whatever ResourceManager/BuildingManager report, no economy
-## logic of its own. Built entirely in code rather than scene-authored,
-## matching HexCellView/StrategicOverlayManager's "code-drawn placeholder"
-## convention.
+## Top HUD strip: one entry per GameEnums.ResourceType, live-updated off
+## ResourceManager.resources_changed. Deliberately dumb — it only formats
+## whatever ResourceManager/BuildingManager report, no economy logic of
+## its own. Built entirely in code rather than scene-authored, matching
+## HexCellView/StrategicOverlayManager's "code-drawn placeholder" convention.
 ##
-## **Icon-only, dark-background rework (user request, playtest round 4:
-## "remove the names of the items and keep the icons... make the resource bar
-## have a dark background"):** the per-resource Label used to read
-## "Food: 42/100" — the "Food:" name prefix is gone (the icon carries that
-## now), the "42/100" amount/cap stays since that's live state, not a name,
-## and is genuinely useful to see at a glance without hovering. A hover
-## tooltip (Control.tooltip_text, Godot's own built-in mechanism — no custom
-## Popup needed) fills the gap left by the removed name AND adds the two
-## numbers the user asked for that weren't shown anywhere before: today's
-## projected income and expenditure, straight off
-## BuildingManager.get_projected_daily_flow() so the tooltip can never drift
-## from what the next `day_completed` tick will actually bank.
+## Icon-only, dark background — "remove the names of the items and keep
+## the icons... make the resource bar have a dark background" (user
+## feedback): the per-resource Label used to read "Food: 42/100" — the
+## "Food:" name prefix is gone (the icon carries that now), the "42/100"
+## amount/cap stays since that's live state, genuinely useful to see at a
+## glance without hovering. A hover tooltip (Control.tooltip_text, Godot's
+## own built-in mechanism) fills the gap left by the removed name and adds
+## today's projected income and expenditure, straight off
+## BuildingManager.get_projected_daily_flow() so the tooltip can never
+## drift from what the next day_completed tick will actually bank.
 ##
-## **Dark background — real bug, not a re-skin:** `extends HBoxContainer`
-## used to plainly not draw a background at all — `HUDStyles.style_panel()`
-## sets a `"panel"` theme stylebox override, but only `Panel`/`PanelContainer`
-## (and similar) actually draw one; plain `Container` subclasses like
-## `HBoxContainer` silently ignore it. Switching the root to `PanelContainer`
-## (with the resource entries in an inner `HBoxContainer` — `PanelContainer`
-## itself only manages ONE child's margins, not a row layout) is what
-## actually renders `HUDStyles.PANEL_COLOR`. Scoped to this bar only, not a
-## project-wide `HUDStyles.style_panel()` fix — that would touch every other
-## HUD element's visuals as an unintended side effect of a resource-bar bug
-## report, out of scope here.
+## Dark background: extends HBoxContainer used to not draw a background at
+## all — HUDStyles.style_panel() sets a "panel" theme stylebox override,
+## but only Panel/PanelContainer (and similar) actually draw one; plain
+## Container subclasses like HBoxContainer silently ignore it. Switching
+## the root to PanelContainer (with the resource entries in an inner
+## HBoxContainer — PanelContainer itself only manages ONE child's margins,
+## not a row layout) is what actually renders HUDStyles.PANEL_COLOR.
 
-## Icon pixel size — small enough to sit comfortably inline with a Label at
-## this bar's own font size, matching HUDStyles' existing text scale rather
-## than a hand-picked number disconnected from it.
-const ICON_SIZE: int = 20
+const ICON_SIZE: int = 20  ## Small enough to sit comfortably inline with a Label at this bar's own font size, matching HUDStyles' existing text scale.
 
 var _resource_manager: ResourceManager
 var _building_manager: BuildingManager
@@ -82,9 +72,8 @@ func _ready() -> void:
 ## Called by MainHUD once it has resolved its ResourceManager/BuildingManager
 ## NodePaths — this view has no NodePath of its own since MainHUD builds it
 ## in code, not via a scene with pre-wired exports. `building_manager` is
-## optional (same "gracefully skip it" convention every other optional MainHUD
-## dependency follows) — without it, the tooltip still shows the resource's
-## name, just no income/expenditure lines.
+## optional — without it, the tooltip still shows the resource's name,
+## just no income/expenditure lines.
 func setup(resource_manager: ResourceManager, building_manager: BuildingManager = null) -> void:
 	_resource_manager = resource_manager
 	_building_manager = building_manager
@@ -99,12 +88,12 @@ func _on_resources_changed(stockpile: Dictionary) -> void:
 		_labels[resource_type].text = "%d/%s" % [int(amount), cap_text]
 		_entries[resource_type].tooltip_text = _build_tooltip(resource_type)
 
-## "the name of the resource, total daily income and total daily
-## expenditure" (user request) — income/expenditure read straight off
+## "The name of the resource, total daily income and total daily
+## expenditure" (user feedback) — income/expenditure read straight off
 ## BuildingManager.get_projected_daily_flow()'s live preview, so this can't
 ## drift from what the next day_completed tick will actually bank. A
-## resource with neither income nor expenditure today still gets a tooltip
-## (just the name) rather than an empty one.
+## resource with neither income nor expenditure today still gets a
+## tooltip (just the name) rather than an empty one.
 func _build_tooltip(resource_type: GameEnums.ResourceType) -> String:
 	var text := ResourceVisuals.display_name(resource_type)
 	if not _building_manager:
