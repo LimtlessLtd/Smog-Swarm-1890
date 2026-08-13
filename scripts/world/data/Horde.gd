@@ -1,88 +1,75 @@
 class_name Horde
 extends Resource
 
-## One roaming zombie horde (design doc Phase 5.2/5.10) — a mobile entity
-## with a hex position, a strength (`size`), and a behavioral state. Saved
-## directly, same as WallSegment: nothing here references another live
-## Resource, so there's no need for a separate save-entry wrapper the way
-## BuildingInstance needs BuildingSaveEntry.
+## One roaming zombie horde — a mobile entity with a hex position, a
+## strength (size), and a behavioral state. Saved directly, same as
+## WallSegment: nothing here references another live Resource, so there's
+## no need for a separate save-entry wrapper the way BuildingInstance needs
+## BuildingSaveEntry.
 ##
 ## Only GameEnums.HordeState.WANDERING is actually produced/transitioned to
 ## right now (see HordeManager) — ATTRACTED (drawn toward industrial noise
 ## or a lit vision source) and ATTACKING (besieging a specific wall
-## segment/hex) are the rest of Phase 5.10's state machine, blocked on
-## Phase 5.2's still-nonexistent noise tracking and Phase 5.10's still-
-## nonexistent siege-seeking behavior respectively. The enum values exist
-## now so wiring them up later is additive, not a breaking rename.
+## segment/hex) are the rest of the state machine.
 ##
-## Combat stats (HP_PER_ZOMBIE/DAMAGE_PER_ZOMBIE below): the horde-combat-
-## stat decision every Phase 5.4/5.6/5.9/5.10 "no live combat trigger
-## exists" note has been pointing at — `size` alone is a headcount, not
-## something CombatEngine.resolve_engagement() can compute an engagement
-## from. Read/applied by the new CombatCoordinator (Phase 5.4/5.9/5.10's
-## live combat trigger), never by HordeManager itself — same "data class
-## other systems mutate directly" role hex_coord/path already play.
+## Combat stats (HP_PER_ZOMBIE/DAMAGE_PER_ZOMBIE below): size alone is a
+## headcount, not something CombatEngine.resolve_engagement() can compute
+## an engagement from. Read/applied by CombatCoordinator, never by
+## HordeManager itself — same "data class other systems mutate directly"
+## role hex_coord/path play.
 
 @export var hex_coord: Vector2i = Vector2i.ZERO
 @export var size: int = 0
 @export var state: GameEnums.HordeState = GameEnums.HordeState.WANDERING
 @export var id: int = 0
 
-## Phase 2.5.4: offset from hex_coord's center, same contract as
+## Offset from hex_coord's center, same contract as
 ## BuildingInstance.local_position/UnitInstance.local_position — written
 ## continuously, every frame, by HordeManager's MovementStepper-driven
-## drift (user request, later pass — see MovementStepper.gd) as the horde
-## actually walks, rather than the old hex-center jump a horde used to do
-## on every step. ZERO for a freshly-spawned horde (starting seed or a
-## fresh casualty pool) — saved directly along with the rest of this
-## Resource, same as every other field here.
+## drift as the horde actually walks. ZERO for a freshly-spawned horde
+## (starting seed or a fresh casualty pool) — saved directly along with
+## the rest of this Resource.
 @export var local_position: Vector2 = Vector2.ZERO
 
-## Current drift path (Phase 5.5's HexPathfinder) — `hex_coord` itself is
-## excluded, so the next hex to step into is `path[0]`. Deliberately NOT
-## @export: it's cheap for HordeManager to replan from scratch after a load
-## (same reasoning Zone of Control coverage uses for not saving itself —
-## see LogisticsNetwork), and a mid-path point in time isn't meaningful
-## state worth persisting anyway.
+## Current drift path (HexPathfinder) — hex_coord itself is excluded, so
+## the next hex to step into is path[0]. NOT @export: it's cheap for
+## HordeManager to replan from scratch after a load (same reasoning Zone
+## of Control coverage uses for not saving itself — see LogisticsNetwork),
+## and a mid-path point in time isn't meaningful state worth persisting.
 var path: Array[Vector2i] = []
 
-## Design doc, user request: a Dragoon's charge (GameEnums.UnitAbility.
-## CHARGE_KNOCKBACK) "knocks them back and stuns them for a second" — set by
+## A Dragoon's charge (GameEnums.UnitAbility.CHARGE_KNOCKBACK) knocks a
+## horde back and stuns it for a second — set by
 ## CombatCoordinator._apply_special_ability_effects(), decremented and
 ## enforced by HordeManager._advance_horde() (movement/wall-siege progress
-## both pause while stunned). Deliberately NOT @export, same reasoning as
-## `path` above — a stun this short-lived (order of one second) is never
-## meaningful state worth surviving a save/load; a horde reloaded mid-stun
-## just resumes unstunned, which reads fine.
+## both pause while stunned). NOT @export, same reasoning as `path` above
+## — a stun this short-lived is never meaningful state worth surviving a
+## save/load; a horde reloaded mid-stun just resumes unstunned.
 var stun_seconds_remaining: float = 0.0
 
-## Placeholder balancing numbers, not an architecture decision — same
-## framing as every other constant table in this project (UnitCatalog's
-## per-tier curve, CombatEngine's forced-melee multipliers). A modest
+## Placeholder balancing numbers, not an architecture decision. A modest
 ## per-zombie contribution: a starting horde (10-25, see HordeManager)
 ## fields roughly a Tier-0/1 unit's worth of HP and a fraction of its
 ## damage per zombie, so a lone unit can plausibly whittle down a small
-## horde but a large one is a real threat — exact numbers are for
-## playtesting to retune, not for this decision to get "right" up front.
+## horde but a large one is a real threat.
 const HP_PER_ZOMBIE: float = 2.0
 const DAMAGE_PER_ZOMBIE: float = 0.5
 
-## Real per-zombie identity (user request, 2026-08-11: "each individual
-## zombie should have a randomly generated value for how susceptible they
-## are to stimuli... and it defines how easily attracted a particular
-## zombie is to noises or light" — plus per-individual movement/speed
-## variance). Deterministic from (id, index) rather than a stored array —
-## O(1) regardless of horde size (a horde can be thousands strong; storing
-## a real per-zombie array would scale save-file size and merge/split
+## Real per-zombie identity — "each individual zombie should have a
+## randomly generated value for how susceptible they are to stimuli... and
+## it defines how easily attracted a particular zombie is to noises or
+## light" (user feedback), plus per-individual movement/speed variance.
+## Deterministic from (id, index) rather than a stored array — O(1)
+## regardless of horde size (a horde can be thousands strong; storing a
+## real per-zombie array would scale save-file size and merge/split
 ## bookkeeping with it), and matches this project's own established
 ## seeded-RNG convention (LocalDetailGenerator._hex_seed(),
 ## TacticalEntityLayer._scatter_offset()'s own _hash01()). A zombie's own
 ## values survive a save/load (id+index reproduce the exact same numbers)
-## but do NOT survive a horde merge/split (indices renumber) — a
-## disclosed, deliberate limitation: "which specific zombie used to be
-## susceptible" was never meaningful state on its own, only "this horde's
-## population skews jumpy or dull" is, and mean_susceptibility() below is
-## what actually gets read.
+## but do NOT survive a horde merge/split (indices renumber) — "which
+## specific zombie used to be susceptible" was never meaningful state on
+## its own, only "this horde's population skews jumpy or dull" is, and
+## mean_susceptibility() below is what actually gets read.
 const MIN_SUSCEPTIBILITY: float = 0.4  ## Dullest zombies — only reacts to a source roughly 2.5x louder than ATTRACTION_THRESHOLD.
 const MAX_SUSCEPTIBILITY: float = 1.6  ## Jumpiest zombies — reacts to a source well under ATTRACTION_THRESHOLD.
 const MIN_SPEED_VARIANCE: float = 0.85
@@ -143,7 +130,7 @@ func get_combat_damage() -> float:
 ## division against HP_PER_ZOMBIE, since a fraction of a zombie's worth of
 ## HP remaining doesn't leave a fractional zombie standing. Never goes
 ## negative; a horde reduced to 0 is CombatCoordinator's cue to remove it
-## via HordeManager.remove_horde(), not this method's own job (Horde has no
-## reference back to HordeManager to call that itself).
+## via HordeManager.remove_horde(), not this method's own job (Horde has
+## no reference back to HordeManager to call that itself).
 func apply_remaining_hp(remaining_hp: float) -> void:
 	size = maxi(0, int(floor(remaining_hp / HP_PER_ZOMBIE)))
