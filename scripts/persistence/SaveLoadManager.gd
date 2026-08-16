@@ -44,7 +44,9 @@ const _UNSAFE_FILENAME_CHARS: Array[String] = [":", "/", "\\", "?", "*", "\"", "
 @export var horde_manager_path: NodePath
 @export var unit_manager_path: NodePath
 @export var territory_controller_path: NodePath
+@export var settlement_founding_controller_path: NodePath  ## Optional — re-derives founded settlements from the restored buildings. Unset means a loaded save's founded hexes revert to their map-gen terrain.
 
+var _settlement_founding_controller: SettlementFoundingController
 var _building_manager: BuildingManager
 var _resource_manager: ResourceManager
 var _logistics_network: LogisticsNetwork
@@ -80,6 +82,8 @@ func _ready() -> void:
 		_unit_manager = get_node(unit_manager_path)
 	if territory_controller_path != NodePath():
 		_territory_controller = get_node(territory_controller_path)
+	if settlement_founding_controller_path != NodePath():
+		_settlement_founding_controller = get_node(settlement_founding_controller_path)
 
 ## Every campaign with at least one save slot on disk, alphabetical. Empty if
 ## nothing has ever been saved yet.
@@ -243,6 +247,16 @@ func _apply_save_data(data: SaveGameData) -> void:
 		_territory_controller.load_save_state(data.lost_territory_hexes)
 	if _building_manager:
 		_building_manager.load_save_entries(data.buildings, data.next_building_id)
+	# Immediately after buildings, and before anything that reads terrain
+	# back: founding carries no save entry of its own — which hexes are
+	# founded, and how far each has paved, is re-derived wholesale from the
+	# Town Halls and populations load_save_entries() just restored (see
+	# SettlementFoundingController's own doc comment). Sequenced here so
+	# LogisticsNetwork's ZoC recompute below already sees the restored
+	# is_settlement/biome_type rather than the pristine map-gen values a
+	# fresh boot regenerated.
+	if _settlement_founding_controller:
+		_settlement_founding_controller.rebuild_from_buildings()
 	if _logistics_network:
 		_logistics_network.load_save_segments(data.supply_lines)
 	if _discontent_manager:

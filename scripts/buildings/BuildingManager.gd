@@ -274,6 +274,8 @@ func get_placement_error(building_type: GameEnums.BuildingType, coord: Vector2i,
 		return "%s cannot be built on marsh or peat bog until it is drained." % definition.display_name
 	if definition.requires_settlement and not cell.is_settlement:
 		return "%s can only be built within a settlement." % definition.display_name
+	if definition.max_per_hex > 0 and _count_at(building_type, coord) >= definition.max_per_hex:
+		return "%s is limited to %d per hex." % [definition.display_name, definition.max_per_hex]
 	if not definition.allowed_biomes.is_empty() and not definition.allowed_biomes.has(SubHexTerrainQuery.biome_at(coord, world_pos, cell.biome_type)):
 		return "%s cannot be built on this terrain." % definition.display_name
 	if not definition.allowed_soil_fertility.is_empty() and not definition.allowed_soil_fertility.has(SubHexSoilQuery.soil_fertility_at(coord, local_position, cell.soil_fertility)):
@@ -297,6 +299,17 @@ func get_affordability_error(building_type: GameEnums.BuildingType) -> String:
 	if shortfalls.is_empty():
 		return ""
 	return "Need %s more to build %s." % [", ".join(shortfalls), definition.display_name]
+
+## Counts every instance of `building_type` on `coord`, including ruined and
+## still-under-construction ones — a ruin occupies its plot until demolished,
+## and two queued Town Halls racing to finish on the same hex would break
+## max_per_hex the moment both completed.
+func _count_at(building_type: GameEnums.BuildingType, coord: Vector2i) -> int:
+	var count := 0
+	for instance in _instances_by_hex.get(coord, []):
+		if instance.definition.building_type == building_type:
+			count += 1
+	return count
 
 func _resource_shortfalls(cost: Dictionary) -> Array[String]:
 	var shortfalls: Array[String] = []
