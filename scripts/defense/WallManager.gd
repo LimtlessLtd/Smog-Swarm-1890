@@ -7,26 +7,17 @@ extends Node
 ## same idea, defensive instead of logistical, each segment carrying its OWN
 ## health pool rather than a shared network-wide state.
 ##
-## Ditches and Oil Pits are NOT placed through BuildingManager.place_building()
-## despite being real BuildingCatalog entries: they stack WITH a specific
-## wall segment ("per segment"), not occupying independent hex+local_position
-## the way every other building does. This class reuses BuildingCatalog
-## purely as their cost-data source (add_defense_work()) and tracks which
-## segment has which as a plain bool flag on WallSegment.
-##
 ## Combat: HordeManager._siege_wall() calls damage_segment() below directly
-## whenever a horde's drift path crosses an unbreached segment, with siege-
-## damage bonus and Ditch/Oil Pit counter-damage applied on that caller's
-## side — this class stays combat-ignorant, same "manager mutates a passed-in
-## Resource" split every other combat-adjacent class here keeps.
-## repair_segment() is the recovery action a breach needs.
+## whenever a horde's drift path crosses an unbreached segment — this class
+## stays combat-ignorant, same "manager mutates a passed-in Resource" split
+## every other combat-adjacent class here keeps. repair_segment() is the
+## recovery action a breach needs.
 
 signal wall_segment_placed(segment: WallSegment)
 signal wall_segment_upgraded(segment: WallSegment)
 signal wall_segment_damaged(segment: WallSegment, amount: float)
 signal wall_segment_breached(segment: WallSegment)
 signal wall_segment_repaired(segment: WallSegment)
-signal defense_work_added(segment: WallSegment, work_type: GameEnums.BuildingType)
 signal placement_rejected(hex_a: Vector2i, hex_b: Vector2i, reason: String)
 signal upgrade_rejected(segment: WallSegment, reason: String)
 signal repair_rejected(segment: WallSegment, reason: String)
@@ -358,39 +349,6 @@ func upgrade_segment(segment: WallSegment) -> bool:
 	segment.tier = next_tier
 	segment.current_hp = segment.get_max_hp()
 	wall_segment_upgraded.emit(segment)
-	return true
-
-func get_defense_work_error(segment: WallSegment, work_type: GameEnums.BuildingType) -> String:
-	if not segment:
-		return "No such wall segment."
-	if work_type != GameEnums.BuildingType.DITCH and work_type != GameEnums.BuildingType.OIL_PIT:
-		return "Unknown defense work."
-	if work_type == GameEnums.BuildingType.DITCH and segment.has_ditch:
-		return "This segment already has a Ditch."
-	if work_type == GameEnums.BuildingType.OIL_PIT and segment.has_oil_pit:
-		return "This segment already has an Oil Pit."
-	var definition := BuildingCatalog.get_definition(work_type)
-	if not definition:
-		return "Unknown defense work."
-	if _resource_manager and not _resource_manager.can_afford(definition.construction_cost):
-		return "Not enough resources for %s." % definition.display_name
-	return ""
-
-func can_add_defense_work(segment: WallSegment, work_type: GameEnums.BuildingType) -> bool:
-	return get_defense_work_error(segment, work_type).is_empty()
-
-func add_defense_work(segment: WallSegment, work_type: GameEnums.BuildingType) -> bool:
-	var error := get_defense_work_error(segment, work_type)
-	if not error.is_empty():
-		return false
-	var definition := BuildingCatalog.get_definition(work_type)
-	if _resource_manager:
-		_resource_manager.spend(definition.construction_cost)
-	if work_type == GameEnums.BuildingType.DITCH:
-		segment.has_ditch = true
-	else:
-		segment.has_oil_pit = true
-	defense_work_added.emit(segment, work_type)
 	return true
 
 func damage_segment(segment: WallSegment, amount: float) -> void:

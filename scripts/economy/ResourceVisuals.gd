@@ -83,7 +83,7 @@ static func icon(resource_type: GameEnums.ResourceType) -> Texture2D:
 ## IRON/CONCRETE deliberately map to the pre-rework "cast_iron"/"concrete"
 ## filenames rather than requiring an asset rename — same "enum identifier
 ## and asset/display name can diverge" convention BuildingCatalog already
-## uses (e.g. TERRACED_TENEMENT displays as "Houses").
+## uses (e.g. ARMORY_AND_BARRACKS displays as "Armory & Barracks").
 static func _icon_key(resource_type: GameEnums.ResourceType) -> String:
 	match resource_type:
 		GameEnums.ResourceType.FOOD:

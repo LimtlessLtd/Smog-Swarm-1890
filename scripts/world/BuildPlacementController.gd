@@ -60,7 +60,7 @@ var _building_manager: BuildingManager
 var _camera: CameraController
 
 var _is_placing: bool = false
-var _pending_type: GameEnums.BuildingType = GameEnums.BuildingType.TERRACED_TENEMENT
+var _pending_type: GameEnums.BuildingType = GameEnums.BuildingType.LUMBER_YARD
 
 var _ghost_outline: Line2D
 var _ghost_building: Polygon2D  ## The actual building footprint at its real size/texture, semi-transparent, tracking the cursor exactly.

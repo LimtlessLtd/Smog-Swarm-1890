@@ -42,7 +42,7 @@ To maintain deep industrial strategy without overwhelming player management, res
 * **Tier 0 (Wood Base):** Wood (Lumber Yard), Clay (Clay Pit)
 * **Tier 1 (Brick Base):** Coal (Coal Mine), Limestone (Limestone Quarry)
 * **Tier 2 (Iron Base):** Iron Ore (Iron Ore Mine)
-* **Tier 3 (Steel Base):** Sulfur (Sulfur Mine) & **City Expansion** (Remote specialized outposts)
+* **Tier 3 (Steel Base):** Sulfur (Sulfur Mine), Coal/Wood high-output consolidators (Deep Coal Shafts, Sawmills) & **City Expansion** (Remote specialized outposts)
 * **Tier 4 (Traction Era):** Advanced Extraction (Steam Excavator Depot boosts node yields by +50%)
 * **Tier 5 (Armament Era):** Mass Synthesis & Automation (Bessemer Smelting Complexes & Synthetic Refineries)
 
@@ -102,7 +102,7 @@ Each tier of road/transit infrastructure increases base movement speed while ign
 * **Brickworks** — **Cost:** 150 Wood | **Capacity:** -10 Pop, -30 Energy | **Upkeep:** 100 Clay/day | **Output:** 100 Bricks/day | **Time:** 2 days
 * **Estate Farm** — **Cost:** 180 Wood, 50 Bricks | **Capacity:** -15 Pop, -30 Energy | **Output:** 450 Food/day | **Time:** 2 days
 * **Coal Powerplant** — **Cost:** 100 Wood, 250 Bricks | **Capacity:** -15 Pop, +500 Energy | **Upkeep:** 40 Coal/day | **Time:** 3 days
-* **Research Institute** — **Cost:** 100 Wood, 400 Bricks | **Capacity:** -50 Pop, -150 Energy | **Upkeep:** 80 Food/day | **Output:** 10 Research/day | **Time:** 4 days
+* **Research Institute** — **Cost:** 100 Wood, 200 Bricks | **Capacity:** -50 Pop, -150 Energy | **Upkeep:** 80 Food/day | **Output:** 10 Research/day | **Time:** 4 days
 * **Brick Houses** — **Cost:** 50 Wood, 50 Bricks | **Capacity:** +200 Pop, -10 Energy | **Upkeep:** 80 Food/day | **Time:** 2 days
 * **Garrison** — **Cost:** 200 Wood, 100 Bricks | **Capacity:** -20 Pop, -20 Energy | **Time:** 2 days
 * **Cobblestone Road** — **Cost:** 5 Wood, 10 Bricks/seg | **Bonus:** +50% Speed (Ignores Biome Reductions)
@@ -128,7 +128,9 @@ Each tier of road/transit infrastructure increases base movement speed while ign
 
 ### Tier 3: Steel Base / Rail Network
 * **Town Hall** — **Unlocked at Tier 3** | **Cost:** 300 Wood, 200 Bricks, 150 Concrete, 100 Steel | **Capacity:** +100 Pop, +20 Energy | **Upkeep:** 10 Food/day | **Time:** 3 days | **Function:** Establishes a new 5mi x 5mi ZoC hex. Allows players to found far-flung cities specialized in extracting specific resource nodes. Only 1 can be built per hex tile.
-* **Sulfur Mine** — **Cost:** 250 Wood, 150 Bricks, 100 Concrete, 50 Iron | **Capacity:** -35 Pop, -60 Energy | **Upkeep:** 30 Food/day | **Output:** 50 Sulfur/day | **Time:** 3 days
+* **Sulfur Mine** — **Cost:** 250 Wood, 150 Bricks, 100 Concrete, 50 Iron | **Capacity:** -35 Pop, -60 Energy | **Upkeep:** 30 Food/day | **Output:** 60 Sulfur/day | **Time:** 3 days
+* **Deep Coal Shafts** — **Cost:** 300 Wood, 200 Bricks, 150 Concrete, 100 Iron | **Capacity:** -40 Pop, -100 Energy | **Upkeep:** 40 Food/day | **Output:** 500 Coal/day | **Time:** 4 days. High-output consolidator — one Deep Coal Shaft replaces roughly 5 Tier 1 Coal Mines' worth of output, keeping the late-game map from being tiled with small extractors.
+* **Sawmills** — **Cost:** 300 Wood, 200 Bricks, 150 Concrete, 100 Iron | **Capacity:** -35 Pop, -80 Energy | **Upkeep:** 30 Food/day | **Output:** 1,000 Wood/day | **Time:** 4 days. Same role as Deep Coal Shafts, for Wood — replaces roughly 5 Tier 0 Lumber Yards.
 * **Gunpowder Mill** — **Cost:** 150 Wood, 100 Bricks, 50 Iron | **Capacity:** -15 Pop, -40 Energy | **Upkeep:** 60 Sulfur/day, 40 Coal/day, 20 Food/day | **Output:** 120 Gunpowder/day | **Time:** 3 days
 * **Steelworks** — **Cost:** 300 Wood, 200 Bricks, 150 Concrete, 100 Iron | **Capacity:** -40 Pop, -300 Energy | **Upkeep:** 100 Iron/day, 50 Coal/day, 40 Food/day | **Output:** 75 Steel/day | **Time:** 4 days
 * **Mechanised Farm** — **Cost:** 800 Wood, 400 Bricks, 300 Concrete, 100 Steel | **Capacity:** -40 Pop, -50 Energy | **Output:** 3,500 Food/day | **Time:** 4 days

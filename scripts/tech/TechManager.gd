@@ -80,6 +80,18 @@ func is_wall_tier_unlocked(tier: int) -> bool:
 			return is_researched(definition.tech_id)
 	return false
 
+## Whether building Tier `tier`'s BuildingCatalog entries are unlocked. Tier 0
+## is the always-buildable baseline (no tech node to check) — mirrors
+## is_wall_tier_unlocked()'s exact shape, checked by
+## BuildingManager.get_placement_error() against BuildingDefinition.tier.
+func is_building_tier_unlocked(tier: int) -> bool:
+	if tier <= 0:
+		return true
+	for definition in TechCatalog.get_all_definitions():
+		if definition.unlock_type == GameEnums.TechUnlockType.BUILDING_TIER and definition.unlock_value == tier:
+			return is_researched(definition.tech_id)
+	return false
+
 ## Returns "" if `tech_id` can legally start research right now, or a
 ## human-readable rejection reason otherwise — mirrors
 ## BuildingManager.get_placement_error()'s "queryable without side effects"

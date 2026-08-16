@@ -208,7 +208,7 @@ func _engage(instance: UnitInstance, horde: Horde, movement_from: Vector2i, move
 		_unit_manager.remove_unit(instance)
 
 ## A GARRISON-ordered unit takes less incoming damage, stacking further at
-## night if a non-ruined Searchlight Tower's own vision_radius reaches this
+## night if a non-ruined Search Light's own vision_radius reaches this
 ## hex. HOLD deliberately does NOT qualify — this is Garrison's own payoff
 ## over plain Hold, same distinction UnitOrderController's healing mechanic makes.
 func _garrison_incoming_multiplier(instance: UnitInstance) -> float:
@@ -221,7 +221,7 @@ func _garrison_incoming_multiplier(instance: UnitInstance) -> float:
 
 func _is_near_searchlight_tower(coord: Vector2i) -> bool:
 	for instance in _building_manager.get_all_buildings():
-		if instance.is_ruined or instance.definition.building_type != GameEnums.BuildingType.SEARCHLIGHT_TOWER:
+		if instance.is_ruined or instance.definition.building_type != GameEnums.BuildingType.SEARCH_LIGHT:
 			continue
 		if HexCoord.distance(instance.hex_coord, coord) <= instance.definition.vision_radius:
 			return true

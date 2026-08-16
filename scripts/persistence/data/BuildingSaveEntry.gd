@@ -12,7 +12,7 @@ extends Resource
 ## re-derived from the definition's fixed population_provided/get_max_hp()
 ## baselines once play has moved it.
 
-@export var building_type: GameEnums.BuildingType = GameEnums.BuildingType.TERRACED_TENEMENT
+@export var building_type: GameEnums.BuildingType = GameEnums.BuildingType.TOWN_HALL
 @export var hex_coord: Vector2i = Vector2i.ZERO
 @export var local_position: Vector2 = Vector2.ZERO
 @export var id: int = 0
@@ -32,7 +32,7 @@ extends Resource
 @export var is_under_construction: bool = false
 @export var construction_days_remaining: int = 0
 
-func _init(p_building_type: GameEnums.BuildingType = GameEnums.BuildingType.TERRACED_TENEMENT, p_hex_coord: Vector2i = Vector2i.ZERO, p_id: int = 0, p_local_position: Vector2 = Vector2.ZERO, p_current_population: int = 0, p_current_hp: float = 0.0, p_is_ruined: bool = false, p_is_under_construction: bool = false, p_construction_days_remaining: int = 0) -> void:
+func _init(p_building_type: GameEnums.BuildingType = GameEnums.BuildingType.TOWN_HALL, p_hex_coord: Vector2i = Vector2i.ZERO, p_id: int = 0, p_local_position: Vector2 = Vector2.ZERO, p_current_population: int = 0, p_current_hp: float = 0.0, p_is_ruined: bool = false, p_is_under_construction: bool = false, p_construction_days_remaining: int = 0) -> void:
 	building_type = p_building_type
 	hex_coord = p_hex_coord
 	id = p_id

@@ -81,38 +81,70 @@ enum ResourceType {
 }
 
 enum BuildingCategory {
-	HOUSING_CIVIL,       ## Terraced Tenements, Workhouses, Watchtowers, etc.
-	INDUSTRY_EXTRACTION, ## Brickworks, kilns, pitheads, foundries, powder mills, ammo dumps.
-	AGRICULTURE,         ## Tenant Farms, Grain Silos, Cattle Yards.
-	DEFENSE_WORKS,       ## Searchlight Tower (a normal hex-placed building), plus Ditch/Oil Pit's cost data (placed via WallManager, not BuildingManager — see WallManager's own doc comment).
+	HOUSING_CIVIL,       ## Town Hall, Houses/Tower Blocks, Watchtower, Garrison/Armory/High Command/Traction Works/Ordnance (training buildings), Research Institute.
+	INDUSTRY_EXTRACTION, ## Raw extraction, processed-resource production, power generation.
+	AGRICULTURE,         ## Farms.
+	DEFENSE_WORKS,       ## Search Light — the only BuildingCatalog entry left in this category; walls have their own WallCatalog tier system.
 }
 
+## design_doc.md §3's Tiered Building Specifications, grouped by tier (1
+## group per tier, comments). Fully replaced from the pre-rework tree —
+## design_doc.md's list is authoritative; buildings with no doc equivalent
+## (Gas Streetlamp, Telegraph Relay Office, Steam Printing Press, Grain
+## Silo, Cattle Yard, Ditch, Oil Pit) were cut rather than carried over.
+## Ordinal stability isn't preserved (already broken by the resource
+## rework; see ResourceType's own doc comment).
 enum BuildingType {
-	# --- Housing & Civil ---
-	TERRACED_TENEMENT,
-	WORKHOUSE,
-	CHURCH_STEEPLE_WATCHTOWER,
-	GAS_STREETLAMP,
-	TELEGRAPH_RELAY_OFFICE,
-	STEAM_PRINTING_PRESS,
-	TOWN_HALL,   ## Added as a required Civilian ZoC projector.
-	GARRISON,    ## Added here as the civic-seat/militia-HQ pairing for Town Hall.
-	# --- Industry & Extraction ---
-	TIMBER_CAMP,  ## Added post-launch, economy-balance pass: the ONLY Wood producer in the whole tree — every other raw construction material had a dedicated extractor, Wood never did.
-	CLAY_BRICKWORKS,
-	CHARCOAL_KILN,
-	COAL_PITHEAD,
-	CAST_IRON_FOUNDRY,
-	SALTPETRE_POWDER_MILL,
-	FORWARD_AMMO_DUMP,
-	# --- Agriculture ---
-	TENANT_FARM,
-	GRAIN_SILO,
-	CATTLE_YARD,
-	# --- Defense Works ---
-	SEARCHLIGHT_TOWER,  ## Normal hex-placed building (BuildingManager), like Gas Streetlamp.
-	DITCH,              ## Cost data only — placed via WallManager.add_defense_work(), attached to a specific WallSegment.
-	OIL_PIT,            ## Cost data only — same as DITCH.
+	# --- Town Hall — pre-built free at game start; BuildingDefinition.tier
+	# gates further construction to Tier 3, not this grouping ---
+	TOWN_HALL,
+	# --- Tier 0: Wood Base / Settlement ---
+	LUMBER_YARD,
+	CLAY_PIT,
+	SMALLHOLDING_FARM,
+	STEAM_FURNACE,
+	WOODEN_HOUSES,
+	WATCHTOWER,
+	# --- Tier 1: Brick Base / Borough ---
+	COAL_MINE,
+	LIMESTONE_QUARRY,
+	BRICKWORKS,
+	ESTATE_FARM,
+	COAL_POWERPLANT,
+	RESEARCH_INSTITUTE,
+	BRICK_HOUSES,
+	GARRISON,
+	SUPPLY_DUMP,
+	# --- Tier 2: Iron Base / Industrial District ---
+	IRON_ORE_MINE,
+	IRON_FOUNDRY,
+	CONCRETE_PLANT,
+	INDUSTRIAL_FARM,
+	TOWER_BLOCKS,
+	ARMORY_AND_BARRACKS,
+	SEARCH_LIGHT,
+	# --- Tier 3: Steel Base / Rail Network ---
+	SULFUR_MINE,
+	DEEP_COAL_SHAFTS,  ## High-output Coal consolidator, added post-launch balance pass — see design_doc.md §3 Tier 3.
+	SAWMILLS,          ## Same role for Wood.
+	GUNPOWDER_MILL,
+	STEELWORKS,
+	MECHANISED_FARM,
+	ADVANCED_COAL_POWERPLANT,
+	HIGH_COMMAND_AND_CAVALRY_DEPOT,
+	# --- Tier 4: Advanced Engineering / Automation & Maintenance Era ---
+	STEAM_EXCAVATOR_DEPOT,
+	HEAVY_COAL_WASHERY_AND_PULVERIZER,
+	MECHANIZED_MAINTENANCE_DEPOT,
+	MACADAMIZED_TRANSPORT_HUB,
+	STEAM_TURBINE_POWER_PLANT,
+	TRACTION_WORKS_AND_WORKSHOP,
+	# --- Tier 5: Heavy Industrial / Super-Complex Era ---
+	BESSEMER_SMELTING_COMPLEX,
+	AUTOMATED_FREIGHT_MARSHALLING_YARD,
+	SYNTHETIC_CHEMICAL_REFINERY,
+	CENTRAL_HIGH_VOLTAGE_GRID_STATION,
+	ORDNANCE_AND_ARMAMENT_COMPLEX,
 }
 
 ## 3 roles per unit tier. Melee/ranged are self-explanatory; special's exact
@@ -235,6 +267,7 @@ enum TacticalFidelity {
 enum TechUnlockType {
 	WALL_TIER,        ## Unlocks a wall tier (unlock_value: 1=Brick, 2=Concrete; tier 0/Wooden is baseline, no tech needed).
 	UNIT_TIER,        ## Unlocks a whole unit tier, all 3 roles at once (unlock_value: 1-5; tier 0 is baseline, no tech needed).
+	BUILDING_TIER,    ## Unlocks a whole building tier (unlock_value: 1-5; tier 0 is baseline, no tech needed) — see TechManager.is_building_tier_unlocked().
 	BUILDING_VARIANT, ## Unlocks an advanced building variant — documented hook, unused until a variant building actually exists.
 	SEAFARING,        ## The one node gated on campaign state as well as prerequisites — see TechDefinition.requires_wales_and_scotland_retaken.
 }
