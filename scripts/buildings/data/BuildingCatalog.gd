@@ -111,8 +111,22 @@ static func _town_hall() -> BuildingDefinition:
 	d.construction_cost = {GameEnums.ResourceType.WOOD: 300, GameEnums.ResourceType.BRICKS: 200, GameEnums.ResourceType.CONCRETE: 150, GameEnums.ResourceType.STEEL: 100}
 	d.daily_upkeep = {GameEnums.ResourceType.FOOD: 10.0}
 	d.daily_output = {GameEnums.ResourceType.POPULATION: 100.0, GameEnums.ResourceType.ENERGY: 20.0, GameEnums.ResourceType.RESEARCH_POINTS: 5.0}
-	d.allowed_biomes = [GameEnums.BiomeType.URBAN]
-	d.requires_settlement = true
+	# Every dry-land biome, and deliberately NOT requires_settlement — a Town
+	# Hall is the one building that CREATES a settlement rather than needing
+	# one (design_doc.md §3: "Allows players to found far-flung cities
+	# specialized in extracting specific resource nodes"), so gating it on an
+	# existing settlement would make founding impossible. Listed positively
+	# rather than left empty/"unrestricted": an empty list would also permit
+	# WATERWAY, and a town founded mid-river would pave a crossing the
+	# Bridge-mandatory rule (HexPathfinder.is_water_crossing_blocked()) exists
+	# to forbid. OCEAN is already excluded by the passability check, WATERWAY
+	# is not.
+	d.allowed_biomes = [
+		GameEnums.BiomeType.URBAN, GameEnums.BiomeType.INDUSTRIAL, GameEnums.BiomeType.FARMLAND,
+		GameEnums.BiomeType.MOORLAND, GameEnums.BiomeType.HIGHLAND, GameEnums.BiomeType.WETLAND,
+		GameEnums.BiomeType.WOODLAND, GameEnums.BiomeType.HEATHLAND,
+	]
+	d.max_per_hex = 1  ## design_doc.md §3: "Only 1 can be built per hex tile."
 	d.zoc_roles = [GameEnums.ZoneOfControlType.CIVILIAN]
 	# Without this, a brand-new colony's ONLY vision source is radius 0 (its
 	# own single hex) — Town Hall is BuildingManager.seed_starting_buildings()'s

@@ -30,21 +30,55 @@ extends RefCounted
 ## inventing new derivation logic. That's Phase 3's job (extraction),
 ## when a real consumer needs it, not invented speculatively here.
 ##
-## No write/mutation path — read-only. A sparse mutation store (matching
-## ReclamationManager._drained_hexes's own pattern) lands with whichever
-## later phase first needs to actually change a sub-cell (Phase 3 at the
-## earliest) — building it now with no consumer would be speculative.
+## No write/mutation path of its own — the anticipated sparse mutation store
+## arrived as SubHexTerrainOverride (Town Hall founding, its first real
+## consumer). Every lookup here consults it, so all four sub-hex readers
+## (BuildingManager placement legality, SubHexPortalGraph passability,
+## SubHexSoilQuery, SubHexGroundView) see a mutation without their own
+## override branch. Overrides are applied to a DUPLICATE of the cached
+## sample, never in place — _cache holds raw baked-raster data only, so a
+## disc that later grows or is cleared can't leave a stale paved sub-cell
+## behind.
 
 static var _cache: Dictionary = {}  # "<hex.x>_<hex.y>_<sub.x>_<sub.y>" -> Dictionary (RealTerrainSampler.sample_at()'s own shape, {} cached too so a miss isn't re-queried every call)
 
 ## Terrain at sub-cell `sub_index` within macro-hex `hex_coord`.
 static func sample(hex_coord: Vector2i, sub_index: Vector2i) -> Dictionary:
 	var key := "%d_%d_%d_%d" % [hex_coord.x, hex_coord.y, sub_index.x, sub_index.y]
+	var base: Dictionary
 	if _cache.has(key):
-		return _cache[key]
-	var world_pos := HexCoord.sub_hex_to_world(hex_coord, sub_index)
-	var result := RealTerrainSampler.sample_at_hex(hex_coord, world_pos)  # Prefers the fine per-hex tile when one's baked, same as sample_grid() already does — a plain sample_at() would silently lose that fidelity near the starting settlement.
-	_cache[key] = result
+		base = _cache[key]
+	else:
+		var sampled_pos := HexCoord.sub_hex_to_world(hex_coord, sub_index)
+		base = RealTerrainSampler.sample_at_hex(hex_coord, sampled_pos)  # Prefers the fine per-hex tile when one's baked, same as sample_grid() already does — a plain sample_at() would silently lose that fidelity near the starting settlement.
+		_cache[key] = base
+	if not SubHexTerrainOverride.has_urban_disc(hex_coord):
+		return base  # Overwhelmingly the common case — one dictionary lookup, and the cached result is returned by reference exactly as before overrides existed.
+	return _with_urban_override(hex_coord, HexCoord.sub_hex_to_world(hex_coord, sub_index), base)
+
+## Applies a founded settlement's urban disc to one raw baked sample.
+## Returns `base` itself (not a copy) whenever the override doesn't apply, so
+## the no-op path allocates nothing.
+##
+## Two things a paved disc deliberately does NOT overwrite:
+##
+## - OCEAN/WATERWAY sub-cells. A town doesn't fill in the sea or culvert the
+##   river it was built on. This is load-bearing, not cosmetic: WATERWAY is
+##   impassable-without-a-Bridge (HexPathfinder.is_water_crossing_blocked()),
+##   so letting an urban disc repaint a river would silently reopen exactly
+##   the crossings that rule exists to close.
+## - terrain_feature. A MARSH/PEAT_BOG strip inside the town stays marsh and
+##   stays impassable until actually drained — ReclamationManager owns
+##   draining as a resource-costed player action, and clearing the feature
+##   here would hand that out free with a Town Hall.
+static func _with_urban_override(hex_coord: Vector2i, world_pos: Vector2, base: Dictionary) -> Dictionary:
+	if not SubHexTerrainOverride.is_urban_at(hex_coord, world_pos):
+		return base
+	var biome: GameEnums.BiomeType = base.get("biome_type", GameEnums.BiomeType.MOORLAND)
+	if base.has("biome_type") and (biome == GameEnums.BiomeType.OCEAN or biome == GameEnums.BiomeType.WATERWAY):
+		return base
+	var result := base.duplicate()
+	result["biome_type"] = GameEnums.BiomeType.URBAN
 	return result
 
 ## Convenience wrapper — resolves `world_pos` to its own sub-cell first
