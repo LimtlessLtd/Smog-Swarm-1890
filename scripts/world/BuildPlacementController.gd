@@ -168,7 +168,11 @@ func _update_ghost(world_pos: Vector2) -> void:
 	# free (non-hex-snapped) positioning, so the preview shows exactly
 	# where the building will land, not just which hex it'll belong to.
 	position = world_pos
-	var can_place := _building_manager != null and _building_manager.can_place_building(_pending_type, coord)
+	# local_position (not just coord) so the preview reflects real sub-hex
+	# legality (Sub-Hex Mechanical Layer Phase 3b) — hovering a tiny marsh
+	# patch inside an otherwise-buildable hex now correctly shows blocked.
+	var local_position := world_pos - HexCoord.axial_to_world(coord)
+	var can_place := _building_manager != null and _building_manager.can_place_building(_pending_type, coord, local_position)
 	var color: Color = _VALID_COLOR if can_place else _BLOCKED_COLOR
 
 	# The hex outline is drawn around the HEX's center, which is no longer

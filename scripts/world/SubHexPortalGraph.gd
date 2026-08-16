@@ -39,7 +39,7 @@ const _SAMPLE_STEP: float = HexCoord.SUB_HEX_CELL_SIZE_WORLD_UNITS
 ## array, there's no shared edge to sample). `hex_grid_map` supplies the
 ## macro-level passability fallback for sub-cells outside the baked
 ## real-data corridor (RealTerrainSampler/SubHexTerrainQuery return {} there
-## — see _is_sub_passable() below), same DI-via-parameter convention
+## — see SubHexTerrainQuery.is_passable_at()), same DI-via-parameter convention
 ## HexPathfinder.find_path() already uses rather than this class holding its
 ## own reference.
 static func find_portals(hex_grid_map: HexGridMap, hex_a: Vector2i, hex_b: Vector2i) -> Array[SubHexPortal]:
@@ -75,7 +75,7 @@ static func _compute_portals(hex_grid_map: HexGridMap, hex_a: Vector2i, hex_b: V
 	var t := -half_edge
 	while t <= half_edge:
 		var world_pos := mid + along_edge * t
-		var passable := _is_sub_passable(hex_a, world_pos, fallback_passable_a) and _is_sub_passable(hex_b, world_pos, fallback_passable_b)
+		var passable := SubHexTerrainQuery.is_passable_at(hex_a, world_pos, fallback_passable_a) and SubHexTerrainQuery.is_passable_at(hex_b, world_pos, fallback_passable_b)
 		if passable:
 			run_positions.append(world_pos)
 		else:
@@ -92,25 +92,6 @@ static func _flush_run(run_positions: Array[Vector2], hex_a: Vector2i, hex_b: Ve
 	var sub_a := HexCoord.sub_hex_index_within(hex_a, mid_pos)
 	var sub_b := HexCoord.sub_hex_index_within(hex_b, mid_pos)
 	out_portals.append(SubHexPortal.new(hex_a, hex_b, sub_a, sub_b, mid_pos))
-
-## Sub-cell passability at `world_pos` resolved against `hex_coord`
-## specifically (SubHexTerrainQuery.sample_at_world_within() — locks to THIS
-## hex, doesn't re-derive which hex world_pos geometrically belongs to,
-## matching how every other sub-hex-boundary caller already has to handle
-## SUB_HEX_GRID_SPAN's overhang). Reapplies HexCell.is_passable()'s exact
-## MARSH/PEAT_BOG/OCEAN rule at sub-hex granularity when real baked data
-## exists for this position; falls back to the macro hex's OWN
-## is_passable() (`fallback`) when it doesn't (outside the baked corridor —
-## RealTerrainSampler returns {} there, the same "empty result -> fall back
-## to flat default" contract HexMapGenerator already established, not a new
-## rule invented here).
-static func _is_sub_passable(hex_coord: Vector2i, world_pos: Vector2, fallback: bool) -> bool:
-	var sample := SubHexTerrainQuery.sample_at_world_within(hex_coord, world_pos)
-	if sample.is_empty():
-		return fallback
-	var terrain_feature: GameEnums.TerrainFeature = sample.get("terrain_feature", GameEnums.TerrainFeature.NONE)
-	var biome_type: GameEnums.BiomeType = sample.get("biome_type", GameEnums.BiomeType.MOORLAND)
-	return terrain_feature != GameEnums.TerrainFeature.MARSH and terrain_feature != GameEnums.TerrainFeature.PEAT_BOG and biome_type != GameEnums.BiomeType.OCEAN
 
 ## Canonical pair ordering for the cache key — arbitrary but consistent, so
 ## find_portals(a, b) and find_portals(b, a) share one cache entry instead of
