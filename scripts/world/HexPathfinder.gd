@@ -49,20 +49,57 @@ const BASE_HEX_COST: float = 1.0  ## Base traversal cost for an ordinary hex-to-
 ## multiplier as a path-preference cost, and get_terrain_speed_multiplier()
 ## below inverts the SAME table into a continuous movement speed for
 ## whichever hex an entity is currently crossing (MovementStepper.gd).
+##
+## No WATERWAY entry — Bridge-mandatory-crossing (todo.md, 2026-08-16
+## follow-up) removed the old flat 1.4x "fording" penalty this table used
+## to carry for it. A WATERWAY-touching edge is now either excluded from
+## the graph entirely (is_water_crossing_blocked() below, unbridged) or
+## overridden by a real Bridge's own SupplyLineCatalog speed bonus (bridged
+## — see get_step_cost()'s own override logic) — no live code path ever
+## consults a WATERWAY entry here anymore, so it isn't kept as a stale
+## fallback; missing keys already default to the neutral 1.0 baseline.
 const _BIOME_COST_MULTIPLIER: Dictionary = {
 	GameEnums.BiomeType.HIGHLAND: 1.6,  ## Elevated terrain — Pennine/Chiltern/Cotswold chokepoints.
 	GameEnums.BiomeType.WETLAND: 1.8,   ## Boggy going even where it's not outright impassable MARSH/PEAT_BOG.
-	GameEnums.BiomeType.WATERWAY: 1.4,  ## Fording a river/canal hex rather than bridging it.
 }
+
+## True if the edge from `from` to `to` crosses WATERWAY (either hex is
+## WATERWAY) and no unsevered Bridge segment connects them —
+## design_doc.md: "WATERWAY - IMPASSABLE for all ground units & zombies.
+## Traversable ONLY via Bridges." Checked per-EDGE via
+## LogisticsNetwork.is_bridge_between(), not by making HexCell.is_passable()
+## itself reject WATERWAY — mirrors how WallManager's own blocking check is
+## an edge-level exclusion, not a hex-level one: a horde/unit can walk
+## right up to a riverbank hex from dry land, just can't cross into or
+## through the water without a bridge on that SPECIFIC edge (a hex where a
+## river bends still needs its own bridge on each edge it's entered/exited
+## through, not one bridge anywhere on its boundary).
+##
+## Shared by find_path() below, HordeFlowField._build_field(), and
+## HordeManager._replan_cheap() — three independent neighbor-expansion
+## loops that each need the identical exclusion, same "shared source of
+## truth" reasoning get_step_cost() already established for
+## find_path()/HordeFlowField.
+static func is_water_crossing_blocked(hex_grid_map: HexGridMap, logistics_network: LogisticsNetwork, from: Vector2i, to: Vector2i) -> bool:
+	var from_cell := hex_grid_map.get_cell(from) if hex_grid_map else null
+	var to_cell := hex_grid_map.get_cell(to) if hex_grid_map else null
+	var crosses_water := (from_cell and from_cell.biome_type == GameEnums.BiomeType.WATERWAY) or (to_cell and to_cell.biome_type == GameEnums.BiomeType.WATERWAY)
+	if not crosses_water:
+		return false
+	return not (logistics_network and logistics_network.is_bridge_between(from, to))
 
 ## A* search from `start` to `goal` over `hex_grid_map`'s cells, weighted by
 ## HexCell.is_passable() (impassable hexes — marsh/peat bog — are never
-## entered, not even as a detour) and discounted across
-## `logistics_network` segments when one is supplied. Returns an
+## entered, not even as a detour), excluded across any WATERWAY-touching
+## edge with no Bridge on it (is_water_crossing_blocked() above — same
+## treatment as an impassable hex, a route genuinely goes AROUND unbridged
+## water or fails if there's no way around), and discounted/overridden
+## across `logistics_network` segments when one is supplied. Returns an
 ## Array[Vector2i] path INCLUDING both `start` and `goal`, or an empty
-## array if no path exists (goal unreachable, either endpoint off-map, or
-## either endpoint itself impassable). `start == goal` returns a single-
-## element path rather than searching.
+## array if no path exists (goal unreachable, either endpoint off-map,
+## either endpoint itself impassable, or every route to it crosses
+## unbridged water). `start == goal` returns a single-element path rather
+## than searching.
 ##
 ## `wall_manager` — optional, same "unset gracefully skips it" convention
 ## as `logistics_network`. When supplied, any edge crossed by an
@@ -111,6 +148,8 @@ static func find_path(hex_grid_map: HexGridMap, start: Vector2i, goal: Vector2i,
 		for neighbor in HexCoord.neighbors(current):
 			var cell := hex_grid_map.get_cell(neighbor)
 			if not cell or not cell.is_passable():
+				continue
+			if is_water_crossing_blocked(hex_grid_map, logistics_network, current, neighbor):
 				continue
 			if wall_manager and wall_manager.get_blocking_segment(current, neighbor, HexCoord.axial_to_world(current), HexCoord.axial_to_world(neighbor)):
 				continue

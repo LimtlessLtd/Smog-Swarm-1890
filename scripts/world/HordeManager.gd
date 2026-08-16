@@ -575,12 +575,16 @@ func _is_far_from_player(coord: Vector2i) -> bool:
 ## uniformly-random passable neighbor of the horde's own current hex. Just as
 ## undirected as the real _pick_drift_target()'s ring-pick, without paying
 ## for the graph search. Leaves horde.path empty (tried again next frame) if
-## every neighbor happens to be impassable.
+## every neighbor happens to be impassable OR only reachable across
+## unbridged water (HexPathfinder.is_water_crossing_blocked() — Bridge-
+## mandatory-crossing, todo.md, 2026-08-16 — same exclusion find_path()/
+## HordeFlowField apply, so a FAR horde's cheap hop can't glide across a
+## river the real searches would refuse to cross).
 func _replan_cheap(horde: Horde) -> void:
 	var candidates: Array[Vector2i] = []
 	for neighbor in HexCoord.neighbors(horde.hex_coord):
 		var cell := _hex_grid_map.get_cell(neighbor)
-		if cell and cell.is_passable():
+		if cell and cell.is_passable() and not HexPathfinder.is_water_crossing_blocked(_hex_grid_map, _logistics_network, horde.hex_coord, neighbor):
 			candidates.append(neighbor)
 	if candidates.is_empty():
 		return
