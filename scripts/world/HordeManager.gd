@@ -13,8 +13,9 @@ extends Node
 ##   DRIFT_TARGET_RADIUS, routes to it via HexPathfinder, then walks there
 ##   continuously in real-time world-space (MovementStepper), not hex-to-hex.
 ## - Casualty-conversion spawn source (add_casualty_zombies()), wired to
-##   BuildingManager.civilians_starved and building_ruined: finds-or-creates a
-##   WANDERING horde at the death hex and grows it by the death count.
+##   BuildingManager.building_ruined: finds-or-creates a WANDERING horde at a
+##   ruined housing building's hex and grows it by its housed population at
+##   the moment it fell.
 ## - _on_ambient_spawn_day() rolls a flat daily chance to seed one tiny (1-3)
 ##   horde on ambient wilderness, independent of the starting seed/casualty
 ##   conversion/noise system.
@@ -82,7 +83,7 @@ signal horde_removed(horde: Horde)
 
 @export var hex_grid_map_path: NodePath
 @export var logistics_network_path: NodePath  ## Optional — road/rail/canal discount, applied as a continuous speed bonus (see MovementStepper).
-@export var building_manager_path: NodePath   ## Optional — starvation-casualty spawn source, and local obstacle avoidance (buildings steer continuous movement around them regardless of Tactical hydration). Unset skips both.
+@export var building_manager_path: NodePath   ## Optional — ruin-casualty spawn source (building_ruined), and local obstacle avoidance (buildings steer continuous movement around them regardless of Tactical hydration). Unset skips both.
 @export var wall_manager_path: NodePath       ## Optional — horde-vs-wall siege; unset means walls never block a horde's drift.
 @export var local_detail_manager_path: NodePath  ## Optional — prop obstacle avoidance; props (trees/rocks/etc.) only exist as live data while their hex is Tactical-hydrated (LocalDetailManager.get_props_at()).
 @export var noise_manager_path: NodePath      ## Optional — ATTRACTED state; unset means a horde only ever WANDERs.
@@ -183,7 +184,6 @@ func _ready() -> void:
 		_logistics_network = get_node(logistics_network_path)
 	if building_manager_path != NodePath():
 		_building_manager = get_node(building_manager_path)
-		_building_manager.civilians_starved.connect(_on_civilians_starved)
 		_building_manager.building_ruined.connect(_on_building_ruined)
 	if wall_manager_path != NodePath():
 		_wall_manager = get_node(wall_manager_path)
@@ -283,11 +283,9 @@ func _find_horde_at(coord: Vector2i) -> Horde:
 			return horde
 	return null
 
-func _on_civilians_starved(hex_coord: Vector2i, count: int) -> void:
-	add_casualty_zombies(hex_coord, count)
-
-## `count` may legitimately be 0 (an industrial/agricultural building with no
-## housed population) — add_casualty_zombies() already no-ops on count <= 0.
+## `lost_population` may legitimately be 0 (an industrial/agricultural
+## building with no housed population) — add_casualty_zombies() already
+## no-ops on count <= 0.
 func _on_building_ruined(instance: BuildingInstance, lost_population: int) -> void:
 	add_casualty_zombies(instance.hex_coord, lost_population)
 

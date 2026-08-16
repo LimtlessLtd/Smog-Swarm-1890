@@ -12,15 +12,26 @@ extends Node
 signal resources_changed(stockpile: Dictionary)
 signal upkeep_shortfall(resource_type: GameEnums.ResourceType, shortfall: float)
 
+## POPULATION starts at 0.0, same as every other resource nothing produces
+## yet — Town Hall's real +100 Pop capacity grant (design_doc.md §3) lands
+## with the Building tree rework (todo.md); until then it's an inert pool
+## with a mechanism (BuildingCapacityAllocator) but no producer.
 const STARTING_STOCKPILE: Dictionary = {
 	GameEnums.ResourceType.FOOD: 100.0,
 	GameEnums.ResourceType.ENERGY: 50.0,
+	GameEnums.ResourceType.POPULATION: 0.0,
 	GameEnums.ResourceType.GUNPOWDER: 20.0,
 	GameEnums.ResourceType.RESEARCH_POINTS: 0.0,
 	GameEnums.ResourceType.WOOD: 150.0,
+	GameEnums.ResourceType.CLAY: 0.0,
+	GameEnums.ResourceType.COAL: 0.0,
+	GameEnums.ResourceType.LIMESTONE: 0.0,
+	GameEnums.ResourceType.IRON_ORE: 0.0,
+	GameEnums.ResourceType.SULFUR: 0.0,
 	GameEnums.ResourceType.BRICKS: 100.0,
-	GameEnums.ResourceType.CAST_IRON: 40.0,
-	GameEnums.ResourceType.REINFORCED_CONCRETE: 0.0,
+	GameEnums.ResourceType.IRON: 40.0,
+	GameEnums.ResourceType.STEEL: 0.0,
+	GameEnums.ResourceType.CONCRETE: 0.0,
 }
 
 var _stockpile: Dictionary = {}     # GameEnums.ResourceType -> float

@@ -48,11 +48,10 @@ static func get_display_name(tier: int) -> String:
 			return "Unknown Wall"
 
 ## HP scaling and cost are a balancing pass, not an architecture decision.
-## Concrete's Reinforced Concrete cost is a deliberate forward reference:
-## no building produces that resource yet either (see
-## GameEnums.ResourceType.REINFORCED_CONCRETE's own doc comment), so
-## Concrete Walls stay legitimately unbuildable in practice until a future
-## production building exists.
+## Concrete's Concrete cost is a deliberate forward reference: no building
+## produces that resource yet (see GameEnums.ResourceType.CONCRETE's own
+## doc comment), so Concrete Walls stay legitimately unbuildable in
+## practice until a future Concrete Plant exists (Building tree rework, todo.md).
 static func get_max_hp(tier: int) -> float:
 	match tier:
 		WOODEN:
@@ -69,9 +68,9 @@ static func get_build_cost(tier: int) -> Dictionary:
 		WOODEN:
 			return {GameEnums.ResourceType.WOOD: 40}
 		BRICK:
-			return {GameEnums.ResourceType.BRICKS: 70, GameEnums.ResourceType.CAST_IRON: 10}
+			return {GameEnums.ResourceType.BRICKS: 70, GameEnums.ResourceType.IRON: 10}
 		CONCRETE:
-			return {GameEnums.ResourceType.REINFORCED_CONCRETE: 60, GameEnums.ResourceType.CAST_IRON: 20}
+			return {GameEnums.ResourceType.CONCRETE: 60, GameEnums.ResourceType.IRON: 20}
 		_:
 			return {}
 

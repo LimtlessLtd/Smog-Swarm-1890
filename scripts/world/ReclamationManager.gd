@@ -50,7 +50,7 @@ const DRAIN_COST: Dictionary = {GameEnums.ResourceType.WOOD: 40, GameEnums.Resou
 ## rebuild than a road or a canal lock.
 const _REPAIR_COST_BY_LINE_TYPE: Dictionary = {
 	GameEnums.SupplyLineType.ROAD: {GameEnums.ResourceType.WOOD: 15},
-	GameEnums.SupplyLineType.RAILWAY: {GameEnums.ResourceType.CAST_IRON: 25, GameEnums.ResourceType.WOOD: 10},
+	GameEnums.SupplyLineType.RAILWAY: {GameEnums.ResourceType.IRON: 25, GameEnums.ResourceType.WOOD: 10},
 	GameEnums.SupplyLineType.CANAL: {GameEnums.ResourceType.BRICKS: 20},
 }
 

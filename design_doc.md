@@ -66,7 +66,7 @@ To maintain deep industrial strategy without overwhelming player management, res
     * Tier 5 (Super-Complex Era): 2,500 Research
 
 ### Unified Zone of Control (ZoC) & Field Supply Rules
-* **ZoC Emission & Expansion:** Players begin with **1 Pre-built Starter Town Hall** emitting a 5km x 5km ZoC circle. Constructing new Town Halls to establish far-flung cities and expand global network coverage is **locked until Tier 3**. Linked ZoCs pool global stockpiles; unlinked ZoCs remain local.
+* **ZoC Emission & Expansion:** Players begin with **1 Pre-built Starter Town Hall** emitting a 5 mi x 5 mi ZoC circle. Constructing new Town Halls to establish far-flung cities and expand global network coverage is **locked until Tier 3**. Linked ZoCs pool global stockpiles; unlinked ZoCs remain local.
 * **Infantry Gunpowder Logistics:** Units inside ZoC draw seamlessly from stockpiles. Units exiting ZoC reserve **20 rounds of Gunpowder**. Re-entering any ZoC or visiting an Supply Dump automatically re-arms reserves.
 * **Steam Vehicle Fuel Logistics:** Steam-powered combat vehicles draw Coal directly from pooled stockpiles inside ZoC. When leaving ZoC, steam vehicles reserve **50 Coal** (enabling independent field operations). Re-entering ZoC or visiting a Supply Dump refuels reserves automatically.
 
@@ -83,7 +83,7 @@ Each tier of road/transit infrastructure increases base movement speed while ign
 ## 3. Tiered Building Specifications
 
 ### Tier 0: Wood Base / Settlement
-* **Town Hall** — **Pre-built at Game Start (1 Max at T0-T2)** | **Construction of additional Town Halls locked until Tier 3** | **Capacity:** +100 Pop, +20 Energy | **Upkeep:** 10 Food/day | **Output:** 5 Research/day | **ZoC:** 5km x 5km. Trains Tier 0 units (*Truncheoneer, Toxophilite, Outrider*).
+* **Town Hall** — **Pre-built at Game Start (1 Max at T0-T2)** | **Construction of additional Town Halls locked until Tier 3** | **Capacity:** +100 Pop, +20 Energy | **Upkeep:** 10 Food/day | **Output:** 5 Research/day | **ZoC:** 5mi x 5mi. Trains Tier 0 units (*Truncheoneer, Toxophilite, Outrider*).
 * **Lumber Yard** — **Cost:** 50 Wood | **Capacity:** -5 Pop, -5 Energy | **Output:** 200 Wood/day | **Time:** 1 day
 * **Clay Pit** — **Cost:** 60 Wood | **Capacity:** -15 Pop, -10 Energy | **Upkeep:** 10 Food/day | **Output:** 200 Clay/day | **Time:** 2 days
 * **Smallholding Farm** — **Cost:** 100 Wood | **Capacity:** -10 Pop, -5 Energy | **Output:** 150 Food/day | **Time:** 1 day
@@ -127,7 +127,7 @@ Each tier of road/transit infrastructure increases base movement speed while ign
 ---
 
 ### Tier 3: Steel Base / Rail Network
-* **Town Hall** — **Unlocked at Tier 3** | **Cost:** 300 Wood, 200 Bricks, 150 Concrete, 100 Steel | **Capacity:** +100 Pop, +20 Energy | **Upkeep:** 10 Food/day | **Time:** 3 days | **Function:** Establishes a new 5km x 5km ZoC hex. Allows players to found far-flung cities specialized in extracting specific resource nodes. Only 1 can be built per hex tile.
+* **Town Hall** — **Unlocked at Tier 3** | **Cost:** 300 Wood, 200 Bricks, 150 Concrete, 100 Steel | **Capacity:** +100 Pop, +20 Energy | **Upkeep:** 10 Food/day | **Time:** 3 days | **Function:** Establishes a new 5mi x 5mi ZoC hex. Allows players to found far-flung cities specialized in extracting specific resource nodes. Only 1 can be built per hex tile.
 * **Sulfur Mine** — **Cost:** 250 Wood, 150 Bricks, 100 Concrete, 50 Iron | **Capacity:** -35 Pop, -60 Energy | **Upkeep:** 30 Food/day | **Output:** 50 Sulfur/day | **Time:** 3 days
 * **Gunpowder Mill** — **Cost:** 150 Wood, 100 Bricks, 50 Iron | **Capacity:** -15 Pop, -40 Energy | **Upkeep:** 60 Sulfur/day, 40 Coal/day, 20 Food/day | **Output:** 120 Gunpowder/day | **Time:** 3 days
 * **Steelworks** — **Cost:** 300 Wood, 200 Bricks, 150 Concrete, 100 Iron | **Capacity:** -40 Pop, -300 Energy | **Upkeep:** 100 Iron/day, 50 Coal/day, 40 Food/day | **Output:** 75 Steel/day | **Time:** 4 days
@@ -210,7 +210,7 @@ Each tier of road/transit infrastructure increases base movement speed while ign
 The map covers the British Isles (Ireland and Great Britain) using a two-tier 2D top-down camera architecture:
 
 * **World View (Strategic Tier)**
-  * **Grid Unit:** Uniform 5km × 5km hexagonal grid.
+  * **Grid Unit:** Uniform 5mi × 5mi hexagonal grid.
   * **Visual Display:** Strategic overview rendering overall Zone of Control (ZoC) networks, macro Fog of War, sector threat levels, regional resource totals, major transit corridors (Railways/Canals), macro elevation contours, and aggregated army/horde icons.
   * **Purpose:** Macro logistics, empire planning, and regional military movement.
 
@@ -241,10 +241,10 @@ Rather than using complex 3D terrain meshes, height is managed via discrete 2D i
 
 ### Sub-Hex Granular Biomes
 
-Biome boundaries operate completely independently of the 5km hex grid:
+Biome boundaries operate completely independently of the 5mi hex grid:
 
 * **Continuous Blending:** Biomes (Farmland, Moorland, Highland, Wetland, Woodland, Heathland) are stored as continuous 2D weightmaps (splatmaps) rather than locked hex tiles.
-* **Multi-Biome Hexes:** A single 5km hex tile can seamlessly blend multiple biomes (e.g., a Wetland valley transitioning into Highland ridges bordered by Woodland).
+* **Multi-Biome Hexes:** A single 5mi hex tile can seamlessly blend multiple biomes (e.g., a Wetland valley transitioning into Highland ridges bordered by Woodland).
 * **Coordinate-Based Modifiers:** Movement speed and terrain mechanics evaluate the exact sub-hex biome blend directly beneath a unit's current position.
 
 ---
@@ -262,7 +262,7 @@ Map generation uses real-world open geospatial data, pre-processed and "baked" i
 #### Baking Process
 1. **Raster Quantization:** Raw SRTM DEM height values are processed through threshold filters to output discrete 2D `height_level` masks (0–4) and mark steep slope boundaries as impassable cliff edges.
 2. **Splatmap Generation:** AI terrain synthesis converts land-cover datasets into smooth 2D sub-hex biome weightmaps for Tactical View rendering.
-3. **Hex Feature Aggregation:** Aggregates regional totals across each 5km hex area to populate strategic resource potentials, dominant terrain profiles, and base travel speeds for the World View.
+3. **Hex Feature Aggregation:** Aggregates regional totals across each 5mi hex area to populate strategic resource potentials, dominant terrain profiles, and base travel speeds for the World View.
 
 ---
 
@@ -384,14 +384,14 @@ To optimize CPU usage during large horde events:
 To eliminate ambiguity between macro strategy and micro tactics, spatial dimensions are locked to the following real-world equivalent metrics:
 
 * **Strategic Hex (World View Cell):**
-  * **Dimensions:** Regular hexagon with a 5 km width (flat-to-flat distance).
-  * **Bounding Area:** ~21.65 km²
+  * **Dimensions:** Regular hexagon with a 5 mi width (flat-to-flat distance).
+  * **Bounding Area:** ~21.65 mi²
   * **Purpose:** Primary unit for regional Zone of Control (ZoC), empire pathfinding, resource distribution, and macro fog of war.
 
 * **Tactical Tile (Operational View Cell):**
   * **Dimensions:** Uniform 10 m x 10 m square grid cell.
   * **Scale Conversion:** 1 Strategic Hex ≈ 500 x 500 Tactical Tiles in bounding area.
-  * **Movement Velocity:** Unit movement rates use floating-point sub-tile velocities (tiles/sec) rather than integer steps (e.g., standard infantry walking at ~5 km/h translates to ~0.14 tiles/sec) to ensure smooth interpolation.
+  * **Movement Velocity:** Unit movement rates use floating-point sub-tile velocities (tiles/sec) rather than integer steps (e.g., standard infantry walking at ~5 mi/h translates to ~0.22 tiles/sec) to ensure smooth interpolation.
   * **Purpose:** Fundamental atomic unit for pathfinding, building placement, weapon ranges, collision detection, and LoS shadowcasting.
 
 ---
@@ -404,7 +404,7 @@ To eliminate ambiguity between macro strategy and micro tactics, spatial dimensi
 
 * **Logical Height Level (`height_level`):** An integer byte flag (`uint8`: 0, 1, 2, 3, or 4) assigned per 10 m x 10 m tile. Controls vision occlusion, range bonuses, and passability without requiring 3D mesh height calculations.
 
-* **Zone of Control (ZoC):** A strategic and tactical supply aura centered on key infrastructure. Graphically represented on the World View as a 5 km x 5 km circle area. Unlocks local building placement and seamlessly connects resources to global logistics pools.
+* **Zone of Control (ZoC):** A strategic and tactical supply aura centered on key infrastructure. Graphically represented on the World View as a 5 mi x 5 mi circle area. Unlocks local building placement and seamlessly connects resources to global logistics pools.
 
 * **Symmetric Shadowcasting:** A grid-based 2D Line of Sight (LoS) algorithm that casts light rays outward from a tile center to determine visible vs. occluded tiles in O(N) time, where N is the number of tiles in the vision radius.
 

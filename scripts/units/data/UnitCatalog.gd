@@ -145,9 +145,9 @@ static func _build_definitions() -> Array[UnitDefinition]:
 ## upkeep/HP/damage across all 18 units instead of 18 hand-picked numbers.
 ## Real per-unit tuning is exactly the "balancing pass, not an architecture
 ## decision" every other constant table in this project already disclaims
-## (see e.g. WallCatalog, BuildingManager's starvation constants); this just
+## (see e.g. WallCatalog's per-tier HP/cost table); this just
 ## makes the eventual retuning a one-function edit instead of an
-## eighteen-function one. Deliberately avoids ResourceType.REINFORCED_CONCRETE
+## eighteen-function one. Deliberately avoids ResourceType.CONCRETE
 ## — no building anywhere in the project produces it yet (see that enum
 ## entry's own comment), so requiring it here would make Tier 4-5 units
 ## uncraftable rather than merely expensive.
@@ -176,7 +176,7 @@ static func _unit(type: GameEnums.UnitType, display_name: String, tier: int, rol
 		d.daily_upkeep = {GameEnums.ResourceType.GUNPOWDER: 0.5 + tier * 0.5}
 
 	d.training_cost = {
-		GameEnums.ResourceType.CAST_IRON: 15 + tier * 25,
+		GameEnums.ResourceType.IRON: 15 + tier * 25,
 		GameEnums.ResourceType.BRICKS: 10 * tier,
 	}
 	d.max_hp = 20.0 + tier * 15.0

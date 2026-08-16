@@ -11,11 +11,15 @@ extends Resource
 @export var local_position: Vector2 = Vector2.ZERO  ## Offset from hex_coord's center; see BuildingManager.place_building_at_world().
 @export var id: int = 0
 
-## Population is real, mutable, per-instance state instead of just reading
-## definition.population_provided as a fixed number — this is what can
-## actually be lost to starvation or regrown after a surplus. Seeded from
-## the definition on placement; 0 for any non-housing building, same as
-## population_provided itself.
+## Housing occupancy — distinct from ResourceManager's global POPULATION
+## capacity pool (design_doc.md §2, see BuildingCapacityAllocator). Fixed at
+## definition.population_provided once construction/repair completes, zeroed
+## on ruin (BuildingHealthController.damage()) or while still under
+## construction; nothing mutates it day to day otherwise. Real per-instance
+## state rather than just reading population_provided directly because ruin
+## needs a "how many were housed here at the moment it fell" snapshot
+## (HordeManager's ruin-to-casualties conversion) that survives past the
+## instant the building's baseline stops applying.
 @export var current_population: int = 0
 
 ## A destroyed building doesn't disappear — it becomes a Ruins state.
@@ -42,8 +46,8 @@ func _init(p_definition: BuildingDefinition = null, p_hex_coord: Vector2i = Vect
 	local_position = p_local_position
 	# -1 is "not specified by the caller" (BuildingManager's normal placement
 	# path) — seed from the definition's baseline. A save-restore path passes
-	# the actual saved value explicitly instead, which may differ from the
-	# baseline after starvation deaths/regrowth (see BuildingManager.load_save_entries()).
+	# the actual saved value explicitly instead, which may be 0 rather than
+	# the baseline if the saved building was ruined (see BuildingManager.load_save_entries()).
 	current_population = p_current_population if p_current_population >= 0 else (p_definition.population_provided if p_definition else 0)
 	current_hp = p_current_hp if p_current_hp >= 0.0 else (p_definition.get_max_hp() if p_definition else 0.0)
 	is_ruined = p_is_ruined

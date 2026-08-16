@@ -37,8 +37,6 @@ signal repair_rejected(instance: BuildingInstance, reason: String)
 signal building_ruined(instance: BuildingInstance, lost_population: int)
 signal building_demolished(instance: BuildingInstance)
 signal food_satisfaction_changed(ratio: float)
-signal civilians_starved(hex_coord: Vector2i, count: int)
-signal building_population_changed(instance: BuildingInstance)
 
 ## Re-exported for external callers (DiscontentManager, UnitPanelView) —
 ## BuildingSustenanceController owns the value.
@@ -58,7 +56,7 @@ var _territory_controller: TerritoryController
 var _construction: BuildingConstructionController
 var _health: BuildingHealthController
 var _sustenance: BuildingSustenanceController
-var _energy: BuildingEnergyAllocator
+var _capacity: BuildingCapacityAllocator
 
 var _instances: Array[BuildingInstance] = []
 var _instances_by_hex: Dictionary = {}  # Vector2i -> Array[BuildingInstance]
@@ -77,13 +75,13 @@ func _ready() -> void:
 	if territory_controller_path != NodePath():
 		_territory_controller = get_node(territory_controller_path)
 
-	_energy = BuildingEnergyAllocator.new(_resource_manager)
+	_capacity = BuildingCapacityAllocator.new(_resource_manager)
 
 	_construction = BuildingConstructionController.new()
 	_construction.progressed.connect(func(coord: Vector2i, days: int) -> void: construction_progressed.emit(coord, days))
 	_construction.completed.connect(func(instance: BuildingInstance) -> void: building_construction_completed.emit(instance))
 
-	_health = BuildingHealthController.new(_resource_manager, _territory_controller, _energy, Callable(_construction, "days_for"))
+	_health = BuildingHealthController.new(_resource_manager, _territory_controller, _capacity, Callable(_construction, "days_for"))
 	_health.damaged.connect(func(instance: BuildingInstance, amount: float) -> void: building_damaged.emit(instance, amount))
 	_health.ruined.connect(func(instance: BuildingInstance, lost_population: int) -> void: building_ruined.emit(instance, lost_population))
 	_health.repair_started.connect(func(instance: BuildingInstance, days: int) -> void: repair_started.emit(instance, days))
@@ -93,8 +91,6 @@ func _ready() -> void:
 
 	_sustenance = BuildingSustenanceController.new(_resource_manager, _discontent_manager, _hex_grid_map)
 	_sustenance.food_satisfaction_changed.connect(func(ratio: float) -> void: food_satisfaction_changed.emit(ratio))
-	_sustenance.civilians_starved.connect(func(hex_coord: Vector2i, count: int) -> void: civilians_starved.emit(hex_coord, count))
-	_sustenance.population_changed.connect(func(instance: BuildingInstance) -> void: building_population_changed.emit(instance))
 
 	TickManager.day_completed.connect(_on_day_completed)
 	seed_starting_buildings()
@@ -255,8 +251,8 @@ func get_placement_error(building_type: GameEnums.BuildingType, coord: Vector2i)
 		return "%s needs better soil than this hex has." % definition.display_name
 	if _resource_manager and not _resource_manager.can_afford(definition.construction_cost):
 		return "Not enough resources to build %s." % definition.display_name
-	if _resource_manager and not _resource_manager.can_afford(_energy.cost(definition)):
-		return "Not enough Energy capacity to build %s." % definition.display_name
+	if _resource_manager and not _resource_manager.can_afford(_capacity.cost(definition)):
+		return "Not enough Energy/Population capacity to build %s." % definition.display_name
 	return ""
 
 ## Resource-only affordability check, deliberately NOT terrain/settlement
@@ -268,7 +264,7 @@ func get_affordability_error(building_type: GameEnums.BuildingType) -> String:
 	if not definition or not _resource_manager:
 		return ""
 	var shortfalls := _resource_shortfalls(definition.construction_cost)
-	shortfalls.append_array(_resource_shortfalls(_energy.cost(definition)))
+	shortfalls.append_array(_resource_shortfalls(_capacity.cost(definition)))
 	if shortfalls.is_empty():
 		return ""
 	return "Need %s more to build %s." % [", ".join(shortfalls), definition.display_name]
@@ -312,7 +308,7 @@ func place_building(building_type: GameEnums.BuildingType, coord: Vector2i, loca
 		_resource_manager.spend(definition.construction_cost)
 		for resource_type in definition.storage_bonus:
 			_resource_manager.add_storage_cap(resource_type, float(definition.storage_bonus[resource_type]))
-		_energy.apply(definition)
+		_capacity.apply(definition)
 
 	var days := _construction.days_for(definition)
 	var instance := _register_instance(definition, coord, _next_id, local_position, true, -1, -1.0, false, true)
@@ -327,8 +323,9 @@ func place_building(building_type: GameEnums.BuildingType, coord: Vector2i, loca
 ## once from the save's own record instead of per-instance. `current_population`
 ## defaults to -1 ("not specified" — a fresh placement seeds from
 ## definition.population_provided, see BuildingInstance._init());
-## load_save_entries() passes the actual saved value since population is real
-## mutable state that can differ from that baseline after starvation/regrowth.
+## load_save_entries() passes the actual saved value since population is
+## zeroed on ruin (BuildingHealthController.damage()) and can't otherwise be
+## re-derived from the definition's fixed population_provided baseline.
 func _register_instance(definition: BuildingDefinition, coord: Vector2i, id: int, local_position: Vector2, advance_next_id: bool, current_population: int = -1, current_hp: float = -1.0, is_ruined: bool = false, is_under_construction: bool = false) -> BuildingInstance:
 	var instance := BuildingInstance.new(definition, coord, id, local_position, current_population, current_hp, is_ruined, is_under_construction)
 	if is_under_construction:
