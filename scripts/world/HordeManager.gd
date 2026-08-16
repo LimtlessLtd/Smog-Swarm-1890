@@ -34,15 +34,19 @@ extends Node
 ##   _pick_attraction_target() for the local-not-global scoping.
 ##
 ## Movement is continuous (MovementStepper.advance_toward_hex(), world-units/
-## second, terrain- and logistics-scaled), walking smoothly toward the next
-## hex's center every _process() frame and steering around static obstacles
-## (props/buildings) the same way UnitOrderController does. The wall-blocking
-## check happens per hex-crossing, not once per tick — a multi-hex catch-up
-## burst at high TickManager speed must not glide through an un-breached
-## wall on an intermediate hex. Siege damage against a blocked wall is
-## continuous, scaled by however much of a frame's `delta` the horde spent
-## blocked (converted against the old per-LOGIC_TICK_SECONDS rate) rather
-## than applied once per periodic tick.
+## second, terrain- and logistics-scaled), walking smoothly every _process()
+## frame and steering around static obstacles (props/buildings) the same way
+## UnitOrderController does. Each crossing's actual aim point is the real
+## sub-hex portal SubHexPortalGraph.portal_offset_for_step() resolves for
+## that hex pair (Sub-Hex Mechanical Layer Phase 2a, todo.md,
+## [[sub-hex-mechanical-layer-epic]] memory), falling back to the hex's
+## plain center when no portal exists for that edge. The wall-blocking check
+## happens per hex-crossing, not once per tick — a multi-hex catch-up burst
+## at high TickManager speed must not glide through an un-breached wall on
+## an intermediate hex. Siege damage against a blocked wall is continuous,
+## scaled by however much of a frame's `delta` the horde spent blocked
+## (converted against the old per-LOGIC_TICK_SECONDS rate) rather than
+## applied once per periodic tick.
 ##
 ## LOGIC_TICK_SECONDS no longer gates movement or siege damage — it only
 ## drives _check_merges()/_check_splits() at a fixed real-world rate.
@@ -417,13 +421,18 @@ func _advance_horde(horde: Horde, delta: float) -> void:
 			return  # No valid drift target found this cycle (e.g. boxed in) — try again next frame.
 
 		var next_coord: Vector2i = horde.path[0]
+		var portal_offset := _portal_offset_for_step(horde.hex_coord, next_coord)
 		var segment: WallSegment = null
 		if _wall_manager:
 			# point_a/point_b are real placement geometry, not hex-edge-locked
 			# — get_blocking_segment() checks the horde's actual straight-line
 			# travel this step against every nearby piece's own geometry.
+			# to_world includes portal_offset so this is the SAME line the
+			# horde is about to actually walk (the real portal crossing
+			# point), not the plain hex center a wall near the boundary
+			# could otherwise miss.
 			var from_world := HexCoord.axial_to_world(horde.hex_coord) + horde.local_position
-			var to_world := HexCoord.axial_to_world(next_coord)
+			var to_world := HexCoord.axial_to_world(next_coord) + portal_offset
 			segment = _wall_manager.get_blocking_segment(horde.hex_coord, next_coord, from_world, to_world)
 		if segment and not segment.is_breached():
 			_siege_wall(horde, segment, remaining)
@@ -432,7 +441,7 @@ func _advance_horde(horde: Horde, delta: float) -> void:
 		var from_coord := horde.hex_coord  ## Captured BEFORE the call below overwrites it.
 		var speed := _movement_speed(from_coord, next_coord)
 		var obstacles := _gather_obstacles(from_coord, next_coord)
-		var result := MovementStepper.advance_toward_hex(from_coord, horde.local_position, next_coord, remaining, speed, obstacles, ENTITY_RADIUS, float(horde.id))
+		var result := MovementStepper.advance_toward_hex(from_coord, horde.local_position, next_coord, remaining, speed, obstacles, ENTITY_RADIUS, float(horde.id), portal_offset)
 		horde.hex_coord = result["hex_coord"]
 		horde.local_position = result["local_position"]
 		remaining -= float(result["seconds_used"])
@@ -600,6 +609,13 @@ func _movement_speed(from_coord: Vector2i, to_coord: Vector2i) -> float:
 	speed *= HexPathfinder.get_logistics_speed_multiplier(_logistics_network, from_coord, to_coord)
 	speed *= NIGHT_MOVE_SPEED_MULTIPLIER if TimeCycleManager.is_night() else DAY_MOVE_SPEED_MULTIPLIER
 	return speed
+
+## SubHexPortalGraph.portal_offset_for_step() needs a live HexGridMap — same
+## null-guard convention _movement_speed() above applies to the same field.
+func _portal_offset_for_step(from_coord: Vector2i, to_coord: Vector2i) -> Vector2:
+	if not _hex_grid_map:
+		return Vector2.ZERO
+	return SubHexPortalGraph.portal_offset_for_step(_hex_grid_map, from_coord, to_coord)
 
 ## Buildings (always queryable) + props (only where Tactical-hydrated) near
 ## both the hex a horde currently occupies and the one it's drifting toward.
