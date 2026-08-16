@@ -248,6 +248,40 @@ static func hex_disk(center: Vector2i, radius: int) -> Array[Vector2i]:
 		results.append_array(hex_ring(center, r))
 	return results
 
+## The sub-hex-accurate generalization of hex_disk(source_hex, radius): every
+## hex within `radius` of a source sitting at `source_local_position` inside
+## `source_hex`, instead of every source in a hex producing an identical disk
+## regardless of where in the hex it actually sits. `source_hex` is always
+## included first, unconditionally, regardless of radius or offset —
+## hex_disk(coord, 0) never excluded its own center, and a `radius == 0`
+## source's own fractional_hex_distance() to its own hex is nonzero (see that
+## method's own doc comment), so it would otherwise fail its own "<= radius"
+## test purely from being off-center. Candidates beyond that are gathered
+## from a radius-widened-by-one hex_disk() as a defensive margin — proven in
+## fractional_hex_distance()'s own doc comment that a source confined to its
+## own hex's true boundary can never actually reach past the naive radius-N
+## disk, but this tolerates a momentarily-larger offset for callers (a
+## moving unit) whose local_position updates continuously between discrete
+## recompute triggers, at no extra cost.
+##
+## Sub-Hex Mechanical Layer Phase 5a (todo.md, [[sub-hex-mechanical-layer-epic]]
+## memory) — extracted here after FogOfWarManager (Phase 4) and
+## LogisticsNetwork (Phase 5a) both needed the identical "hex aura from a
+## sub-hex-positioned source" membership test; NoiseManager (Phase 5b) reuses
+## it too. One shared implementation instead of three copies of the same
+## filtering loop.
+static func sub_hex_disk(source_hex: Vector2i, source_local_position: Vector2, radius: int) -> Array[Vector2i]:
+	var result: Array[Vector2i] = [source_hex]
+	if radius <= 0:
+		return result
+	var source_world_pos := axial_to_world(source_hex) + source_local_position
+	for coord in hex_disk(source_hex, radius + 1):
+		if coord == source_hex:
+			continue
+		if fractional_hex_distance(source_world_pos, coord) <= float(radius):
+			result.append(coord)
+	return result
+
 ## Straight hex line from `a` to `b` inclusive, used to lay out rivers, canals
 ## and mountain chains from a couple of hand-placed endpoints.
 static func hex_line(a: Vector2i, b: Vector2i) -> Array[Vector2i]:
