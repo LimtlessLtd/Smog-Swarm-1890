@@ -58,7 +58,7 @@ var _tech_manager: TechManager
 var _construction: BuildingConstructionController
 var _health: BuildingHealthController
 var _sustenance: BuildingSustenanceController
-var _capacity: BuildingCapacityAllocator
+var _capacity: CapacityAllocator
 
 var _instances: Array[BuildingInstance] = []
 var _instances_by_hex: Dictionary = {}  # Vector2i -> Array[BuildingInstance]
@@ -79,7 +79,7 @@ func _ready() -> void:
 	if tech_manager_path != NodePath():
 		_tech_manager = get_node(tech_manager_path)
 
-	_capacity = BuildingCapacityAllocator.new(_resource_manager)
+	_capacity = CapacityAllocator.new(_resource_manager)
 
 	_construction = BuildingConstructionController.new()
 	_construction.progressed.connect(func(coord: Vector2i, days: int) -> void: construction_progressed.emit(coord, days))

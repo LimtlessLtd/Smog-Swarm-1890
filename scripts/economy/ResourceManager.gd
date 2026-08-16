@@ -12,10 +12,11 @@ extends Node
 signal resources_changed(stockpile: Dictionary)
 signal upkeep_shortfall(resource_type: GameEnums.ResourceType, shortfall: float)
 
-## POPULATION starts at 0.0, same as every other resource nothing produces
-## yet — Town Hall's real +100 Pop capacity grant (design_doc.md §3) lands
-## with the Building tree rework (todo.md); until then it's an inert pool
-## with a mechanism (BuildingCapacityAllocator) but no producer.
+## POPULATION starts at 0.0 — every building/unit that draws or grants it
+## (CapacityAllocator) does so relative to this starting value, not a
+## baked-in headcount. Town Hall's own +100 Pop capacity grant
+## (design_doc.md §3, BuildingCatalog) is what actually seeds a real pool
+## once one is built.
 const STARTING_STOCKPILE: Dictionary = {
 	GameEnums.ResourceType.FOOD: 100.0,
 	GameEnums.ResourceType.ENERGY: 50.0,

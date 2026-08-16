@@ -40,8 +40,8 @@ static func _ensure_built() -> void:
 static func _build_definitions() -> Array[UnitDefinition]:
 	return [
 		# --- Tier 0 ("Free Ammo" — no tech needed) ---
-		_unit(GameEnums.UnitType.TRUNCHEONEER, "Truncheoneer", 0, GameEnums.UnitRole.MELEE),
-		_unit(GameEnums.UnitType.TOXOPHILITE, "Toxophilite", 0, GameEnums.UnitRole.RANGED),  # No Gunpowder upkeep by design — arrows aren't a tracked resource.
+		_unit(GameEnums.UnitType.TRUNCHEONEER, "Truncheoneer", 0, GameEnums.UnitRole.MELEE, {GameEnums.ResourceType.WOOD: 20}, 1.0, 1.0),
+		_unit(GameEnums.UnitType.TOXOPHILITE, "Toxophilite", 0, GameEnums.UnitRole.RANGED, {GameEnums.ResourceType.WOOD: 30}, 1.0, 1.0),  # No Gunpowder cost/upkeep by design — arrows aren't a tracked resource.
 		# Outrider: unarmed mounted scout (user request) — damage_multiplier 0.0
 		# means attack_damage works out to exactly 0.0 regardless of the tier
 		# curve underneath, not a small residual number; it genuinely cannot
@@ -52,19 +52,24 @@ static func _build_definitions() -> Array[UnitDefinition]:
 		# Church Steeple Watchtower's own "proper lookout" radius
 		# (BuildingCatalog), the closest existing precedent for "sees
 		# further than its surroundings," rather than inventing a new number.
-		_unit(GameEnums.UnitType.OUTRIDER, "Outrider", 0, GameEnums.UnitRole.SPECIAL, false, GameEnums.UnitAbility.UNARMED_SCOUT, 1.0, 0.0, 1.6, 2),
+		_unit(GameEnums.UnitType.OUTRIDER, "Outrider", 0, GameEnums.UnitRole.SPECIAL, {GameEnums.ResourceType.WOOD: 50}, 1.0, 2.0, false, GameEnums.UnitAbility.UNARMED_SCOUT, 1.0, 0.0, 1.6, 2),
 		# --- Tier 1 (unit_tier_1) ---
-		_unit(GameEnums.UnitType.NAVVY, "Navvy", 1, GameEnums.UnitRole.MELEE),
-		_unit(GameEnums.UnitType.YEOMAN_MARKSMAN, "Yeoman Marksman", 1, GameEnums.UnitRole.RANGED, true),  # First firearm-era ranged unit — Gunpowder depletion penalty starts here.
+		_unit(GameEnums.UnitType.NAVVY, "Navvy", 1, GameEnums.UnitRole.MELEE, {GameEnums.ResourceType.WOOD: 40, GameEnums.ResourceType.BRICKS: 10}, 1.0, 2.0),
+		_unit(GameEnums.UnitType.YEOMAN_MARKSMAN, "Yeoman Marksman", 1, GameEnums.UnitRole.RANGED, {GameEnums.ResourceType.WOOD: 40, GameEnums.ResourceType.BRICKS: 10, GameEnums.ResourceType.GUNPOWDER: 5}, 1.0, 2.0, true),  # First firearm-era ranged unit — Gunpowder depletion penalty starts here.
 		# Grenadier: grenades (user request) — a horde is already one
 		# clustered "blob" target in this game's combat model (Horde.gd),
 		# so there's no separate multi-target AOE to build; splash
 		# effectiveness against a mob is expressed as a straight damage
 		# bonus instead.
-		_unit(GameEnums.UnitType.GRENADIER, "Grenadier", 1, GameEnums.UnitRole.SPECIAL, false, GameEnums.UnitAbility.EXPLOSIVE_SPLASH, 1.0, 1.5, 1.0),
+		_unit(GameEnums.UnitType.GRENADIER, "Grenadier", 1, GameEnums.UnitRole.SPECIAL, {GameEnums.ResourceType.WOOD: 50, GameEnums.ResourceType.BRICKS: 20, GameEnums.ResourceType.GUNPOWDER: 15}, 1.0, 3.0, false, GameEnums.UnitAbility.EXPLOSIVE_SPLASH, 1.0, 1.5, 1.0),
 		# --- Tier 2 (unit_tier_2) ---
-		_unit(GameEnums.UnitType.REDCOAT, "Redcoat", 2, GameEnums.UnitRole.MELEE),
-		_unit(GameEnums.UnitType.RIFLEMAN, "Rifleman", 2, GameEnums.UnitRole.RANGED, true),
+		# Renamed from the old REDCOAT/RIFLEMAN pairing to match design_doc.md
+		# §4 exactly — Bayoneteer is the Melee unit, Redcoat is the Ranged
+		# one. Same art either way (GameEnums.UnitType doc comments/
+		# UnitVisuals._texture_key()) since the underlying character art was
+		# always keyed to role, not to whichever name was on it.
+		_unit(GameEnums.UnitType.BAYONETEER, "Bayoneteer", 2, GameEnums.UnitRole.MELEE, {GameEnums.ResourceType.WOOD: 50, GameEnums.ResourceType.BRICKS: 20, GameEnums.ResourceType.IRON: 10}, 1.0, 3.0),
+		_unit(GameEnums.UnitType.REDCOAT, "Redcoat", 2, GameEnums.UnitRole.RANGED, {GameEnums.ResourceType.WOOD: 50, GameEnums.ResourceType.BRICKS: 20, GameEnums.ResourceType.IRON: 15, GameEnums.ResourceType.GUNPOWDER: 10}, 1.0, 3.0, true),
 		# Chasseur: mounted AND armed with a firearm (user request) — a real
 		# damage_multiplier (not the Outrider's 0.0) makes it a genuine
 		# combat option, strictly better/more useful than the Outrider it
@@ -76,16 +81,16 @@ static func _build_definitions() -> Array[UnitDefinition]:
 		# design, not "every unit that logically uses a firearm") — not
 		# re-litigating that standing decision just because this unit is
 		# now explicitly armed.
-		_unit(GameEnums.UnitType.CHASSEUR, "Chasseur", 2, GameEnums.UnitRole.SPECIAL, false, GameEnums.UnitAbility.MOUNTED_FIREARM, 1.0, 1.3, 1.4),
+		_unit(GameEnums.UnitType.CHASSEUR, "Chasseur", 2, GameEnums.UnitRole.SPECIAL, {GameEnums.ResourceType.WOOD: 80, GameEnums.ResourceType.BRICKS: 30, GameEnums.ResourceType.IRON: 25, GameEnums.ResourceType.GUNPOWDER: 10}, 2.0, 5.0, false, GameEnums.UnitAbility.MOUNTED_FIREARM, 1.0, 1.3, 1.4),
 		# --- Tier 3 (unit_tier_3) ---
-		_unit(GameEnums.UnitType.HIGHLANDER, "Highlander", 3, GameEnums.UnitRole.MELEE),
-		_unit(GameEnums.UnitType.SHARPSHOOTER, "Sharpshooter", 3, GameEnums.UnitRole.RANGED, true),
+		_unit(GameEnums.UnitType.HIGHLANDER, "Highlander", 3, GameEnums.UnitRole.MELEE, {GameEnums.ResourceType.WOOD: 60, GameEnums.ResourceType.BRICKS: 30, GameEnums.ResourceType.STEEL: 30}, 1.0, 4.0),
+		_unit(GameEnums.UnitType.SHARPSHOOTER, "Sharpshooter", 3, GameEnums.UnitRole.RANGED, {GameEnums.ResourceType.WOOD: 60, GameEnums.ResourceType.BRICKS: 30, GameEnums.ResourceType.STEEL: 40, GameEnums.ResourceType.GUNPOWDER: 20}, 1.0, 4.0, true),
 		# Dragoon: a mounted charge (user request) — knocks a horde back a hex
 		# and stuns it briefly on contact (CombatCoordinator, not a stat on
 		# this Resource at all); attack_damage stays at the plain baseline
 		# curve since the charge itself, not raw damage, is this unit's real
 		# value. Still mounted (move_speed_multiplier), same as Outrider/Chasseur.
-		_unit(GameEnums.UnitType.DRAGOON, "Dragoon", 3, GameEnums.UnitRole.SPECIAL, false, GameEnums.UnitAbility.CHARGE_KNOCKBACK, 1.0, 1.0, 1.3),
+		_unit(GameEnums.UnitType.DRAGOON, "Dragoon", 3, GameEnums.UnitRole.SPECIAL, {GameEnums.ResourceType.WOOD: 100, GameEnums.ResourceType.BRICKS: 40, GameEnums.ResourceType.STEEL: 50, GameEnums.ResourceType.GUNPOWDER: 15}, 2.0, 6.0, false, GameEnums.UnitAbility.CHARGE_KNOCKBACK, 1.0, 1.0, 1.3),
 		# --- Tier 4 (unit_tier_4) — grounded heavy engineering, not battle-mechs (design doc). ---
 		# Traction Ram: "a rugged, heavy agricultural-industrial engine
 		# designed to slow-roll and crush obstacles under its immense weight"
@@ -96,13 +101,13 @@ static func _build_definitions() -> Array[UnitDefinition]:
 		# roster to carry a combat ability rather than only the shared
 		# tier/role curve — "Ram" is the unit's whole identity, that stopped
 		# being optional to express once it had real art/flavor to match.
-		_unit(GameEnums.UnitType.TRACTION_RAM, "Traction Ram", 4, GameEnums.UnitRole.MELEE, false, GameEnums.UnitAbility.TRAMPLE_KNOCKBACK, 1.8, 1.0, 0.85),
+		_unit(GameEnums.UnitType.TRACTION_RAM, "Traction Ram", 4, GameEnums.UnitRole.MELEE, {GameEnums.ResourceType.WOOD: 150, GameEnums.ResourceType.BRICKS: 100, GameEnums.ResourceType.CONCRETE: 100, GameEnums.ResourceType.STEEL: 100}, 3.0, 10.0, false, GameEnums.UnitAbility.TRAMPLE_KNOCKBACK, 1.8, 1.0, 0.85, 0, 20.0, 10.0, 50.0),
 		# Maxim Quadricycle: "high mobility and sustained automatic fire
 		# without heavy armor plating" (README) — a fast, hard-hitting glass
 		# cannon: real damage and speed bonuses, paid for with a real HP
 		# penalty for the "skeletal frame... without heavy armor plating"
 		# its own description insists on.
-		_unit(GameEnums.UnitType.MAXIM_QUADRICYCLE, "Maxim Quadricycle", 4, GameEnums.UnitRole.RANGED, true, GameEnums.UnitAbility.NONE, 0.75, 1.3, 1.4),
+		_unit(GameEnums.UnitType.MAXIM_QUADRICYCLE, "Maxim Quadricycle", 4, GameEnums.UnitRole.RANGED, {GameEnums.ResourceType.WOOD: 100, GameEnums.ResourceType.BRICKS: 100, GameEnums.ResourceType.CONCRETE: 80, GameEnums.ResourceType.STEEL: 120, GameEnums.ResourceType.GUNPOWDER: 40}, 2.0, 8.0, true, GameEnums.UnitAbility.NONE, 0.75, 1.3, 1.4, 0, 10.0, 5.0, 50.0),
 		# Searchlight Tender: "a mobile support unit designed to illuminate
 		# infected sectors and coordinate defensive lines" (README) — this is
 		# what MOBILE_SUPPLY_DUMP's underlying mechanic already does:
@@ -114,7 +119,7 @@ static func _build_definitions() -> Array[UnitDefinition]:
 		# description is a fast dispatch car, not a support vehicle (see
 		# Tier 5 below). Low damage_multiplier — it carries no weapon in its
 		# own description; its value is entirely the aura.
-		_unit(GameEnums.UnitType.SEARCHLIGHT_TENDER, "Searchlight Tender", 4, GameEnums.UnitRole.SPECIAL, false, GameEnums.UnitAbility.MOBILE_SUPPLY_DUMP, 1.0, 0.5, 1.0),
+		_unit(GameEnums.UnitType.SEARCHLIGHT_TENDER, "Searchlight Tender", 4, GameEnums.UnitRole.SPECIAL, {GameEnums.ResourceType.WOOD: 120, GameEnums.ResourceType.BRICKS: 80, GameEnums.ResourceType.CONCRETE: 100, GameEnums.ResourceType.STEEL: 80}, 2.0, 8.0, false, GameEnums.UnitAbility.MOBILE_SUPPLY_DUMP, 1.0, 0.5, 1.0, 0, 15.0, 5.0, 50.0),
 		# --- Tier 5 (unit_tier_5) — same "no retro-futuristic steampunk tropes" rule as Tier 4. ---
 		# Holt Breaker: "unarmed with turrets, it relies entirely on tracked
 		# traction and brute engine power to bulldoze through dense crowds
@@ -123,13 +128,13 @@ static func _build_definitions() -> Array[UnitDefinition]:
 		# mechanic: same TRAMPLE_KNOCKBACK, the heaviest HP pool and lowest
 		# move speed in the roster, and damage de-emphasized since its own
 		# description explicitly says it isn't armed.
-		_unit(GameEnums.UnitType.HOLT_BREAKER, "Holt Breaker", 5, GameEnums.UnitRole.MELEE, false, GameEnums.UnitAbility.TRAMPLE_KNOCKBACK, 2.6, 0.8, 0.75),
+		_unit(GameEnums.UnitType.HOLT_BREAKER, "Holt Breaker", 5, GameEnums.UnitRole.MELEE, {GameEnums.ResourceType.WOOD: 300, GameEnums.ResourceType.BRICKS: 200, GameEnums.ResourceType.CONCRETE: 200, GameEnums.ResourceType.STEEL: 300}, 5.0, 15.0, false, GameEnums.UnitAbility.TRAMPLE_KNOCKBACK, 2.6, 0.8, 0.75, 0, 50.0, 20.0, 50.0),
 		# Field Howitzer Gun Tractor: "a long recoil mechanism... completely
 		# different from an armored tank" (README) — the hardest-hitting
 		# unit in the roster (real siege artillery), paid for with the
 		# lowest HP and move speed of any Tier 5 unit: an unarmored, slow,
 		# two-part towed gun, not a tank.
-		_unit(GameEnums.UnitType.FIELD_HOWITZER_GUN_TRACTOR, "Field Howitzer Gun Tractor", 5, GameEnums.UnitRole.RANGED, true, GameEnums.UnitAbility.NONE, 0.7, 1.8, 0.7),
+		_unit(GameEnums.UnitType.FIELD_HOWITZER_GUN_TRACTOR, "Field Howitzer Gun Tractor", 5, GameEnums.UnitRole.RANGED, {GameEnums.ResourceType.WOOD: 200, GameEnums.ResourceType.BRICKS: 200, GameEnums.ResourceType.CONCRETE: 200, GameEnums.ResourceType.STEEL: 400, GameEnums.ResourceType.GUNPOWDER: 80}, 4.0, 12.0, true, GameEnums.UnitAbility.NONE, 0.7, 1.8, 0.7, 0, 40.0, 15.0, 50.0),
 		# Armoured Command Car: "sleek, lower to the ground, and noticeably
 		# faster-looking than the bulky agricultural tractors... rear
 		# open-top deck for radio/pigeon dispatch boxes... a small rotating
@@ -138,19 +143,17 @@ static func _build_definitions() -> Array[UnitDefinition]:
 		# not a damage dealer (that's the Howitzer): real armor and a
 		# working gun back its speed, but its value is arriving at a
 		# threatened hex quickly, not out-damaging a dedicated combat unit.
-		_unit(GameEnums.UnitType.ARMOURED_COMMAND_CAR, "Armoured Command Car", 5, GameEnums.UnitRole.SPECIAL, false, GameEnums.UnitAbility.RAPID_RESPONSE, 1.1, 1.1, 1.4),
+		_unit(GameEnums.UnitType.ARMOURED_COMMAND_CAR, "Armoured Command Car", 5, GameEnums.UnitRole.SPECIAL, {GameEnums.ResourceType.WOOD: 250, GameEnums.ResourceType.BRICKS: 150, GameEnums.ResourceType.CONCRETE: 150, GameEnums.ResourceType.STEEL: 250, GameEnums.ResourceType.GUNPOWDER: 30}, 4.0, 12.0, false, GameEnums.UnitAbility.RAPID_RESPONSE, 1.1, 1.1, 1.4, 0, 30.0, 10.0, 50.0),
 	]
 
-## Shared placeholder balancing curve — one formula for training cost/
-## upkeep/HP/damage across all 18 units instead of 18 hand-picked numbers.
-## Real per-unit tuning is exactly the "balancing pass, not an architecture
+## HP/damage stay a shared placeholder balancing curve — design_doc.md §4 has
+## no HP/damage numbers to source from, only cost/capacity/upkeep, so that
+## half of `_unit()` is exactly the "balancing pass, not an architecture
 ## decision" every other constant table in this project already disclaims
-## (see e.g. WallCatalog's per-tier HP/cost table); this just
-## makes the eventual retuning a one-function edit instead of an
-## eighteen-function one. Deliberately avoids ResourceType.CONCRETE
-## — no building anywhere in the project produces it yet (see that enum
-## entry's own comment), so requiring it here would make Tier 4-5 units
-## uncraftable rather than merely expensive.
+## (see e.g. WallCatalog's per-tier HP/cost table). `training_cost`/
+## `pop_cost`/`food_upkeep`/`energy_cost`/`coal_upkeep`/`fuel_reserve` are
+## real numbers transcribed straight from design_doc.md §4, replacing the
+## old formulaic cost curve entirely.
 ##
 ## `ability`/`hp_multiplier`/`damage_multiplier`/`move_speed_multiplier`
 ## apply ON TOP of the shared curve/role multiplier below, not instead of
@@ -169,16 +172,25 @@ static func _build_definitions() -> Array[UnitDefinition]:
 ## only, same contract as BuildingDefinition.vision_radius) for every unit
 ## below except Outrider, whose own call site explains the one deliberate
 ## exception.
-static func _unit(type: GameEnums.UnitType, display_name: String, tier: int, role: GameEnums.UnitRole, requires_gunpowder: bool = false, ability: GameEnums.UnitAbility = GameEnums.UnitAbility.NONE, hp_multiplier: float = 1.0, damage_multiplier: float = 1.0, move_speed_multiplier: float = 1.0, vision_radius: int = 0) -> UnitDefinition:
+static func _unit(type: GameEnums.UnitType, display_name: String, tier: int, role: GameEnums.UnitRole, training_cost: Dictionary, pop_cost: float, food_upkeep: float, requires_gunpowder: bool = false, ability: GameEnums.UnitAbility = GameEnums.UnitAbility.NONE, hp_multiplier: float = 1.0, damage_multiplier: float = 1.0, move_speed_multiplier: float = 1.0, vision_radius: int = 0, energy_cost: float = 0.0, coal_upkeep: float = 0.0, fuel_reserve: float = 0.0) -> UnitDefinition:
 	var d := UnitDefinition.new(type, display_name, tier, role)
+	d.training_cost = training_cost
 	d.requires_gunpowder = requires_gunpowder
-	if requires_gunpowder:
-		d.daily_upkeep = {GameEnums.ResourceType.GUNPOWDER: 0.5 + tier * 0.5}
+	d.fuel_reserve = fuel_reserve
 
-	d.training_cost = {
-		GameEnums.ResourceType.IRON: 15 + tier * 25,
-		GameEnums.ResourceType.BRICKS: 10 * tier,
-	}
+	# daily_upkeep mixes two different kinds of cost — see UnitDefinition's
+	# own doc comment: FOOD/COAL are real recurring drains (tallied daily by
+	# UnitManager), POPULATION/ENERGY are one-time capacity reservations
+	# (CapacityAllocator, applied/refunded at train/retrain/death time, never
+	# tallied as a recurring flow).
+	d.daily_upkeep = {GameEnums.ResourceType.FOOD: food_upkeep}
+	if pop_cost > 0.0:
+		d.daily_upkeep[GameEnums.ResourceType.POPULATION] = pop_cost
+	if energy_cost > 0.0:
+		d.daily_upkeep[GameEnums.ResourceType.ENERGY] = energy_cost
+	if coal_upkeep > 0.0:
+		d.daily_upkeep[GameEnums.ResourceType.COAL] = coal_upkeep
+
 	d.max_hp = 20.0 + tier * 15.0
 	d.attack_damage = 3.0 + tier * 2.0
 	match role:
@@ -186,7 +198,6 @@ static func _unit(type: GameEnums.UnitType, display_name: String, tier: int, rol
 			d.max_hp *= 1.2      # Tankier — has to close to melee range to do anything.
 		GameEnums.UnitRole.RANGED:
 			d.max_hp *= 0.9      # Fragile — the Gunpowder-depletion "unarmored melee mode" penalty (UnitDefinition.requires_gunpowder) hits this role hardest.
-			d.attack_damage *= 1.3
 		GameEnums.UnitRole.SPECIAL:
 			pass  # Baseline before the four per-unit overrides below apply — no role-wide multiplier of its own, unlike MELEE/RANGED.
 

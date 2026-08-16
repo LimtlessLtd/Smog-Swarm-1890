@@ -20,7 +20,7 @@ extends RefCounted
 ## "Capacity: -X Pop, -Y Energy" (a consumer) becomes
 ## daily_upkeep[POPULATION]/daily_upkeep[ENERGY]; "Capacity: +X Pop/Energy"
 ## (a producer) becomes daily_output[POPULATION]/daily_output[ENERGY] — both
-## settled once at construction/repair via BuildingCapacityAllocator, not a
+## settled once at construction/repair via CapacityAllocator, not a
 ## daily flow (see BuildingDefinition.daily_upkeep's own doc comment).
 ## population_provided is set ONLY on the three dedicated housing buildings
 ## (Wooden Houses/Brick Houses/Tower Blocks) — it drives BOTH
@@ -175,7 +175,7 @@ static func _wooden_houses() -> BuildingDefinition:
 	d.construction_cost = {GameEnums.ResourceType.WOOD: 40}
 	d.population_provided = 50
 	d.daily_upkeep = {GameEnums.ResourceType.ENERGY: 5.0, GameEnums.ResourceType.FOOD: 20.0}
-	d.daily_output = {GameEnums.ResourceType.POPULATION: 50.0}  ## Mirrors population_provided into the BuildingCapacityAllocator grant — see class doc comment.
+	d.daily_output = {GameEnums.ResourceType.POPULATION: 50.0}  ## Mirrors population_provided into the CapacityAllocator grant — see class doc comment.
 	d.allowed_biomes = [GameEnums.BiomeType.URBAN]
 	d.requires_settlement = true
 	return d

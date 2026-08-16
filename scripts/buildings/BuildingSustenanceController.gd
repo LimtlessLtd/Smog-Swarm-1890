@@ -6,7 +6,7 @@ extends RefCounted
 ## whatever instance list it's given each call (does not own the registry).
 ##
 ## Population is a capacity pool (design_doc.md §2, see
-## BuildingCapacityAllocator) now, not a headcount this class tracks or
+## CapacityAllocator) now, not a headcount this class tracks or
 ## mutates — low Food satisfaction cuts production via
 ## _production_multiplier() below, it no longer starves anyone to death, and
 ## surplus Food no longer regrows population. A housing instance's own
@@ -41,10 +41,10 @@ func _init(resource_manager: ResourceManager, discontent_manager: DiscontentMana
 	_hex_grid_map = hex_grid_map
 
 ## Returns {"consumed": Dictionary, "produced": Dictionary, "ratio": float}.
-## Excludes BuildingCapacityAllocator.CAPACITY_RESOURCE_TYPES (ENERGY,
+## Excludes CapacityAllocator.CAPACITY_RESOURCE_TYPES (ENERGY,
 ## POPULATION) on both sides — those are one-time capacity grants/reserves
 ## settled at construction, not a daily flow; including them here would
-## double-count on top of BuildingCapacityAllocator.apply().
+## double-count on top of CapacityAllocator.apply().
 func compute_daily_totals(instances: Array[BuildingInstance]) -> Dictionary:
 	var consumed: Dictionary = {}
 	var produced: Dictionary = {}
@@ -57,7 +57,7 @@ func compute_daily_totals(instances: Array[BuildingInstance]) -> Dictionary:
 		total_population += instance.current_population
 
 		for resource_type in definition.daily_upkeep:
-			if BuildingCapacityAllocator.CAPACITY_RESOURCE_TYPES.has(resource_type):
+			if CapacityAllocator.CAPACITY_RESOURCE_TYPES.has(resource_type):
 				continue
 			consumed[resource_type] = consumed.get(resource_type, 0.0) + float(definition.daily_upkeep[resource_type])
 
@@ -65,7 +65,7 @@ func compute_daily_totals(instances: Array[BuildingInstance]) -> Dictionary:
 		if _hex_grid_map:
 			cell = _hex_grid_map.get_cell(instance.hex_coord)
 		var output := instance.get_effective_output(cell)
-		for resource_type in BuildingCapacityAllocator.CAPACITY_RESOURCE_TYPES:
+		for resource_type in CapacityAllocator.CAPACITY_RESOURCE_TYPES:
 			output.erase(resource_type)
 
 		if _discontent_manager:

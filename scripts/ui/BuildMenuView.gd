@@ -169,12 +169,12 @@ func _describe_building(definition: BuildingDefinition) -> String:
 	var lines: Array[String] = []
 	lines.append("Cost: %s" % HUDStyles.format_resource_dict(definition.construction_cost))
 	# ENERGY/POPULATION entries are one-time capacity draws
-	# (BuildingCapacityAllocator), not a recurring "/day" cost — excluded
+	# (CapacityAllocator), not a recurring "/day" cost — excluded
 	# here the same way _describe_effect()/_add_capacity_stats() (UnitPanelView)
 	# keep them out of their own "/day" lines.
 	var recurring_upkeep: Dictionary = {}
 	for resource_type in definition.daily_upkeep:
-		if not BuildingCapacityAllocator.CAPACITY_RESOURCE_TYPES.has(resource_type):
+		if not CapacityAllocator.CAPACITY_RESOURCE_TYPES.has(resource_type):
 			recurring_upkeep[resource_type] = definition.daily_upkeep[resource_type]
 	var upkeep := HUDStyles.format_resource_dict(recurring_upkeep)
 	if not upkeep.is_empty():
@@ -191,7 +191,7 @@ func _describe_building(definition: BuildingDefinition) -> String:
 func _describe_effect(definition: BuildingDefinition) -> String:
 	var parts: Array[String] = []
 	for resource_type in definition.daily_output:
-		# POPULATION is skipped here — it's the BuildingCapacityAllocator
+		# POPULATION is skipped here — it's the CapacityAllocator
 		# capacity grant mirroring population_provided (BuildingCatalog's
 		# housing builders), already covered by "Houses %d population" below;
 		# listing it again here would double it up under a misleading "/day" label.
