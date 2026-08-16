@@ -12,7 +12,7 @@ extends Resource
 @export var id: int = 0
 
 ## Housing occupancy — distinct from ResourceManager's global POPULATION
-## capacity pool (design_doc.md §2, see BuildingCapacityAllocator). Fixed at
+## capacity pool (design_doc.md §2, see CapacityAllocator). Fixed at
 ## definition.population_provided once construction/repair completes, zeroed
 ## on ruin (BuildingHealthController.damage()) or while still under
 ## construction; nothing mutates it day to day otherwise. Real per-instance

@@ -40,10 +40,16 @@ extends Node
 ## this class; UnitManager itself still never references CombatEngine or
 ## CombatCoordinator.
 ##
-## Not implemented yet: Morale/veterancy is a separate system
-## (UnitMorale). Starvation exemption is moot — nothing feeds units Food
-## upkeep at all (units are exempt by design; see UnitDefinition's own doc
-## comment on why Food isn't modeled here).
+## Not implemented yet: Morale/veterancy is a separate system (UnitMorale).
+##
+## Food upkeep and one-time Population/Energy capacity (design_doc.md §4)
+## are both real: Food/Coal drain daily via _on_day_completed()'s
+## daily_upkeep tally (same loop that already drained Gunpowder), while
+## Population/Energy are reserved/refunded once via CapacityAllocator —
+## applied in train_unit()/retrain_unit() (immediately, same "pay upfront"
+## timing training_cost already uses) and refunded in remove_unit(), mirroring
+## BuildingManager/BuildingHealthController's own construction/ruin timing
+## for the same allocator.
 
 signal unit_trained(instance: UnitInstance)
 signal unit_removed(instance: UnitInstance)
@@ -70,6 +76,7 @@ var _hex_grid_map: HexGridMap
 var _building_manager: BuildingManager
 var _resource_manager: ResourceManager
 var _tech_manager: TechManager
+var _capacity: CapacityAllocator
 var _instances: Array[UnitInstance] = []
 var _next_id: int = 1
 ## Paid-for training/retraining not yet finished.
@@ -87,6 +94,7 @@ func _ready() -> void:
 		_resource_manager = get_node(resource_manager_path)
 	if tech_manager_path != NodePath():
 		_tech_manager = get_node(tech_manager_path)
+	_capacity = CapacityAllocator.new(_resource_manager)
 	TickManager.day_completed.connect(_on_day_completed)
 
 func get_all_units() -> Array[UnitInstance]:
@@ -127,6 +135,8 @@ func get_training_error(unit_type: GameEnums.UnitType, coord: Vector2i) -> Strin
 		return "%s can only be trained at a building that trains units (a Garrison)." % definition.display_name
 	if _resource_manager and not _resource_manager.can_afford(definition.training_cost):
 		return "Not enough resources to train %s." % definition.display_name
+	if _resource_manager and not _resource_manager.can_afford(_capacity.cost(definition)):
+		return "Not enough Population/Energy capacity to train %s." % definition.display_name
 	return ""
 
 func can_train_unit(unit_type: GameEnums.UnitType, coord: Vector2i) -> bool:
@@ -143,6 +153,7 @@ func train_unit(unit_type: GameEnums.UnitType, coord: Vector2i) -> bool:
 	var definition := UnitCatalog.get_definition(unit_type)
 	if _resource_manager:
 		_resource_manager.spend(definition.training_cost)
+		_capacity.apply(definition)
 
 	var days := mini(definition.tier * _TRAINING_DAYS_PER_TIER + _TRAINING_DAYS_PER_TIER, _MAX_TRAINING_DAYS)
 	_pending_training.append({"unit_type": unit_type, "coord": coord, "days_remaining": days})
@@ -199,6 +210,7 @@ func _spawn_local_position(coord: Vector2i, training_building_position: Vector2)
 	return training_building_position + Vector2(cos(angle), sin(angle)) * radius
 
 func remove_unit(instance: UnitInstance) -> void:
+	_capacity.refund(instance.definition)
 	_instances.erase(instance)
 	unit_removed.emit(instance)
 
@@ -237,6 +249,8 @@ func get_retrain_error(instance: UnitInstance, new_type: GameEnums.UnitType) -> 
 		return "%s's tier hasn't been researched yet." % new_definition.display_name
 	if _resource_manager and not _resource_manager.can_afford(_retrain_cost(new_definition)):
 		return "Not enough resources to retrain into %s." % new_definition.display_name
+	if _resource_manager and not _resource_manager.can_afford(_retrain_capacity_shortfall(instance.definition, new_definition)):
+		return "Not enough Population/Energy capacity to retrain into %s." % new_definition.display_name
 	return ""
 
 func can_retrain_unit(instance: UnitInstance, new_type: GameEnums.UnitType) -> bool:
@@ -256,6 +270,8 @@ func retrain_unit(instance: UnitInstance, new_type: GameEnums.UnitType) -> bool:
 	var new_definition := UnitCatalog.get_definition(new_type)
 	if _resource_manager:
 		_resource_manager.spend(_retrain_cost(new_definition))
+		_capacity.refund(instance.definition)
+		_capacity.apply(new_definition)
 
 	var days := maxi(1, ceili(float(mini(new_definition.tier * _TRAINING_DAYS_PER_TIER + _TRAINING_DAYS_PER_TIER, _MAX_TRAINING_DAYS)) * _RETRAIN_DAYS_FRACTION))
 	_pending_retrain.append({"instance": instance, "new_type": new_type, "days_remaining": days})
@@ -289,6 +305,23 @@ func _retrain_cost(new_definition: UnitDefinition) -> Dictionary:
 	for resource_type in new_definition.training_cost:
 		cost[resource_type] = float(new_definition.training_cost[resource_type]) * RETRAIN_COST_FRACTION
 	return cost
+
+## retrain_unit() refunds `old_definition`'s capacity draw before applying
+## `new_definition`'s — checking affordability against new_definition's FULL
+## capacity cost would reject a retrain the player can actually afford (the
+## old unit's own reservation is about to be freed up first). Only the
+## increase matters: e.g. Highlander (-1 Pop) -> Dragoon (-2 Pop) needs 1
+## more Pop headroom available, not 2. Returns only the positive per-type
+## deltas, ready to pass straight to ResourceManager.can_afford().
+func _retrain_capacity_shortfall(old_definition: UnitDefinition, new_definition: UnitDefinition) -> Dictionary:
+	var old_cost := _capacity.cost(old_definition)
+	var new_cost := _capacity.cost(new_definition)
+	var shortfall: Dictionary = {}
+	for resource_type in CapacityAllocator.CAPACITY_RESOURCE_TYPES:
+		var delta := float(new_cost.get(resource_type, 0.0)) - float(old_cost.get(resource_type, 0.0))
+		if delta > 0.0:
+			shortfall[resource_type] = delta
+	return shortfall
 
 ## Shared instance-bookkeeping between a fresh train_unit() (already
 ## validated/paid) and load_save_state() (restoring units already paid for
@@ -336,12 +369,17 @@ func _has_incomplete_training_building(coord: Vector2i) -> bool:
 			return true
 	return false
 
-## Daily Gunpowder upkeep tally (UnitDefinition.daily_upkeep, only nonzero
-## for requires_gunpowder units) — ResourceManager.apply_daily_flow() with
-## an empty `produced` dict, since units generate no daily output of their
-## own. Nothing about the Gunpowder-depletion combat penalty is computed
-## here — that's CombatEngine's job at attack time, reading the stockpile
-## fresh rather than caching a "shortfall happened" flag from today's tally.
+## Daily recurring upkeep tally (Gunpowder — only nonzero for
+## requires_gunpowder units — plus Food for every unit and Coal for Tier 4-5
+## vehicles) — ResourceManager.apply_daily_flow() with an empty `produced`
+## dict, since units generate no daily output of their own. Excludes
+## CapacityAllocator.CAPACITY_RESOURCE_TYPES (Population/Energy) — those are
+## one-time reservations settled in train_unit()/retrain_unit()/remove_unit(),
+## not a recurring flow; same exclusion BuildingSustenanceController applies
+## for buildings. Nothing about the Gunpowder-depletion combat penalty is
+## computed here — that's CombatEngine's job at attack time, reading the
+## stockpile fresh rather than caching a "shortfall happened" flag from
+## today's tally.
 func _on_day_completed(_day_number: int) -> void:
 	_process_pending_training()
 	_process_pending_retrain()
@@ -350,6 +388,8 @@ func _on_day_completed(_day_number: int) -> void:
 	var consumed: Dictionary = {}
 	for instance in _instances:
 		for resource_type in instance.definition.daily_upkeep:
+			if CapacityAllocator.CAPACITY_RESOURCE_TYPES.has(resource_type):
+				continue
 			consumed[resource_type] = consumed.get(resource_type, 0.0) + float(instance.definition.daily_upkeep[resource_type])
 	if not consumed.is_empty():
 		_resource_manager.apply_daily_flow(consumed, {})

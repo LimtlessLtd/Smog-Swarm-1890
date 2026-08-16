@@ -21,11 +21,11 @@ const REPAIR_COST_FRACTION: float = 0.5
 
 var _resource_manager: ResourceManager
 var _territory_controller: TerritoryController
-var _capacity: BuildingCapacityAllocator
+var _capacity: CapacityAllocator
 var _construction_days: Callable  ## BuildingConstructionController.days_for, injected so repair() uses the same cost-to-duration formula without depending on the whole construction controller.
 var _pending_repair: Array[Dictionary] = []  # {instance: BuildingInstance, days_remaining: int}
 
-func _init(resource_manager: ResourceManager, territory_controller: TerritoryController, capacity: BuildingCapacityAllocator, construction_days: Callable) -> void:
+func _init(resource_manager: ResourceManager, territory_controller: TerritoryController, capacity: CapacityAllocator, construction_days: Callable) -> void:
 	_resource_manager = resource_manager
 	_territory_controller = territory_controller
 	_capacity = capacity

@@ -14,7 +14,33 @@ extends Resource
 @export var role: GameEnums.UnitRole = GameEnums.UnitRole.MELEE
 
 @export var training_cost: Dictionary = {}  ## GameEnums.ResourceType -> int, paid once when UnitManager trains one.
-@export var daily_upkeep: Dictionary = {}   ## GameEnums.ResourceType -> float. Gunpowder only, and only where requires_gunpowder is true — see that field.
+
+## GameEnums.ResourceType -> float. Gunpowder (only where requires_gunpowder
+## is true — see that field), Food (every unit), Coal (Tier 4-5 vehicles
+## only) are all real recurring costs, tallied daily by
+## UnitManager._on_day_completed(). ENERGY/POPULATION entries (design_doc.md
+## §4's "Cap: -X Pop[, -Y Energy]" line) are a different kind of thing
+## entirely — a one-time capacity draw reserved when the unit is trained and
+## refunded on death/disband/retrain-swap (CapacityAllocator), NOT a
+## recurring flow — UnitManager._on_day_completed() excludes
+## CapacityAllocator.CAPACITY_RESOURCE_TYPES from its daily tally for exactly
+## this reason.
+@export var daily_upkeep: Dictionary = {}
+
+## GameEnums.ResourceType -> float. Always empty — no unit in design_doc.md
+## §4 grants capacity, only draws it. Present for shape parity with
+## BuildingDefinition (both feed CapacityAllocator, which is duck-typed on
+## daily_upkeep/daily_output existing on whatever it's given).
+@export var daily_output: Dictionary = {}
+
+## Coal capacity of a Tier 4-5 vehicle's fuel tank (design_doc.md §4's "Fuel
+## Reserve: 50 Coal" line, identical across all 6 vehicles) — 0.0 for every
+## non-vehicle unit. No refuel/depletion system reads this yet; the vehicle's
+## real Coal cost today is entirely its daily_upkeep[COAL] recurring drain.
+## Recorded so the doc's own number isn't silently dropped, not wired into
+## any mechanic — same "data recorded, mechanism not invented here" scoping
+## as BuildingDefinition's own function-only placeholder fields.
+@export var fuel_reserve: float = 0.0
 
 @export var max_hp: float = 10.0
 @export var attack_damage: float = 1.0

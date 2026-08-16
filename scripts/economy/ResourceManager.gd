@@ -15,7 +15,7 @@ signal upkeep_shortfall(resource_type: GameEnums.ResourceType, shortfall: float)
 ## POPULATION starts at 0.0, same as every other resource nothing produces
 ## yet — Town Hall's real +100 Pop capacity grant (design_doc.md §3) lands
 ## with the Building tree rework (todo.md); until then it's an inert pool
-## with a mechanism (BuildingCapacityAllocator) but no producer.
+## with a mechanism (CapacityAllocator) but no producer.
 const STARTING_STOCKPILE: Dictionary = {
 	GameEnums.ResourceType.FOOD: 100.0,
 	GameEnums.ResourceType.ENERGY: 50.0,

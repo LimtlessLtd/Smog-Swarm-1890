@@ -50,9 +50,9 @@ static func _texture_key(unit_type: GameEnums.UnitType) -> String:
 			return "yeoman_marksman"
 		GameEnums.UnitType.GRENADIER:
 			return "grenadier"
-		GameEnums.UnitType.REDCOAT:
+		GameEnums.UnitType.BAYONETEER:  # Renamed from REDCOAT (design_doc.md §4 Tier 2 rename) — same melee character art, "redcoat" key unchanged.
 			return "redcoat"
-		GameEnums.UnitType.RIFLEMAN:
+		GameEnums.UnitType.REDCOAT:  # Renamed from RIFLEMAN (design_doc.md §4 Tier 2 rename) — same ranged character art, "rifleman" key unchanged.
 			return "rifleman"
 		GameEnums.UnitType.CHASSEUR:
 			return "chasseur"

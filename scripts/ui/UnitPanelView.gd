@@ -297,7 +297,7 @@ func _add_production_stat(instance: BuildingInstance) -> void:
 	var output := instance.get_effective_output(cell)
 	var parts: Array[String] = []
 	for resource_type in output:
-		if BuildingCapacityAllocator.CAPACITY_RESOURCE_TYPES.has(resource_type):
+		if CapacityAllocator.CAPACITY_RESOURCE_TYPES.has(resource_type):
 			continue
 		var amount := float(output[resource_type])
 		if amount > 0.0:
@@ -319,12 +319,12 @@ func _add_production_stat(instance: BuildingInstance) -> void:
 ## current_population (what's actually being paid for today), not
 ## population_provided's baseline capacity — is what makes "how much upkeep
 ## it costs" true for a housing building. Excludes
-## BuildingCapacityAllocator.CAPACITY_RESOURCE_TYPES from daily_upkeep itself
+## CapacityAllocator.CAPACITY_RESOURCE_TYPES from daily_upkeep itself
 ## — see _add_capacity_stats() for why those are a separate line.
 func _recurring_upkeep_display(instance: BuildingInstance) -> String:
 	var upkeep: Dictionary = {}
 	for resource_type in instance.definition.daily_upkeep:
-		if BuildingCapacityAllocator.CAPACITY_RESOURCE_TYPES.has(resource_type):
+		if CapacityAllocator.CAPACITY_RESOURCE_TYPES.has(resource_type):
 			continue
 		upkeep[resource_type] = upkeep.get(resource_type, 0.0) + float(instance.definition.daily_upkeep[resource_type])
 	if instance.current_population > 0:
@@ -335,14 +335,14 @@ func _recurring_upkeep_display(instance: BuildingInstance) -> String:
 ## A deliberately separate line per type from "Upkeep: ... / day", not
 ## folded into it: an ENERGY/POPULATION entry in daily_upkeep/daily_output is
 ## a one-time capacity draw/contribution settled once at construction/repair
-## (BuildingCapacityAllocator.apply()), never a recurring daily flow —
+## (CapacityAllocator.apply()), never a recurring daily flow —
 ## labeling it "/ day" alongside genuine recurring costs would misstate it,
 ## the exact mistake _recurring_upkeep_display() avoids. Shows whichever
 ## side applies per type (a consumer's draw or a producer's contribution —
 ## no building both draws and contributes the same type today, but nothing
 ## here assumes that stays true).
 func _add_capacity_stats(definition: BuildingDefinition) -> void:
-	for resource_type in BuildingCapacityAllocator.CAPACITY_RESOURCE_TYPES:
+	for resource_type in CapacityAllocator.CAPACITY_RESOURCE_TYPES:
 		var draw := float(definition.daily_upkeep.get(resource_type, 0.0))
 		var output := float(definition.daily_output.get(resource_type, 0.0))
 		if draw <= 0.0 and output <= 0.0:
@@ -551,15 +551,29 @@ func _retrain_preview_cost(definition: UnitDefinition) -> Dictionary:
 		cost[resource_type] = float(definition.training_cost[resource_type]) * UnitManager.RETRAIN_COST_FRACTION
 	return cost
 
-## Training cost is one-time (UnitManager.train_unit()'s own spend),
-## daily_upkeep is the recurring Gunpowder drain — shown as two separate
-## lines for the same one-time-vs-recurring clarity BuildMenuView's own
-## card details keep for buildings.
+## Training cost is one-time (UnitManager.train_unit()'s own spend);
+## daily_upkeep now mixes two different kinds of cost (UnitDefinition's own
+## doc comment) — Gunpowder/Food/Coal are a real recurring drain, Population/
+## Energy are a one-time capacity reservation (CapacityAllocator), settled
+## once at training/retrain/death, never a recurring flow. Splitting them
+## into separate "Upkeep: .../day" and "Capacity: ..." lines avoids
+## mislabeling the one-time draw as recurring — the same split
+## _add_capacity_stats()/_recurring_upkeep_display() already keep for the
+## building-instance panel above.
 func _unit_card_details(definition: UnitDefinition) -> String:
 	var text := "Cost: %s" % HUDStyles.format_resource_dict(definition.training_cost)
-	var upkeep := HUDStyles.format_resource_dict(definition.daily_upkeep)
+	var recurring: Dictionary = {}
+	var capacity_parts: Array[String] = []
+	for resource_type in definition.daily_upkeep:
+		if CapacityAllocator.CAPACITY_RESOURCE_TYPES.has(resource_type):
+			capacity_parts.append("-%s %s" % [String.num(float(definition.daily_upkeep[resource_type]), 1).rstrip("0").rstrip("."), ResourceVisuals.display_name(resource_type)])
+		else:
+			recurring[resource_type] = definition.daily_upkeep[resource_type]
+	var upkeep := HUDStyles.format_resource_dict(recurring)
 	if not upkeep.is_empty():
 		text += "\nUpkeep: %s/day" % upkeep
+	if not capacity_parts.is_empty():
+		text += "\nCapacity: %s (one-time)" % ", ".join(capacity_parts)
 	return text
 
 func _role_name(role: GameEnums.UnitRole) -> String:

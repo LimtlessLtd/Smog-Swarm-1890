@@ -20,7 +20,7 @@ extends Resource
 ## construction/repair and refunded the instant the building ruins. Reuses
 ## this same field (rather than a dedicated one) since it's still "what this
 ## building needs to operate," just settled once instead of every day — see
-## BuildingCapacityAllocator.apply()'s own doc comment for the full
+## CapacityAllocator.apply()'s own doc comment for the full
 ## mechanism. Every OTHER resource type here still means exactly what the
 ## field name says.
 @export var daily_upkeep: Dictionary = {}
@@ -36,7 +36,7 @@ extends Resource
 ## built, feeds colony-wide Food upkeep via BuildingSustenanceController.
 ## FOOD_PER_POPULATION, and HordeManager's ruin-to-casualties conversion) and
 ## a mirrored daily_output[ResourceType.POPULATION] entry (the
-## BuildingCapacityAllocator capacity grant, design_doc.md §2) that
+## CapacityAllocator capacity grant, design_doc.md §2) that
 ## BuildingCatalog's housing builders set explicitly alongside this field —
 ## see e.g. _terraced_tenement().
 @export var population_provided: int = 0
