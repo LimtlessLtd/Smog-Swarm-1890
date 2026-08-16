@@ -239,11 +239,26 @@ func get_buildings_with_zoc_role(role: GameEnums.ZoneOfControlType) -> Array[Bui
 			result.append(instance)
 	return result
 
-## Returns "" if `building_type` can legally be built at `coord` right now, or
-## a human-readable rejection reason otherwise. Exposed separately from
-## place_building() so UI can preview legality without attempting (and
-## signalling a rejection for) a real placement.
-func get_placement_error(building_type: GameEnums.BuildingType, coord: Vector2i) -> String:
+## Returns "" if `building_type` can legally be built at `coord` (at exactly
+## `local_position` within it — the offset from the hex's own center,
+## defaulting to ZERO/the hex center) right now, or a human-readable
+## rejection reason otherwise. Exposed separately from place_building() so
+## UI can preview legality without attempting (and signalling a rejection
+## for) a real placement.
+##
+## Passability/biome/soil-fertility are resolved at real sub-hex resolution
+## under `local_position` (SubHexTerrainQuery/SubHexSoilQuery — Sub-Hex
+## Mechanical Layer Phase 3b, todo.md, [[sub-hex-mechanical-layer-epic]]
+## memory: local_position stops being cosmetic-only for placement legality
+## too, matching Phase 3a's extraction-side change) rather than the macro
+## hex's own aggregate values — a building could otherwise be legally
+## placed on a marsh strip or non-arable patch that happens to sit inside
+## an overall-passable/-farmland hex. Falls back to the macro hex's own
+## `cell` fields outside the baked corridor, same "empty result -> fall
+## back to flat default" contract every class in this epic already follows,
+## so a caller passing the default ZERO local_position on an off-corridor
+## hex behaves exactly as before this phase.
+func get_placement_error(building_type: GameEnums.BuildingType, coord: Vector2i, local_position: Vector2 = Vector2.ZERO) -> String:
 	var definition := BuildingCatalog.get_definition(building_type)
 	if not definition:
 		return "Unknown building type."
@@ -254,13 +269,14 @@ func get_placement_error(building_type: GameEnums.BuildingType, coord: Vector2i)
 	var cell := _hex_grid_map.get_cell(coord)
 	if not cell:
 		return "%s is outside the map." % coord
-	if not cell.is_passable():
+	var world_pos := HexCoord.axial_to_world(coord) + local_position
+	if not SubHexTerrainQuery.is_passable_at(coord, world_pos, cell.is_passable()):
 		return "%s cannot be built on marsh or peat bog until it is drained." % definition.display_name
 	if definition.requires_settlement and not cell.is_settlement:
 		return "%s can only be built within a settlement." % definition.display_name
-	if not definition.allowed_biomes.is_empty() and not definition.allowed_biomes.has(cell.biome_type):
+	if not definition.allowed_biomes.is_empty() and not definition.allowed_biomes.has(SubHexTerrainQuery.biome_at(coord, world_pos, cell.biome_type)):
 		return "%s cannot be built on this terrain." % definition.display_name
-	if not definition.allowed_soil_fertility.is_empty() and not definition.allowed_soil_fertility.has(cell.soil_fertility):
+	if not definition.allowed_soil_fertility.is_empty() and not definition.allowed_soil_fertility.has(SubHexSoilQuery.soil_fertility_at(coord, local_position, cell.soil_fertility)):
 		return "%s needs better soil than this hex has." % definition.display_name
 	if _resource_manager and not _resource_manager.can_afford(definition.construction_cost):
 		return "Not enough resources to build %s." % definition.display_name
@@ -292,8 +308,8 @@ func _resource_shortfalls(cost: Dictionary) -> Array[String]:
 			shortfalls.append("%s %s" % [missing, ResourceVisuals.display_name(resource_type)])
 	return shortfalls
 
-func can_place_building(building_type: GameEnums.BuildingType, coord: Vector2i) -> bool:
-	return get_placement_error(building_type, coord).is_empty()
+func can_place_building(building_type: GameEnums.BuildingType, coord: Vector2i, local_position: Vector2 = Vector2.ZERO) -> bool:
+	return get_placement_error(building_type, coord, local_position).is_empty()
 
 ## `local_position` is an offset from the hex's own center (Tactical view
 ## placement); leave it ZERO for hex-granularity placement.
@@ -311,7 +327,7 @@ func can_place_building(building_type: GameEnums.BuildingType, coord: Vector2i) 
 ## ZoC, production tallies) check is_under_construction and wait for
 ## building_construction_completed instead.
 func place_building(building_type: GameEnums.BuildingType, coord: Vector2i, local_position: Vector2 = Vector2.ZERO) -> bool:
-	var error := get_placement_error(building_type, coord)
+	var error := get_placement_error(building_type, coord, local_position)
 	if not error.is_empty():
 		placement_rejected.emit(building_type, coord, error)
 		return false

@@ -73,3 +73,30 @@ static func sample_at_world_within(hex_coord: Vector2i, world_pos: Vector2) -> D
 ## test) ever needs a clean slate.
 static func clear_cache() -> void:
 	_cache.clear()
+
+## Sub-cell passability at `world_pos` resolved against `hex_coord`
+## specifically (sample_at_world_within() — locks to THIS hex, doesn't
+## re-derive which hex world_pos geometrically belongs to). Reapplies
+## HexCell.is_passable()'s exact MARSH/PEAT_BOG/OCEAN rule at sub-hex
+## granularity; returns `fallback` when this position has no baked data
+## (outside the corridor). Public — shared by SubHexPortalGraph (Phase 1c)
+## and BuildingManager.get_placement_error() (Phase 3b) rather than each
+## reimplementing the same rule.
+static func is_passable_at(hex_coord: Vector2i, world_pos: Vector2, fallback: bool) -> bool:
+	var sample := sample_at_world_within(hex_coord, world_pos)
+	if sample.is_empty():
+		return fallback
+	var terrain_feature: GameEnums.TerrainFeature = sample.get("terrain_feature", GameEnums.TerrainFeature.NONE)
+	var biome_type: GameEnums.BiomeType = sample.get("biome_type", GameEnums.BiomeType.MOORLAND)
+	return terrain_feature != GameEnums.TerrainFeature.MARSH and terrain_feature != GameEnums.TerrainFeature.PEAT_BOG and biome_type != GameEnums.BiomeType.OCEAN
+
+## Sub-cell biome at `world_pos` resolved against `hex_coord`, or `fallback`
+## outside the baked corridor. Public for BuildingManager.get_placement_error()
+## (Phase 3b) — a building's `allowed_biomes` restriction reads the real
+## terrain under its exact footprint instead of the macro hex's single
+## majority-voted biome_type.
+static func biome_at(hex_coord: Vector2i, world_pos: Vector2, fallback: GameEnums.BiomeType) -> GameEnums.BiomeType:
+	var sample := sample_at_world_within(hex_coord, world_pos)
+	if sample.is_empty():
+		return fallback
+	return sample.get("biome_type", fallback)
