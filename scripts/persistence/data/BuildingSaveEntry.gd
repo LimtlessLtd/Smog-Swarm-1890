@@ -7,10 +7,10 @@ extends Resource
 ## re-look-up the live BuildingDefinition from BuildingCatalog by type on
 ## load instead of saving (and potentially staling) a definition copy, per
 ## the design doc's explicit decision. current_population and
-## current_hp/is_ruined are the exceptions saved alongside them
-## — genuinely mutable per-instance state (starvation deaths, surplus
-## regrowth, siege damage) that can't be re-derived from the definition's
-## fixed population_provided/get_max_hp() baselines once play has moved it.
+## current_hp/is_ruined are the exceptions saved alongside them — real
+## per-instance state (zeroed on ruin, siege damage) that can't be
+## re-derived from the definition's fixed population_provided/get_max_hp()
+## baselines once play has moved it.
 
 @export var building_type: GameEnums.BuildingType = GameEnums.BuildingType.TERRACED_TENEMENT
 @export var hex_coord: Vector2i = Vector2i.ZERO

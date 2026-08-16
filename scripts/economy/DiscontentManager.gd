@@ -36,8 +36,7 @@ extends Node
 ##   day_completed handler runs (this node must be a LATER Main.tscn
 ##   sibling than BuildingManager — see Main.tscn) so today's production
 ##   penalty (queried by BuildingManager, see get_production_multiplier())
-##   reads YESTERDAY's Discontent, not a value this same tick is still
-##   computing — the same causality rule starvation/regrowth already uses.
+##   reads YESTERDAY's Discontent, not a value this same tick is still computing.
 
 signal region_discontent_changed(hex_coords: Array[Vector2i], discontent: float)
 
@@ -57,13 +56,11 @@ var _regions: Array = []  # Array[Array[Vector2i]], cached from the most recent 
 # cadences are safe to mix this way.
 var _pending_shortfall_types: Dictionary = {}       # GameEnums.ResourceType -> true
 var _pending_food_ratio: float = 1.0                # BuildingManager.food_satisfaction_changed's latest report.
-var _pending_casualty_pressure_by_hex: Dictionary = {}  # Vector2i -> float
 
 ## Exact numbers are a balancing pass, not an architecture decision — every
 ## constant below is a documented placeholder, not a tuned value.
 const OVERCROWDING_CAPACITY_PER_HEX: float = 40.0   ## Region capacity scales with hex count, so a 12-hex London isn't trivially "overcrowded" just for being large — matches multi-hex settlements sharing one Discontent value.
 const OVERCROWDING_PRESSURE_SCALE: float = 0.5      ## Discontent gained per day per 1.0 of overcrowding_ratio above capacity.
-const STARVATION_CASUALTY_PRESSURE_PER_DEATH: float = 0.02  ## Per starved civilian (BuildingManager.civilians_starved) within the region's own hexes that day — the one real "casualties" input available today; combat casualties/incursions aren't built yet.
 const HUNGER_BAND_PRESSURE: float = 0.05            ## Flat daily pressure, applied to every region equally, while the colony's food ratio sits in the hungry-but-not-starving band (independent of BuildingManager's own direct production penalty, per the design doc).
 const SHORTFALL_PRESSURE_PER_EVENT: float = 0.05    ## Flat daily pressure per distinct resource type that hit ResourceManager.upkeep_shortfall that day, applied to every region equally (the stockpile is one global pool — Discontent is region-scoped, the economy underneath it deliberately isn't).
 const RECOVERY_PER_DAY: float = 0.03                ## Passive daily decay toward content when no drivers fire that day.
@@ -76,7 +73,6 @@ func _ready() -> void:
 		_logistics_network.network_recomputed.connect(_on_network_recomputed)
 	if building_manager_path != NodePath():
 		_building_manager = get_node(building_manager_path)
-		_building_manager.civilians_starved.connect(_on_civilians_starved)
 		_building_manager.food_satisfaction_changed.connect(_on_food_satisfaction_changed)
 	if resource_manager_path != NodePath():
 		_resource_manager = get_node(resource_manager_path)
@@ -148,6 +144,10 @@ func _recompute_regions() -> void:
 					frontier.append(neighbor)
 		_regions.append(region)
 
+## instance.current_population is housing occupancy (fixed at
+## definition.population_provided once built, zeroed on ruin) — a different
+## quantity from ResourceManager's global POPULATION capacity pool, which
+## this region-scoped overcrowding math doesn't touch.
 func _region_population(region: Array[Vector2i]) -> int:
 	if not _building_manager:
 		return 0
@@ -183,11 +183,7 @@ func _on_day_completed(_day_number: int) -> void:
 		var overcrowding_ratio := float(region_population) / region_capacity
 		var overcrowding_pressure := maxf(overcrowding_ratio - 1.0, 0.0) * OVERCROWDING_PRESSURE_SCALE
 
-		var casualty_pressure := 0.0
-		for coord in region:
-			casualty_pressure += _pending_casualty_pressure_by_hex.get(coord, 0.0)
-
-		var delta := overcrowding_pressure + casualty_pressure + global_pressure - RECOVERY_PER_DAY
+		var delta := overcrowding_pressure + global_pressure - RECOVERY_PER_DAY
 		var updated := clampf(_region_discontent(region) + delta, 0.0, 1.0)
 		for coord in region:
 			_discontent_by_hex[coord] = updated
@@ -195,7 +191,6 @@ func _on_day_completed(_day_number: int) -> void:
 
 	_pending_shortfall_types.clear()
 	_pending_food_ratio = 1.0
-	_pending_casualty_pressure_by_hex.clear()
 
 	# A hex that's no longer part of any current civilian region stops being
 	# tracked — Discontent is a property of currently-covered civilian
@@ -211,9 +206,6 @@ func _on_day_completed(_day_number: int) -> void:
 
 func _on_network_recomputed() -> void:
 	_recompute_regions()
-
-func _on_civilians_starved(hex_coord: Vector2i, count: int) -> void:
-	_pending_casualty_pressure_by_hex[hex_coord] = _pending_casualty_pressure_by_hex.get(hex_coord, 0.0) + count * STARVATION_CASUALTY_PRESSURE_PER_DEATH
 
 func _on_upkeep_shortfall(resource_type: GameEnums.ResourceType, _shortfall: float) -> void:
 	_pending_shortfall_types[resource_type] = true

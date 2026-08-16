@@ -1,4 +1,4 @@
-# Technical Specifications & Game Design Document: The Smog & The Swarm (1890s-1920s Era Post-Zombie Apocalypse Industrial Revolution British Empire) - v4.4
+# Technical Specifications & Game Design Document: The Smog & The Swarm (1890s-1920s Era Post-Zombie Apocalypse Industrial Revolution British Empire) - v4.5
 
 ---
 
@@ -66,7 +66,7 @@ To maintain deep industrial strategy without overwhelming player management, res
     * Tier 5 (Super-Complex Era): 2,500 Research
 
 ### Unified Zone of Control (ZoC) & Field Supply Rules
-* **ZoC Emission & Expansion:** Players begin with **1 Pre-built Starter Town Hall** emitting a 5km x 5km ZoC circle. Constructing new Town Halls to establish far-flung cities and expand global network coverage is **locked until Tier 3**. Linked ZoCs pool global stockpiles; unlinked ZoCs remain local.
+* **ZoC Emission & Expansion:** Players begin with **1 Pre-built Starter Town Hall** emitting a 5 mi x 5 mi ZoC circle. Constructing new Town Halls to establish far-flung cities and expand global network coverage is **locked until Tier 3**. Linked ZoCs pool global stockpiles; unlinked ZoCs remain local.
 * **Infantry Gunpowder Logistics:** Units inside ZoC draw seamlessly from stockpiles. Units exiting ZoC reserve **20 rounds of Gunpowder**. Re-entering any ZoC or visiting an Supply Dump automatically re-arms reserves.
 * **Steam Vehicle Fuel Logistics:** Steam-powered combat vehicles draw Coal directly from pooled stockpiles inside ZoC. When leaving ZoC, steam vehicles reserve **50 Coal** (enabling independent field operations). Re-entering ZoC or visiting a Supply Dump refuels reserves automatically.
 
@@ -83,7 +83,7 @@ Each tier of road/transit infrastructure increases base movement speed while ign
 ## 3. Tiered Building Specifications
 
 ### Tier 0: Wood Base / Settlement
-* **Town Hall** — **Pre-built at Game Start (1 Max at T0-T2)** | **Construction of additional Town Halls locked until Tier 3** | **Capacity:** +100 Pop, +20 Energy | **Upkeep:** 10 Food/day | **Output:** 5 Research/day | **ZoC:** 5km x 5km. Trains Tier 0 units (*Truncheoneer, Toxophilite, Outrider*).
+* **Town Hall** — **Pre-built at Game Start (1 Max at T0-T2)** | **Construction of additional Town Halls locked until Tier 3** | **Capacity:** +100 Pop, +20 Energy | **Upkeep:** 10 Food/day | **Output:** 5 Research/day | **ZoC:** 5mi x 5mi. Trains Tier 0 units (*Truncheoneer, Toxophilite, Outrider*).
 * **Lumber Yard** — **Cost:** 50 Wood | **Capacity:** -5 Pop, -5 Energy | **Output:** 200 Wood/day | **Time:** 1 day
 * **Clay Pit** — **Cost:** 60 Wood | **Capacity:** -15 Pop, -10 Energy | **Upkeep:** 10 Food/day | **Output:** 200 Clay/day | **Time:** 2 days
 * **Smallholding Farm** — **Cost:** 100 Wood | **Capacity:** -10 Pop, -5 Energy | **Output:** 150 Food/day | **Time:** 1 day
@@ -127,7 +127,7 @@ Each tier of road/transit infrastructure increases base movement speed while ign
 ---
 
 ### Tier 3: Steel Base / Rail Network
-* **Town Hall** — **Unlocked at Tier 3** | **Cost:** 300 Wood, 200 Bricks, 150 Concrete, 100 Steel | **Capacity:** +100 Pop, +20 Energy | **Upkeep:** 10 Food/day | **Time:** 3 days | **Function:** Establishes a new 5km x 5km ZoC hex. Allows players to found far-flung cities specialized in extracting specific resource nodes. Only 1 can be built per hex tile.
+* **Town Hall** — **Unlocked at Tier 3** | **Cost:** 300 Wood, 200 Bricks, 150 Concrete, 100 Steel | **Capacity:** +100 Pop, +20 Energy | **Upkeep:** 10 Food/day | **Time:** 3 days | **Function:** Establishes a new 5mi x 5mi ZoC hex. Allows players to found far-flung cities specialized in extracting specific resource nodes. Only 1 can be built per hex tile.
 * **Sulfur Mine** — **Cost:** 250 Wood, 150 Bricks, 100 Concrete, 50 Iron | **Capacity:** -35 Pop, -60 Energy | **Upkeep:** 30 Food/day | **Output:** 50 Sulfur/day | **Time:** 3 days
 * **Gunpowder Mill** — **Cost:** 150 Wood, 100 Bricks, 50 Iron | **Capacity:** -15 Pop, -40 Energy | **Upkeep:** 60 Sulfur/day, 40 Coal/day, 20 Food/day | **Output:** 120 Gunpowder/day | **Time:** 3 days
 * **Steelworks** — **Cost:** 300 Wood, 200 Bricks, 150 Concrete, 100 Iron | **Capacity:** -40 Pop, -300 Energy | **Upkeep:** 100 Iron/day, 50 Coal/day, 40 Food/day | **Output:** 75 Steel/day | **Time:** 4 days
@@ -210,7 +210,7 @@ Each tier of road/transit infrastructure increases base movement speed while ign
 The map covers the British Isles (Ireland and Great Britain) using a two-tier 2D top-down camera architecture:
 
 * **World View (Strategic Tier)**
-  * **Grid Unit:** Uniform 5km × 5km hexagonal grid.
+  * **Grid Unit:** Uniform 5mi × 5mi hexagonal grid.
   * **Visual Display:** Strategic overview rendering overall Zone of Control (ZoC) networks, macro Fog of War, sector threat levels, regional resource totals, major transit corridors (Railways/Canals), macro elevation contours, and aggregated army/horde icons.
   * **Purpose:** Macro logistics, empire planning, and regional military movement.
 
@@ -225,26 +225,26 @@ The map covers the British Isles (Ireland and Great Britain) using a two-tier 2D
 
 Rather than using complex 3D terrain meshes, height is managed via discrete 2D integer flags (`height_level` 0 to 4) assigned to map coordinates:
 
-* **Level 0 — Sea-level:** The lowest level possible, sea level should be applied to everywhere the sea biome is present, it is the lowest possible elevation.
+* **Level 0 — Sea-level:** The lowest level possible, sea level should be applied everywhere the sea biome is present.
 * **Level 1 — Lowland:** Standard baseline elevation. No vision or range modifiers.
 * **Level 2 — Hill:** Minor elevated terrain.
-  * **Combat Bonus:** +15% Range and Line of Sight (LoS) for ranged units targeting Level 0 or 1.
+  * **Combat Bonus:** +15% Weapon Firing Range and +15% Line of Sight (LoS) targeting Level 0 or 1.
   * **Movement:** Standard biome rules apply.
 * **Level 3 — Highland:** Major elevated terrain.
-  * **Combat Bonus:** +25% Range and Line of Sight (LoS) for ranged units targeting Level 0, 1 or 2.
+  * **Combat Bonus:** +25% Weapon Firing Range and +25% Line of Sight (LoS) targeting Level 0, 1, or 2.
   * **LoS Block:** Occludes vision to lower elevation tiles directly behind it.
 * **Level 4 — Mountain:** Extreme peak elevation.
   * **Passability:** **IMPASSABLE** for all ground units, vehicles, and zombies.
-  * **LoS Block:** Completely blocks all Line of Sight and projectable vision across its boundary.
+  * **LoS Block:** Completely opaque; blocks all Line of Sight and projectable vision across its boundary regardless of viewer elevation.
 
 ---
 
 ### Sub-Hex Granular Biomes
 
-Biome boundaries operate completely independently of the 5km hex grid:
+Biome boundaries operate completely independently of the 5mi hex grid:
 
 * **Continuous Blending:** Biomes (Farmland, Moorland, Highland, Wetland, Woodland, Heathland) are stored as continuous 2D weightmaps (splatmaps) rather than locked hex tiles.
-* **Multi-Biome Hexes:** A single 5km hex tile can seamlessly blend multiple biomes (e.g., a Wetland valley transitioning into Highland ridges bordered by Woodland).
+* **Multi-Biome Hexes:** A single 5mi hex tile can seamlessly blend multiple biomes (e.g., a Wetland valley transitioning into Highland ridges bordered by Woodland).
 * **Coordinate-Based Modifiers:** Movement speed and terrain mechanics evaluate the exact sub-hex biome blend directly beneath a unit's current position.
 
 ---
@@ -256,13 +256,13 @@ Map generation uses real-world open geospatial data, pre-processed and "baked" i
 #### Input Sources
 * **Topography (Elevation):** NASA SRTM / Copernicus DEM (30m elevation data converted into 0–4 integer elevation masks and vector cliff boundaries).
 * **Land Cover (Biomes):** CORINE Land Cover / Copernicus land use data (historical forest, wetland, moorland distributions).
-* **Hydrology & Infrastructure:** OpenStreetMap (OSM) vector data (natural river channels, coastlines, historical road/rail routes). Applied last so rivers, coastlines, roads, rails and canals are formed correctly on top of the map and not overwritten by other sweeps.
+* **Hydrology & Infrastructure:** OpenStreetMap (OSM) vector data (natural river channels, coastlines, historical road/rail routes). Applied last so rivers, coastlines, roads, rails, and canals are formed correctly on top of the map and not overwritten by other sweeps.
 * **Geology (Resource Nodes):** British Geological Survey (BGS) & Geological Survey Ireland (GSI) spatial data (coal seams, iron ore veins, limestone deposits).
 
 #### Baking Process
 1. **Raster Quantization:** Raw SRTM DEM height values are processed through threshold filters to output discrete 2D `height_level` masks (0–4) and mark steep slope boundaries as impassable cliff edges.
 2. **Splatmap Generation:** AI terrain synthesis converts land-cover datasets into smooth 2D sub-hex biome weightmaps for Tactical View rendering.
-3. **Hex Feature Aggregation:** Aggregates regional totals across each 5km hex area to populate strategic resource potentials, dominant terrain profiles, and base travel speeds for the World View.
+3. **Hex Feature Aggregation:** Aggregates regional totals across each 5mi hex area to populate strategic resource potentials, dominant terrain profiles, and base travel speeds for the World View.
 
 ---
 
@@ -273,9 +273,9 @@ Map generation uses real-world open geospatial data, pre-processed and "baked" i
 Vision uses a **2D Symmetric Shadowcasting** algorithm calculated from the unit's tile origin out to its maximum Vision Radius.
 
 #### Elevation Interaction
-* **Height Advantage (+1 Tile Radius per level):** Units on a higher `height_level` gain +1 tile vision radius per elevation level above the target tile.
+* **Vision Advantage (+1 Tile Radius per level):** Units on a higher `height_level` gain +1 tile vision radius per elevation level above the target tile. (Note: Percentage range bonuses apply specifically to weapon firing distances as defined in Sec 5).
 * **Occlusion Rules:**
-  * **Level 3 (Mountain):** Completely opaque. Blocks all LoS, rays, and vision fields regardless of viewer elevation.
+  * **Level 4 (Mountain):** Completely opaque. Blocks all LoS, rays, and vision fields regardless of viewer elevation.
   * **Level N Obstacle:** Occludes all tiles behind it that have an elevation lower than Level N, unless the viewer is on an elevation higher than Level N.
 * **Biome Vision Modifiers:**
   * **Woodland:** 50% Vision Penetration. Vision range looking into or through Woodland is reduced by 50%.
@@ -322,7 +322,7 @@ Each action emits an acoustic impulse with a specific base radius (`R_sound` in 
 #### Sound Attenuation Rules
 * **Open Terrain / Waterways:** Sound travels at 100% nominal distance.
 * **Woodland / Structures / Walls:** Dampens sound propagation by -2 tiles per obstacle tile traversed.
-* **Elevation Barriers (Level 2/3):** Level 3 Mountains block sound completely. Level 2 Highlands reduce sound propagation radius by 50%.
+* **Elevation Barriers (Level 2/3):** Level 4 Mountains block sound completely. Level 2/3 Highlands reduce sound propagation radius by 50%.
 
 ---
 
@@ -350,7 +350,10 @@ Zombies process sensory inputs through a prioritized 4-state behavioral logic tr
 
 * **State 4: Swarm Vector (Horde Cascading)**
   * **Base Behavior:** Broadcasts a 3-tile radial Pheromone Pulse every 1.0 second.
-  * **Cascade Effect:** Any Idle or Investigating zombies touching this pulse immediately force-transition to **Aggro / Chase** targeting the same location, initiating a chain-reaction horde surge.
+  * **Cascade Attenuation Rules:**
+    * **Line-of-Sight Check:** Pulse only triggers nearby zombies if unblocked by Level 4 Mountain terrain or solid fortifications.
+    * **Hop Depth Limit:** Pheromone pulse cascade depth is capped at **3 max hops** (originating zombie -> Hop 1 -> Hop 2 -> Hop 3) to prevent runaway map-wide loops.
+    * **Cooldown:** Each zombie has a 5.0-second cooldown on triggering or re-broadcasting a Swarm Vector pulse.
 
 ---
 
@@ -359,7 +362,7 @@ Zombies process sensory inputs through a prioritized 4-state behavioral logic tr
 To handle thousands of active zombies and pathing/perception calls at high performance:
 
 #### Spatial Hash Grid & Bitmask Layers
-* **Spatial Partitioning:** The tactical view map is divided into 16 x 16 tile spatial hash buckets to instantly retrieve units and sound events within perception queries.
+* **Spatial Partitioning:** The tactical view map is divided into 16 x 16 tile spatial hash buckets (160m × 160m) to instantly retrieve units and sound events within perception queries.
 * **Light & Sound Grid (Bitfield Matrix):**
   * Light and Noise levels are calculated on a coarse grid overlaid on the tile map.
   * `LightMap[x][y]` stores a single `uint8` illumination value (0-255).
@@ -370,8 +373,9 @@ To optimize CPU usage during large horde events:
 * **Distance-Based Ticking:**
   * **Off-screen / Far (>50 tiles from player):** AI state evaluated once every 2.0s.
   * **Mid-range (20-50 tiles):** AI state evaluated once every 0.5s.
-  * **Combat Range (<20 tiles):** AI state evaluated every frame (16ms / 60Hz).
+  * **Combat Range (<20 tiles):** AI state evaluated every frame (16ms / 60Hz). Fits within 1-2 spatial hash bucket queries.
 
+---
 
 ## 7. Technical Glossary & Spatial Specifications
 
@@ -380,26 +384,27 @@ To optimize CPU usage during large horde events:
 To eliminate ambiguity between macro strategy and micro tactics, spatial dimensions are locked to the following real-world equivalent metrics:
 
 * **Strategic Hex (World View Cell):**
-  * **Dimensions:** Regular hexagon with a 5 km width (flat-to-flat distance).
-  * **Bounding Area:** ~21.65 km²
+  * **Dimensions:** Regular hexagon with a 5 mi width (flat-to-flat distance).
+  * **Bounding Area:** ~21.65 mi²
   * **Purpose:** Primary unit for regional Zone of Control (ZoC), empire pathfinding, resource distribution, and macro fog of war.
 
 * **Tactical Tile (Operational View Cell):**
   * **Dimensions:** Uniform 10 m x 10 m square grid cell.
   * **Scale Conversion:** 1 Strategic Hex ≈ 500 x 500 Tactical Tiles in bounding area.
+  * **Movement Velocity:** Unit movement rates use floating-point sub-tile velocities (tiles/sec) rather than integer steps (e.g., standard infantry walking at ~5 mi/h translates to ~0.22 tiles/sec) to ensure smooth interpolation.
   * **Purpose:** Fundamental atomic unit for pathfinding, building placement, weapon ranges, collision detection, and LoS shadowcasting.
 
 ---
 
 ### Core Technical Definitions
 
-* **Tile:** The atomic 10 m x 10 m square grid coordinate (x, y) in Tactical View. All unit speeds, vision radii, explosion effects, and building footprints are measured in integers or floats of Tiles (e.g., 1 Tile/sec = 36 km/h).
+* **Tile:** The atomic 10 m x 10 m square grid coordinate (x, y) in Tactical View. All unit speeds, vision radii, explosion effects, and building footprints are measured in tiles.
 
 * **Splatmap / Biome Weightmap:** A resolution-independent 2D texture array mapping normalized float values (0.0 to 1.0) for each biome type per coordinate. Used to render smooth visual transitions and compute exact weighted movement penalties at sub-tile resolution.
 
-* **Logical Height Level (`height_level`):** An integer byte flag (0, 1, 2, or 3) assigned per 10 m x 10 m tile. Controls vision occlusion, range bonuses, and passability without requiring 3D mesh height calculations.
+* **Logical Height Level (`height_level`):** An integer byte flag (`uint8`: 0, 1, 2, 3, or 4) assigned per 10 m x 10 m tile. Controls vision occlusion, range bonuses, and passability without requiring 3D mesh height calculations.
 
-* **Zone of Control (ZoC):** A strategic and tactical supply aura centered on key infrastructure. Graphically represented on the World View as a 5 km x 5 km area. Unlocks local building placement and seamlessly connects resources to global logistics pools.
+* **Zone of Control (ZoC):** A strategic and tactical supply aura centered on key infrastructure. Graphically represented on the World View as a 5 mi x 5 mi circle area. Unlocks local building placement and seamlessly connects resources to global logistics pools.
 
 * **Symmetric Shadowcasting:** A grid-based 2D Line of Sight (LoS) algorithm that casts light rays outward from a tile center to determine visible vs. occluded tiles in O(N) time, where N is the number of tiles in the vision radius.
 
@@ -409,4 +414,4 @@ To eliminate ambiguity between macro strategy and micro tactics, spatial dimensi
 
 * **Spatial Hash Bucket:** A 16 x 16 Tile grid partition (160 m x 160 m) used by the engine to chunk entity spatial data, allowing rapid proximity queries without iterating over every unit on the map.
 
-* **Pheromone Pulse:** A recurring 3-Tile radial event broadcasted by active *Aggro* zombies that forces adjacent *Idle* or *Investigating* zombies to immediately acquire the same target vector.
+* **Pheromone Pulse:** A recurring 3-Tile radial event broadcasted by active *Aggro* zombies that forces adjacent *Idle* or *Investigating* zombies to acquire the target vector (bounded by a 3-hop cascade depth limit and 5s cooldown).

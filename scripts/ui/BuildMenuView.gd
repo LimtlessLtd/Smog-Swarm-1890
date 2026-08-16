@@ -178,7 +178,15 @@ func _build_building_card(definition: BuildingDefinition, colors: Dictionary = {
 func _describe_building(definition: BuildingDefinition) -> String:
 	var lines: Array[String] = []
 	lines.append("Cost: %s" % HUDStyles.format_resource_dict(definition.construction_cost))
-	var upkeep := HUDStyles.format_resource_dict(definition.daily_upkeep)
+	# ENERGY/POPULATION entries are one-time capacity draws
+	# (BuildingCapacityAllocator), not a recurring "/day" cost — excluded
+	# here the same way _describe_effect()/_add_capacity_stats() (UnitPanelView)
+	# keep them out of their own "/day" lines.
+	var recurring_upkeep: Dictionary = {}
+	for resource_type in definition.daily_upkeep:
+		if not BuildingCapacityAllocator.CAPACITY_RESOURCE_TYPES.has(resource_type):
+			recurring_upkeep[resource_type] = definition.daily_upkeep[resource_type]
+	var upkeep := HUDStyles.format_resource_dict(recurring_upkeep)
 	if not upkeep.is_empty():
 		lines.append("Upkeep: %s/day" % upkeep)
 	lines.append(_describe_effect(definition))
@@ -193,6 +201,12 @@ func _describe_building(definition: BuildingDefinition) -> String:
 func _describe_effect(definition: BuildingDefinition) -> String:
 	var parts: Array[String] = []
 	for resource_type in definition.daily_output:
+		# POPULATION is skipped here — it's the BuildingCapacityAllocator
+		# capacity grant mirroring population_provided (BuildingCatalog's
+		# housing builders), already covered by "Houses %d population" below;
+		# listing it again here would double it up under a misleading "/day" label.
+		if resource_type == GameEnums.ResourceType.POPULATION:
+			continue
 		var amount := float(definition.daily_output[resource_type])
 		if resource_type == GameEnums.ResourceType.ENERGY:
 			parts.append("+%s Energy (one-time)" % String.num(amount, 0))

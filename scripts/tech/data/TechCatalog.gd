@@ -68,7 +68,7 @@ static func _brick_walls() -> TechDefinition:
 static func _concrete_walls() -> TechDefinition:
 	var d := TechDefinition.new(&"concrete_walls", "Concrete Walls")
 	d.description = "Upgrades the wall tier available for chokepoint construction from Brick to Concrete."
-	d.cost = {GameEnums.ResourceType.RESEARCH_POINTS: 90, GameEnums.ResourceType.CAST_IRON: 50}
+	d.cost = {GameEnums.ResourceType.RESEARCH_POINTS: 90, GameEnums.ResourceType.IRON: 50}
 	d.research_days = 3
 	d.prerequisites = [&"brick_walls"]
 	d.unlock_type = GameEnums.TechUnlockType.WALL_TIER
@@ -85,7 +85,7 @@ static func _concrete_walls() -> TechDefinition:
 static func _unit_tier(tier: int, tier_display_name: String, research_points_cost: int, research_days: int) -> TechDefinition:
 	var d := TechDefinition.new(StringName("unit_tier_%d" % tier), tier_display_name)
 	d.description = "Unlocks Tier %d's melee, ranged and special units, all 3 roles at once." % tier
-	d.cost = {GameEnums.ResourceType.RESEARCH_POINTS: research_points_cost, GameEnums.ResourceType.CAST_IRON: research_points_cost * 0.6}
+	d.cost = {GameEnums.ResourceType.RESEARCH_POINTS: research_points_cost, GameEnums.ResourceType.IRON: research_points_cost * 0.6}
 	d.research_days = research_days
 	if tier > 1:
 		d.prerequisites = [StringName("unit_tier_%d" % (tier - 1))]

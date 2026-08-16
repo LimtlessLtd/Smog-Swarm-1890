@@ -21,14 +21,14 @@ const REPAIR_COST_FRACTION: float = 0.5
 
 var _resource_manager: ResourceManager
 var _territory_controller: TerritoryController
-var _energy: BuildingEnergyAllocator
+var _capacity: BuildingCapacityAllocator
 var _construction_days: Callable  ## BuildingConstructionController.days_for, injected so repair() uses the same cost-to-duration formula without depending on the whole construction controller.
 var _pending_repair: Array[Dictionary] = []  # {instance: BuildingInstance, days_remaining: int}
 
-func _init(resource_manager: ResourceManager, territory_controller: TerritoryController, energy: BuildingEnergyAllocator, construction_days: Callable) -> void:
+func _init(resource_manager: ResourceManager, territory_controller: TerritoryController, capacity: BuildingCapacityAllocator, construction_days: Callable) -> void:
 	_resource_manager = resource_manager
 	_territory_controller = territory_controller
-	_energy = energy
+	_capacity = capacity
 	_construction_days = construction_days
 
 func damage(instance: BuildingInstance, amount: float) -> void:
@@ -40,7 +40,7 @@ func damage(instance: BuildingInstance, amount: float) -> void:
 		var lost_population := instance.current_population
 		instance.current_population = 0
 		instance.is_ruined = true
-		_energy.refund(instance.definition)
+		_capacity.refund(instance.definition)
 		ruined.emit(instance, lost_population)
 
 func repair_cost(definition: BuildingDefinition) -> Dictionary:
@@ -59,8 +59,8 @@ func get_repair_error(instance: BuildingInstance) -> String:
 	# Full amount, not REPAIR_COST_FRACTION — repairing reconnects the same
 	# operational power draw a fresh construction would; the 50% discount
 	# only applies to physical rebuild material.
-	if _resource_manager and not _resource_manager.can_afford(_energy.cost(instance.definition)):
-		return "Not enough Energy capacity to repair %s." % instance.definition.display_name
+	if _resource_manager and not _resource_manager.can_afford(_capacity.cost(instance.definition)):
+		return "Not enough Energy/Population capacity to repair %s." % instance.definition.display_name
 	return ""
 
 func can_repair(instance: BuildingInstance) -> bool:
@@ -73,7 +73,7 @@ func repair(instance: BuildingInstance) -> bool:
 		return false
 	if _resource_manager:
 		_resource_manager.spend(repair_cost(instance.definition))
-		_energy.apply(instance.definition)
+		_capacity.apply(instance.definition)
 	var days: int = _construction_days.call(instance.definition)
 	_pending_repair.append({"instance": instance, "days_remaining": days})
 	repair_started.emit(instance, days)
@@ -91,9 +91,10 @@ func can_demolish(instance: BuildingInstance) -> bool:
 
 ## Refund: construction_cost * REPAIR_COST_FRACTION, or 100% if the instance
 ## is still under construction (nothing built yet to have used up material
-## on). Energy is a separate 100% top-up, only for a still-intact building —
-## a ruin already had its Energy refunded once by damage()'s ruin branch, so
-## a second refund here would create Energy from nothing.
+## on). Energy/Population capacity is a separate 100% top-up, only for a
+## still-intact building — a ruin already had its capacity refunded once by
+## damage()'s ruin branch, so a second refund here would create capacity from
+## nothing.
 func demolish(instance: BuildingInstance) -> bool:
 	if not get_demolish_error(instance).is_empty():
 		return false
@@ -103,9 +104,9 @@ func demolish(instance: BuildingInstance) -> bool:
 		for resource_type in instance.definition.construction_cost:
 			refund[resource_type] = float(instance.definition.construction_cost[resource_type]) * refund_fraction
 		if not instance.is_ruined:
-			var energy_refund := _energy.cost(instance.definition)
-			for resource_type in energy_refund:
-				refund[resource_type] = refund.get(resource_type, 0.0) + energy_refund[resource_type]
+			var capacity_refund := _capacity.cost(instance.definition)
+			for resource_type in capacity_refund:
+				refund[resource_type] = refund.get(resource_type, 0.0) + capacity_refund[resource_type]
 		for resource_type in refund:
 			_resource_manager.add(resource_type, refund[resource_type])
 	demolished.emit(instance)

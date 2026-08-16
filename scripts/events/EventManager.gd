@@ -134,7 +134,7 @@ func _on_food_satisfaction_changed(ratio: float) -> void:
 	if band > _food_band:
 		var percent := int(round(ratio * 100.0))
 		if band == 3:
-			raise_event(GameEnums.EventCategory.ECONOMY, GameEnums.EventSeverity.CRITICAL, Vector2i.ZERO, "Civilians are starving — food satisfaction has fallen to %d%%!" % percent)
+			raise_event(GameEnums.EventCategory.ECONOMY, GameEnums.EventSeverity.CRITICAL, Vector2i.ZERO, "Food satisfaction has collapsed to %d%% — production is badly hurt!" % percent)
 		else:
 			raise_event(GameEnums.EventCategory.ECONOMY, GameEnums.EventSeverity.WARNING, Vector2i.ZERO, "Food is running short — satisfaction has dropped to %d%%." % percent)
 	_food_band = band

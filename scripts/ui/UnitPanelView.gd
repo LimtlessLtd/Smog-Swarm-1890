@@ -64,14 +64,16 @@ func setup(unit_command_controller: UnitCommandController, unit_manager: UnitMan
 		_building_manager.building_repaired.connect(_on_building_stats_changed)
 		_building_manager.building_ruined.connect(_on_building_stats_changed)
 		# HP/Population/"if overrun"/Upkeep are computed at render time only —
-		# combat damage and starvation/regrowth both mutate the live
-		# BuildingInstance without firing repair_started/building_repaired/
-		# building_ruined, so a panel left open across either event would
-		# show stale numbers without these two connections too. Reuses the
-		# same handler — its body only checks "is the affected instance the
-		# one currently selected," not why it changed.
+		# combat damage mutates the live BuildingInstance without firing
+		# repair_started/building_repaired/building_ruined, so a panel left
+		# open across a hit would show stale numbers without this connection
+		# too. Reuses the same handler — its body only checks "is the
+		# affected instance the one currently selected," not why it changed.
+		# Population itself no longer needs its own connection here — it only
+		# changes on construction/repair completion or ruin, all three
+		# already covered above (or by _on_day_completed()'s daily refresh
+		# for the construction-completion case).
 		_building_manager.building_damaged.connect(_on_building_stats_changed)
-		_building_manager.building_population_changed.connect(_on_building_stats_changed)
 	if _wall_manager:
 		_wall_manager.repair_started.connect(_on_wall_repair_changed)
 		_wall_manager.wall_segment_repaired.connect(_on_wall_repair_changed)
@@ -255,9 +257,9 @@ func _add_training_queue(coord: Vector2i) -> void:
 ## horde if this building fell right now (building_ruined's own
 ## lost_population payload IS instance.current_population at the moment it
 ## ruins, so this reads straight off the same field rather than a separate
-## estimate), recurring daily upkeep, and Energy. Population/zombie lines
-## are skipped for a building with no housing capacity at all
-## (population_provided == 0).
+## estimate), recurring daily upkeep, and Energy/Population capacity.
+## Population/zombie lines are skipped for a building with no housing
+## capacity at all (population_provided == 0).
 func _add_building_economy_stats(instance: BuildingInstance) -> void:
 	var definition := instance.definition
 	_add_production_stat(instance)
@@ -279,7 +281,7 @@ func _add_building_economy_stats(instance: BuildingInstance) -> void:
 		HUDStyles.style_label(upkeep_stats, false, true)
 		_list.add_child(upkeep_stats)
 
-	_add_energy_stat(definition)
+	_add_capacity_stats(definition)
 
 ## The same effective-output preview BuildMenuView._describe_effect() shows
 ## before a building is placed, now shown for a real, already-placed
@@ -287,15 +289,15 @@ func _add_building_economy_stats(instance: BuildingInstance) -> void:
 ## scaled for farms, via BuildingManager.get_hex_cell()) rather than the
 ## flat definition.daily_output, so this can't disagree with what
 ## BuildingManager._compute_daily_totals() is actually crediting the colony
-## today. ENERGY is a one-time grid draw/contribution, not a daily flow —
-## handled separately by _add_energy_stat(), same split
+## today. ENERGY/POPULATION are one-time capacity grants, not a daily flow —
+## handled separately by _add_capacity_stats(), same split
 ## _recurring_upkeep_display() keeps.
 func _add_production_stat(instance: BuildingInstance) -> void:
 	var cell: HexCell = _building_manager.get_hex_cell(instance.hex_coord) if _building_manager else null
 	var output := instance.get_effective_output(cell)
 	var parts: Array[String] = []
 	for resource_type in output:
-		if resource_type == GameEnums.ResourceType.ENERGY:
+		if BuildingCapacityAllocator.CAPACITY_RESOURCE_TYPES.has(resource_type):
 			continue
 		var amount := float(output[resource_type])
 		if amount > 0.0:
@@ -316,12 +318,13 @@ func _add_production_stat(instance: BuildingInstance) -> void:
 ## per-instance daily_upkeep loop. Folding that same formula in here — using
 ## current_population (what's actually being paid for today), not
 ## population_provided's baseline capacity — is what makes "how much upkeep
-## it costs" true for a housing building. Excludes ResourceType.ENERGY from
-## daily_upkeep itself — see _add_energy_stat() for why that's a separate line.
+## it costs" true for a housing building. Excludes
+## BuildingCapacityAllocator.CAPACITY_RESOURCE_TYPES from daily_upkeep itself
+## — see _add_capacity_stats() for why those are a separate line.
 func _recurring_upkeep_display(instance: BuildingInstance) -> String:
 	var upkeep: Dictionary = {}
 	for resource_type in instance.definition.daily_upkeep:
-		if resource_type == GameEnums.ResourceType.ENERGY:
+		if BuildingCapacityAllocator.CAPACITY_RESOURCE_TYPES.has(resource_type):
 			continue
 		upkeep[resource_type] = upkeep.get(resource_type, 0.0) + float(instance.definition.daily_upkeep[resource_type])
 	if instance.current_population > 0:
@@ -329,27 +332,29 @@ func _recurring_upkeep_display(instance: BuildingInstance) -> String:
 		upkeep[food] = upkeep.get(food, 0.0) + instance.current_population * BuildingManager.FOOD_PER_POPULATION
 	return _format_upkeep(upkeep)
 
-## A deliberately separate line from "Upkeep: ... / day", not folded into
-## it: an ENERGY entry in daily_upkeep/daily_output is a one-time grid draw/
-## contribution settled once at construction/repair
-## (BuildingEnergyAllocator.apply()), never a recurring daily flow — labeling
-## it "/ day" alongside genuine recurring costs would misstate it, the exact
-## mistake _recurring_upkeep_display() avoids. Shows whichever side applies
-## (a consumer's draw or a producer's contribution — no building both draws
-## and contributes today, but nothing here assumes that stays true).
-func _add_energy_stat(definition: BuildingDefinition) -> void:
-	var energy := GameEnums.ResourceType.ENERGY
-	var draw := float(definition.daily_upkeep.get(energy, 0.0))
-	var output := float(definition.daily_output.get(energy, 0.0))
-	if draw <= 0.0 and output <= 0.0:
-		return
-	var energy_stats := Label.new()
-	if output > 0.0:
-		energy_stats.text = "Energy: +%s (one-time grid contribution)" % String.num(output, 1)
-	else:
-		energy_stats.text = "Energy: -%s (one-time grid draw)" % String.num(draw, 1)
-	HUDStyles.style_label(energy_stats, false, true)
-	_list.add_child(energy_stats)
+## A deliberately separate line per type from "Upkeep: ... / day", not
+## folded into it: an ENERGY/POPULATION entry in daily_upkeep/daily_output is
+## a one-time capacity draw/contribution settled once at construction/repair
+## (BuildingCapacityAllocator.apply()), never a recurring daily flow —
+## labeling it "/ day" alongside genuine recurring costs would misstate it,
+## the exact mistake _recurring_upkeep_display() avoids. Shows whichever
+## side applies per type (a consumer's draw or a producer's contribution —
+## no building both draws and contributes the same type today, but nothing
+## here assumes that stays true).
+func _add_capacity_stats(definition: BuildingDefinition) -> void:
+	for resource_type in BuildingCapacityAllocator.CAPACITY_RESOURCE_TYPES:
+		var draw := float(definition.daily_upkeep.get(resource_type, 0.0))
+		var output := float(definition.daily_output.get(resource_type, 0.0))
+		if draw <= 0.0 and output <= 0.0:
+			continue
+		var capacity_stats := Label.new()
+		var label := ResourceVisuals.display_name(resource_type)
+		if output > 0.0:
+			capacity_stats.text = "%s: +%s (one-time)" % [label, String.num(output, 1)]
+		else:
+			capacity_stats.text = "%s: -%s (one-time)" % [label, String.num(draw, 1)]
+		HUDStyles.style_label(capacity_stats, false, true)
+		_list.add_child(capacity_stats)
 
 ## Dedicated formatter for the Upkeep line — HUDStyles.format_resource_dict()
 ## (used for training/retrain cost display, where every value is a whole

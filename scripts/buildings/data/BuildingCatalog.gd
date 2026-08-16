@@ -67,6 +67,10 @@ static func _terraced_tenement() -> BuildingDefinition:
 	d.category = GameEnums.BuildingCategory.HOUSING_CIVIL
 	d.construction_cost = {GameEnums.ResourceType.WOOD: 40, GameEnums.ResourceType.BRICKS: 60}
 	d.population_provided = 12
+	# Mirrors population_provided into the BuildingCapacityAllocator capacity
+	# grant (design_doc.md §2) — see BuildingDefinition.population_provided's
+	# own doc comment for why both are set from the same number.
+	d.daily_output = {GameEnums.ResourceType.POPULATION: 12.0}
 	d.allowed_biomes = [GameEnums.BiomeType.URBAN]
 	d.requires_settlement = true
 	return d
@@ -76,6 +80,7 @@ static func _workhouse() -> BuildingDefinition:
 	d.category = GameEnums.BuildingCategory.HOUSING_CIVIL
 	d.construction_cost = {GameEnums.ResourceType.WOOD: 30, GameEnums.ResourceType.BRICKS: 80}
 	d.population_provided = 20
+	d.daily_output = {GameEnums.ResourceType.POPULATION: 20.0}  ## See _terraced_tenement()'s own comment.
 	d.allowed_biomes = [GameEnums.BiomeType.URBAN]
 	d.requires_settlement = true
 	return d
@@ -85,7 +90,7 @@ static func _workhouse() -> BuildingDefinition:
 static func _church_steeple_watchtower() -> BuildingDefinition:
 	var d := BuildingDefinition.new(GameEnums.BuildingType.CHURCH_STEEPLE_WATCHTOWER, "Watchtower")
 	d.category = GameEnums.BuildingCategory.HOUSING_CIVIL
-	d.construction_cost = {GameEnums.ResourceType.BRICKS: 100, GameEnums.ResourceType.CAST_IRON: 10}
+	d.construction_cost = {GameEnums.ResourceType.BRICKS: 100, GameEnums.ResourceType.IRON: 10}
 	d.allowed_biomes = [GameEnums.BiomeType.URBAN]
 	d.requires_settlement = true
 	# Doubles as a lookout post (Military) and a parish church (Civilian) — see class doc.
@@ -98,7 +103,7 @@ static func _church_steeple_watchtower() -> BuildingDefinition:
 static func _gas_streetlamp() -> BuildingDefinition:
 	var d := BuildingDefinition.new(GameEnums.BuildingType.GAS_STREETLAMP, "Streetlamp")
 	d.category = GameEnums.BuildingCategory.HOUSING_CIVIL
-	d.construction_cost = {GameEnums.ResourceType.CAST_IRON: 15}
+	d.construction_cost = {GameEnums.ResourceType.IRON: 15}
 	d.daily_upkeep = {GameEnums.ResourceType.ENERGY: 1.0}
 	d.allowed_biomes = [GameEnums.BiomeType.URBAN]
 	d.requires_settlement = true
@@ -110,7 +115,7 @@ static func _gas_streetlamp() -> BuildingDefinition:
 static func _telegraph_relay_office() -> BuildingDefinition:
 	var d := BuildingDefinition.new(GameEnums.BuildingType.TELEGRAPH_RELAY_OFFICE, "Telegraph Relay")
 	d.category = GameEnums.BuildingCategory.HOUSING_CIVIL
-	d.construction_cost = {GameEnums.ResourceType.WOOD: 20, GameEnums.ResourceType.CAST_IRON: 20}
+	d.construction_cost = {GameEnums.ResourceType.WOOD: 20, GameEnums.ResourceType.IRON: 20}
 	# Knowledge/civic source for the Tech Tree — telegraph traffic
 	# between settlements is the natural in-fiction source of Research Points.
 	d.daily_output = {GameEnums.ResourceType.RESEARCH_POINTS: 3.0}
@@ -123,7 +128,7 @@ static func _telegraph_relay_office() -> BuildingDefinition:
 static func _steam_printing_press() -> BuildingDefinition:
 	var d := BuildingDefinition.new(GameEnums.BuildingType.STEAM_PRINTING_PRESS, "Printing Press")
 	d.category = GameEnums.BuildingCategory.HOUSING_CIVIL
-	d.construction_cost = {GameEnums.ResourceType.WOOD: 25, GameEnums.ResourceType.CAST_IRON: 30}
+	d.construction_cost = {GameEnums.ResourceType.WOOD: 25, GameEnums.ResourceType.IRON: 30}
 	d.daily_upkeep = {GameEnums.ResourceType.ENERGY: 2.0}
 	# Knowledge/civic source for the Tech Tree — a press turning
 	# out journals/pamphlets/technical bulletins is the other natural source.
@@ -135,7 +140,7 @@ static func _steam_printing_press() -> BuildingDefinition:
 static func _town_hall() -> BuildingDefinition:
 	var d := BuildingDefinition.new(GameEnums.BuildingType.TOWN_HALL, "Town Hall")
 	d.category = GameEnums.BuildingCategory.HOUSING_CIVIL
-	d.construction_cost = {GameEnums.ResourceType.BRICKS: 150, GameEnums.ResourceType.CAST_IRON: 40}
+	d.construction_cost = {GameEnums.ResourceType.BRICKS: 150, GameEnums.ResourceType.IRON: 40}
 	d.allowed_biomes = [GameEnums.BiomeType.URBAN]
 	d.requires_settlement = true
 	d.zoc_roles = [GameEnums.ZoneOfControlType.CIVILIAN]
@@ -149,7 +154,7 @@ static func _town_hall() -> BuildingDefinition:
 static func _garrison() -> BuildingDefinition:
 	var d := BuildingDefinition.new(GameEnums.BuildingType.GARRISON, "Garrison")
 	d.category = GameEnums.BuildingCategory.HOUSING_CIVIL
-	d.construction_cost = {GameEnums.ResourceType.BRICKS: 90, GameEnums.ResourceType.CAST_IRON: 25}
+	d.construction_cost = {GameEnums.ResourceType.BRICKS: 90, GameEnums.ResourceType.IRON: 25}
 	d.daily_upkeep = {GameEnums.ResourceType.GUNPOWDER: 3.0}
 	d.allowed_biomes = [GameEnums.BiomeType.URBAN]
 	d.requires_settlement = true
@@ -206,7 +211,7 @@ static func _charcoal_kiln() -> BuildingDefinition:
 static func _coal_pithead() -> BuildingDefinition:
 	var d := BuildingDefinition.new(GameEnums.BuildingType.COAL_PITHEAD, "Coal Pit")
 	d.category = GameEnums.BuildingCategory.INDUSTRY_EXTRACTION
-	d.construction_cost = {GameEnums.ResourceType.WOOD: 60, GameEnums.ResourceType.CAST_IRON: 20}
+	d.construction_cost = {GameEnums.ResourceType.WOOD: 60, GameEnums.ResourceType.IRON: 20}
 	d.daily_output = {GameEnums.ResourceType.ENERGY: 10.0}
 	d.allowed_biomes = [GameEnums.BiomeType.INDUSTRIAL, GameEnums.BiomeType.MOORLAND, GameEnums.BiomeType.HIGHLAND]
 	d.noise_output = 5  # Winding gear/heavy machinery — louder than a surface kiln.
@@ -216,9 +221,9 @@ static func _coal_pithead() -> BuildingDefinition:
 static func _cast_iron_foundry() -> BuildingDefinition:
 	var d := BuildingDefinition.new(GameEnums.BuildingType.CAST_IRON_FOUNDRY, "Iron Foundry")
 	d.category = GameEnums.BuildingCategory.INDUSTRY_EXTRACTION
-	d.construction_cost = {GameEnums.ResourceType.BRICKS: 70, GameEnums.ResourceType.CAST_IRON: 30}
+	d.construction_cost = {GameEnums.ResourceType.BRICKS: 70, GameEnums.ResourceType.IRON: 30}
 	d.daily_upkeep = {GameEnums.ResourceType.ENERGY: 8.0}
-	d.daily_output = {GameEnums.ResourceType.CAST_IRON: 5.0}
+	d.daily_output = {GameEnums.ResourceType.IRON: 5.0}
 	d.allowed_biomes = [GameEnums.BiomeType.INDUSTRIAL, GameEnums.BiomeType.URBAN]
 	d.noise_output = 6  # Hammering/casting — the loudest single source in the tree today.
 	return d
@@ -237,7 +242,7 @@ static func _saltpetre_powder_mill() -> BuildingDefinition:
 static func _forward_ammo_dump() -> BuildingDefinition:
 	var d := BuildingDefinition.new(GameEnums.BuildingType.FORWARD_AMMO_DUMP, "Forward Ammo Dump")
 	d.category = GameEnums.BuildingCategory.INDUSTRY_EXTRACTION
-	d.construction_cost = {GameEnums.ResourceType.WOOD: 25, GameEnums.ResourceType.CAST_IRON: 10}
+	d.construction_cost = {GameEnums.ResourceType.WOOD: 25, GameEnums.ResourceType.IRON: 10}
 	d.daily_upkeep = {GameEnums.ResourceType.GUNPOWDER: 2.0}
 	# No biome/settlement restriction on purpose — its whole role (2.3) is projecting
 	# Military ZoC out into not-yet-secured frontier hexes.
@@ -280,7 +285,7 @@ static func _cattle_yard() -> BuildingDefinition:
 static func _searchlight_tower() -> BuildingDefinition:
 	var d := BuildingDefinition.new(GameEnums.BuildingType.SEARCHLIGHT_TOWER, "Searchlight Tower")
 	d.category = GameEnums.BuildingCategory.DEFENSE_WORKS
-	d.construction_cost = {GameEnums.ResourceType.CAST_IRON: 35, GameEnums.ResourceType.BRICKS: 20}
+	d.construction_cost = {GameEnums.ResourceType.IRON: 35, GameEnums.ResourceType.BRICKS: 20}
 	d.daily_upkeep = {GameEnums.ResourceType.ENERGY: 3.0}
 	d.zoc_roles = [GameEnums.ZoneOfControlType.MILITARY]
 	d.vision_radius = 2  # Illuminates the perimeter beyond its own hex, same role as the Watchtower.

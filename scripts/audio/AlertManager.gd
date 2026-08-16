@@ -10,13 +10,14 @@ extends Node
 ## away. MainHUD's own toast plumbing is an independent second listener on
 ## the same EventManager.event_raised signal — this class doesn't reach
 ## into the HUD, same "multiple independent listeners off one signal"
-## precedent BuildingManager.civilians_starved has (DiscontentManager +
-## HordeManager, neither aware of the other).
+## precedent BuildingManager.building_ruined has (EventManager + HordeManager,
+## neither aware of the other).
 ##
 ## Every event severity above INFO auto-pauses — GameEnums.EventSeverity.WARNING
 ## (a unit takes a hit and survives, food dips under 100%, a resource
 ## stockpile hits zero) equally with CRITICAL (a unit/building destroyed, a
-## wall breached, territory lost, a large horde spotted, starvation). INFO
+## wall breached, territory lost, a large horde spotted, food satisfaction
+## collapsing). INFO
 ## (territory recaptured, today's only INFO source) is exempt — good news
 ## doesn't need to interrupt play. Not spammy in practice: EventManager
 ## itself already collapses each of these to "fires once per meaningful

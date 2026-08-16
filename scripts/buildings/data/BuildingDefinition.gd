@@ -14,23 +14,31 @@ extends Resource
 
 @export var construction_cost: Dictionary = {}  ## GameEnums.ResourceType -> int, paid once on placement.
 ## GameEnums.ResourceType -> float, drained every day_completed — EXCEPT
-## ResourceType.ENERGY: Energy isn't a recurring drain at all, it's a
-## one-time grid allocation taken once at construction/repair and
-## refunded the instant the building ruins. Reuses this same field
-## (rather than a dedicated one) since it's still "what this building
-## needs to operate," just settled once instead of every day — see
-## BuildingEnergyAllocator.apply()'s own doc comment for the full
+## ResourceType.ENERGY/POPULATION: both are design_doc.md §2 capacity pools,
+## not a recurring drain — a one-time grid/labor allocation taken once at
+## construction/repair and refunded the instant the building ruins. Reuses
+## this same field (rather than a dedicated one) since it's still "what this
+## building needs to operate," just settled once instead of every day — see
+## BuildingCapacityAllocator.apply()'s own doc comment for the full
 ## mechanism. Every OTHER resource type here still means exactly what the
 ## field name says.
 @export var daily_upkeep: Dictionary = {}
 ## GameEnums.ResourceType -> float, produced every day_completed — same
-## ENERGY exception as daily_upkeep above, mirrored: an ENERGY entry here
-## is a one-time grid contribution granted at construction/repair and
+## ENERGY/POPULATION exception as daily_upkeep above, mirrored: an entry
+## here for either type is a one-time grant made at construction/repair and
 ## withdrawn on ruin, not a daily income.
 @export var daily_output: Dictionary = {}
 @export var storage_bonus: Dictionary = {}      ## GameEnums.ResourceType -> float, added to ResourceManager's cap once on placement.
 
-@export var population_provided: int = 0  ## Housing only; drives colony-wide Food upkeep (see BuildingSustenanceController.FOOD_PER_POPULATION).
+## Housing only. Drives two separate things that both read this one field:
+## BuildingInstance.current_population (occupancy — fixed at this value once
+## built, feeds colony-wide Food upkeep via BuildingSustenanceController.
+## FOOD_PER_POPULATION, and HordeManager's ruin-to-casualties conversion) and
+## a mirrored daily_output[ResourceType.POPULATION] entry (the
+## BuildingCapacityAllocator capacity grant, design_doc.md §2) that
+## BuildingCatalog's housing builders set explicitly alongside this field —
+## see e.g. _terraced_tenement().
+@export var population_provided: int = 0
 
 ## Placement restrictions — an empty array means "no restriction of this kind".
 @export var allowed_biomes: Array[GameEnums.BiomeType] = []
