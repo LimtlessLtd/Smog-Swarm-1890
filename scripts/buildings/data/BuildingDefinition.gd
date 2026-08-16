@@ -8,9 +8,10 @@ extends Resource
 ## aggregation. Holds no logic beyond simple derived queries over its own
 ## fields, matching HexCell/District's role in the world system.
 
-@export var building_type: GameEnums.BuildingType = GameEnums.BuildingType.TERRACED_TENEMENT
+@export var building_type: GameEnums.BuildingType = GameEnums.BuildingType.TOWN_HALL
 @export var display_name: String = ""
 @export var category: GameEnums.BuildingCategory = GameEnums.BuildingCategory.HOUSING_CIVIL
+@export var tier: int = 0  ## 0-5, matches TechManager.is_building_tier_unlocked()'s tier numbering exactly. Town Hall is the one exception: tier 3 here gates player-driven construction (design_doc.md §3's "locked until Tier 3"), but the free starting instance is placed via BuildingManager.seed_starting_buildings()'s direct-registration path, which never calls get_placement_error() and so never consults this field.
 
 @export var construction_cost: Dictionary = {}  ## GameEnums.ResourceType -> int, paid once on placement.
 ## GameEnums.ResourceType -> float, drained every day_completed — EXCEPT
@@ -86,7 +87,7 @@ extends Resource
 ## kiln) — placeholder balancing numbers, not an architecture decision.
 @export var noise_output: int = 0
 
-func _init(p_type: GameEnums.BuildingType = GameEnums.BuildingType.TERRACED_TENEMENT, p_display_name: String = "") -> void:
+func _init(p_type: GameEnums.BuildingType = GameEnums.BuildingType.TOWN_HALL, p_display_name: String = "") -> void:
 	building_type = p_type
 	display_name = p_display_name
 

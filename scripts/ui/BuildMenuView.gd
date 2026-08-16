@@ -43,16 +43,6 @@ const CATEGORY_ORDER: Array[GameEnums.BuildingCategory] = [
 	GameEnums.BuildingCategory.AGRICULTURE,
 ]
 
-## Ditch/Oil Pit are DEFENSE_WORKS BuildingCatalog entries but are placed
-## via WallManager.add_defense_work() on an existing wall segment, not
-## BuildingManager.place_building_at_world() like everything else this menu
-## arms. Excluded here so clicking one can't arm a placement flow that was
-## never built to handle it.
-const _EXCLUDED_FROM_MENU: Array[GameEnums.BuildingType] = [
-	GameEnums.BuildingType.DITCH,
-	GameEnums.BuildingType.OIL_PIT,
-]
-
 ## Card size settled after two rounds of user feedback: an early pass
 ## shrunk cards down to 92/28/11/9 ("reduce the size of the building
 ## cards... its currently very large"), which then clipped multi-clause
@@ -92,7 +82,7 @@ func _ready() -> void:
 	scroll.add_child(columns)
 
 	for category in CATEGORY_ORDER:
-		var definitions := _visible_definitions(category)
+		var definitions := BuildingCatalog.get_definitions_in_category(category)
 		if definitions.is_empty():
 			continue  # An empty column would just be dead space.
 		columns.add_child(_build_category_column(category, definitions))
@@ -117,8 +107,8 @@ func _build_category_column(category: GameEnums.BuildingCategory, definitions: A
 
 	return column
 
-## Defense Works (BuildingCatalog's DEFENSE_WORKS category — Searchlight
-## Tower today) and Walls (a wholly separate placement flow, WallManager,
+## Defense Works (BuildingCatalog's DEFENSE_WORKS category — Search Light,
+## the only entry left in it) and Walls (a wholly separate placement flow, WallManager,
 ## never a BuildingCatalog category at all) merged into ONE column, per
 ## user feedback ("Defense Works & Walls should be combined into one
 ## category... red and white") — same shared red/white
@@ -142,7 +132,7 @@ func _build_defense_and_walls_column() -> Control:
 	var colors := HUDStyles.category_card_colors("defense_walls")
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 8)
-	for definition in _visible_definitions(GameEnums.BuildingCategory.DEFENSE_WORKS):
+	for definition in BuildingCatalog.get_definitions_in_category(GameEnums.BuildingCategory.DEFENSE_WORKS):
 		row.add_child(_build_building_card(definition, colors))
 	row.add_child(HUDStyles.build_card(
 		"Wooden Wall",
@@ -255,13 +245,6 @@ func _role_display_name(role: GameEnums.UnitRole) -> String:
 			return "Special"
 		_:
 			return "?"
-
-func _visible_definitions(category: GameEnums.BuildingCategory) -> Array[BuildingDefinition]:
-	var result: Array[BuildingDefinition] = []
-	for definition in BuildingCatalog.get_definitions_in_category(category):
-		if not _EXCLUDED_FROM_MENU.has(definition.building_type):
-			result.append(definition)
-	return result
 
 func _on_building_button_pressed(building_type: GameEnums.BuildingType) -> void:
 	building_selected.emit(building_type)

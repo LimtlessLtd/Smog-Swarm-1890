@@ -47,11 +47,13 @@ const FOOD_STARVATION_RATIO := BuildingSustenanceController.FOOD_STARVATION_RATI
 @export var resource_manager_path: NodePath
 @export var discontent_manager_path: NodePath  ## Optional — unset skips DiscontentManager.get_production_multiplier() entirely.
 @export var territory_controller_path: NodePath  ## Optional — unset means repair_building()/demolish_building() never check territory state.
+@export var tech_manager_path: NodePath  ## Optional — unset means get_placement_error() never checks BuildingDefinition.tier, so every building tier is placeable regardless of research.
 
 var _hex_grid_map: HexGridMap
 var _resource_manager: ResourceManager
 var _discontent_manager: DiscontentManager
 var _territory_controller: TerritoryController
+var _tech_manager: TechManager
 
 var _construction: BuildingConstructionController
 var _health: BuildingHealthController
@@ -74,6 +76,8 @@ func _ready() -> void:
 		_discontent_manager = get_node(discontent_manager_path)
 	if territory_controller_path != NodePath():
 		_territory_controller = get_node(territory_controller_path)
+	if tech_manager_path != NodePath():
+		_tech_manager = get_node(tech_manager_path)
 
 	_capacity = BuildingCapacityAllocator.new(_resource_manager)
 
@@ -101,20 +105,20 @@ func _ready() -> void:
 ## hex layout. Falls back to any qualifying settlement hex otherwise.
 const _STARTING_REGION_NAME := "Manchester"
 
-## Offsets the free starting Foundry so it doesn't render on top of the Town
-## Hall at Tactical zoom — same hex, nudged off-center.
-const _STARTING_FOUNDRY_OFFSET := Vector2(150.0, -100.0)
+## Offsets the free starting Lumber Yard so it doesn't render on top of the
+## Town Hall at Tactical zoom — same hex, nudged off-center.
+const _STARTING_LUMBER_YARD_OFFSET := Vector2(150.0, -100.0)
 
 const _STARTING_FARM_SEARCH_RADIUS: int = 6
 const _NO_FARM_HEX := Vector2i(-1, -1)
 
 ## Searches outward ring-by-ring (HexCoord.hex_disk() is cumulative) up to
-## _STARTING_FARM_SEARCH_RADIUS for the nearest hex TENANT_FARM can legally
-## occupy (Town Hall's own hex is always URBAN, which Tenant Farm can't be
+## _STARTING_FARM_SEARCH_RADIUS for the nearest hex SMALLHOLDING_FARM can
+## legally occupy (Town Hall's own hex is always URBAN, which a farm can't be
 ## placed on). Among a ring's candidates, prefers higher soil_fertility, then
 ## distance as a tiebreak. Returns _NO_FARM_HEX if nothing qualifies in range.
 func _find_starting_farm_hex(from: Vector2i) -> Vector2i:
-	var farm_definition := BuildingCatalog.get_definition(GameEnums.BuildingType.TENANT_FARM)
+	var farm_definition := BuildingCatalog.get_definition(GameEnums.BuildingType.SMALLHOLDING_FARM)
 	if not farm_definition:
 		return _NO_FARM_HEX
 	var seen: Dictionary = {}  # Vector2i -> true
@@ -168,8 +172,15 @@ func seed_starting_buildings() -> void:
 
 	var town_hall := BuildingCatalog.get_definition(GameEnums.BuildingType.TOWN_HALL)
 	_register_instance(town_hall, target.coord, _next_id, Vector2.ZERO, true)
-	var foundry := BuildingCatalog.get_definition(GameEnums.BuildingType.CAST_IRON_FOUNDRY)
-	_register_instance(foundry, target.coord, _next_id, _STARTING_FOUNDRY_OFFSET, true)
+	# Lumber Yard, not a Foundry — the pre-rework free starting building was
+	# CAST_IRON_FOUNDRY, whose new Tier 2 equivalent (Iron Foundry) draws 100
+	# Iron Ore/day, 25 Coal/day upkeep design_doc.md §3 gives it. Handing that
+	# out for free at Tier 0, with no Iron Ore Mine/Coal Mine built yet to
+	# feed it, would run both stockpiles negative from day one. Lumber Yard
+	# has no upstream input (design_doc.md §3 Tier 0) — same "free, no
+	# prerequisite" role TIMBER_CAMP played pre-rework.
+	var lumber_yard := BuildingCatalog.get_definition(GameEnums.BuildingType.LUMBER_YARD)
+	_register_instance(lumber_yard, target.coord, _next_id, _STARTING_LUMBER_YARD_OFFSET, true)
 
 	# Deliberately just the one core hex, not a corridor out to the starting
 	# Farm — WallManager.seed_starting_defenses() fences this hex only, so the
@@ -177,7 +188,7 @@ func seed_starting_buildings() -> void:
 	_starting_settlement_hexes = [target.coord]
 	var farm_hex := _find_starting_farm_hex(target.coord)
 	if farm_hex != _NO_FARM_HEX:
-		var farm := BuildingCatalog.get_definition(GameEnums.BuildingType.TENANT_FARM)
+		var farm := BuildingCatalog.get_definition(GameEnums.BuildingType.SMALLHOLDING_FARM)
 		_register_instance(farm, farm_hex, _next_id, Vector2.ZERO, true)
 
 func get_starting_settlement_hexes() -> Array[Vector2i]:
@@ -238,6 +249,8 @@ func get_placement_error(building_type: GameEnums.BuildingType, coord: Vector2i)
 		return "Unknown building type."
 	if not _hex_grid_map:
 		return "No hex grid map wired to BuildingManager."
+	if _tech_manager and not _tech_manager.is_building_tier_unlocked(definition.tier):
+		return "%s requires Tier %d research first." % [definition.display_name, definition.tier]
 	var cell := _hex_grid_map.get_cell(coord)
 	if not cell:
 		return "%s is outside the map." % coord

@@ -9,7 +9,7 @@ extends RefCounted
 
 var _layer: Node2D
 var _wall_manager: WallManager
-var _markers: Dictionary = {}  # int (WallSegment.id) -> Node2D (container: "Body" Line2D + "DefenseWork" Polygon2D)
+var _markers: Dictionary = {}  # int (WallSegment.id) -> Node2D (container: "Body" Line2D)
 
 func _init(layer: Node2D, wall_manager: WallManager) -> void:
 	_layer = layer
@@ -37,11 +37,6 @@ func on_removed(segment: WallSegment) -> void:
 		marker.queue_free()
 	_markers.erase(segment.id)
 
-func on_defense_work_added(segment: WallSegment, _work_type: GameEnums.BuildingType) -> void:
-	var marker: Node2D = _markers.get(segment.id)
-	if marker:
-		_update_defense_work(marker, segment)
-
 ## Territory shifting (a hex gaining/losing ZoC coverage) can flip a
 ## segment's outer/legacy classification without the segment itself changing
 ## (no placed/upgraded/breached/repaired signal fires) — call on
@@ -59,12 +54,6 @@ func _build_marker(segment: WallSegment) -> Node2D:
 	body.name = "Body"
 	container.add_child(body)
 	_apply_look(container, segment)
-
-	var defense_work := Polygon2D.new()
-	defense_work.name = "DefenseWork"
-	defense_work.visible = false
-	container.add_child(defense_work)
-	_update_defense_work(container, segment)
 
 	return container
 
@@ -87,21 +76,3 @@ func _apply_look(marker: Node2D, segment: WallSegment) -> void:
 	var is_legacy := _wall_manager != null and _wall_manager.is_legacy_segment(segment)
 	marker.modulate = WallVisuals.legacy_modulate() if is_legacy else WallVisuals.outer_modulate()
 
-## Ditch/Oil Pit stack alongside a segment rather than replacing it — a small
-## square at the segment's own midpoint, on top of the line.
-func _update_defense_work(marker: Node2D, segment: WallSegment) -> void:
-	var work := marker.get_node("DefenseWork") as Polygon2D
-	if not segment.has_ditch and not segment.has_oil_pit:
-		work.visible = false
-		return
-	work.visible = true
-	var midpoint := (segment.point_a + segment.point_b) / 2.0
-	var half := 5.0
-	work.polygon = PackedVector2Array([
-		midpoint + Vector2(-half, -half), midpoint + Vector2(half, -half),
-		midpoint + Vector2(half, half), midpoint + Vector2(-half, half),
-	])
-	var texture := WallVisuals.defense_work_texture(segment.has_ditch, segment.has_oil_pit)
-	work.texture = texture
-	work.uv = TacticalHexView.quad_uv(texture)  ## Polygon2D.uv is texture-PIXEL-space, not normalized 0..1.
-	work.color = Color.WHITE if texture else WallVisuals.defense_work_color(segment.has_ditch, segment.has_oil_pit)

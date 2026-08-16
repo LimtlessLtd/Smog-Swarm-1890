@@ -54,6 +54,7 @@ hex_grid_map_path = NodePath("../WorldRoot/HexGridMap")
 resource_manager_path = NodePath("../ResourceManager")
 discontent_manager_path = NodePath("../DiscontentManager")
 territory_controller_path = NodePath("../TerritoryController")
+tech_manager_path = NodePath("../TechManager")
 
 [node name="LogisticsNetwork" parent="." instance=ExtResource("5")]
 hex_grid_map_path = NodePath("../WorldRoot/HexGridMap")

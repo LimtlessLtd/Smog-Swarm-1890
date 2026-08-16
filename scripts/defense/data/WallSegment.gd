@@ -31,8 +31,6 @@ extends Resource
 @export var point_b: Vector2 = Vector2.ZERO  ## World-space end of this piece's line.
 @export var tier: int = WallCatalog.WOODEN
 @export var current_hp: float = 0.0
-@export var has_ditch: bool = false    ## A Ditch stacks with the segment rather than replacing it.
-@export var has_oil_pit: bool = false  ## Same for an Oil Pit.
 ## A Gate is the same segment at the same tier, blocks/sieges a horde
 ## exactly like a solid wall (WallManager.damage_segment() doesn't
 ## distinguish it) — the only difference is get_max_hp() below applying

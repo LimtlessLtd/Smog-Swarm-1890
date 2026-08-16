@@ -153,7 +153,6 @@ func _ready() -> void:
 		_wall_manager.wall_segment_breached.connect(_wall_renderer.on_state_changed)
 		_wall_manager.wall_segment_repaired.connect(_wall_renderer.on_state_changed)
 		_wall_manager.wall_segment_removed.connect(_wall_renderer.on_removed)
-		_wall_manager.defense_work_added.connect(_wall_renderer.on_defense_work_added)
 		_wall_renderer.seed(_wall_manager.get_segments())
 
 	if logistics_network_path != NodePath():

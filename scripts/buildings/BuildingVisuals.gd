@@ -62,52 +62,49 @@ static func building_texture(building_type: GameEnums.BuildingType) -> Texture2D
 		_texture_cache[building_type] = _load_texture(building_type)
 	return _texture_cache[building_type]
 
-## Matches assets/buildings/<key>.svg exactly — see that folder's own file list.
+## Matches assets/buildings/<key>.svg/.png exactly — see that folder's own
+## file list. Building tree rework (design_doc.md §3): most keys below reuse
+## pre-rework art under a new BuildingType identifier where the old and new
+## building are close enough in kind (e.g. IRON_FOUNDRY -> the old
+## CAST_IRON_FOUNDRY art) — same "enum identifier and asset filename can
+## diverge" convention ResourceVisuals._icon_key() documents for IRON/CONCRETE.
+## Every Tier 2+ building with no real-world predecessor returns "" (no art
+## authored yet, falls back to category_color()) until art lands.
 static func _texture_key(building_type: GameEnums.BuildingType) -> String:
 	match building_type:
-		GameEnums.BuildingType.TERRACED_TENEMENT:
-			return "terraced_tenement"
-		GameEnums.BuildingType.WORKHOUSE:
-			return "workhouse"
-		# Uses the real "watchtower.png" AI-art asset (a separate, newer
-		# file, not a same-named .png next to the original hand-authored
-		# church_steeple_watchtower.svg) — _load_texture()'s own
-		# .png-then-.svg fallback means this key alone is enough.
-		GameEnums.BuildingType.CHURCH_STEEPLE_WATCHTOWER:
-			return "watchtower"
-		GameEnums.BuildingType.GAS_STREETLAMP:
-			return "gas_streetlamp"
-		GameEnums.BuildingType.TELEGRAPH_RELAY_OFFICE:
-			return "telegraph_relay_office"
-		GameEnums.BuildingType.STEAM_PRINTING_PRESS:
-			return "steam_printing_press"
 		GameEnums.BuildingType.TOWN_HALL:
 			return "town_hall"
+		GameEnums.BuildingType.LUMBER_YARD:
+			return "timber_camp"
+		GameEnums.BuildingType.SMALLHOLDING_FARM:
+			return "tenant_farm"
+		GameEnums.BuildingType.WOODEN_HOUSES:
+			return "terraced_tenement"
+		# Uses the real "watchtower.png" AI-art asset (a separate, newer file,
+		# not a same-named .png next to the original hand-authored
+		# church_steeple_watchtower.svg) — _load_texture()'s own
+		# .png-then-.svg fallback means this key alone is enough.
+		GameEnums.BuildingType.WATCHTOWER:
+			return "watchtower"
+		GameEnums.BuildingType.COAL_MINE:
+			return "coal_pithead"
+		GameEnums.BuildingType.BRICKWORKS:
+			return "clay_brickworks"
+		GameEnums.BuildingType.RESEARCH_INSTITUTE:
+			return "steam_printing_press"
+		GameEnums.BuildingType.BRICK_HOUSES:
+			return "workhouse"
 		GameEnums.BuildingType.GARRISON:
 			return "garrison"
-		GameEnums.BuildingType.TIMBER_CAMP:
-			return "timber_camp"
-		GameEnums.BuildingType.CLAY_BRICKWORKS:
-			return "clay_brickworks"
-		GameEnums.BuildingType.CHARCOAL_KILN:
-			return "charcoal_kiln"
-		GameEnums.BuildingType.COAL_PITHEAD:
-			return "coal_pithead"
-		GameEnums.BuildingType.CAST_IRON_FOUNDRY:
-			return "cast_iron_foundry"
-		GameEnums.BuildingType.SALTPETRE_POWDER_MILL:
-			return "saltpetre_powder_mill"
-		GameEnums.BuildingType.FORWARD_AMMO_DUMP:
+		GameEnums.BuildingType.SUPPLY_DUMP:
 			return "forward_ammo_dump"
-		GameEnums.BuildingType.TENANT_FARM:
-			return "tenant_farm"
-		GameEnums.BuildingType.GRAIN_SILO:
-			return "grain_silo"
-		GameEnums.BuildingType.CATTLE_YARD:
-			return "cattle_yard"
-		GameEnums.BuildingType.SEARCHLIGHT_TOWER:
+		GameEnums.BuildingType.IRON_FOUNDRY:
+			return "cast_iron_foundry"
+		GameEnums.BuildingType.SEARCH_LIGHT:
 			return "searchlight_tower"
-		_:  # DITCH/OIL_PIT never reach here — placed via WallManager, never rendered as a BuildingInstance box (see WallManager's own doc comment).
+		GameEnums.BuildingType.GUNPOWDER_MILL:
+			return "saltpetre_powder_mill"
+		_:
 			return ""
 
 ## Real AI-generated building art (see assets/buildings/README.md)

@@ -169,13 +169,6 @@ const NIGHT_AGGRESSION_MULTIPLIER: float = 2.0
 static func get_night_aggression_multiplier() -> float:
 	return NIGHT_AGGRESSION_MULTIPLIER if TimeCycleManager.is_night() else 1.0
 
-## Flat headcount-worth chip damage per siege tick against a besieging
-## horde, converted through Horde.HP_PER_ZOMBIE like any other combat
-## damage — a sufficiently ditched-and-pitted wall can grind a small horde
-## to nothing before it ever breaches.
-const DITCH_COUNTER_DAMAGE: float = 3.0
-const OIL_PIT_COUNTER_DAMAGE: float = 5.0
-
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS  ## Background-simulation infrastructure — shouldn't freeze if the SceneTree is ever paused.
 	if hex_grid_map_path != NodePath():
@@ -451,11 +444,7 @@ func _advance_horde(horde: Horde, delta: float) -> void:
 			horde.state = GameEnums.HordeState.WANDERING  # Through the breach — back to roaming.
 		horde_moved.emit(horde, from_coord, horde.hex_coord)
 
-## Damages `segment` with the siege bonus (WALL_SIEGE_DAMAGE_MULTIPLIER), and
-## applies Ditch/Oil Pit counter-damage back on the besieging horde,
-## converted through the same Horde.apply_remaining_hp() every other
-## combat-damage source uses — a sufficiently defended segment can grind a
-## small horde to nothing before it ever breaches.
+## Damages `segment` with the siege bonus (WALL_SIEGE_DAMAGE_MULTIPLIER).
 ##
 ## `seconds` is whatever fraction of this frame the horde spent blocked,
 ## scaled against LOGIC_TICK_SECONDS so total damage-per-real-second matches
@@ -464,18 +453,6 @@ func _siege_wall(horde: Horde, segment: WallSegment, seconds: float) -> void:
 	horde.state = GameEnums.HordeState.ATTACKING
 	var tick_fraction := seconds / LOGIC_TICK_SECONDS
 	_wall_manager.damage_segment(segment, horde.get_combat_damage() * WALL_SIEGE_DAMAGE_MULTIPLIER * get_night_aggression_multiplier() * tick_fraction)
-
-	var counter_damage := 0.0
-	if segment.has_ditch:
-		counter_damage += DITCH_COUNTER_DAMAGE
-	if segment.has_oil_pit:
-		counter_damage += OIL_PIT_COUNTER_DAMAGE
-	counter_damage *= tick_fraction
-	if counter_damage <= 0.0:
-		return
-	horde.apply_remaining_hp(horde.get_combat_hp() - counter_damage)
-	if horde.size <= 0:
-		remove_horde(horde)
 
 ## ATTRACTED is checked FIRST on every replan, before falling back to the
 ## unbiased WANDERING pick — a horde within range of a noise/light source
