@@ -124,3 +124,37 @@ static func _is_canonical_first(hex_a: Vector2i, hex_b: Vector2i) -> bool:
 ## SubHexTerrainQuery.clear_cache() already documents.
 static func clear_cache() -> void:
 	_cache.clear()
+
+## Local offset (relative to `to_hex`'s own center) a mover should aim for
+## when crossing hex-to-hex from `from_hex` into `to_hex` — the real portal
+## nearest the edge midpoint (the center-to-center line's own closest point
+## to the shared edge, since that line is perpendicular to the edge by
+## construction — see this file's own geometry doc comment), i.e. the
+## least-detour crossing point when more than one portal exists. Returns
+## Vector2.ZERO (the old plain-center behavior) when find_portals() returns
+## none for this edge — HexPathfinder's macro graph only sees per-hex
+## passability, not per-edge boundary detail, so a hex pair it considers
+## traversable can still have a fully-impassable shared boundary (a
+## marsh/cliff seam right at the edge); falling back to the center keeps
+## movement working exactly as before Phase 2a rather than stalling.
+##
+## Sub-Hex Mechanical Layer Phase 2a (todo.md,
+## [[sub-hex-mechanical-layer-epic]] memory) — the "hierarchical long-range
+## routing" consumer Phase 1c built this graph for: UnitOrderController and
+## HordeManager both call this per hex-to-hex leg so a multi-hex route
+## crosses through the real 30m-resolution choke point instead of every
+## hex's plain geometric center.
+static func portal_offset_for_step(hex_grid_map: HexGridMap, from_hex: Vector2i, to_hex: Vector2i) -> Vector2:
+	var portals := find_portals(hex_grid_map, from_hex, to_hex)
+	if portals.is_empty():
+		return Vector2.ZERO
+	var to_center := HexCoord.axial_to_world(to_hex)
+	var mid := (HexCoord.axial_to_world(from_hex) + to_center) * 0.5
+	var best: SubHexPortal = portals[0]
+	var best_dist := mid.distance_squared_to(best.world_pos)
+	for portal in portals:
+		var dist := mid.distance_squared_to(portal.world_pos)
+		if dist < best_dist:
+			best = portal
+			best_dist = dist
+	return best.world_pos - to_center

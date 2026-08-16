@@ -9,13 +9,17 @@ extends Node
 ## player-directed instead of autonomous drift.
 ##
 ## Movement is continuous (MovementStepper.advance_toward_hex(), world-
-## units/second, terrain- and logistics-scaled), walking smoothly toward the
-## next hex's center every _process() frame, steering around static
-## obstacles (props/buildings) the same way HordeManager does.
-## HexPathfinder still supplies the STRATEGIC route (which hexes to cross,
-## respecting terrain/logistics costs); only how an entity gets from one hex
-## center to the next is continuous. Units are still never blocked by walls
-## (only HordeManager's hordes are) — pre-existing asymmetry.
+## units/second, terrain- and logistics-scaled), walking smoothly every
+## _process() frame, steering around static obstacles (props/buildings) the
+## same way HordeManager does. HexPathfinder still supplies the STRATEGIC
+## route (which hexes to cross, respecting terrain/logistics costs); each
+## crossing's actual aim point is the real sub-hex portal
+## SubHexPortalGraph.portal_offset_for_step() resolves for that hex pair
+## (Sub-Hex Mechanical Layer Phase 2a, todo.md,
+## [[sub-hex-mechanical-layer-epic]] memory) rather than the hex's plain
+## geometric center, falling back to the center only when no portal exists
+## for that edge. Units are still never blocked by walls (only
+## HordeManager's hordes are) — pre-existing asymmetry.
 ##
 ## LOGIC_TICK_SECONDS no longer gates movement — it only drives
 ## _regen_if_friendly() at a fixed real-world rate.
@@ -278,14 +282,18 @@ func _advance_toward(instance: UnitInstance, destination: Vector2i, destination_
 	while remaining > 0.0 and not instance.path.is_empty():
 		var next_coord: Vector2i = instance.path[0]
 		var from_coord := instance.hex_coord  ## Captured BEFORE the call below overwrites it — this is the hex actually being left this crossing.
+		var leg_local_offset := destination_local if next_coord == destination else _portal_offset_for_step(from_coord, next_coord)
 
 		# Live wall re-check — _replan() above only avoids walls that
 		# existed at planning time; a wall built mid-route (or restored
 		# from a save) could leave a stale instance.path still pointing
 		# through an edge that's blocked NOW. Same "peek every hex-crossing
 		# attempt" cadence HordeManager uses before deciding to siege —
-		# units get a fresh route around it instead.
-		if _wall_manager and _wall_manager.get_blocking_segment(from_coord, next_coord, HexCoord.axial_to_world(from_coord), HexCoord.axial_to_world(next_coord)):
+		# units get a fresh route around it instead. to_world includes
+		# leg_local_offset so this checks the SAME line the unit is about
+		# to actually walk (the real portal crossing point), not the plain
+		# hex center a wall near the boundary could otherwise miss.
+		if _wall_manager and _wall_manager.get_blocking_segment(from_coord, next_coord, HexCoord.axial_to_world(from_coord), HexCoord.axial_to_world(next_coord) + leg_local_offset):
 			instance.path.clear()
 			_replan(instance, destination)
 			if instance.path.is_empty():
@@ -295,7 +303,6 @@ func _advance_toward(instance: UnitInstance, destination: Vector2i, destination_
 		var speed := _movement_speed(instance, from_coord, next_coord)
 		last_speed = speed
 		var obstacles: Array[Dictionary] = [] if bypass_obstacles else _gather_obstacles(from_coord, next_coord)
-		var leg_local_offset := destination_local if next_coord == destination else Vector2.ZERO
 		var result := MovementStepper.advance_toward_hex(from_coord, instance.local_position, next_coord, remaining, speed, obstacles, ENTITY_RADIUS, float(instance.id), leg_local_offset)
 		instance.hex_coord = result["hex_coord"]
 		instance.local_position = result["local_position"]
@@ -350,6 +357,13 @@ func _replan(instance: UnitInstance, destination: Vector2i) -> void:
 	if path.size() > 1:
 		path.remove_at(0)  # path[0] is the unit's own current hex.
 		instance.path = path
+
+## SubHexPortalGraph.portal_offset_for_step() needs a live HexGridMap — same
+## null-guard convention _movement_speed() already applies to the same field.
+func _portal_offset_for_step(from_coord: Vector2i, to_coord: Vector2i) -> Vector2:
+	if not _hex_grid_map:
+		return Vector2.ZERO
+	return SubHexPortalGraph.portal_offset_for_step(_hex_grid_map, from_coord, to_coord)
 
 ## Terrain (current hex) and logistics (this edge) speed multipliers
 ## stacked onto MovementStepper.BASE_MOVE_SPEED — the same table the

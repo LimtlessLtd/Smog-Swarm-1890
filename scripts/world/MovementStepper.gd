@@ -76,13 +76,14 @@ const STEERING_LOOKAHEAD: float = 140.0
 ## own header doc comment describes.
 ##
 ## `target_local_offset` — an offset from `target_hex`'s own center, ZERO
-## by default (every existing caller, and every INTERMEDIATE hex of a
-## multi-hex path, still means exactly "walk to this hex's plain center").
-## A caller advancing toward the FINAL hex of a player-issued move/patrol
-## order can pass the real clicked offset instead, so the unit's true
-## destination is the exact point clicked, not a hex-snapped
-## approximation — pathfinding between hexes is unaffected either way,
-## this only changes where the LAST leg's own arrival point is.
+## by default. A caller advancing toward the FINAL hex of a player-issued
+## move/patrol order passes the real clicked offset, so the unit's true
+## destination is the exact point clicked, not a hex-snapped approximation.
+## Every INTERMEDIATE hex of a multi-hex path passes its real sub-hex
+## portal offset instead (SubHexPortalGraph.portal_offset_for_step(), Sub-
+## Hex Mechanical Layer Phase 2a) — pathfinding between hexes (which hexes
+## to cross) is unaffected either way, this only changes exactly where each
+## leg's own arrival point within its hex is.
 static func advance_toward_hex(hex_coord: Vector2i, local_position: Vector2, target_hex: Vector2i, available_seconds: float, speed: float, obstacles: Array[Dictionary], entity_radius: float, wobble_seed: float = 0.0, target_local_offset: Vector2 = Vector2.ZERO) -> Dictionary:
 	if available_seconds <= 0.0:
 		return {"hex_coord": hex_coord, "local_position": local_position, "arrived": false, "seconds_used": 0.0}
