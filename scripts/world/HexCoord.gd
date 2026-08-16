@@ -198,6 +198,36 @@ static func distance(a: Vector2i, b: Vector2i) -> int:
 	var bc := _axial_to_cube(b)
 	return int((absf(ac.x - bc.x) + absf(ac.y - bc.y) + absf(ac.z - bc.z)) / 2.0)
 
+## Same cube-distance metric as distance() above, but `from_pos` is a
+## continuous world position instead of a hex already snapped to one — the
+## "without the rounding" companion to world_to_axial_fractional() (that
+## method's own doc comment), extended from raw coordinates to distance.
+## Equals float(distance(world_to_axial(from_pos), to_hex)) exactly whenever
+## from_pos sits at from_pos's own hex's precise center (the fractional
+## coordinate then equals the integer one exactly), and varies smoothly for
+## any other from_pos.
+##
+## fractional_hex_distance(p, own_hex) for a `p` strictly inside own_hex's
+## true geometric boundary is bounded by [0, 2/3) — 2/3 only at the hex's
+## own vertices (each shared 3 ways with its neighbors, equidistant from all
+## three in this metric), NOT approaching 1 as a naive "world distance /
+## hex size" intuition might suggest. Since this is a genuine metric (a
+## scaled L1 norm on cube coordinates), the triangle inequality means an
+## in-hex offset can shrink this metric's distance to any OTHER hex by at
+## most that same 2/3 — a source confined to its own hex can never end up
+## closer than (integer hex-distance - 2/3) to anything, so it can shift
+## which boundary-ring hexes it reaches but never reach past its own
+## naive-radius disk. Sub-Hex Mechanical Layer Phase 4 (todo.md,
+## [[sub-hex-mechanical-layer-epic]] memory) — lets FogOfWarManager size a
+## vision source's true reach by its exact sub-hex local_position instead of
+## just which macro hex it occupies, an eccentric-vision-cone effect bounded
+## exactly as described above (see that class's own doc comment).
+static func fractional_hex_distance(from_pos: Vector2, to_hex: Vector2i) -> float:
+	var frac := world_to_axial_fractional(from_pos)
+	var from_cube := Vector3(frac.x, -frac.x - frac.y, frac.y)
+	var to_cube := _axial_to_cube(to_hex)
+	return (absf(from_cube.x - to_cube.x) + absf(from_cube.y - to_cube.y) + absf(from_cube.z - to_cube.z)) / 2.0
+
 ## Ring of hexes exactly `radius` steps from `center` (radius 0 == just the center).
 static func hex_ring(center: Vector2i, radius: int) -> Array[Vector2i]:
 	var results: Array[Vector2i] = []
