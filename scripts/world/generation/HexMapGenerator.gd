@@ -46,6 +46,15 @@ const _FEATURE_STAMP_ORDER: Array[GeographyFeature.FeatureType] = [
 	GeographyFeature.FeatureType.SETTLEMENT,
 ]
 
+## Public — SubHexSoilQuery (Sub-Hex Mechanical Layer Phase 3) reruns this
+## exact same noise field at sub-hex granularity instead of redeclaring its
+## own copy of these numbers, so macro and sub-hex soil derivation can never
+## drift apart.
+const SOIL_NOISE_SEED: int = 1891
+const SOIL_NOISE_FREQUENCY: float = 0.35
+const SOIL_NOISE_LUSH_THRESHOLD: float = 0.35
+const SOIL_NOISE_DESOLATE_THRESHOLD: float = -0.35
+
 var _elevation_noise: FastNoiseLite
 var _soil_noise: FastNoiseLite
 
@@ -56,8 +65,8 @@ func _init() -> void:
 	_elevation_noise.noise_type = FastNoiseLite.TYPE_PERLIN
 
 	_soil_noise = FastNoiseLite.new()
-	_soil_noise.seed = 1891
-	_soil_noise.frequency = 0.35
+	_soil_noise.seed = SOIL_NOISE_SEED
+	_soil_noise.frequency = SOIL_NOISE_FREQUENCY
 	_soil_noise.noise_type = FastNoiseLite.TYPE_PERLIN
 
 func generate() -> Dictionary:
@@ -195,9 +204,9 @@ func _apply_soil_noise(cells: Dictionary) -> void:
 		if cell.biome_type != GameEnums.BiomeType.MOORLAND and cell.biome_type != GameEnums.BiomeType.FARMLAND:
 			continue
 		var n := _soil_noise.get_noise_2d(cell.coord.x, cell.coord.y)
-		if n > 0.35:
+		if n > SOIL_NOISE_LUSH_THRESHOLD:
 			cell.soil_fertility = GameEnums.SoilFertility.LUSH
-		elif n < -0.35:
+		elif n < SOIL_NOISE_DESOLATE_THRESHOLD:
 			cell.soil_fertility = GameEnums.SoilFertility.DESOLATE
 		else:
 			cell.soil_fertility = GameEnums.SoilFertility.POOR

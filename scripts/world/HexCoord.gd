@@ -172,9 +172,20 @@ static func axial_to_world(coord: Vector2i) -> Vector2:
 	return Vector2(x, y)
 
 static func world_to_axial(pos: Vector2) -> Vector2i:
+	var frac := world_to_axial_fractional(pos)
+	return _cube_round_to_axial(Vector3(frac.x, -frac.x - frac.y, frac.y))
+
+## The SAME formula world_to_axial() rounds to the nearest hex, without the
+## rounding — a continuous (q, r) that equals a hex's own integer coord
+## exactly at that hex's center and varies smoothly within it. Extracted for
+## SubHexSoilQuery (Sub-Hex Mechanical Layer Phase 3), which reruns
+## HexMapGenerator's own per-macro-hex soil noise pass (originally sampled
+## at the integer cell.coord) at this continuous coordinate instead, for
+## real intra-hex variation using the identical noise field/scale.
+static func world_to_axial_fractional(pos: Vector2) -> Vector2:
 	var q := (sqrt(3.0) / 3.0 * pos.x - 1.0 / 3.0 * pos.y) / HEX_SIZE
 	var r := (2.0 / 3.0 * pos.y) / HEX_SIZE
-	return _cube_round_to_axial(Vector3(q, -q - r, r))
+	return Vector2(q, r)
 
 static func neighbors(coord: Vector2i) -> Array[Vector2i]:
 	var result: Array[Vector2i] = []
