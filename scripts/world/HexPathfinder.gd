@@ -18,10 +18,9 @@ extends RefCounted
 ## geometry-based), a much shorter-range problem that doesn't need a second
 ## hex-graph search. This class still supplies the STRATEGIC route (which
 ## hexes to cross) that MovementStepper walks continuously between, and —
-## via get_terrain_speed_multiplier()/get_logistics_speed_multiplier()
-## below — the same biome/logistics numbers that shape that route also
-## shape how fast continuous movement crosses each hex, one shared table
-## instead of two.
+## via get_movement_speed_multiplier() below — the same biome/logistics
+## numbers that shape that route also shape how fast continuous movement
+## crosses each hex, one shared source instead of two independent ones.
 ##
 ## Consumers: HordeManager and UnitOrderController both route several hexes
 ## across the map through this same graph, then hand the resulting hex
@@ -29,20 +28,22 @@ extends RefCounted
 
 const BASE_HEX_COST: float = 1.0  ## Base traversal cost for an ordinary hex-to-hex step — a balancing number, not an architecture one.
 
-## Cost multiplier applied to a step when an unsevered supply line segment
-## (ROAD/RAILWAY/CANAL) connects the two hexes. A severed segment doesn't
-## count — a horde or column can't lean on a supply line the player's own
-## network no longer considers usable.
-const LOGISTICS_EDGE_COST_MULTIPLIER: float = 0.5
-
 ## Each biome gets its own movement-cost multiplier instead of every
 ## passable hex costing the flat BASE_HEX_COST — Highland/Wetland slower
 ## than Farmland/Moorland. A balancing pass, not an architecture decision;
 ## a biome with no entry here costs the unmodified baseline. Applied to the
 ## DESTINATION hex of a step (moving INTO dense terrain is what's slow, not
-## leaving it) and stacks multiplicatively with the logistics discount — a
-## road through a highland pass is still cheaper than the bare hillside
-## beside it, just not as cheap as a road through open farmland.
+## leaving it). An edge with a real, unsevered SupplyLineSegment on it does
+## NOT stack this multiplier with the segment's own speed bonus — Infrastructure
+## rework (todo.md, 2026-08-16): design_doc.md's Infrastructure Velocity
+## Modifiers rule is explicit ("completely ignoring underlying biome
+## movement speed reductions... while units are actively traversing
+## directly on the infrastructure tile itself"), so get_step_cost()/
+## get_movement_speed_multiplier() below OVERRIDE this table entirely on a
+## segment's edge rather than multiplying against it — a road through a
+## highland pass costs exactly what SupplyLineCatalog says that road tier
+## costs, full stop, not "road discount times highland penalty" the way an
+## un-roaded highland hex still does.
 ##
 ## Shapes both scales: the Strategic A* route weighs a step by this
 ## multiplier as a path-preference cost, and get_terrain_speed_multiplier()
@@ -84,9 +85,10 @@ static func find_path(hex_grid_map: HexGridMap, start: Vector2i, goal: Vector2i,
 	# Standard A*: open_set is a cheap Vector2i -> true membership map (the
 	# frontier), g_score is the cheapest known cost from `start` to a given
 	# hex, f_score is g_score plus the hex-distance heuristic to `goal`.
-	# NOT strictly admissible once LOGISTICS_EDGE_COST_MULTIPLIER (0.5,
-	# below BASE_HEX_COST) or the per-biome multipliers (some below 1.0
-	# too, e.g. any future fast-terrain entry) are in play — a long enough
+	# NOT strictly admissible once a SupplyLineCatalog speed multiplier
+	# (well above 1.0, i.e. a step cost well below BASE_HEX_COST) or the
+	# per-biome multipliers (some below 1.0 too, e.g. any future
+	# fast-terrain entry) are in play — a long enough
 	# discounted route could in principle cost less than the plain
 	# hex-count heuristic assumes, which can occasionally steer A* away
 	# from the GLOBAL optimum toward "a" reachable, still-perfectly-valid
@@ -128,34 +130,40 @@ static func find_path(hex_grid_map: HexGridMap, start: Vector2i, goal: Vector2i,
 ## between two hexes isn't directional); the biome/base cost is entirely a
 ## function of `to_cell`.
 static func get_step_cost(from: Vector2i, to: Vector2i, to_cell: HexCell, logistics_network: LogisticsNetwork) -> float:
-	var cost := BASE_HEX_COST * float(_BIOME_COST_MULTIPLIER.get(to_cell.biome_type, 1.0))
 	if logistics_network:
 		var segment := logistics_network.get_segment_between(from, to)
 		if segment and not segment.is_severed:
-			return cost * LOGISTICS_EDGE_COST_MULTIPLIER
-	return cost
+			# Overrides, not stacks with, the biome multiplier below — see
+			# _BIOME_COST_MULTIPLIER's own doc comment.
+			return BASE_HEX_COST / SupplyLineCatalog.get_speed_multiplier(segment.line_type, segment.tier)
+	return BASE_HEX_COST * float(_BIOME_COST_MULTIPLIER.get(to_cell.biome_type, 1.0))
 
 ## The exact inverse of _BIOME_COST_MULTIPLIER above, reusing the SAME
 ## table rather than a second one — terrain that costs more to path
-## THROUGH is also slower to actually walk ACROSS once chosen. Consumed by
-## MovementStepper.advance_toward_hex() to scale continuous travel speed by
-## whichever hex the entity is currently crossing.
+## THROUGH is also slower to actually walk ACROSS once chosen.
 static func get_terrain_speed_multiplier(cell: HexCell) -> float:
 	if not cell:
 		return 1.0
 	return 1.0 / float(_BIOME_COST_MULTIPLIER.get(cell.biome_type, 1.0))
 
-## Same inversion for the logistics discount — a road/rail/canal edge is
-## FASTER to walk, not just cheaper to path through. `to` isn't required to
-## already be the entity's next hex specifically; any adjacent pair works,
-## same as LogisticsNetwork.get_segment_between() itself.
-static func get_logistics_speed_multiplier(logistics_network: LogisticsNetwork, from: Vector2i, to: Vector2i) -> float:
-	if not logistics_network:
-		return 1.0
-	var segment := logistics_network.get_segment_between(from, to)
-	if segment and not segment.is_severed:
-		return 1.0 / LOGISTICS_EDGE_COST_MULTIPLIER
-	return 1.0
+## Real continuous-movement speed multiplier for crossing the CURRENT hex
+## (`from_coord`) while heading toward `to_coord`. A real, unsevered
+## SupplyLineSegment on this edge returns its own tier's
+## SupplyLineCatalog.get_speed_multiplier() outright — OVERRIDING the
+## terrain multiplier entirely, not stacking with it (see
+## _BIOME_COST_MULTIPLIER's own doc comment for why) — otherwise falls back
+## to get_terrain_speed_multiplier() for whichever hex the entity is
+## currently standing in. Replaces the old two-call stack
+## (get_terrain_speed_multiplier() * get_logistics_speed_multiplier(), the
+## latter a flat 2x discount for ANY line_type/tier) both
+## UnitOrderController and HordeManager used to apply as two separate
+## multiplications — this is the one call that decides between them instead.
+static func get_movement_speed_multiplier(hex_grid_map: HexGridMap, logistics_network: LogisticsNetwork, from_coord: Vector2i, to_coord: Vector2i) -> float:
+	if logistics_network:
+		var segment := logistics_network.get_segment_between(from_coord, to_coord)
+		if segment and not segment.is_severed:
+			return SupplyLineCatalog.get_speed_multiplier(segment.line_type, segment.tier)
+	return get_terrain_speed_multiplier(hex_grid_map.get_cell(from_coord) if hex_grid_map else null)
 
 static func _lowest_f_score(open_set: Dictionary, f_score: Dictionary) -> Vector2i:
 	var best: Vector2i

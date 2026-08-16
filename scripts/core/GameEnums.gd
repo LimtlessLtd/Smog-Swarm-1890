@@ -225,6 +225,7 @@ enum SupplyLineType {
 	ROAD,
 	RAILWAY,
 	CANAL,
+	BRIDGE,  ## The only SupplyLineType legal across a WATERWAY edge — see SupplyLineCatalog's own doc comment.
 }
 
 enum PropType {

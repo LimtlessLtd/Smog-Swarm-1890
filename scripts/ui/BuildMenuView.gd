@@ -32,6 +32,10 @@ signal building_selected(building_type: GameEnums.BuildingType)
 ## arming WallPlacementController's click-DRAG flow is a different shape
 ## from BuildPlacementController's click-to-place one, not a building type.
 signal wall_placement_selected(is_gate: bool)
+## A fifth column (Infrastructure rework, todo.md, 2026-08-16) — arming
+## SupplyLinePlacementController's hex-click-chain flow is its own shape
+## too, keyed by GameEnums.SupplyLineType rather than a building type.
+signal infrastructure_placement_selected(line_type: GameEnums.SupplyLineType)
 
 ## DEFENSE_WORKS excluded from this list — folded into
 ## _build_defense_and_walls_column() instead of getting its own generic
@@ -88,6 +92,7 @@ func _ready() -> void:
 		columns.add_child(_build_category_column(category, definitions))
 
 	columns.add_child(_build_defense_and_walls_column())
+	columns.add_child(_build_infrastructure_column())
 
 func _build_category_column(category: GameEnums.BuildingCategory, definitions: Array[BuildingDefinition]) -> Control:
 	var column := VBoxContainer.new()
@@ -151,6 +156,49 @@ func _build_defense_and_walls_column() -> Control:
 	column.add_child(row)
 
 	return column
+
+## Road/Railway/Canal/Bridge — a wholly separate placement flow
+## (SupplyLinePlacementController, hex-click-chain) the same way Walls are,
+## so this gets its own column rather than folding into
+## _build_defense_and_walls_column() (Infrastructure isn't a defensive
+## structure). Each card only ever arms tier 0 — same "fresh placement
+## stays base-tier-only, upgrade_segment() is the only way to advance it"
+## precedent Walls already established; no dedicated art exists yet for any
+## of the four (null icon_texture — HUDStyles.build_card falls back to a
+## plain category-color box, same as every other unauthored-art case in
+## this project).
+func _build_infrastructure_column() -> Control:
+	var column := VBoxContainer.new()
+	column.add_theme_constant_override("separation", 6)
+
+	var header := Label.new()
+	header.text = "Infrastructure"
+	HUDStyles.style_label(header, true)
+	column.add_child(header)
+
+	var colors := HUDStyles.category_card_colors("infrastructure")
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+	for line_type in [GameEnums.SupplyLineType.ROAD, GameEnums.SupplyLineType.RAILWAY, GameEnums.SupplyLineType.CANAL, GameEnums.SupplyLineType.BRIDGE]:
+		row.add_child(HUDStyles.build_card(
+			SupplyLineCatalog.get_display_name(line_type, 0),
+			null,
+			"Cost: %s/hex\n%s\nClick a hex, then an adjacent hex to connect it." % [
+				HUDStyles.format_resource_dict(SupplyLineCatalog.get_build_cost(line_type, 0)),
+				_describe_infrastructure_bonus(line_type),
+			],
+			func() -> void: infrastructure_placement_selected.emit(line_type),
+			true, _CARD_WIDTH, _CARD_ICON_SIZE, colors, _CARD_NAME_FONT_SIZE, _CARD_DETAILS_FONT_SIZE,
+		))
+	column.add_child(row)
+
+	return column
+
+func _describe_infrastructure_bonus(line_type: GameEnums.SupplyLineType) -> String:
+	var bonus_percent := int(round((SupplyLineCatalog.get_speed_multiplier(line_type, 0) - 1.0) * 100.0))
+	if line_type == GameEnums.SupplyLineType.BRIDGE:
+		return "+%d%% Speed — only buildable across water." % bonus_percent
+	return "+%d%% Speed, ignores terrain penalty." % bonus_percent
 
 func _build_building_card(definition: BuildingDefinition, colors: Dictionary = {}) -> Control:
 	return HUDStyles.build_card(

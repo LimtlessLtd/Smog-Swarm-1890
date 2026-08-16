@@ -45,6 +45,8 @@ extends CanvasLayer
 @export var noise_manager_path: NodePath  ## Optional — unset means no Threat Meter markers on the minimap; everything else about it is unaffected.
 @export var wall_manager_path: NodePath   ## Optional — feeds UnitPanelView's wall-repair toast/live-refresh; unset means a selected wall's Repair button still works (UnitCommandController owns the call) but no live-refresh/toast.
 @export var wall_placement_controller_path: NodePath  ## Optional — arms WallPlacementController from BuildMenuView's Walls tab; unset means that tab's buttons do nothing.
+@export var supply_line_placement_controller_path: NodePath  ## Optional — arms SupplyLinePlacementController from BuildMenuView's Infrastructure tab; unset means that tab's buttons do nothing.
+@export var logistics_network_path: NodePath  ## Optional — feeds a placement-rejected toast for Infrastructure; unset means placement rejections are silent (still blocked, just no on-screen reason).
 
 const MARGIN := 8.0
 const ROW_HEIGHT := 32.0
@@ -87,6 +89,8 @@ var _toast: HUDToastRouter
 var _placement_feedback: HUDPlacementFeedback
 var _wall_manager: WallManager
 var _wall_placement_controller: WallPlacementController
+var _supply_line_placement_controller: SupplyLinePlacementController
+var _logistics_network: LogisticsNetwork
 
 func _ready() -> void:
 	var resource_manager: ResourceManager = null
@@ -98,6 +102,10 @@ func _ready() -> void:
 		_wall_manager = get_node(wall_manager_path)
 	if wall_placement_controller_path != NodePath():
 		_wall_placement_controller = get_node(wall_placement_controller_path)
+	if supply_line_placement_controller_path != NodePath():
+		_supply_line_placement_controller = get_node(supply_line_placement_controller_path)
+	if logistics_network_path != NodePath():
+		_logistics_network = get_node(logistics_network_path)
 	if save_load_manager_path != NodePath():
 		_save_load_manager = get_node(save_load_manager_path)
 		_save_load_manager.game_saved.connect(_on_game_saved)
@@ -164,6 +172,10 @@ func _ready() -> void:
 		_placement_feedback.wire_build_placement_controller(_build_placement_controller)
 	if _wall_placement_controller:
 		_placement_feedback.wire_wall_placement_controller(_wall_placement_controller)
+	if _logistics_network:
+		_placement_feedback.wire_logistics_network(_logistics_network)
+	if _supply_line_placement_controller:
+		_placement_feedback.wire_supply_line_placement_controller(_supply_line_placement_controller)
 
 func _build_resource_bar(resource_manager: ResourceManager) -> void:
 	var resource_bar := ResourceBarView.new()
@@ -285,6 +297,7 @@ func _build_bottom_bar(hex_grid_map: HexGridMap, fog_of_war_manager: FogOfWarMan
 	bar.add_child(build_menu)
 	build_menu.building_selected.connect(_on_building_selected)
 	build_menu.wall_placement_selected.connect(_on_wall_placement_selected)
+	build_menu.infrastructure_placement_selected.connect(_on_infrastructure_placement_selected)
 
 	var minimap := MinimapView.new()
 	minimap.name = "Minimap"
@@ -477,6 +490,10 @@ func _on_building_selected(building_type: GameEnums.BuildingType) -> void:
 func _on_wall_placement_selected(is_gate: bool) -> void:
 	if _wall_placement_controller:
 		_wall_placement_controller.begin_placement(is_gate)
+
+func _on_infrastructure_placement_selected(line_type: GameEnums.SupplyLineType) -> void:
+	if _supply_line_placement_controller:
+		_supply_line_placement_controller.begin_placement(line_type)
 
 func _on_training_started(unit_type: GameEnums.UnitType, _coord: Vector2i, days: int) -> void:
 	var definition := UnitCatalog.get_definition(unit_type)
