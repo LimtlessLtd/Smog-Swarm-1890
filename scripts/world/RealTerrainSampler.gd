@@ -185,9 +185,8 @@ static func sample_at(world_pos: Vector2) -> Dictionary:
 static func sample_grid(coord: Vector2i, n: int) -> Array:
 	var center := HexCoord.axial_to_world(coord)
 	var result: Array = []
-	var use_fine := _fine_tile_for(coord) != null
 	if n <= 1:
-		result.append(_sample_fine(coord, center) if use_fine else sample_at(center))
+		result.append(sample_at_hex(coord, center))
 		return result
 	var span := HexCoord.SUB_HEX_GRID_SPAN  # Shared with SubHexGroundView's own render grid — see that constant's own doc comment (HexCoord.gd).
 	var step := span / float(n - 1)
@@ -196,8 +195,19 @@ static func sample_grid(coord: Vector2i, n: int) -> Array:
 		for col in range(n):
 			var offset := Vector2(start + col * step, start + row * step)
 			var world_pos := center + offset
-			result.append(_sample_fine(coord, world_pos) if use_fine else sample_at(world_pos))
+			result.append(sample_at_hex(coord, world_pos))
 	return result
+
+## Single-point version of the fine-tile-preferring choice sample_grid()
+## already makes per hex — for callers that need one exact position rather
+## than a whole grid (SubHexTerrainQuery, Sub-Hex Mechanical Layer Phase
+## 1a) without losing fine-tile fidelity by calling the coarse sample_at()
+## alone. `world_pos` need not be `coord`'s own center — any position is
+## resolved against whichever hex's fine tile (if any) `coord` names.
+static func sample_at_hex(coord: Vector2i, world_pos: Vector2) -> Dictionary:
+	if _fine_tile_for(coord) != null:
+		return _sample_fine(coord, world_pos)
+	return sample_at(world_pos)
 
 ## --- Fine per-hex tiles -----------------------------------------------
 ##
