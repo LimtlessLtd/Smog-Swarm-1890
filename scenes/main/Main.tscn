@@ -77,6 +77,7 @@ building_manager_path = NodePath("../BuildingManager")
 logistics_network_path = NodePath("../LogisticsNetwork")
 unit_manager_path = NodePath("../UnitManager")
 unit_order_controller_path = NodePath("../UnitOrderController")
+tech_manager_path = NodePath("../TechManager")
 
 [node name="NoiseManager" parent="." instance=ExtResource("25")]
 hex_grid_map_path = NodePath("../WorldRoot/HexGridMap")
@@ -123,6 +124,7 @@ logistics_network_path = NodePath("../LogisticsNetwork")
 building_manager_path = NodePath("../BuildingManager")
 local_detail_manager_path = NodePath("../WorldRoot/LocalDetailManager")
 wall_manager_path = NodePath("../WallManager")
+tech_manager_path = NodePath("../TechManager")
 
 [node name="CombatCoordinator" parent="." instance=ExtResource("19")]
 unit_manager_path = NodePath("../UnitManager")
@@ -130,6 +132,7 @@ horde_manager_path = NodePath("../HordeManager")
 unit_order_controller_path = NodePath("../UnitOrderController")
 resource_manager_path = NodePath("../ResourceManager")
 building_manager_path = NodePath("../BuildingManager")
+tech_manager_path = NodePath("../TechManager")
 hex_grid_map_path = NodePath("../WorldRoot/HexGridMap")
 
 [node name="EventManager" parent="." instance=ExtResource("23")]

@@ -25,6 +25,7 @@ var _unit_command_controller: UnitCommandController
 var _unit_manager: UnitManager
 var _building_manager: BuildingManager
 var _wall_manager: WallManager
+var _tech_manager: TechManager  ## Optional — per-unit research upgrades, so a selected unit's HP readout shows its EFFECTIVE maximum. Unset shows the raw UnitDefinition value.
 
 var _list: VBoxContainer
 
@@ -38,7 +39,8 @@ func _ready() -> void:
 	add_child(_list)
 	_render_idle()
 
-func setup(unit_command_controller: UnitCommandController, unit_manager: UnitManager, building_manager: BuildingManager = null, wall_manager: WallManager = null) -> void:
+func setup(unit_command_controller: UnitCommandController, unit_manager: UnitManager, building_manager: BuildingManager = null, wall_manager: WallManager = null, tech_manager: TechManager = null) -> void:
+	_tech_manager = tech_manager
 	_unit_command_controller = unit_command_controller
 	_unit_manager = unit_manager
 	_building_manager = building_manager
@@ -453,7 +455,7 @@ func _render_unit_panel(instance: UnitInstance) -> void:
 	_list.add_child(header)
 
 	var stats := Label.new()
-	stats.text = "HP %d/%d — %s — %s" % [int(instance.current_hp), int(definition.max_hp), _rank_name(UnitMorale.get_rank(instance)), _order_name(instance.order)]
+	stats.text = "HP %d/%d — %s — %s" % [int(instance.current_hp), int(UnitUpgrades.max_hp(_tech_manager, definition)), _rank_name(UnitMorale.get_rank(instance)), _order_name(instance.order)]
 	HUDStyles.style_label(stats)
 	_list.add_child(stats)
 

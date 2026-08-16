@@ -91,11 +91,13 @@ const NIGHT_LIT_BONUS: int = 1       ## Lit sources (BuildingDefinition.lit_at_n
 @export var building_manager_path: NodePath
 @export var logistics_network_path: NodePath
 @export var unit_manager_path: NodePath  ## Optional — without it, units simply aren't a vision source (buildings/ZoC still work).
+@export var tech_manager_path: NodePath  ## Optional — the SPECIAL-role vision upgrade (UnitUpgrades.vision_radius()). Unset means units see exactly their raw UnitDefinition radius.
 @export var unit_order_controller_path: NodePath  ## Optional — without it, unit vision still computes correctly on train/remove/day-night, it just won't refresh live as a unit walks between hexes.
 
 var _hex_grid_map: HexGridMap
 var _building_manager: BuildingManager
 var _logistics_network: LogisticsNetwork
+var _tech_manager: TechManager
 var _unit_manager: UnitManager
 var _unit_order_controller: UnitOrderController
 
@@ -114,6 +116,8 @@ func _ready() -> void:
 	if logistics_network_path != NodePath():
 		_logistics_network = get_node(logistics_network_path)
 		_logistics_network.network_recomputed.connect(_on_network_recomputed)
+	if tech_manager_path != NodePath():
+		_tech_manager = get_node(tech_manager_path)
 	if unit_manager_path != NodePath():
 		_unit_manager = get_node(unit_manager_path)
 		_unit_manager.unit_trained.connect(_on_units_changed)
@@ -208,7 +212,7 @@ func _compute_visible_set() -> Dictionary:
 		# Same radius/night/terrain contract as buildings above — see this
 		# class's own doc comment for why there's no lit_at_night branch here.
 		for instance in _unit_manager.get_all_units():
-			var radius := instance.definition.vision_radius
+			var radius := UnitUpgrades.vision_radius(_tech_manager, instance.definition)
 			if is_night:
 				radius = maxi(0, radius - NIGHT_VISION_PENALTY)
 			radius = _apply_terrain_penalty(radius, instance.hex_coord)

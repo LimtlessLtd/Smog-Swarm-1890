@@ -94,6 +94,7 @@ func _ready() -> void:
 		_resource_manager = get_node(resource_manager_path)
 	if tech_manager_path != NodePath():
 		_tech_manager = get_node(tech_manager_path)
+		_tech_manager.tech_researched.connect(_on_tech_researched)
 	_capacity = CapacityAllocator.new(_resource_manager)
 	TickManager.day_completed.connect(_on_day_completed)
 
@@ -295,9 +296,14 @@ func _complete_retrain(instance: UnitInstance, new_type: GameEnums.UnitType) -> 
 	# Carries over relative damage state rather than a free full heal on
 	# retrain — a unit at half health before retraining is at half health
 	# (of its NEW, larger max_hp) after, not topped up for free.
-	var hp_fraction := instance.current_hp / instance.definition.max_hp if instance.definition.max_hp > 0.0 else 1.0
+	# Both maxima are the EFFECTIVE ones (per-unit upgrades included) — the
+	# old type's and the new type's upgrades are researched independently, so
+	# comparing a raw max against an upgraded one would silently heal or wound
+	# the unit on retrain.
+	var old_max := UnitUpgrades.max_hp(_tech_manager, instance.definition)
+	var hp_fraction := instance.current_hp / old_max if old_max > 0.0 else 1.0
 	instance.definition = new_definition
-	instance.current_hp = new_definition.max_hp * hp_fraction
+	instance.current_hp = UnitUpgrades.max_hp(_tech_manager, new_definition) * hp_fraction
 	unit_retrained.emit(instance)
 
 func _retrain_cost(new_definition: UnitDefinition) -> Dictionary:
@@ -323,12 +329,41 @@ func _retrain_capacity_shortfall(old_definition: UnitDefinition, new_definition:
 			shortfall[resource_type] = delta
 	return shortfall
 
+## design_doc.md §4 requires a unit upgrade to "auto-apply to active &
+## future units". Future units are free — UnitUpgrades derives everything
+## from TechManager, so nothing cached the old value. ACTIVE units need this
+## one handler, and only for MAX_HP: current_hp is real per-instance state,
+## so raising the ceiling without touching it would read as the health bar
+## getting emptier rather than the unit getting tougher. Every other upgrade
+## (damage, movement, vision, gunpowder relief) is pure derivation and needs
+## no per-instance fixup at all.
+##
+## Scales current_hp by the same ratio the maximum moved, rather than
+## granting the full delta on top — a unit at half health stays at half
+## health of its new, larger maximum, exactly the call _complete_retrain()
+## already documents for retraining ("not topped up for free"). It still
+## gains real HP; it just doesn't get healed by researching armour.
+func _on_tech_researched(tech_id: StringName) -> void:
+	var upgrade := UnitUpgradeCatalog.get_definition(tech_id)
+	if not upgrade or upgrade.stat != GameEnums.UnitUpgradeStat.MAX_HP:
+		return
+	if upgrade.magnitude <= 0.0:
+		return
+	for instance in _instances:
+		if instance.definition and instance.definition.unit_type == upgrade.unit_type:
+			instance.current_hp *= upgrade.magnitude
+
 ## Shared instance-bookkeeping between a fresh train_unit() (already
 ## validated/paid) and load_save_state() (restoring units already paid for
 ## in a previous session) — same split BuildingManager.place_building()/
 ## load_save_entries() use around _register_instance().
 func _register_instance(definition: UnitDefinition, coord: Vector2i, id: int, advance_next_id: bool, current_hp: float = -1.0, order: GameEnums.UnitOrderType = GameEnums.UnitOrderType.HOLD, move_target: Vector2i = Vector2i.ZERO, patrol_waypoints: Array[Vector2i] = [], kill_count: int = 0, local_position: Vector2 = Vector2.ZERO, move_target_local: Vector2 = Vector2.ZERO, patrol_waypoint_locals: Array[Vector2] = []) -> UnitInstance:
-	var instance := UnitInstance.new(definition, coord, id, current_hp)
+	# A fresh training (-1.0, "not specified") starts at its EFFECTIVE max
+	# HP, not the raw definition's — otherwise a unit trained after its
+	# Armour Plating upgrade would spawn already wounded. A save-restore path
+	# passes a real saved value and is untouched by this.
+	var seed_hp := current_hp if current_hp >= 0.0 else UnitUpgrades.max_hp(_tech_manager, definition)
+	var instance := UnitInstance.new(definition, coord, id, seed_hp)
 	instance.order = order
 	instance.move_target = move_target
 	instance.patrol_waypoints = patrol_waypoints

@@ -22,12 +22,23 @@ signal closed
 const LIST_HEIGHT := 280.0
 
 ## Declaration order groups related nodes together (both wall tiers, then
-## every unit tier in order, then Seafaring standing alone) rather than
-## TechCatalog's own dictionary iteration order, which isn't guaranteed
-## stable across runs the way a hand-authored list is.
+## every unit tier in order, then every building tier, then Seafaring
+## standing alone) rather than TechCatalog's own dictionary iteration order,
+## which isn't guaranteed stable across runs the way a hand-authored list is.
+##
+## The five building_tier_N nodes were missing from this list — researchable
+## through TechManager but with no row to click, so the whole building tier
+## gate was unreachable from the UI. Pre-existing, fixed here alongside the
+## unit-upgrade rows below rather than left as a second invisible tier gate.
+##
+## Per-unit upgrade nodes are deliberately NOT listed here — there are 36 of
+## them, generated from the roster (UnitUpgradeCatalog), so hand-listing them
+## would reintroduce exactly the roster-drift problem generating them avoids.
+## _refresh() appends them after this list instead.
 const DISPLAY_ORDER: Array[StringName] = [
 	&"brick_walls", &"concrete_walls",
 	&"unit_tier_1", &"unit_tier_2", &"unit_tier_3", &"unit_tier_4", &"unit_tier_5",
+	&"building_tier_1", &"building_tier_2", &"building_tier_3", &"building_tier_4", &"building_tier_5",
 	&"seafaring",
 ]
 
@@ -112,6 +123,18 @@ func _refresh() -> void:
 		var definition := TechCatalog.get_definition(tech_id)
 		if definition:
 			_list.add_child(_build_row(definition))
+	# The 36 generated per-unit upgrades, after the hand-ordered core list.
+	# Walks the roster explicitly (tier order, as UnitCatalog declares it)
+	# and asks for each unit's pair, rather than iterating
+	# UnitUpgradeCatalog's own lookup Dictionary — same reasoning
+	# DISPLAY_ORDER's comment gives for not iterating TechCatalog's. A unit's
+	# two rows land together and in chain order (the second requires the
+	# first) because get_upgrades_for() returns them index-ordered.
+	for unit_definition in UnitCatalog.get_all_definitions():
+		for upgrade in UnitUpgradeCatalog.get_upgrades_for(unit_definition.unit_type):
+			var definition := TechCatalog.get_definition(upgrade.tech_id)
+			if definition:
+				_list.add_child(_build_row(definition))
 
 func _build_row(definition: TechDefinition) -> Control:
 	var row := VBoxContainer.new()

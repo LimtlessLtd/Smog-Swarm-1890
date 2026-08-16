@@ -123,12 +123,14 @@ const CHARGE_STUN_SECONDS: float = 1.0
 @export var unit_order_controller_path: NodePath
 @export var resource_manager_path: NodePath  ## Optional — unset always resolves as "Gunpowder available".
 @export var building_manager_path: NodePath  ## Optional — the undefended-building siege trigger; unset skips it.
+@export var tech_manager_path: NodePath      ## Optional — per-unit research upgrades (UnitUpgrades). Unset means every unit fights at its raw UnitDefinition stats, exactly as before upgrades existed.
 @export var hex_grid_map_path: NodePath      ## Optional — CHARGE_KNOCKBACK/TRAMPLE_KNOCKBACK need to validate a knockback destination is a real, passable hex; unset means those two abilities never physically knock a horde anywhere (a CHARGE_KNOCKBACK's stun still applies regardless — see _knock_back()'s own doc comment).
 
 var _unit_manager: UnitManager
 var _horde_manager: HordeManager
 var _resource_manager: ResourceManager
 var _building_manager: BuildingManager
+var _tech_manager: TechManager
 var _hex_grid_map: HexGridMap
 
 func _ready() -> void:
@@ -144,6 +146,8 @@ func _ready() -> void:
 		_resource_manager = get_node(resource_manager_path)
 	if building_manager_path != NodePath():
 		_building_manager = get_node(building_manager_path)
+	if tech_manager_path != NodePath():
+		_tech_manager = get_node(tech_manager_path)
 	if hex_grid_map_path != NodePath():
 		_hex_grid_map = get_node(hex_grid_map_path)
 
@@ -175,16 +179,20 @@ func _engage(instance: UnitInstance, horde: Horde, movement_from: Vector2i, move
 	if _resource_manager:
 		gunpowder_available = _resource_manager.get_amount(GameEnums.ResourceType.GUNPOWDER) > 0.0
 
-	var damage_multiplier := UnitMorale.get_damage_multiplier(instance, gunpowder_available)
+	var damage_multiplier := UnitMorale.get_damage_multiplier(instance, gunpowder_available, UnitUpgrades.max_hp(_tech_manager, instance.definition))
 	if TimeCycleManager.is_day():
 		damage_multiplier *= DAY_DAMAGE_MULTIPLIER
+	# Per-unit research upgrades fold into the multiplier seam that already
+	# exists rather than a new parameter — see UnitUpgrades.damage_multiplier().
+	damage_multiplier *= UnitUpgrades.damage_multiplier(_tech_manager, instance.definition)
+	var forced_melee := UnitUpgrades.forced_melee_multipliers(_tech_manager, instance.definition)
 	var incoming_damage_multiplier := _garrison_incoming_multiplier(instance)
 	# Night's mirror of the DAY_DAMAGE_MULTIPLIER bump above, on the horde's
 	# side instead of the unit's — see HordeManager.get_night_aggression_multiplier()'s
 	# own doc comment.
 	var horde_damage := horde.get_combat_damage() * HordeManager.get_night_aggression_multiplier()
 	var headcount_before := instance.get_squad_headcount()
-	var result := CombatEngine.resolve_engagement(instance, gunpowder_available, horde.get_combat_hp(), horde_damage, damage_multiplier, incoming_damage_multiplier)
+	var result := CombatEngine.resolve_engagement(instance, gunpowder_available, horde.get_combat_hp(), horde_damage, damage_multiplier, incoming_damage_multiplier, forced_melee["outgoing"], forced_melee["incoming"])
 	horde.apply_remaining_hp(result.defender_hp_remaining)
 	engagement_resolved.emit(instance, horde, result)
 
