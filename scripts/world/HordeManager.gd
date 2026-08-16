@@ -65,16 +65,21 @@ extends Node
 ##     system exists yet; STARTING_HORDE_COUNT/SIZE are a flat one-time seed.
 ##
 ## Performance: the real per-horde expense isn't continuous movement itself
-## (MovementStepper's per-frame math is a handful of vector ops) — it's
-## HexPathfinder.find_path()'s A* search, called from _replan() every time a
-## horde's drift path empties. That search's open set is a plain Dictionary
-## scanned linearly for the lowest f_score, not a binary heap, and at
-## real horde-scale (hundreds-to-thousands of Horde instances) that adds up
-## for hordes nobody's anywhere near. FAR_SIMULATION_RADIUS/_is_far_from_player()/
-## _replan_cheap() give a WANDERING horde outside that radius of every placed
-## building a one-hex random-neighbor hop instead of a real A* search — still
-## "no deliberate beeline anywhere" (WANDERING's own design intent), just
-## without paying for the graph search. ATTRACTED and ATTACKING hordes are
+## (MovementStepper's per-frame math is a handful of vector ops) — it's the
+## route search _replan() runs every time a horde's drift path empties. Since
+## Sub-Hex Mechanical Layer Phase 2b, that's HordeFlowField.trace_path(), a
+## lookup against a cached, shared-per-goal Dijkstra field rather than
+## HexPathfinder.find_path()'s own per-call A*, so hordes converging on the
+## same target (an ATTRACTED swarm on one noise source, overlapping
+## WANDERING drift picks) share ONE search instead of one each — real
+## savings only at real horde-scale (hundreds-to-thousands of Horde
+## instances), which is exactly where FAR_SIMULATION_RADIUS/
+## _is_far_from_player()/_replan_cheap() already targeted the same problem
+## from the other direction: a WANDERING horde outside that radius of every
+## placed building gets a one-hex random-neighbor hop instead of any real
+## search at all — still "no deliberate beeline anywhere" (WANDERING's own
+## design intent), just without paying for a graph search nobody's anywhere
+## near needs. ATTRACTED and ATTACKING hordes are
 ## exempt regardless of distance: ATTRACTED needs to reach a real target
 ## efficiently, and ATTACKING only triggers by physically reaching a wall —
 ## already player-built, so already "near a building" in practice — and its
@@ -476,16 +481,22 @@ func _replan(horde: Horde) -> void:
 	var is_attracted := attraction_target != horde.hex_coord
 	# An ATTRACTED horde always gets the real path below — it has a specific
 	# target to reach. A plain WANDERING horde far from every building skips
-	# the expensive A* search entirely.
+	# the shared-field route entirely.
 	if not is_attracted and _is_far_from_player(horde.hex_coord):
 		_replan_cheap(horde)
 		return
 	var target := attraction_target if is_attracted else _pick_drift_target(horde.hex_coord)
 	if target == horde.hex_coord:
 		return
-	var path := HexPathfinder.find_path(_hex_grid_map, horde.hex_coord, target, _logistics_network)
-	if path.size() > 1:
-		path.remove_at(0)  # path[0] is the horde's own current hex — the walk starts at path[1] onward.
+	# HordeFlowField (Phase 2b) replaces a per-horde HexPathfinder.find_path()
+	# call here — multiple hordes replanning toward the same `target` (an
+	# ATTRACTED swarm converging on one noise source, or overlapping
+	# WANDERING drift picks) share ONE cached Dijkstra field instead of each
+	# running its own A* search. trace_path() already excludes horde's own
+	# current hex, same "path[0] is the next hex to step into" shape
+	# HexPathfinder.find_path() callers used to unwrap by hand.
+	var path := HordeFlowField.trace_path(_hex_grid_map, _logistics_network, horde.hex_coord, target)
+	if not path.is_empty():
 		horde.path = path
 		horde.state = GameEnums.HordeState.ATTRACTED if is_attracted else GameEnums.HordeState.WANDERING
 		# Cosmetic gap, not functional: if this ATTRACTED walk later crosses
