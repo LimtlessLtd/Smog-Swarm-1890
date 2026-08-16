@@ -61,29 +61,24 @@ extends Node
 ##
 ## Sub-Hex Mechanical Layer Phase 4 (todo.md, [[sub-hex-mechanical-layer-epic]]
 ## memory) — vision coverage reads each source's real hex_coord +
-## local_position, not just hex_coord, via HexCoord.fractional_hex_distance()
-## (_mark_visible_from_source() below). A building or unit sitting near its
-## hex's edge sees LESS far on the side opposite the edge it's near, an
-## asymmetric vision cone shifted toward wherever the source actually sits,
-## instead of every source within a hex producing an identical disk
-## regardless of position. It never sees FURTHER than a hex-centered source
-## at the same radius would: HexCoord.fractional_hex_distance() from a
-## position strictly inside a hex to that hex's own hex_coord tops out at
-## 2/3 (attained only at the hex's own vertices, each shared 3 ways with
-## its neighbors — see
-## HexCoord.fractional_hex_distance()'s own doc comment), and the triangle
-## inequality that metric obeys means no hex beyond the naive radius-N disk
-## can ever end up within N of an off-center source either — confirmed
-## empirically via a temporary debug hook before this comment was written,
-## not just derived on paper. The fog STATE machine (UNSEEN/EXPLORED/
-## VISIBLE) and its storage stay per-macro-hex, same as before this phase —
-## only the membership test for "is this hex within reach" got sub-hex-
-## accurate; a real per-sub-hex fog grid (finer than one state per macro
-## hex) is a further rearchitecture this phase doesn't attempt.
-## _apply_terrain_penalty() also stays keyed to the source's macro
-## hex_coord's own aggregate vegetation density, not a sub-hex sample — the
-## geometric reach is now sub-hex-accurate, the terrain-density penalty
-## applied to it isn't (yet).
+## local_position, not just hex_coord, via HexCoord.sub_hex_disk()
+## (_mark_visible_from_source() below; the membership math itself moved into
+## that shared HexCoord utility in Phase 5a once LogisticsNetwork's Military
+## ZoC aura needed the identical logic — see that method's own doc comment
+## for the full "shrink-only, never extends past the naive radius" proof). A
+## building or unit sitting near its hex's edge sees LESS far on the side
+## opposite the edge it's near, an asymmetric vision cone shifted toward
+## wherever the source actually sits, instead of every source within a hex
+## producing an identical disk regardless of position — and, by that proof,
+## never FURTHER than a hex-centered source at the same radius would. The
+## fog STATE machine (UNSEEN/EXPLORED/VISIBLE) and its storage stay
+## per-macro-hex, same as before this phase — only the membership test for
+## "is this hex within reach" got sub-hex-accurate; a real per-sub-hex fog
+## grid (finer than one state per macro hex) is a further rearchitecture
+## this phase doesn't attempt. _apply_terrain_penalty() also stays keyed to
+## the source's macro hex_coord's own aggregate vegetation density, not a
+## sub-hex sample — the geometric reach is now sub-hex-accurate, the
+## terrain-density penalty applied to it isn't (yet).
 
 signal fog_state_changed(coord: Vector2i, state: GameEnums.FogState)
 
@@ -226,30 +221,12 @@ func _compute_visible_set() -> Dictionary:
 ## Fills `result` with every hex within `radius` of a vision source sitting
 ## at `source_local_position` inside `source_hex` — shared by the building
 ## and unit loops above so the sub-hex reach math (Phase 4, see this class's
-## doc comment) exists in one place. The source's own hex is always marked
-## visible unconditionally: place_building_at_world()/world_to_coord() only
-## ever assign a hex whose Voronoi region actually contains the click, which
-## bounds HexCoord.fractional_hex_distance(world_pos, source_hex) to at most
-## 2/3 for any legally-placed building (see this file's class doc comment),
-## but a `radius == 0` source would still fail its own "<= radius" test
-## against that nonzero fractional distance — hex_disk(coord, 0) never had
-## that problem, this preserves the same guarantee.
+## doc comment) exists in one place. HexCoord.sub_hex_disk() (Phase 5a) does
+## the actual membership math now — extracted there once LogisticsNetwork's
+## Military ZoC aura needed the identical logic, so this is just the
+## HexGridMap.has_cell() filter this class's own consumers need on top of it.
 func _mark_visible_from_source(source_hex: Vector2i, source_local_position: Vector2, radius: int, result: Dictionary) -> void:
-	if not _hex_grid_map or _hex_grid_map.has_cell(source_hex):
-		result[source_hex] = true
-	if radius <= 0:
-		return
-	var source_world_pos := HexCoord.axial_to_world(source_hex) + source_local_position
-	# Candidates widened one ring past the naive radius as a defensive
-	# margin — proven above (class doc comment) that a source legally bound
-	# to its own hex's Voronoi region can never actually reach a hex beyond
-	# the naive radius-N disk, but UnitInstance.local_position is written
-	# continuously mid-movement and this only reads it when unit_moved fires
-	# at a hex-boundary crossing, not every frame, so tolerating a
-	# momentarily wider-than-usual offset here costs nothing.
-	for coord in HexCoord.hex_disk(source_hex, radius + 1):
-		if HexCoord.fractional_hex_distance(source_world_pos, coord) > float(radius):
-			continue
+	for coord in HexCoord.sub_hex_disk(source_hex, source_local_position, radius):
 		if not _hex_grid_map or _hex_grid_map.has_cell(coord):
 			result[coord] = true
 
