@@ -223,15 +223,16 @@ static func sample_at_hex(coord: Vector2i, world_pos: Vector2) -> Dictionary:
 ## HexCoord.SUB_HEX_GRID_SPAN square sample_grid() already samples across,
 ## so swapping which raster answers a given sample is transparent to every caller.
 ##
-## A hex with no baked fine tile yet (the overwhelming majority — only a
-## demo radius around the starting settlement is baked, see
-## tools/geo_bake/bake_fine_tiles.py's own doc comment) falls back to the
-## existing coarse landcover.png — nothing regresses, coverage only gets
-## better as more fine tiles are baked later. Does NOT bake/read a fine
-## elevation tile — elevation varies smoothly enough at this scale that the
-## coarse elevation.png is unaffected; only biome/terrain_feature get the
-## fine treatment.
-const WORLD_UNITS_PER_PIXEL_FINE: float = 1024.0 / 96.0  ## ~10.7 world units/pixel (~104 real metres) — must match tools/geo_bake/bake_fine_tiles.py's own FINE_TILE_PIXELS/HexCoord.SUB_HEX_GRID_SPAN-derived constant exactly.
+## Sub-Hex Mechanical Layer Phase 1b: baked for the full 3,876-hex playable
+## corridor (tools/geo_bake/bake_fine_tiles.py --corridor), not just a demo
+## radius — every hex inside RealTerrainSampler._CORRIDOR_Q/_CORRIDOR_R now
+## has a fine tile. A hex outside that corridor (Wales/Scotland/Ireland,
+## hard-gated) still has none and falls back to the coarse landcover.png —
+## nothing regresses, same graceful-fallback contract as before. Does NOT
+## bake/read a fine elevation tile — elevation varies smoothly enough at
+## this scale that the coarse elevation.png is unaffected; only biome/
+## terrain_feature get the fine treatment.
+const WORLD_UNITS_PER_PIXEL_FINE: float = 1024.0 / 333.0  ## Sub-Hex Mechanical Layer Phase 1b: 333 = HexCoord.SUB_HEX_GRID_N, one fine-tile pixel per 30m mechanical sub-hex cell exactly — must match tools/geo_bake/bake_fine_tiles.py's own FINE_TILE_PIXELS constant.
 const _FINE_TILE_DIR: String = "res://assets/terrain_data/fine"
 
 static var _fine_tile_cache: Dictionary = {}  ## Vector2i (hex coord) -> Image, or null once confirmed no tile exists — caching the miss too means a hex with no fine tile is only checked on disk once.

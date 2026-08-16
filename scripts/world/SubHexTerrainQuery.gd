@@ -13,11 +13,13 @@ extends RefCounted
 ## so repeated nearby queries (the expected access pattern once a real
 ## mechanic reads this) don't re-hit the raster every call.
 ##
-## Multiple adjacent 30m sub-cells alias to the same underlying ~104m-pixel
-## fine-tile value (where a fine tile is baked) or ~878m-pixel coarse value
-## (elsewhere) until Phase 1b rebakes at real 30m-equivalent resolution —
-## expected for this phase, not a bug: this class proves the addressing/
-## caching plumbing works, not real-world fidelity yet.
+## Phase 1a baseline: multiple adjacent 30m sub-cells aliased to the same
+## underlying ~104m-pixel fine-tile value (where a fine tile was baked) or
+## ~878m-pixel coarse value (elsewhere). Phase 1b rebaked fine tiles at
+## FINE_TILE_PIXELS=333 (RealTerrainSampler.gd), one pixel per 30m sub-cell
+## exactly (HexCoord.SUB_HEX_GRID_N) — a hex WITH a baked fine tile now has
+## genuine per-sub-cell fidelity, not an alias. A hex without one yet still
+## falls back to the ~878m-pixel coarse raster (aliased) until baked.
 ##
 ## Returns exactly RealTerrainSampler.sample_at()'s own shape
 ## (biome_type/terrain_feature/elevation_m/elevation, or {} off the baked

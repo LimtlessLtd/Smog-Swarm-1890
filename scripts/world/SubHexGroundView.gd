@@ -69,7 +69,11 @@ const _MAX_BLEND_WEIGHT: float = 0.6
 ##   ever RECOVERS real data at a handful of this render grid's own edge/
 ##   corner samples that used to land just outside the fine tile's
 ##   96x96-pixel bounds and return empty -- strictly fewer small rendering
-##   gaps at hex edges, never the reverse, in the case checked.
+##   gaps at hex edges, never the reverse, in the case checked. (Fine tiles
+##   were 96x96px/~104m-per-pixel at the time this was measured -- Phase 1b
+##   rebaked them at 333x333px/~real-30m-per-pixel, matching
+##   HexCoord.SUB_HEX_GRID_N 1:1; the snap-to-cell-center behavior described
+##   here is unchanged, only the underlying pixel density improved.)
 ## - A hex WITHOUT one (London area, (75,145) -- true for ~99% of the
 ##   corridor until Phase 1b): ~5% of the 121 render-grid samples showed a
 ##   DIFFERENT biome classification than the old exact-position sample, at
@@ -77,7 +81,7 @@ const _MAX_BLEND_WEIGHT: float = 0.6
 ##   neighboring ~878m coarse pixel near a boundary. A real, if small and
 ##   edge-of-hex-scale, rendering difference, not a crash or garbage data --
 ##   an expected consequence of the aliasing SubHexTerrainQuery's own doc
-##   comment already discloses, and moot once Phase 1b rebakes real 30m data.
+##   comment already discloses, and moot for any hex Phase 1b rebaked real 30m data for.
 ## _GRID_N (11, a RENDERING density chosen for
 ## cheap per-frame redraw) stays independent of
 ## HexCoord.SUB_HEX_CELL_SIZE_METERS (30m, the MECHANICAL grid Phase 2+
