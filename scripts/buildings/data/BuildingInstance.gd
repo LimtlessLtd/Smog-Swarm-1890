@@ -56,14 +56,22 @@ func _init(p_definition: BuildingDefinition = null, p_hex_coord: Vector2i = Vect
 func is_destroyed() -> bool:
 	return current_hp <= 0.0
 
-## `daily_output` scaled by the occupied hex's soil fertility when the
-## definition opts in (see BuildingDefinition.soil_fertility_scales_output).
-## `hex_cell` may be null (e.g. caller has no live HexGridMap reference yet);
-## output is returned unscaled in that case.
+## `daily_output` scaled by the soil fertility under this building's REAL
+## sub-hex footprint (hex_coord + local_position — Sub-Hex Mechanical Layer
+## Phase 3, todo.md, [[sub-hex-mechanical-layer-epic]] memory:
+## local_position stops being cosmetic-only here) when the definition opts
+## in (see BuildingDefinition.soil_fertility_scales_output).
+## SubHexSoilQuery.soil_fertility_at() falls back to `hex_cell`'s own
+## macro-hex soil_fertility outside the baked corridor — `hex_cell` may be
+## null (e.g. caller has no live HexGridMap reference yet), in which case
+## POOR (the baseline daily_output is authored against) is assumed rather
+## than skipping the scale entirely.
 func get_effective_output(hex_cell: HexCell) -> Dictionary:
 	var output: Dictionary = definition.daily_output.duplicate()
-	if definition.soil_fertility_scales_output and hex_cell:
-		var multiplier := _fertility_multiplier(hex_cell.soil_fertility)
+	if definition.soil_fertility_scales_output:
+		var fallback := hex_cell.soil_fertility if hex_cell else GameEnums.SoilFertility.POOR
+		var soil := SubHexSoilQuery.soil_fertility_at(hex_coord, local_position, fallback)
+		var multiplier := _fertility_multiplier(soil)
 		for resource_type in output:
 			output[resource_type] = float(output[resource_type]) * multiplier
 	return output
