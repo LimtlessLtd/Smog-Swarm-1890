@@ -312,7 +312,7 @@ func _build_unit_panel(unit_manager: UnitManager, wall_manager: WallManager) -> 
 	add_child(unit_panel)
 	_place_top_left(unit_panel, UNIT_PANEL_SIZE)
 	if _unit_command_controller:
-		unit_panel.setup(_unit_command_controller, unit_manager, _building_manager, wall_manager)
+		unit_panel.setup(_unit_command_controller, unit_manager, _building_manager, wall_manager, _tech_manager)
 
 func _build_toast() -> void:
 	_toast = HUDToastRouter.new(self, _place_above_bottom_bar_wide)

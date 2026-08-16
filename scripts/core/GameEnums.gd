@@ -271,6 +271,27 @@ enum TechUnlockType {
 	BUILDING_TIER,    ## Unlocks a whole building tier (unlock_value: 1-5; tier 0 is baseline, no tech needed) — see TechManager.is_building_tier_unlocked().
 	BUILDING_VARIANT, ## Unlocks an advanced building variant — documented hook, unused until a variant building actually exists.
 	SEAFARING,        ## The one node gated on campaign state as well as prerequisites — see TechDefinition.requires_wales_and_scotland_retaken.
+	## design_doc.md §4's "2 research upgrades per unit type (auto-applies to
+	## active & future units)". Appended, not inserted above SEAFARING —
+	## Godot enums serialize as raw int ordinals, so inserting would silently
+	## repoint every existing save's researched tech records. unlock_value
+	## carries the GameEnums.UnitType ordinal the upgrade applies to; WHICH of
+	## that unit's two upgrades it is lives in UnitUpgradeDefinition (a single
+	## int can't carry both, and the effect table has to exist there anyway).
+	UNIT_UPGRADE,
+}
+
+## Which stat one per-unit research upgrade actually moves. Split by role
+## rather than applied uniformly (user-decided): MELEE units get
+## ATTACK_DAMAGE then MAX_HP, RANGED units ATTACK_DAMAGE then
+## GUNPOWDER_RELIEF, SPECIAL units MOVE_SPEED then VISION_RADIUS — see
+## UnitUpgradeCatalog for the table and why each role got the pair it did.
+enum UnitUpgradeStat {
+	ATTACK_DAMAGE,     ## Multiplier on UnitDefinition.attack_damage, folded into the damage_multiplier CombatCoordinator already passes CombatEngine.
+	MAX_HP,            ## Multiplier on UnitDefinition.max_hp. Active units are granted the delta outright, not just a bigger empty bar.
+	GUNPOWDER_RELIEF,  ## Softens the forced-melee penalty (CombatEngine.FORCED_MELEE_*) toward 1.0 by this fraction; 1.0 would remove it entirely.
+	MOVE_SPEED,        ## Multiplier on UnitDefinition.move_speed_multiplier.
+	VISION_RADIUS,     ## Flat hex-ring bonus added to UnitDefinition.vision_radius (not a multiplier — most units sit at 0, which nothing multiplies off).
 }
 
 ## EventManager's typed event records — what kind of thing happened.

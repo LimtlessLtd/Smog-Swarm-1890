@@ -61,16 +61,24 @@ const FORCED_MELEE_DAMAGE_TAKEN_MULTIPLIER: float = 1.5 ## Incoming damage while
 ## new Resource/RefCounted subtype: damage_dealt (to the defender),
 ## defender_hp_remaining, attacker_hp_remaining, and attacker_forced_melee
 ## (whether the Gunpowder-depletion penalty applied this round).
-static func resolve_engagement(attacker: UnitInstance, attacker_gunpowder_available: bool, defender_hp: float, defender_damage: float, damage_multiplier: float = 1.0, incoming_damage_multiplier: float = 1.0) -> Dictionary:
+## `forced_melee_outgoing`/`forced_melee_incoming` default to the two
+## constants above, i.e. exactly the behavior before they were parameters.
+## They exist for the RANGED per-unit "Munitions Discipline" upgrade, which
+## softens the depletion penalty rather than removing it — supplied by the
+## caller (CombatCoordinator, via UnitUpgrades.forced_melee_multipliers())
+## for the same reason every other multiplier here is: this engine stays
+## ignorant of what computed it. Passed as a PAIR because the penalty is a
+## pair; easing only the outgoing half would change what the mechanic means.
+static func resolve_engagement(attacker: UnitInstance, attacker_gunpowder_available: bool, defender_hp: float, defender_damage: float, damage_multiplier: float = 1.0, incoming_damage_multiplier: float = 1.0, forced_melee_outgoing: float = FORCED_MELEE_DAMAGE_MULTIPLIER, forced_melee_incoming: float = FORCED_MELEE_DAMAGE_TAKEN_MULTIPLIER) -> Dictionary:
 	var forced_melee := attacker.definition.requires_gunpowder and not attacker_gunpowder_available
 
 	var outgoing_damage := attacker.definition.attack_damage * damage_multiplier
 	if forced_melee:
-		outgoing_damage *= FORCED_MELEE_DAMAGE_MULTIPLIER
+		outgoing_damage *= forced_melee_outgoing
 
 	var incoming_damage := defender_damage
 	if forced_melee:
-		incoming_damage *= FORCED_MELEE_DAMAGE_TAKEN_MULTIPLIER
+		incoming_damage *= forced_melee_incoming
 	incoming_damage *= incoming_damage_multiplier
 
 	var defender_hp_remaining := maxf(defender_hp - outgoing_damage, 0.0)

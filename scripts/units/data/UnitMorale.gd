@@ -58,11 +58,23 @@ static func get_rank(instance: UnitInstance) -> Rank:
 	return Rank.ROOKIE
 
 ## 0.0 (broken) .. 1.0 (steady) — the four inputs above, averaged.
-static func get_morale(instance: UnitInstance, gunpowder_available: bool) -> float:
-	if not instance.definition or instance.definition.max_hp <= 0.0:
+##
+## `effective_max_hp` defaults to -1.0, meaning "use the definition's own
+## max_hp" — i.e. exactly the behavior before per-unit upgrades existed. A
+## caller that knows about researched upgrades (CombatCoordinator, via
+## UnitUpgrades.max_hp()) passes the real ceiling instead, so an upgraded
+## unit isn't scored as though it were permanently over-healthy. Supplied as
+## a plain caller-computed scalar rather than a TechManager reference, the
+## same convention CombatEngine's own multipliers use — this stays a pure
+## stat helper that knows nothing about research.
+static func get_morale(instance: UnitInstance, gunpowder_available: bool, effective_max_hp: float = -1.0) -> float:
+	if not instance.definition:
+		return 1.0
+	var max_hp := effective_max_hp if effective_max_hp >= 0.0 else instance.definition.max_hp
+	if max_hp <= 0.0:
 		return 1.0
 
-	var hp_factor := instance.current_hp / instance.definition.max_hp
+	var hp_factor := instance.current_hp / max_hp
 
 	var equipment_factor := 1.0
 	if instance.definition.requires_gunpowder and not gunpowder_available:
@@ -86,8 +98,8 @@ static func get_morale(instance: UnitInstance, gunpowder_available: bool) -> flo
 ## penalty and veterancy's bonus combined into one number so CombatEngine
 ## itself needs only one extra parameter, not two, and never has to know
 ## this class (or ranks, or kill counts) exists at all.
-static func get_damage_multiplier(instance: UnitInstance, gunpowder_available: bool) -> float:
-	var morale := get_morale(instance, gunpowder_available)
+static func get_damage_multiplier(instance: UnitInstance, gunpowder_available: bool, effective_max_hp: float = -1.0) -> float:
+	var morale := get_morale(instance, gunpowder_available, effective_max_hp)
 	var morale_multiplier: float = lerpf(MIN_MORALE_DAMAGE_MULTIPLIER, 1.0, morale)
 
 	var veterancy_bonus := 0.0

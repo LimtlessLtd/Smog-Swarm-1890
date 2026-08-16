@@ -60,6 +60,7 @@ signal unit_moved(instance: UnitInstance, from_coord: Vector2i, to_coord: Vector
 @export var logistics_network_path: NodePath  ## Optional — HexPathfinder's road/rail/canal discount (a continuous speed bonus, see MovementStepper), and the Zone of Control read _is_friendly_hex() gates Garrison/Hold healing on. Unset skips both.
 @export var building_manager_path: NodePath  ## Optional — local obstacle avoidance: buildings steer continuous movement around them regardless of Tactical hydration.
 @export var local_detail_manager_path: NodePath  ## Optional — local obstacle avoidance: props (trees/rocks/etc.) only exist as live data while their hex is Tactical-hydrated (LocalDetailManager.get_props_at()).
+@export var tech_manager_path: NodePath  ## Optional — the SPECIAL-role movement upgrade (UnitUpgrades.move_speed_multiplier()). Unset means units move at their raw UnitDefinition speed.
 @export var wall_manager_path: NodePath  ## Optional — strategic route wall-avoidance, fed into HexPathfinder.find_path() so a unit's route goes around an un-breached wall. Unset means no wall-awareness.
 
 var _hex_grid_map: HexGridMap
@@ -67,6 +68,7 @@ var _unit_manager: UnitManager
 var _logistics_network: LogisticsNetwork
 var _building_manager: BuildingManager
 var _local_detail_manager: LocalDetailManager
+var _tech_manager: TechManager
 var _wall_manager: WallManager
 var _logic_tick_timer: float = 0.0
 
@@ -117,6 +119,8 @@ func _ready() -> void:
 		_building_manager = get_node(building_manager_path)
 	if local_detail_manager_path != NodePath():
 		_local_detail_manager = get_node(local_detail_manager_path)
+	if tech_manager_path != NodePath():
+		_tech_manager = get_node(tech_manager_path)
 	if wall_manager_path != NodePath():
 		_wall_manager = get_node(wall_manager_path)
 
@@ -374,7 +378,7 @@ func _portal_offset_for_step(from_coord: Vector2i, to_coord: Vector2i) -> Vector
 ## faster) stacks on top the same way; 1.0 for every non-mounted unit, so
 ## this is a no-op for most of the roster.
 func _movement_speed(instance: UnitInstance, from_coord: Vector2i, to_coord: Vector2i) -> float:
-	var speed := MovementStepper.BASE_MOVE_SPEED * instance.definition.move_speed_multiplier
+	var speed := MovementStepper.BASE_MOVE_SPEED * UnitUpgrades.move_speed_multiplier(_tech_manager, instance.definition)
 	speed *= HexPathfinder.get_movement_speed_multiplier(_hex_grid_map, _logistics_network, from_coord, to_coord)
 	if TimeCycleManager.is_day():
 		speed *= DAY_MOVE_SPEED_MULTIPLIER
