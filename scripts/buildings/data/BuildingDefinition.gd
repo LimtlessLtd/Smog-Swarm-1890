@@ -46,6 +46,14 @@ extends Resource
 @export var allowed_soil_fertility: Array[GameEnums.SoilFertility] = []
 @export var requires_settlement: bool = false  ## True for civic/industrial buildings that must sit inside a settlement's urban footprint.
 
+## How many of this building may stand on one hex; 0 (the default) means no
+## limit, matching the "empty/zero == no restriction of this kind" convention
+## the two arrays above already use. A data field rather than a Town-Hall
+## special case in BuildingManager, even though Town Hall is its only user
+## today — design_doc.md §3 states the rule per building ("Only 1 can be
+## built per hex tile"), so it belongs on the definition.
+@export var max_per_hex: int = 0
+
 ## When true, daily_output is treated as the POOR-soil baseline and scaled
 ## by the target hex's actual soil fertility (see
 ## BuildingInstance.get_effective_output) — this is what granular soil

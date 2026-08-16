@@ -29,6 +29,12 @@ const DETAIL_RADIUS: int = 1  ## Hex disk radius hydrated around the camera; 1 =
 @export var fog_of_war_path: NodePath
 @export var wall_manager_path: NodePath  ## Optional — Tactical-zoom wall rendering. Unset means walls don't render up close; StrategicOverlayManager's own thin markers are unaffected.
 @export var unit_command_controller_path: NodePath  ## Optional — selection-highlight sync. Unset means TacticalHexView's per-building tint never lights up.
+## Optional — repaints a hex whose sub-hex ground actually changed under it
+## (a founded settlement paving its urban disc). Unset means a newly founded
+## or newly grown town's ground only updates on the next building change
+## there. See _on_urban_extent_changed() for why the building signals this
+## class already listens to aren't sufficient on their own.
+@export var settlement_founding_controller_path: NodePath
 
 var _hex_grid_map: HexGridMap
 var _building_manager: BuildingManager
@@ -60,6 +66,9 @@ func _ready() -> void:
 		# off without a second building_placed emission (which would
 		# double-fire every other building_placed listener too).
 		_building_manager.building_construction_completed.connect(_on_buildings_changed)
+	if settlement_founding_controller_path != NodePath():
+		var founding: SettlementFoundingController = get_node(settlement_founding_controller_path)
+		founding.urban_extent_changed.connect(_on_urban_extent_changed)
 	if logistics_network_path != NodePath():
 		_logistics_network = get_node(logistics_network_path)
 		_logistics_network.network_recomputed.connect(_on_network_recomputed)
@@ -239,6 +248,22 @@ func _on_buildings_changed(instance: BuildingInstance) -> void:
 ## a valid (if heavier-handed) way to pick that up.
 func _on_building_ruined(instance: BuildingInstance, _lost_population: int) -> void:
 	_on_buildings_changed(instance)
+
+## A founded settlement's urban disc always moves as a CONSEQUENCE of a
+## building event on that same hex (a Town Hall completing, or housing
+## changing what its population sums to), so the building signals above
+## already fire for every case this one does — but they fire FIRST:
+## SettlementFoundingController is a child of Main while this class is a
+## child of WorldRoot, Main's first child, so its _ready() (and therefore
+## its own connection to the same building signal) runs after this one's.
+## Rehydrating off the building signal alone would rebuild the view from
+## terrain the disc hadn't been written to yet. Listening here instead makes
+## the repaint order-independent rather than resting on _ready() order.
+func _on_urban_extent_changed(coord: Vector2i, _radius: float) -> void:
+	if not _is_tactical_mode or not _tactical_views.has(coord):
+		return
+	_dehydrate_hex(coord)
+	_refresh_hydrated_neighborhood(_last_centered_coord)
 
 ## A ZoC change can flip an already-hydrated hex's own overlay without that
 ## hex newly qualifying/disqualifying for detail at all (e.g. a Garrison
