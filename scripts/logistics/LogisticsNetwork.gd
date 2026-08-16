@@ -42,19 +42,32 @@ extends Node
 ## territory_controller_path is optional — unset means no hex is ever
 ## territorially lost.
 ##
-## Sub-Hex Mechanical Layer Phase 5a (todo.md, [[sub-hex-mechanical-layer-epic]]
-## memory) — Military ZoC (both the building aura and the mobile
-## MOBILE_SUPPLY_DUMP aura) sizes its reach by the projecting source's real
-## hex_coord + local_position via HexCoord.sub_hex_disk() (_apply_military_aura()
-## below), the same shared utility FogOfWarManager's vision coverage uses
-## (Phase 4) — a source near its hex's edge projects an asymmetric aura
-## shifted toward wherever it actually sits, never further than a
-## hex-centered source at the same radius would (see HexCoord.
-## fractional_hex_distance()'s own doc comment for the proof). Civilian ZoC
-## is untouched — it covers only the whole projecting hex itself, no radius
-## disk involved, nothing for sub-hex position to refine.
+## Infrastructure rework (todo.md, 2026-08-16) — get_placement_error()/
+## can_place_segment()/place_segment() and get_upgrade_error()/
+## can_upgrade_segment()/upgrade_segment() give this class the same
+## "validate -> spend -> register" placement/upgrade responsibility
+## WallManager already has for wall segments (that class's own doc comment
+## explicitly names LogisticsNetwork as sharing its "chain of independently-
+## tracked segments between hex pairs" shape) — not a new responsibility
+## bolted onto an unrelated class, the established precedent for exactly
+## this kind of segment-graph manager. Real per-(line_type, tier) costs and
+## build legality live in SupplyLineCatalog, mirroring WallCatalog.
+##
+## Placement legality: a BRIDGE is only legal across an edge touching a
+## WATERWAY hex; ROAD/RAILWAY/CANAL are only legal where NEITHER hex is
+## WATERWAY (open water needs a bridge, not a road laid across it). Neither
+## direction is enforced yet at the PATHFINDING level — HexPathfinder still
+## lets any unit/horde ford a WATERWAY hex today regardless of whether it's
+## bridged (a pre-existing, disclosed simplification) — making Bridges
+## functionally REQUIRED to cross water (matching design_doc.md's "WATERWAY
+## - IMPASSABLE... Traversable ONLY via Bridges" literally) is a separate,
+## larger pathfinding change, deliberately split into its own follow-up PR
+## rather than bundled with this placement/cost/speed-bonus pass.
 
 signal network_recomputed
+signal placement_rejected(hex_a: Vector2i, hex_b: Vector2i, reason: String)
+signal segment_upgraded(segment: SupplyLineSegment)
+signal upgrade_rejected(segment: SupplyLineSegment, reason: String)
 
 const MILITARY_AURA_COVERAGE: float = 0.66
 const MILITARY_AURA_RADIUS: int = 1  ## How far (in hexes) Military ZoC projects beyond its own hex.
@@ -74,11 +87,15 @@ const MOBILE_SUPPLY_AURA_RADIUS: int = 0
 @export var territory_controller_path: NodePath  ## Optional — unset skips recompute-on-territory-change; _has_secured_ground() still reads live HexCell.districts state either way.
 @export var unit_manager_path: NodePath          ## Optional — the MOBILE_SUPPLY_DUMP ability (Searchlight Tender); unset means no unit ever projects ZoC.
 @export var unit_order_controller_path: NodePath ## Optional — recompute-on-move for the mobile aura above; without this, a MOBILE_SUPPLY_DUMP unit's aura only updates on train/remove, not as it walks.
+@export var resource_manager_path: NodePath      ## Optional — unset means place_segment()/upgrade_segment() never check affordability or spend anything, same "unwired means untested" convention WallManager's own resource_manager_path already documents.
+@export var tech_manager_path: NodePath          ## Optional — gates a tier's placement/upgrade against TechManager.is_building_tier_unlocked(). Unset means every tier reads as unlocked.
 
 var _hex_grid_map: HexGridMap
 var _building_manager: BuildingManager
 var _territory_controller: TerritoryController
 var _unit_manager: UnitManager
+var _resource_manager: ResourceManager
+var _tech_manager: TechManager
 var _segments: Array[SupplyLineSegment] = []
 var _zoc_by_hex: Dictionary = {}  # Vector2i -> ZoneOfControlState
 
@@ -99,13 +116,97 @@ func _ready() -> void:
 	if unit_order_controller_path != NodePath():
 		var unit_order_controller: UnitOrderController = get_node(unit_order_controller_path)
 		unit_order_controller.unit_moved.connect(_on_unit_moved)
+	if resource_manager_path != NodePath():
+		_resource_manager = get_node(resource_manager_path)
+	if tech_manager_path != NodePath():
+		_tech_manager = get_node(tech_manager_path)
 	recompute()
 
-func add_supply_line(line_type: GameEnums.SupplyLineType, hex_a: Vector2i, hex_b: Vector2i) -> SupplyLineSegment:
-	var segment := SupplyLineSegment.new(line_type, hex_a, hex_b)
+## Raw registration, no validation/cost — the free/internal primitive
+## place_segment() below builds on after its own checks pass. Kept public
+## (mirrors WallManager's own seed-vs-player-placement split) for any
+## future free/seeded caller (e.g. a starting rail line), though none
+## exists yet.
+func add_supply_line(line_type: GameEnums.SupplyLineType, hex_a: Vector2i, hex_b: Vector2i, tier: int = 0) -> SupplyLineSegment:
+	var segment := SupplyLineSegment.new(line_type, hex_a, hex_b, tier)
 	_segments.append(segment)
 	recompute()
 	return segment
+
+## Returns "" if `line_type` at `tier` can legally be placed on the edge
+## between `hex_a` and `hex_b` right now, or a rejection reason otherwise.
+func get_placement_error(line_type: GameEnums.SupplyLineType, tier: int, hex_a: Vector2i, hex_b: Vector2i) -> String:
+	if not _hex_grid_map:
+		return "No hex grid map wired to LogisticsNetwork."
+	if HexCoord.distance(hex_a, hex_b) != 1:
+		return "Infrastructure can only connect adjacent hexes."
+	var cell_a := _hex_grid_map.get_cell(hex_a)
+	var cell_b := _hex_grid_map.get_cell(hex_b)
+	if not cell_a or not cell_b:
+		return "Infrastructure edge is outside the map."
+	if not cell_a.is_passable() or not cell_b.is_passable():
+		return "Cannot build infrastructure on marsh or peat bog until it is drained."
+	var touches_water := cell_a.biome_type == GameEnums.BiomeType.WATERWAY or cell_b.biome_type == GameEnums.BiomeType.WATERWAY
+	if line_type == GameEnums.SupplyLineType.BRIDGE and not touches_water:
+		return "A Bridge can only be built across open water."
+	if line_type != GameEnums.SupplyLineType.BRIDGE and touches_water:
+		return "%s cannot cross open water — build a Bridge instead." % SupplyLineCatalog.get_display_name(line_type, tier)
+	if tier < 0 or tier > SupplyLineCatalog.get_max_tier(line_type):
+		return "%s has no such tier." % SupplyLineCatalog.get_display_name(line_type, tier)
+	if _tech_manager and not _tech_manager.is_building_tier_unlocked(tier):
+		return "%s hasn't been researched yet." % SupplyLineCatalog.get_display_name(line_type, tier)
+	if get_segment_between(hex_a, hex_b):
+		return "This edge already has infrastructure — upgrade it instead."
+	if _resource_manager and not _resource_manager.can_afford(SupplyLineCatalog.get_build_cost(line_type, tier)):
+		return "Not enough resources to build %s." % SupplyLineCatalog.get_display_name(line_type, tier)
+	return ""
+
+func can_place_segment(line_type: GameEnums.SupplyLineType, tier: int, hex_a: Vector2i, hex_b: Vector2i) -> bool:
+	return get_placement_error(line_type, tier, hex_a, hex_b).is_empty()
+
+## The real player-facing placement entry point — validates, spends, then
+## registers via add_supply_line(). Returns null (and emits
+## placement_rejected) on failure, same "manager decides, controller only
+## calls" contract BuildingManager.place_building()/WallManager.place_wall_line()
+## already establish.
+func place_segment(line_type: GameEnums.SupplyLineType, tier: int, hex_a: Vector2i, hex_b: Vector2i) -> SupplyLineSegment:
+	var error := get_placement_error(line_type, tier, hex_a, hex_b)
+	if not error.is_empty():
+		placement_rejected.emit(hex_a, hex_b, error)
+		return null
+	if _resource_manager:
+		_resource_manager.spend(SupplyLineCatalog.get_build_cost(line_type, tier))
+	return add_supply_line(line_type, hex_a, hex_b, tier)
+
+func get_upgrade_error(segment: SupplyLineSegment) -> String:
+	if not segment:
+		return "No such infrastructure segment."
+	if segment.tier >= SupplyLineCatalog.get_max_tier(segment.line_type):
+		return "%s is already at its highest tier." % SupplyLineCatalog.get_display_name(segment.line_type, segment.tier)
+	var next_tier := segment.tier + 1
+	if _tech_manager and not _tech_manager.is_building_tier_unlocked(next_tier):
+		return "%s hasn't been researched yet." % SupplyLineCatalog.get_display_name(segment.line_type, next_tier)
+	if _resource_manager and not _resource_manager.can_afford(SupplyLineCatalog.get_upgrade_cost(segment.line_type, next_tier)):
+		return "Not enough resources to upgrade to %s." % SupplyLineCatalog.get_display_name(segment.line_type, next_tier)
+	return ""
+
+func can_upgrade_segment(segment: SupplyLineSegment) -> bool:
+	return get_upgrade_error(segment).is_empty()
+
+## Mirrors WallManager.upgrade_segment() exactly — costs 50% of building the
+## next tier from scratch (SupplyLineCatalog.get_upgrade_cost()).
+func upgrade_segment(segment: SupplyLineSegment) -> bool:
+	var error := get_upgrade_error(segment)
+	if not error.is_empty():
+		upgrade_rejected.emit(segment, error)
+		return false
+	var next_tier := segment.tier + 1
+	if _resource_manager:
+		_resource_manager.spend(SupplyLineCatalog.get_upgrade_cost(segment.line_type, next_tier))
+	segment.tier = next_tier
+	segment_upgraded.emit(segment)
+	recompute()
+	return true
 
 func sever_segment_between(hex_a: Vector2i, hex_b: Vector2i) -> void:
 	_set_severed_between(hex_a, hex_b, true)

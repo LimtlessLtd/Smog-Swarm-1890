@@ -375,9 +375,7 @@ func _portal_offset_for_step(from_coord: Vector2i, to_coord: Vector2i) -> Vector
 ## this is a no-op for most of the roster.
 func _movement_speed(instance: UnitInstance, from_coord: Vector2i, to_coord: Vector2i) -> float:
 	var speed := MovementStepper.BASE_MOVE_SPEED * instance.definition.move_speed_multiplier
-	if _hex_grid_map:
-		speed *= HexPathfinder.get_terrain_speed_multiplier(_hex_grid_map.get_cell(from_coord))
-	speed *= HexPathfinder.get_logistics_speed_multiplier(_logistics_network, from_coord, to_coord)
+	speed *= HexPathfinder.get_movement_speed_multiplier(_hex_grid_map, _logistics_network, from_coord, to_coord)
 	if TimeCycleManager.is_day():
 		speed *= DAY_MOVE_SPEED_MULTIPLIER
 	return speed

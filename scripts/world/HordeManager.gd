@@ -616,15 +616,14 @@ func load_save_state(hordes: Array[Horde], next_id: int) -> void:
 	_next_id = next_id
 	_logic_tick_timer = 0.0
 
-## Terrain (current hex) and logistics (this edge) speed multipliers stacked
-## onto MovementStepper.BASE_MOVE_SPEED — the same table the drift route was
-## chosen against, plus the Day/Night modifier, stacking multiplicatively
-## with terrain/logistics like every other factor here.
+## Terrain-or-infrastructure speed multiplier (whichever this edge actually
+## has — see HexPathfinder.get_movement_speed_multiplier()'s own doc
+## comment for why it's one or the other, not both stacked) onto
+## MovementStepper.BASE_MOVE_SPEED — the same table the drift route was
+## chosen against — plus the Day/Night modifier.
 func _movement_speed(from_coord: Vector2i, to_coord: Vector2i) -> float:
 	var speed := MovementStepper.BASE_MOVE_SPEED
-	if _hex_grid_map:
-		speed *= HexPathfinder.get_terrain_speed_multiplier(_hex_grid_map.get_cell(from_coord))
-	speed *= HexPathfinder.get_logistics_speed_multiplier(_logistics_network, from_coord, to_coord)
+	speed *= HexPathfinder.get_movement_speed_multiplier(_hex_grid_map, _logistics_network, from_coord, to_coord)
 	speed *= NIGHT_MOVE_SPEED_MULTIPLIER if TimeCycleManager.is_night() else DAY_MOVE_SPEED_MULTIPLIER
 	return speed
 

@@ -33,6 +33,14 @@ func wire_wall_placement_controller(controller: WallPlacementController) -> void
 	controller.placement_started.connect(_on_wall_placement_started)
 	controller.placement_ended.connect(_on_placement_ended)
 
+func wire_logistics_network(logistics_network: LogisticsNetwork) -> void:
+	logistics_network.placement_rejected.connect(_on_infrastructure_placement_rejected)
+
+## placement_ended reused again, same reasoning as wire_wall_placement_controller()'s own comment.
+func wire_supply_line_placement_controller(controller: SupplyLinePlacementController) -> void:
+	controller.placement_started.connect(_on_infrastructure_placement_started)
+	controller.placement_ended.connect(_on_placement_ended)
+
 func _on_placement_started(building_type: GameEnums.BuildingType) -> void:
 	var definition := BuildingCatalog.get_definition(building_type)
 	var display_name := definition.display_name if definition else "building"
@@ -48,6 +56,12 @@ func _on_wall_placement_started(_tier: int) -> void:
 	_mode_label.text = "Placing wall — click and drag along the map (Shift-drag for more, Right-click/Esc to cancel)"
 
 func _on_wall_placement_rejected(_hex_a: Vector2i, _hex_b: Vector2i, reason: String) -> void:
+	_toast.show(reason)
+
+func _on_infrastructure_placement_started(line_type: GameEnums.SupplyLineType, tier: int) -> void:
+	_mode_label.text = "Placing %s — click a hex, then an adjacent hex to connect it (Right-click/Esc to cancel)" % SupplyLineCatalog.get_display_name(line_type, tier)
+
+func _on_infrastructure_placement_rejected(_hex_a: Vector2i, _hex_b: Vector2i, reason: String) -> void:
 	_toast.show(reason)
 
 func _on_construction_started(building_type: GameEnums.BuildingType, _coord: Vector2i, days: int) -> void:

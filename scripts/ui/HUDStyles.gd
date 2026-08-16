@@ -269,6 +269,8 @@ static func category_card_colors(key: String) -> Dictionary:
 			return {"fill": Color(0.17, 0.15, 0.10), "hover_fill": Color(0.24, 0.21, 0.15), "border": Color(0.48, 0.68, 0.36)}
 		"defense_walls":  # Red & white — Defense Works + Walls, combined into one column.
 			return {"fill": Color(0.23, 0.12, 0.11), "hover_fill": Color(0.32, 0.17, 0.16), "border": Color(0.88, 0.85, 0.82)}
+		"infrastructure":  # Ochre & grey — Road/Railway/Canal/Bridge (Infrastructure rework, todo.md).
+			return {"fill": Color(0.20, 0.17, 0.10), "hover_fill": Color(0.28, 0.24, 0.15), "border": Color(0.78, 0.66, 0.38)}
 		_:
 			return {}
 
