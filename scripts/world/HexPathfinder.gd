@@ -112,7 +112,7 @@ static func find_path(hex_grid_map: HexGridMap, start: Vector2i, goal: Vector2i,
 				continue
 			if wall_manager and wall_manager.get_blocking_segment(current, neighbor, HexCoord.axial_to_world(current), HexCoord.axial_to_world(neighbor)):
 				continue
-			var tentative_g: float = g_score[current] + _step_cost(current, neighbor, cell, logistics_network)
+			var tentative_g: float = g_score[current] + get_step_cost(current, neighbor, cell, logistics_network)
 			if tentative_g < g_score.get(neighbor, INF):
 				came_from[neighbor] = current
 				g_score[neighbor] = tentative_g
@@ -121,7 +121,13 @@ static func find_path(hex_grid_map: HexGridMap, start: Vector2i, goal: Vector2i,
 
 	return []  # Frontier exhausted without reaching goal — unreachable (e.g. sealed off by impassable terrain).
 
-static func _step_cost(from: Vector2i, to: Vector2i, to_cell: HexCell, logistics_network: LogisticsNetwork) -> float:
+## Public (not `_`-prefixed) — HordeFlowField reuses this exact edge-cost
+## model to build its Dijkstra integration field, so a flow-field route and
+## an A* route never disagree about what a given hex-to-hex step actually
+## costs. `from` only matters for the logistics-segment lookup (a segment
+## between two hexes isn't directional); the biome/base cost is entirely a
+## function of `to_cell`.
+static func get_step_cost(from: Vector2i, to: Vector2i, to_cell: HexCell, logistics_network: LogisticsNetwork) -> float:
 	var cost := BASE_HEX_COST * float(_BIOME_COST_MULTIPLIER.get(to_cell.biome_type, 1.0))
 	if logistics_network:
 		var segment := logistics_network.get_segment_between(from, to)
