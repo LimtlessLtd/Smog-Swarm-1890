@@ -55,14 +55,17 @@ extends Node
 ##
 ## Placement legality: a BRIDGE is only legal across an edge touching a
 ## WATERWAY hex; ROAD/RAILWAY/CANAL are only legal where NEITHER hex is
-## WATERWAY (open water needs a bridge, not a road laid across it). Neither
-## direction is enforced yet at the PATHFINDING level — HexPathfinder still
-## lets any unit/horde ford a WATERWAY hex today regardless of whether it's
-## bridged (a pre-existing, disclosed simplification) — making Bridges
-## functionally REQUIRED to cross water (matching design_doc.md's "WATERWAY
-## - IMPASSABLE... Traversable ONLY via Bridges" literally) is a separate,
-## larger pathfinding change, deliberately split into its own follow-up PR
-## rather than bundled with this placement/cost/speed-bonus pass.
+## WATERWAY (open water needs a bridge, not a road laid across it).
+##
+## Bridge-mandatory-crossing (todo.md, 2026-08-16 follow-up) — is_bridge_between()
+## below is what makes that legality rule matter at the PATHFINDING level
+## too: HexPathfinder.is_water_crossing_blocked() calls it to exclude any
+## unbridged WATERWAY-touching edge from find_path()/HordeFlowField/
+## HordeManager._replan_cheap(), matching design_doc.md's "WATERWAY -
+## IMPASSABLE... Traversable ONLY via Bridges" literally. This class only
+## answers "is this specific edge bridged" — the actual exclusion logic
+## lives in HexPathfinder, the same "this class owns segment data, callers
+## decide what to do with it" split get_segment_between() already has.
 
 signal network_recomputed
 signal placement_rejected(hex_a: Vector2i, hex_b: Vector2i, reason: String)
@@ -227,6 +230,17 @@ func get_segment_between(hex_a: Vector2i, hex_b: Vector2i) -> SupplyLineSegment:
 		if (segment.hex_a == hex_a and segment.hex_b == hex_b) or (segment.hex_a == hex_b and segment.hex_b == hex_a):
 			return segment
 	return null
+
+## True if an unsevered Bridge connects `hex_a` and `hex_b` specifically —
+## Bridge-mandatory-crossing (todo.md, 2026-08-16 follow-up to the
+## Infrastructure rework above): HexPathfinder.is_water_crossing_blocked()
+## calls this to decide whether a WATERWAY-touching edge is actually
+## traversable. A severed Bridge doesn't count — the same "can't lean on a
+## network the player's own severance state no longer considers usable"
+## rule every other supply-line consumer already follows.
+func is_bridge_between(hex_a: Vector2i, hex_b: Vector2i) -> bool:
+	var segment := get_segment_between(hex_a, hex_b)
+	return segment != null and segment.line_type == GameEnums.SupplyLineType.BRIDGE and not segment.is_severed
 
 ## Segments + severed state only; ZoC coverage (_zoc_by_hex) is
 ## deliberately not part of this, it recomputes fresh from buildings +
