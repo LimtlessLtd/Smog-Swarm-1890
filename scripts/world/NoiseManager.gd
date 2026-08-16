@@ -32,6 +32,18 @@ extends Node
 ## SOME attention after dark, just less than an active foundry district
 ## would. A ruined building contributes nothing — rubble has no operating
 ## machinery left to be loud, and no light left to cast.
+##
+## Sub-Hex Mechanical Layer Phase 5b (todo.md, [[sub-hex-mechanical-layer-epic]]
+## memory) — both ends of this aura are sub-hex-accurate now. The SOURCE
+## side (recompute() below) sizes each building's contribution by its real
+## hex_coord + local_position via HexCoord.sub_hex_disk() (the same shared
+## utility Phase 4/5a use for vision/ZoC), so a Foundry near its hex's edge
+## projects noise shifted toward wherever it actually sits. The LISTENER
+## side is new to this phase — get_loudest_hex_within() takes an optional
+## `listener_local_position` so HordeManager can pass a horde's own
+## sub-hex position, not just its hex_coord, when scanning for attraction —
+## no prior aura/vision mechanic in this epic had a "listener" concept to
+## make sub-hex-accurate, they all read a per-hex field directly.
 
 signal noise_recomputed
 
@@ -60,18 +72,22 @@ func _ready() -> void:
 func get_noise_at(coord: Vector2i) -> float:
 	return _noise_by_hex.get(coord, 0.0)
 
-## The loudest hex within `radius` of `coord` (INCLUSIVE of `coord` itself)
-## — HordeManager's own "attraction is local, not global" check reads this
-## rather than the raw per-hex Dictionary directly. Returns `coord` itself
-## both when nothing in range is louder than `coord` already is, AND when
-## nothing at all has been generated there — callers that care about the
-## difference check get_noise_at() on the result themselves
+## The loudest hex within `radius` of a listener sitting at
+## `listener_local_position` inside `coord` (INCLUSIVE of `coord` itself) —
+## HordeManager's own "attraction is local, not global" check reads this
+## rather than the raw per-hex Dictionary directly, passing the horde's own
+## `local_position` (Phase 5b) so a horde standing near its hex's edge
+## scans from where it actually is, not just which hex it's in. Returns
+## `coord` itself both when nothing in range is louder than `coord` already
+## is, AND when nothing at all has been generated there — callers that care
+## about the difference check get_noise_at() on the result themselves
 ## (HordeManager._pick_attraction_target() does exactly that against
-## ATTRACTION_THRESHOLD).
-func get_loudest_hex_within(coord: Vector2i, radius: int) -> Vector2i:
+## ATTRACTION_THRESHOLD). `listener_local_position` defaults to
+## Vector2.ZERO (the old hex-center behavior) for any other caller.
+func get_loudest_hex_within(coord: Vector2i, radius: int, listener_local_position: Vector2 = Vector2.ZERO) -> Vector2i:
 	var best_coord := coord
 	var best_noise := get_noise_at(coord)
-	for candidate in HexCoord.hex_disk(coord, radius):
+	for candidate in HexCoord.sub_hex_disk(coord, listener_local_position, radius):
 		var noise := get_noise_at(candidate)
 		if noise > best_noise:
 			best_noise = noise
@@ -95,7 +111,7 @@ func recompute() -> void:
 				contribution += NIGHT_LIGHT_ATTRACTION
 			if contribution <= 0.0:
 				continue
-			for coord in HexCoord.hex_disk(instance.hex_coord, NOISE_RADIUS):
+			for coord in HexCoord.sub_hex_disk(instance.hex_coord, instance.local_position, NOISE_RADIUS):
 				if not _hex_grid_map or _hex_grid_map.has_cell(coord):
 					result[coord] = result.get(coord, 0.0) + contribution
 	_noise_by_hex = result

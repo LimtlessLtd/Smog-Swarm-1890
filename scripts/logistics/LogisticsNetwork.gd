@@ -299,15 +299,7 @@ func recompute() -> void:
 		for instance in _building_manager.get_buildings_with_zoc_role(GameEnums.ZoneOfControlType.MILITARY):
 			if instance.is_ruined or not _is_supply_intact(instance.hex_coord) or _is_territorially_lost(instance.hex_coord):
 				continue
-			# Every hex within MILITARY_AURA_RADIUS gets the same flat
-			# coverage fraction, not just the projecting hex itself. Not
-			# gated on _hex_grid_map.has_cell() the way FogOfWarManager's
-			# own vision-disk loop is — a coord with no real HexCell behind
-			# it never gets queried by anything real, so skipping the
-			# check costs nothing and keeps this loop simple.
-			for coord in HexCoord.hex_disk(instance.hex_coord, MILITARY_AURA_RADIUS):
-				var state := _state_for(coord)
-				state.military_coverage = maxf(state.military_coverage, MILITARY_AURA_COVERAGE)
+			_apply_military_aura(instance.hex_coord, instance.local_position, MILITARY_AURA_RADIUS)
 
 	# The Searchlight Tender's mobile supply dump — same MILITARY_AURA_COVERAGE
 	# fraction a building projects, just from wherever the unit currently
@@ -323,10 +315,21 @@ func recompute() -> void:
 		for instance: UnitInstance in _unit_manager.get_all_units():
 			if instance.definition.ability != GameEnums.UnitAbility.MOBILE_SUPPLY_DUMP or instance.is_destroyed():
 				continue
-			for coord in HexCoord.hex_disk(instance.hex_coord, MOBILE_SUPPLY_AURA_RADIUS):
-				var state := _state_for(coord)
-				state.military_coverage = maxf(state.military_coverage, MILITARY_AURA_COVERAGE)
+			_apply_military_aura(instance.hex_coord, instance.local_position, MOBILE_SUPPLY_AURA_RADIUS)
 	network_recomputed.emit()
+
+## Applies MILITARY_AURA_COVERAGE to every hex within `radius` of a source
+## sitting at `source_local_position` inside `source_hex`, via
+## HexCoord.sub_hex_disk() — shared by the building and mobile-unit auras
+## above (Sub-Hex Mechanical Layer Phase 5a, see this class's own doc
+## comment). Not gated on _hex_grid_map.has_cell() the way FogOfWarManager's
+## own vision-disk loop is — a coord with no real HexCell behind it never
+## gets queried by anything real, so skipping the check costs nothing and
+## keeps this loop simple.
+func _apply_military_aura(source_hex: Vector2i, source_local_position: Vector2, radius: int) -> void:
+	for coord in HexCoord.sub_hex_disk(source_hex, source_local_position, radius):
+		var state := _state_for(coord)
+		state.military_coverage = maxf(state.military_coverage, MILITARY_AURA_COVERAGE)
 
 func _state_for(coord: Vector2i) -> ZoneOfControlState:
 	if not _zoc_by_hex.has(coord):

@@ -513,10 +513,17 @@ func _replan(horde: Horde) -> void:
 ## no-op sentinel _pick_drift_target() uses) when no NoiseManager is wired,
 ## nothing in range clears ATTRACTION_THRESHOLD, or the loudest hex in range
 ## is the horde's own current hex.
+##
+## Passes horde.local_position (Sub-Hex Mechanical Layer Phase 5b, todo.md,
+## [[sub-hex-mechanical-layer-epic]] memory) so the awareness scan is
+## centered on the horde's real sub-hex position, not just its hex_coord —
+## a horde standing near the edge of its hex closest to a noise source
+## perceives it as it actually would, rather than every horde anywhere in
+## the same hex scanning identically.
 func _pick_attraction_target(from_coord: Vector2i, horde: Horde) -> Vector2i:
 	if not _noise_manager:
 		return from_coord
-	var candidate := _noise_manager.get_loudest_hex_within(from_coord, ATTRACTION_AWARENESS_RADIUS)
+	var candidate := _noise_manager.get_loudest_hex_within(from_coord, ATTRACTION_AWARENESS_RADIUS, horde.local_position)
 	if candidate == from_coord:
 		return from_coord
 	# A horde whose zombies skew jumpy (mean_susceptibility() > 1.0) reacts
