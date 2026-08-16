@@ -85,6 +85,80 @@ const WORLD_UNITS_PER_REAL_METER: float = 0.1025599
 ## still poke past the hex's real boundary.
 const SUB_HEX_GRID_SPAN: float = HEX_SIZE * 2.0
 
+## Sub-Hex Mechanical Layer (todo.md, [[sub-hex-mechanical-layer-epic]]
+## memory) — the target real-world size of one MECHANICAL sub-hex cell
+## (movement/extraction/vision/ZoC/horde-AI granularity, Phase 2 onward),
+## deliberately decoupled from SUB_HEX_GRID_SPAN's rendering/sampling
+## resolution above (SubHexGroundView's 11x11 render grid, ~93 world units/
+## ~909m per cell — fine for a mesh redrawn every frame, nowhere near
+## mechanically granular). 30m chosen so play can zoom in on individual
+## units/buildings while the simulation still reasons at real street/field-
+## boundary scale, not a ~1km blur.
+const SUB_HEX_CELL_SIZE_METERS: float = 30.0
+
+## world_units = meters * WORLD_UNITS_PER_REAL_METER (that constant's own
+## derivation above) ~= 3.0768 world units. Same "shared here, not
+## re-derived per call site" reasoning WORLD_UNITS_PER_REAL_METER itself
+## already documents.
+const SUB_HEX_CELL_SIZE_WORLD_UNITS: float = SUB_HEX_CELL_SIZE_METERS * WORLD_UNITS_PER_REAL_METER
+
+## Sub-cell grid resolution spanning SUB_HEX_GRID_SPAN (1024.0 world units)
+## at SUB_HEX_CELL_SIZE_WORLD_UNITS (~3.0768) per cell: 1024.0 / 3.0768 ~=
+## 332.9 -> 333. A literal, not ceili(SUB_HEX_GRID_SPAN /
+## SUB_HEX_CELL_SIZE_WORLD_UNITS) — GDScript const initializers can't call
+## non-constant-folded math functions (same constraint this file's own
+## WORLD_UNITS_PER_REAL_METER doc comment already notes for sqrt()).
+## 333x333 = 110,889 addressable sub-cells per macro-hex — see
+## world_to_sub_hex()/sub_hex_to_world() below for why this is an
+## addressing scheme, not 110,889 live per-hex objects (SubHexTerrainQuery
+## answers cells sparsely/on demand, it does not instantiate this grid).
+const SUB_HEX_GRID_N: int = 333
+
+## Resolves `pos` to the sub-hex cell it falls within: which macro hex
+## (world_to_axial(), unchanged) plus a local (sx, sy) index into that
+## hex's own SUB_HEX_GRID_SPAN-sized square, 0..SUB_HEX_GRID_N-1 each axis,
+## (0,0) at the square's own top-left corner (hex center minus half the
+## span in both axes). Mirrors RealTerrainSampler.sample_grid()'s own span/
+## step addressing, just indexable/invertible now instead of only
+## iterable. Returns a Dictionary ({"hex_coord": Vector2i, "sub_index":
+## Vector2i}) rather than a second Resource type — this is a coordinate
+## conversion, not new persistent state (see SubHexTerrainQuery for the
+## consumer).
+static func world_to_sub_hex(pos: Vector2) -> Dictionary:
+	var hex_coord := world_to_axial(pos)
+	return {"hex_coord": hex_coord, "sub_index": sub_hex_index_within(hex_coord, pos)}
+
+## Local sub-cell index within a KNOWN `hex_coord`'s own SUB_HEX_GRID_SPAN
+## square — does NOT re-derive which hex `pos` geometrically belongs to.
+## world_to_sub_hex() above uses world_to_axial() for that, but
+## world_to_axial() can disagree with a caller's own already-known
+## hex_coord for a position in the square grid's overhanging corner area
+## (SUB_HEX_GRID_SPAN necessarily pokes past a hex's true hexagonal
+## boundary into whichever neighbor sits there — see that constant's own
+## doc comment). A caller iterating a grid explicitly centered on one hex
+## (SubHexGroundView's render grid, SubHexTerrainQuery's own
+## sample_at_world_within()) needs every sample locked to THAT hex, not
+## silently re-resolved to a neighbor near the edges.
+static func sub_hex_index_within(hex_coord: Vector2i, pos: Vector2) -> Vector2i:
+	var hex_center := axial_to_world(hex_coord)
+	var half_span := SUB_HEX_GRID_SPAN * 0.5
+	var local := pos - hex_center + Vector2(half_span, half_span)
+	var sx := clampi(int(local.x / SUB_HEX_CELL_SIZE_WORLD_UNITS), 0, SUB_HEX_GRID_N - 1)
+	var sy := clampi(int(local.y / SUB_HEX_CELL_SIZE_WORLD_UNITS), 0, SUB_HEX_GRID_N - 1)
+	return Vector2i(sx, sy)
+
+## Inverse of world_to_sub_hex() — the world-space CENTER of sub-cell
+## `sub_index` within `hex_coord`, for feeding back into
+## RealTerrainSampler.sample_at() or any other exact-position query.
+static func sub_hex_to_world(hex_coord: Vector2i, sub_index: Vector2i) -> Vector2:
+	var hex_center := axial_to_world(hex_coord)
+	var half_span := SUB_HEX_GRID_SPAN * 0.5
+	var origin := hex_center - Vector2(half_span, half_span)
+	return origin + Vector2(
+		(float(sub_index.x) + 0.5) * SUB_HEX_CELL_SIZE_WORLD_UNITS,
+		(float(sub_index.y) + 0.5) * SUB_HEX_CELL_SIZE_WORLD_UNITS
+	)
+
 const NEIGHBOR_DIRECTIONS: Array[Vector2i] = [
 	Vector2i(1, 0), Vector2i(1, -1), Vector2i(0, -1),
 	Vector2i(-1, 0), Vector2i(-1, 1), Vector2i(0, 1),

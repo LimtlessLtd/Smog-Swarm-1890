@@ -54,6 +54,46 @@ static func _get_blend_shader() -> Shader:
 ## boundary cell still visibly leans toward its own texture, not a 50/50 mush.
 const _MAX_BLEND_WEIGHT: float = 0.6
 
+## Sub-Hex Mechanical Layer Phase 1a: routed through SubHexTerrainQuery
+## (30m-addressed, cached) instead of calling RealTerrainSampler.
+## sample_grid() directly — same _GRID_N x _GRID_N positions
+## RealTerrainSampler.sample_grid() itself would compute (same _GRID_SPAN/
+## step math), same underlying raster data, same fine-tile preference
+## (RealTerrainSampler.sample_at_hex()). NOT byte-identical to the old
+## direct-sample path, though: SubHexTerrainQuery.sample() snaps every
+## query to its 30m cell's CENTER before sampling (correct for its real
+## job -- two nearby positions in the same mechanical cell must answer the
+## same way), rather than sampling the exact requested position. Verified
+## with two throwaway scripts, disclosed rather than glossed over:
+## - A hex WITH a baked fine tile (Manchester, (80,118)): the snap only
+##   ever RECOVERS real data at a handful of this render grid's own edge/
+##   corner samples that used to land just outside the fine tile's
+##   96x96-pixel bounds and return empty -- strictly fewer small rendering
+##   gaps at hex edges, never the reverse, in the case checked.
+## - A hex WITHOUT one (London area, (75,145) -- true for ~99% of the
+##   corridor until Phase 1b): ~5% of the 121 render-grid samples showed a
+##   DIFFERENT biome classification than the old exact-position sample, at
+##   the same elevation -- the cell-center snap occasionally crosses into a
+##   neighboring ~878m coarse pixel near a boundary. A real, if small and
+##   edge-of-hex-scale, rendering difference, not a crash or garbage data --
+##   an expected consequence of the aliasing SubHexTerrainQuery's own doc
+##   comment already discloses, and moot once Phase 1b rebakes real 30m data.
+## _GRID_N (11, a RENDERING density chosen for
+## cheap per-frame redraw) stays independent of
+## HexCoord.SUB_HEX_CELL_SIZE_METERS (30m, the MECHANICAL grid Phase 2+
+## will read) — see HexCoord.gd's own doc comment on why those are
+## deliberately different numbers.
+func _sample_render_grid(coord: Vector2i) -> Array:
+	var center := HexCoord.axial_to_world(coord)
+	var result: Array = []
+	var step := _GRID_SPAN / float(_GRID_N - 1)
+	var start := -_GRID_SPAN * 0.5
+	for row in range(_GRID_N):
+		for col in range(_GRID_N):
+			var offset := Vector2(start + col * step, start + row * step)
+			result.append(SubHexTerrainQuery.sample_at_world_within(coord, center + offset))
+	return result
+
 func setup(cell: HexCell) -> void:
 	for child in get_children():
 		child.queue_free()
@@ -62,7 +102,7 @@ func setup(cell: HexCell) -> void:
 		_build_fallback(cell)
 		return
 
-	var samples := RealTerrainSampler.sample_grid(cell.coord, _GRID_N)
+	var samples := _sample_render_grid(cell.coord)
 	if samples.is_empty() or samples[0].is_empty():
 		_build_fallback(cell)
 		return
