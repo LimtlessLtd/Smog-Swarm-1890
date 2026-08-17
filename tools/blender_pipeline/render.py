@@ -56,10 +56,18 @@ def main():
     if args.elevation is not None:
         render_common.CATEGORY_ELEVATION_DEG[args.category] = args.elevation
 
-    out_dir = os.path.dirname(os.path.abspath(args.out))
+    # Absolute path, not args.out as-given: Blender's own scene.render.filepath
+    # resolution for a relative path (no leading "//") does NOT reliably match
+    # Python's os.getcwd() on Windows for an unsaved .blend — measured directly,
+    # a relative "assets/walls/wall_brick.png" silently wrote to
+    # "C:\assets\walls\wall_brick.png" instead of the launching shell's actual
+    # working directory, no error either way (render_common.render_to()'s
+    # bpy.ops.render.render(write_still=True) doesn't raise on this).
+    out_path = os.path.abspath(args.out)
+    out_dir = os.path.dirname(out_path)
     os.makedirs(out_dir, exist_ok=True)
-    render_common.render_to(args.out, args.category, args.resolution)
-    print(f"Rendered {args.out}")
+    render_common.render_to(out_path, args.category, args.resolution)
+    print(f"Rendered {out_path}")
 
 
 if __name__ == "__main__":

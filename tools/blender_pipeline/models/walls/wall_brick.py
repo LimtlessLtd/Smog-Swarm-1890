@@ -2,6 +2,14 @@
 continuous red brick wall with a coping ledge on top — one solid slab
 with a visible brick course pattern, distinct from wall_wooden.py's
 individual posts.
+
+Top-down (walls' current camera angle): the coping ledge is the topmost
+surface across the segment's full width, fully occluding the brick
+coursing below it — a flat coping alone rendered as a plain rectangle,
+indistinguishable in silhouette from wall_concrete.py's slab. The seam
+strips below give the coping itself a visible "individual coping stones"
+seam pattern so it still reads as brick from directly above, not just by
+color.
 """
 
 import bpy
@@ -32,3 +40,9 @@ def build():
                  scale=(0.13, 0.005, 0.05), size=1.0)
 
     part(bpy.ops.mesh.primitive_cube_add, coping_mat, (0, 0, 0.5), scale=(1.02, 0.1, 0.03), size=1.0)
+
+    # Coping-stone seams, visible from directly above (see module doc comment).
+    coping_dark_mat = flat_material("CopingDark", tuple(c * 0.75 for c in COPING_COLOR))
+    for i in range(7):
+        x = -0.45 + i * 0.15
+        part(bpy.ops.mesh.primitive_cube_add, coping_dark_mat, (x, 0, 0.516), scale=(0.012, 0.1, 0.002), size=1.0)

@@ -43,12 +43,35 @@ CATEGORY_ELEVATION_DEG = {
     # believably on the hex grid, not flat UI glyphs.
     "buildings": 60.0,
     "props": 75.0,
-    # Much shallower than every other category — a wall is meant to be read
-    # as a barrier FACE (like a fence texture), not a rooftop; a steep
-    # bird's-eye angle would show almost nothing but its thin top edge.
-    "walls": 35.0,
+    # Was 35 (a "barrier FACE" side-on shot) — user correction (2026-08-17):
+    # "the same should be true for walls and gates" as infrastructure, i.e.
+    # top-down. The game itself never shows a wall from the side (WallVisuals
+    # applies these as a Line2D-tiled texture on the flat 2D map, same as
+    # every other overhead sprite) so a face-on render was inconsistent with
+    # how the art actually gets used, not a deliberate stylistic exception.
+    # A Gate segment has no separate art asset — WallVisuals.gate_color()
+    # tints whichever tier texture is already in play, so re-rendering the 3
+    # wall tier textures covers gates too.
+    "walls": 90.0,
     "zombies": 58.0,  # Same reasoning as units — a standing/shambling figure, not a flat object.
     "terrain": 90.0,  # straight down — terrain tiles are flat-viewed, no side ever visible
+    # Road/Railway/Canal/Bridge are flat line segments drawn along a hex
+    # edge/path (SupplyLinePlacementController's hex-click-chain), not a
+    # standalone object with a "face" — same reasoning as "terrain", not a
+    # reused angled category.
+    "infrastructure": 90.0,
+}
+
+# Extra per-category tightening of add_camera()'s default ortho_scale=3.0.
+# "walls"/"infrastructure" models are long, thin strips (built ~1.0 unit
+# long, ~0.1-0.2 wide) meant to be seen from directly above and tiled along
+# their length by Line2D — framed at the same 3.0 scale every bodied
+# category uses, the strip would occupy only a sliver of the square frame,
+# starving the tiled texture of resolution. Anything not listed here keeps
+# add_camera()'s own 3.0 default.
+CATEGORY_ORTHO_SCALE = {
+    "walls": 1.3,
+    "infrastructure": 1.3,
 }
 
 # Freestyle thickness is in absolute render-resolution pixels, not a fraction of frame
@@ -117,13 +140,28 @@ def setup_render(resolution: int):
     lineset.linestyle.thickness = resolution * OUTLINE_THICKNESS_FRACTION
 
 
-def add_camera(category: str, yaw_deg: float = 45.0, distance: float = 10.0, ortho_scale: float = 3.0):
+def add_camera(category: str, yaw_deg: float = None, distance: float = 10.0, ortho_scale: float = None):
     """Orthographic camera at the category's elevation, given yaw around the world
     Z axis (45 degrees matches every existing prompt's "isometric-ish" framing —
-    that's the default single-shot angle), always aimed at the world origin — asset
-    scripts should build their model centered on (0, 0, 0). yaw_deg is what
-    render_directional_to() sweeps to produce multiple facings of the same model."""
-    elevation = math.radians(CATEGORY_ELEVATION_DEG.get(category, 75.0))
+    that's the default single-shot angle for an angled category), always aimed at
+    the world origin — asset scripts should build their model centered on
+    (0, 0, 0). yaw_deg is what render_directional_to() sweeps to produce multiple
+    facings of the same model. ortho_scale defaults to CATEGORY_ORTHO_SCALE's
+    per-category framing, falling back to 3.0 (every bodied category's original
+    hardcoded value) if the category isn't listed there — pass an explicit value
+    to override either."""
+    if ortho_scale is None:
+        ortho_scale = CATEGORY_ORTHO_SCALE.get(category, 3.0)
+    category_elevation_deg = CATEGORY_ELEVATION_DEG.get(category, 75.0)
+    is_straight_down = abs(category_elevation_deg - 90.0) < 1e-6
+    if yaw_deg is None:
+        # A straight-down camera has no "isometric angling" for 45 to describe —
+        # any nonzero yaw here just spins the whole image in-plane (measured: it
+        # rotated wall_wooden.py's posts 45 degrees off horizontal). 0 keeps the
+        # model's local X/Y mapped straight to image X/Y, matching every
+        # walls/infrastructure script's own "built along local X" convention.
+        yaw_deg = 0.0 if is_straight_down else 45.0
+    elevation = math.radians(category_elevation_deg)
     yaw = math.radians(yaw_deg)
 
     # Re-entrant: render_directional_to() calls this once per facing in the same
@@ -139,19 +177,34 @@ def add_camera(category: str, yaw_deg: float = 45.0, distance: float = 10.0, ort
     cam_obj = bpy.data.objects.new("Camera", cam_data)
     bpy.context.collection.objects.link(cam_obj)
 
-    x = distance * math.cos(elevation) * math.cos(yaw)
-    y = distance * math.cos(elevation) * math.sin(yaw)
-    z = distance * math.sin(elevation)
-    cam_obj.location = (x, y, z)
+    if is_straight_down:
+        # Straight-down (elevation == 90): TRACK_TO's up_axis has nothing to
+        # solve for when the aim direction is exactly world -Z, producing an
+        # arbitrary/inconsistent in-plane rotation — measured directly on
+        # wall_wooden.py (posts built along local X, meant to render as a
+        # horizontal row): the TRACK_TO path below rendered them as a
+        # diagonal scatter instead. A direct rotation sidesteps the
+        # constraint's singularity: a camera at identity rotation already
+        # looks along -Z with local +X/+Y mapped straight to image X/Y, so a
+        # model built along local X (every walls/infrastructure script's own
+        # convention, matching WallVisuals/SupplyLineVisuals' length-axis
+        # tiling) comes out with that axis horizontal, as intended.
+        cam_obj.location = (0.0, 0.0, distance)
+        cam_obj.rotation_euler = (0.0, 0.0, yaw)
+    else:
+        x = distance * math.cos(elevation) * math.cos(yaw)
+        y = distance * math.cos(elevation) * math.sin(yaw)
+        z = distance * math.sin(elevation)
+        cam_obj.location = (x, y, z)
 
-    # Aim at origin: track-to constraint avoids hand-rolling the rotation matrix.
-    track = cam_obj.constraints.new(type='TRACK_TO')
-    empty = bpy.data.objects.new("AimTarget", None)
-    empty.location = (0.0, 0.0, 0.0)
-    bpy.context.collection.objects.link(empty)
-    track.target = empty
-    track.track_axis = 'TRACK_NEGATIVE_Z'
-    track.up_axis = 'UP_Y'
+        # Aim at origin: track-to constraint avoids hand-rolling the rotation matrix.
+        track = cam_obj.constraints.new(type='TRACK_TO')
+        empty = bpy.data.objects.new("AimTarget", None)
+        empty.location = (0.0, 0.0, 0.0)
+        bpy.context.collection.objects.link(empty)
+        track.target = empty
+        track.track_axis = 'TRACK_NEGATIVE_Z'
+        track.up_axis = 'UP_Y'
 
     bpy.context.scene.camera = cam_obj
     return cam_obj
