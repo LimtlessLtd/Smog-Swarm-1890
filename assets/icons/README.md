@@ -1,6 +1,17 @@
-# Resource/HUD icon generation pipeline (user request)
+# Resource/HUD icon generation pipeline (user request) — AI-PROMPT APPROACH ABANDONED
 
-**Status: infrastructure built, images not yet generated.** No tool in this
+**The AI-prompt approach below is abandoned, not just paused.** The user
+explicitly chose Blender instead when asked to brainstorm an asset
+pipeline — **"lets use blender only, no API AI Image gen needed"** — see
+`tools/blender_pipeline/README.md`. `coal.png` is generated that way
+(`tools/blender_pipeline/models/icons/coal.py` — the pipeline's first
+proof-of-concept asset); the other 7 missing icons (population, clay,
+limestone, iron_ore, sulfur, steel — 8 already existed pre-rework) haven't
+had a Blender pass yet. Any future icon art should use that pipeline, not
+the prompts below. Kept only as a historical record.
+
+**Original status note, before the Blender pipeline existed:**
+infrastructure built, images not yet generated. No tool in this
 Claude Code environment can call an AI image generator — the 8 prompts
 below and the code in `ResourceVisuals.gd`/`ResourceBarView.gd` are the
 complete, ready-to-use pipeline; someone with real image-generation access

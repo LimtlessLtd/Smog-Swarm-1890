@@ -1,6 +1,17 @@
-# Building art generation pipeline (user request)
+# Building art generation pipeline (user request) — AI-PROMPT APPROACH ABANDONED
 
-**Status: infrastructure built, images not yet generated.** No tool in this
+**The AI-prompt approach below is abandoned, not just paused.** The user
+explicitly chose Blender instead when asked to brainstorm an asset
+pipeline — **"lets use blender only, no API AI Image gen needed"** — see
+`tools/blender_pipeline/README.md`. Units and the coal resource icon are
+already generated that way (`tools/blender_pipeline/models/units/*.py`,
+`models/icons/coal.py`); buildings haven't had a Blender pass yet — still
+rendering their existing hand-drawn SVGs — but any future building-art
+work should use that pipeline, not the prompts below. Kept only as a
+historical record.
+
+**Original status note, before the Blender pipeline existed:**
+infrastructure built, images not yet generated. No tool in this
 Claude Code environment can call an AI image generator — the 18 prompts
 below and the `BuildingVisuals.gd` PNG-first fallback are the complete,
 ready-to-use pipeline; someone with real image-generation access needs to

@@ -265,6 +265,25 @@ enum TacticalFidelity {
 	HIGH,    ## Full detail — individual squad figures/zombies.
 }
 
+## 8-way sprite facing for the Blender directional-render pipeline
+## (tools/blender_pipeline/render_common.py's DIRECTIONS_8) — order matches
+## that module's list exactly (compass, clockwise from N) so FacingUtil can
+## index one array with these ordinals instead of a name lookup. Consumed
+## by UnitVisuals.unit_texture()/ZombieVisuals.zombie_texture() to pick
+## which of a unit/zombie's 8 rendered facings to show; derived every frame
+## from movement, not stored on UnitInstance/Horde — see
+## TacticalEntityLayer._advance_facing().
+enum Facing8 {
+	N,
+	NE,
+	E,
+	SE,
+	S,
+	SW,
+	W,
+	NW,
+}
+
 enum TechUnlockType {
 	WALL_TIER,        ## Unlocks a wall tier (unlock_value: 1=Brick, 2=Concrete; tier 0/Wooden is baseline, no tech needed).
 	UNIT_TIER,        ## Unlocks a whole unit tier, all 3 roles at once (unlock_value: 1-5; tier 0 is baseline, no tech needed).

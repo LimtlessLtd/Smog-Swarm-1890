@@ -34,15 +34,16 @@ extends Node2D
 ##
 ## **Rendering at scale:** HIGH-fidelity zombie figures — the only path this
 ## project expects to reach horde-scale counts — draw through
-## ZombieVisuals.VARIANT_COUNT (3) shared MultiMeshInstance2D batch layers
-## (_zombie_batch_layers, built once in _ready(), repopulated every frame by
-## _rebuild_zombie_batches()) instead of one Polygon2D/Sprite2D scene node
-## PER FIGURE. A MultiMesh instance is a transform written into a GPU
-## buffer, not a scene-tree node the engine individually tracks/processes/
-## draws — that per-node overhead, not the per-frame position math, is what
-## made the old approach fall over before real horde-scale counts.
-## LOW/MEDIUM zombie rendering and every unit figure are unchanged, still
-## one node each — none come near the count where batching matters.
+## ZombieVisuals.VARIANT_COUNT * FacingUtil.COUNT (3*8=24) shared
+## MultiMeshInstance2D batch layers (_zombie_batch_layers, built once in
+## _ready(), repopulated every frame by _rebuild_zombie_batches()) instead
+## of one Polygon2D/Sprite2D scene node PER FIGURE. A MultiMesh instance is
+## a transform written into a GPU buffer, not a scene-tree node the engine
+## individually tracks/processes/draws — that per-node overhead, not the
+## per-frame position math, is what made the old approach fall over before
+## real horde-scale counts. LOW/MEDIUM zombie rendering and every unit
+## figure are unchanged, still one node each — none come near the count
+## where batching matters.
 ##
 ## **Multi-Tier Visual Fidelity:** this class owns all three of Tactical
 ## zoom's internal fidelity bands (GameEnums.TacticalFidelity), driven by
@@ -58,6 +59,12 @@ extends Node2D
 ## the flat procedural shape wherever a PNG has been authored — HIGH and
 ## MEDIUM only. LOW stays a uniform per-category blob (it was only ever
 ## meant to distinguish "unit vs. building vs. zombie", not unit types).
+##
+## **Facing:** units and hordes both get an 8-way GameEnums.Facing8, derived
+## every frame from movement (_advance_facing()) — see that function's own
+## doc comment for why it's derived rather than read from stored state. A
+## Horde has no per-figure position (see ZombieVisuals.zombie_texture()'s
+## doc comment), so it's one facing for the whole horde, not per-figure.
 
 const FIGURE_COLOR := Color(0.85, 0.8, 0.7)    ## Player-unit squad figures (HIGH) — pale "uniform" tone, distinct from terrain/prop/building colors.
 const VEHICLE_COLOR := Color(0.5, 0.46, 0.32)  ## Tier 4-5 single-model units (HIGH) — heavier, darker than a squad figure.
@@ -67,6 +74,12 @@ const FIGURE_RADIUS := 6.0
 const VEHICLE_RADIUS := 16.0
 const ZOMBIE_RADIUS := 5.0
 const FIGURE_SPREAD := 20.0  ## How far individual squad/zombie figures scatter from their entity's own local_position.
+
+## World units of frame-to-frame movement below which a stale facing is
+## kept rather than recomputed — a stationary unit/horde's position still
+## carries floating-point noise, and recomputing from that would flicker
+## facing on something that isn't actually moving.
+const MIN_FACING_MOVE_DISTANCE := 1.0
 
 ## Performance safety net for the batched HIGH-fidelity zombie renderer.
 ## MAX_RENDERED_ZOMBIES_PER_HORDE keeps one gigantic horde from consuming
@@ -114,7 +127,23 @@ var _unit_draw_keys: Dictionary = {}   # int (UnitInstance.id) -> Vector2i(headc
 var _horde_groups: Dictionary = {}     # int (Horde.id) -> Node2D
 var _horde_draw_keys: Dictionary = {}  # int (Horde.id) -> Vector2i(display_count, fidelity), last-drawn
 
-var _zombie_batch_layers: Array[MultiMeshInstance2D] = []  ## HIGH-fidelity zombie batch renderer — index == a ZombieVisuals variant (0..VARIANT_COUNT-1).
+## Facing tracking — see _advance_facing(). Kept as separate id-keyed
+## Dictionaries (not folded into _unit_groups' Node2D, e.g. via metadata)
+## since units and hordes each need their own last-position/facing pair and
+## both get cleaned up alongside their existing *_draw_keys entries.
+var _unit_last_position: Dictionary = {}  # int (UnitInstance.id) -> Vector2
+var _unit_facing: Dictionary = {}         # int (UnitInstance.id) -> GameEnums.Facing8
+var _horde_last_position: Dictionary = {} # int (Horde.id) -> Vector2
+var _horde_facing: Dictionary = {}        # int (Horde.id) -> GameEnums.Facing8
+
+## HIGH-fidelity zombie batch renderer — one layer per (variant, facing)
+## pair, flat-indexed as `variant * FacingUtil.COUNT + facing` (see
+## _zombie_batch_index()). A whole Horde shares one facing (Horde has no
+## per-figure position, only per-figure scatter offsets — see
+## ZombieVisuals.zombie_texture()'s own doc comment), so every figure in a
+## batch signature list still resolves to exactly one texture per layer,
+## same as the pre-directional VARIANT_COUNT-only version this replaced.
+var _zombie_batch_layers: Array[MultiMeshInstance2D] = []
 var _last_zombie_batch_signature: Array = []  ## Dirty-check cache for _rebuild_zombie_batches().
 
 func _ready() -> void:
@@ -132,7 +161,8 @@ func _ready() -> void:
 		_fidelity = _camera.get_tactical_fidelity()
 
 	for variant in range(ZombieVisuals.VARIANT_COUNT):
-		_zombie_batch_layers.append(_build_zombie_batch_layer(variant))
+		for facing in range(FacingUtil.COUNT):
+			_zombie_batch_layers.append(_build_zombie_batch_layer(variant, facing as GameEnums.Facing8))
 
 func _process(_delta: float) -> void:
 	if not visible:
@@ -170,14 +200,26 @@ func _refresh_units() -> void:
 			_unit_groups[id].queue_free()
 			_unit_groups.erase(id)
 			_unit_draw_keys.erase(id)
+			_unit_last_position.erase(id)
+			_unit_facing.erase(id)
 
 func _update_unit_group(instance: UnitInstance) -> void:
 	var group: Node2D = _unit_groups[instance.id]
 	group.position = HexCoord.axial_to_world(instance.hex_coord) + instance.local_position
 
+	var facing_changed := _advance_facing(instance.id, group.position, _unit_last_position, _unit_facing)
+
 	var headcount := instance.get_squad_headcount()
 	var draw_key := Vector2i(headcount, _fidelity)
 	if _unit_draw_keys.get(instance.id, Vector2i(-1, -1)) == draw_key:
+		# Headcount/fidelity unchanged — the usual case while a unit just
+		# walks in a straight line. Only a facing change (usually every
+		# frame while turning) needs anything done here, and cheaply: swap
+		# existing Sprite2D children's texture in place rather than the
+		# full free-and-rebuild below, which would turn "unit changed
+		# direction" into per-figure node churn every frame.
+		if facing_changed and _fidelity != GameEnums.TacticalFidelity.LOW:
+			_retexture_unit_group(group, instance, _unit_facing[instance.id])
 		return
 	_unit_draw_keys[instance.id] = draw_key
 
@@ -186,6 +228,7 @@ func _update_unit_group(instance: UnitInstance) -> void:
 	if headcount <= 0:
 		return  # Destroyed this frame, about to be removed via unit_removed — draw nothing rather than a stale figure.
 
+	var facing: GameEnums.Facing8 = _unit_facing[instance.id]
 	match _fidelity:
 		GameEnums.TacticalFidelity.LOW:
 			# Not UnitVisuals-aware, even where art exists — LOW is a
@@ -193,13 +236,25 @@ func _update_unit_group(instance: UnitInstance) -> void:
 			# zombie", not unit-from-unit).
 			group.add_child(_build_figure(FIGURE_COLOR, LOW_UNIT_RADIUS, Vector2.ZERO))
 		GameEnums.TacticalFidelity.MEDIUM:
-			group.add_child(_build_role_marker(instance))
+			group.add_child(_build_role_marker(instance, facing))
 		_:  # HIGH — UnitVisuals-aware.
 			if instance.is_squad_rendered():
 				for i in range(headcount):
-					group.add_child(_build_unit_figure(instance, FIGURE_RADIUS, _scatter_offset(i, headcount, instance.id), FIGURE_COLOR))
+					group.add_child(_build_unit_figure(instance, facing, FIGURE_RADIUS, _scatter_offset(i, headcount, instance.id), FIGURE_COLOR))
 			else:
-				group.add_child(_build_unit_figure(instance, VEHICLE_RADIUS, Vector2.ZERO, VEHICLE_COLOR))
+				group.add_child(_build_unit_figure(instance, facing, VEHICLE_RADIUS, Vector2.ZERO, VEHICLE_COLOR))
+
+## Facing-only update path for a group whose figures already exist (see
+## _update_unit_group()'s draw_key-unchanged branch) — walks existing
+## Sprite2D children and swaps their texture, leaves Polygon2D fallback
+## shapes (no directional art authored yet) and everything else untouched.
+func _retexture_unit_group(group: Node2D, instance: UnitInstance, facing: GameEnums.Facing8) -> void:
+	var texture := UnitVisuals.unit_texture(instance.definition.unit_type, facing)
+	if not texture:
+		return
+	for child in group.get_children():
+		if child is Sprite2D:
+			child.texture = texture
 
 ## Real per-unit-type sprite art (UnitVisuals.unit_texture()) in place of
 ## the flat circle where authored, sized to the same diameter the fallback
@@ -209,8 +264,8 @@ func _update_unit_group(instance: UnitInstance) -> void:
 ## TacticalHexView's Polygon2D-quad-with-explicit-uv approach — there's no
 ## pre-existing polygon shape to texture here (figures are built ad hoc), so
 ## a plain sprite scaled to the target diameter is simpler and equally correct.
-func _build_unit_figure(instance: UnitInstance, radius: float, offset: Vector2, fallback_color: Color) -> Node2D:
-	var texture := UnitVisuals.unit_texture(instance.definition.unit_type)
+func _build_unit_figure(instance: UnitInstance, facing: GameEnums.Facing8, radius: float, offset: Vector2, fallback_color: Color) -> Node2D:
+	var texture := UnitVisuals.unit_texture(instance.definition.unit_type, facing)
 	if not texture:
 		return _build_figure(fallback_color, radius, offset)
 	var sprite := Sprite2D.new()
@@ -225,9 +280,9 @@ func _build_unit_figure(instance: UnitInstance, radius: float, offset: Vector2, 
 ## this tier's smaller radius rather than a separate MEDIUM-specific asset
 ## (one generated image per unit, reused at both fidelity bands). Falls back
 ## to the shape-by-role marker (never color alone) when no art exists yet.
-func _build_role_marker(instance: UnitInstance) -> Node2D:
+func _build_role_marker(instance: UnitInstance, facing: GameEnums.Facing8) -> Node2D:
 	var radius := MEDIUM_UNIT_BASE_RADIUS + float(instance.definition.tier) * MEDIUM_UNIT_TIER_STEP
-	var texture := UnitVisuals.unit_texture(instance.definition.unit_type)
+	var texture := UnitVisuals.unit_texture(instance.definition.unit_type, facing)
 	if texture:
 		var sprite := Sprite2D.new()
 		sprite.texture = texture
@@ -253,8 +308,8 @@ func _build_role_marker(instance: UnitInstance) -> Node2D:
 ## ZombieVisuals.VARIANT_COUNT looks this figure gets — deterministic (same
 ## figure always looks the same across redraws) but varied across a horde's
 ## own figures so a cluster doesn't read as identical clones.
-func _build_zombie_figure(horde_id: int, index: int, offset: Vector2) -> Node2D:
-	var texture := ZombieVisuals.zombie_texture(horde_id + index)
+func _build_zombie_figure(horde_id: int, index: int, offset: Vector2, facing: GameEnums.Facing8) -> Node2D:
+	var texture := ZombieVisuals.zombie_texture(horde_id + index, facing)
 	if not texture:
 		return _build_figure(ZOMBIE_COLOR, ZOMBIE_RADIUS, offset)
 	var sprite := Sprite2D.new()
@@ -282,6 +337,8 @@ func _refresh_hordes() -> void:
 			_horde_groups[id].queue_free()
 			_horde_groups.erase(id)
 			_horde_draw_keys.erase(id)
+			_horde_last_position.erase(id)
+			_horde_facing.erase(id)
 	# Once per frame, not once per horde — HIGH-fidelity figures don't live
 	# under each horde's own `group` node the way LOW/MEDIUM's do.
 	_rebuild_zombie_batches()
@@ -296,9 +353,28 @@ func _update_horde_group(horde: Horde) -> void:
 	group.position = HexCoord.axial_to_world(horde.hex_coord) + horde.local_position
 	group.visible = _fog_of_war_manager == null or _fog_of_war_manager.is_visible(horde.hex_coord)
 
+	# Computed here (not in _rebuild_zombie_batches()) so it runs once per
+	# horde regardless of fidelity — MEDIUM's per-figure sprites and HIGH's
+	# batch layers (via _horde_facing, read back in _rebuild_zombie_batches())
+	# both need it, and this is the one place both paths already visit.
+	var facing_changed := _advance_facing(horde.id, group.position, _horde_last_position, _horde_facing)
+
 	var display_count := _horde_display_count(horde.size)
 	var draw_key := Vector2i(display_count, _fidelity)
 	if _horde_draw_keys.get(horde.id, Vector2i(-1, -1)) == draw_key:
+		# Same reasoning as _update_unit_group()'s own unchanged-draw_key
+		# branch: retexture MEDIUM's existing Sprite2D children in place
+		# rather than a full rebuild. LOW is never ZombieVisuals-aware and
+		# HIGH has no per-horde children at all (batch layers), so only
+		# MEDIUM has anything to do here.
+		if facing_changed and _fidelity == GameEnums.TacticalFidelity.MEDIUM:
+			var facing: GameEnums.Facing8 = _horde_facing[horde.id]
+			var children := group.get_children()
+			for i in range(children.size()):
+				if children[i] is Sprite2D:
+					var texture := ZombieVisuals.zombie_texture(horde.id + i, facing)  # Same horde_id+index variant formula _build_zombie_figure() used to build this child originally.
+					if texture:
+						children[i].texture = texture
 		return
 	_horde_draw_keys[horde.id] = draw_key
 
@@ -312,9 +388,10 @@ func _update_horde_group(horde: Horde) -> void:
 		# call _update_unit_group() makes for units.
 		group.add_child(_build_diamond(ZOMBIE_COLOR, LOW_ZOMBIE_RADIUS))
 	elif _fidelity == GameEnums.TacticalFidelity.MEDIUM:
+		var facing: GameEnums.Facing8 = _horde_facing[horde.id]
 		for i in range(display_count):
 			var variance := horde.individual_speed_variance(i)
-			group.add_child(_build_zombie_figure(horde.id, i, _scatter_offset(i, display_count, horde.id, FIGURE_SPREAD, variance)))
+			group.add_child(_build_zombie_figure(horde.id, i, _scatter_offset(i, display_count, horde.id, FIGURE_SPREAD, variance), facing))
 	# else HIGH: rendered through the shared MultiMesh batch layers instead
 	# of per-horde child nodes — see _rebuild_zombie_batches() (called once
 	# per frame from _refresh_hordes()). Nothing to add here; the clear
@@ -338,11 +415,20 @@ func _horde_display_count(size: int) -> int:
 
 ## --- GPU-batched HIGH-fidelity zombie rendering -----------------------------
 
-## One shared MultiMeshInstance2D per ZombieVisuals art variant — a single
-## draw call renders every figure using that variant, across EVERY horde on
-## the map at once. No texture authored for a variant falls back to a solid
-## `modulate` tint (ZOMBIE_COLOR) — a MultiMesh has no per-instance shape
-## choice the way a lone Polygon2D circle does.
+## One shared MultiMeshInstance2D per (ZombieVisuals variant, Facing8) pair
+## — VARIANT_COUNT * FacingUtil.COUNT (3*8=24) layers total, each still a
+## single draw call for every figure sharing that exact variant+facing,
+## across EVERY horde on the map at once. Same MultiMesh constraint as the
+## pre-directional 3-layer version this replaced (one texture per layer) —
+## going directional just means more layers, not a per-instance texture
+## trick (e.g. an atlas + custom-data UV shader), because a whole Horde
+## shares one facing (see ZombieVisuals.zombie_texture()'s doc comment):
+## every figure a given (variant, facing) layer will ever hold really does
+## want the exact same texture, so the simple multi-layer approach already
+## established here still fits without a shader. No texture authored for a
+## (variant, facing) pair falls back to a solid `modulate` tint
+## (ZOMBIE_COLOR) — a MultiMesh has no per-instance shape choice the way a
+## lone Polygon2D circle does.
 ##
 ## Each layer's quad is sized from ITS OWN texture's real dimensions (not a
 ## shared flat constant), scaled so the longer axis lands on the same
@@ -351,13 +437,13 @@ func _horde_display_count(size: int) -> int:
 ## _build_zombie_figure() all apply. A QuadMesh's UVs span its own fixed
 ## `size` regardless of the texture's real pixel dimensions, so a fixed
 ## square size would stretch a non-square texture.
-func _build_zombie_batch_layer(variant: int) -> MultiMeshInstance2D:
+func _build_zombie_batch_layer(variant: int, facing: GameEnums.Facing8) -> MultiMeshInstance2D:
 	var mm := MultiMesh.new()
 	mm.transform_format = MultiMesh.TRANSFORM_2D
 	mm.use_colors = false
 	mm.use_custom_data = false
 
-	var texture := ZombieVisuals.zombie_texture(variant)
+	var texture := ZombieVisuals.zombie_texture(variant, facing)
 	var mesh := QuadMesh.new()
 	if texture:
 		var largest_dim := maxf(texture.get_width(), texture.get_height())
@@ -368,7 +454,7 @@ func _build_zombie_batch_layer(variant: int) -> MultiMeshInstance2D:
 	mm.instance_count = 0
 
 	var mmi := MultiMeshInstance2D.new()
-	mmi.name = "ZombieBatch%d" % variant
+	mmi.name = "ZombieBatch%d_%s" % [variant, FacingUtil.suffix(facing)]
 	mmi.multimesh = mm
 	if texture:
 		mmi.texture = texture
@@ -377,8 +463,8 @@ func _build_zombie_batch_layer(variant: int) -> MultiMeshInstance2D:
 	# z_index is scoped to this node's own children only (every competing
 	# node — unit/horde groups included — is also a direct child of this
 	# same TacticalEntityLayer, so it only arbitrates among them). Puts the
-	# horde ABOVE units deliberately: these 3 layers are created here in
-	# _ready(), unconditionally the first 3 children, while every unit/horde
+	# horde ABOVE units deliberately: these layers are created here in
+	# _ready(), unconditionally the first children, while every unit/horde
 	# group node is only added later from _refresh_units()/_refresh_hordes()
 	# (both _process()-driven, after _ready()) — without z_index, Godot
 	# draws lower child index first, permanently burying zombie figures
@@ -387,6 +473,12 @@ func _build_zombie_batch_layer(variant: int) -> MultiMeshInstance2D:
 	mmi.z_index = 1
 	add_child(mmi)
 	return mmi
+
+## Flat index into _zombie_batch_layers for a given (variant, facing) pair
+## — layers are built in _ready() as an outer loop over variant, inner over
+## facing, so this must match that nesting exactly.
+func _zombie_batch_index(variant: int, facing: GameEnums.Facing8) -> int:
+	return variant * FacingUtil.COUNT + facing
 
 ## Repopulates every _zombie_batch_layers entry — hordes move continuously
 ## in general, so every visible figure's transform needs rewriting when
@@ -441,14 +533,14 @@ func _rebuild_zombie_batches() -> void:
 	var signature: Array = []
 	for horde in hordes:
 		var visible := _fog_of_war_manager == null or _fog_of_war_manager.is_visible(horde.hex_coord)
-		signature.append([horde.id, horde.hex_coord, horde.local_position, horde.size, visible])
+		signature.append([horde.id, horde.hex_coord, horde.local_position, horde.size, visible, _horde_facing.get(horde.id, GameEnums.Facing8.S)])
 	if signature == _last_zombie_batch_signature:
 		return
 	_last_zombie_batch_signature = signature
 
-	var per_variant: Array = []  # Array[Array[Transform2D]], index == variant
-	for _v in range(ZombieVisuals.VARIANT_COUNT):
-		per_variant.append([])
+	var per_layer: Array = []  # Array[Array[Transform2D]], index == _zombie_batch_index(variant, facing)
+	for _i in range(_zombie_batch_layers.size()):
+		per_layer.append([])
 
 	var total_rendered := 0
 	for horde in hordes:
@@ -460,20 +552,23 @@ func _rebuild_zombie_batches() -> void:
 		display_count = mini(display_count, MAX_TOTAL_RENDERED_ZOMBIES - total_rendered)
 		if display_count <= 0:
 			continue
+		var horde_facing: GameEnums.Facing8 = _horde_facing.get(horde.id, GameEnums.Facing8.S)  ## Whole horde shares one facing — see ZombieVisuals.zombie_texture()'s doc comment.
 		var base_pos := HexCoord.axial_to_world(horde.hex_coord) + horde.local_position
 		var spread := _crowd_spread_radius(display_count)
 		for i in range(display_count):
 			var variant := ((horde.id + i) % ZombieVisuals.VARIANT_COUNT + ZombieVisuals.VARIANT_COUNT) % ZombieVisuals.VARIANT_COUNT
 			var variance := horde.individual_speed_variance(i)
 			var offset := _scatter_offset(i, display_count, horde.id, spread, variance)
-			# Transform2D(rotation, position) — rotation stays 0.0 regardless
-			# of variance/offset: zombies stay upright and never rotate.
-			per_variant[variant].append(Transform2D(0.0, base_pos + offset))
+			# Transform2D(rotation, position) — rotation stays 0.0: which way
+			# a figure faces is which of the 24 batch layers its transform
+			# lands in (art baked into the texture), not a runtime rotation
+			# of a single upright texture.
+			per_layer[_zombie_batch_index(variant, horde_facing)].append(Transform2D(0.0, base_pos + offset))
 		total_rendered += display_count
 
-	for v in range(ZombieVisuals.VARIANT_COUNT):
-		var mm: MultiMesh = _zombie_batch_layers[v].multimesh
-		var transforms: Array = per_variant[v]
+	for layer_index in range(_zombie_batch_layers.size()):
+		var mm: MultiMesh = _zombie_batch_layers[layer_index].multimesh
+		var transforms: Array = per_layer[layer_index]
 		mm.instance_count = transforms.size()
 		for i in range(transforms.size()):
 			mm.set_instance_transform_2d(i, transforms[i])
@@ -487,6 +582,36 @@ func _rebuild_zombie_batches() -> void:
 ## visible jump right at the MEDIUM<->HIGH fidelity boundary.
 func _crowd_spread_radius(display_count: int) -> float:
 	return FIGURE_SPREAD * sqrt(maxf(1.0, float(display_count) / float(MEDIUM_ZOMBIE_CLUSTER_SIZE)))
+
+## --- Facing (shared by units and hordes) ------------------------------------
+
+## Derives an 8-way facing bucket from frame-to-frame world-position
+## movement — there's no stored velocity/heading anywhere upstream
+## (MovementStepper is stateless per-frame math, not an object holding
+## per-unit state), so this reuses the position poll _update_unit_group()/
+## _update_horde_group() already do every frame for their own positioning,
+## rather than adding a new dependency to get at movement intent directly.
+## `last_position`/`facing` are the caller's own tracking Dictionaries
+## (_unit_* or _horde_*) — kept as plain Dictionary params rather than a
+## stateful collaborator object since both call sites already own their
+## dictionaries and the logic here is a single pure step, not enough
+## behavior to justify a new class.
+##
+## New entities (no prior last_position) default to Facing8.S ("facing the
+## camera") and count as unchanged on this first call, since there's no
+## delta yet to compute a real facing from. Returns true only when the
+## stored bucket actually changes, so callers can skip redraw work on an
+## unchanged facing.
+func _advance_facing(id: int, new_pos: Vector2, last_position: Dictionary, facing: Dictionary) -> bool:
+	var previous_facing: GameEnums.Facing8 = facing.get(id, GameEnums.Facing8.S)
+	var updated_facing := previous_facing
+	if last_position.has(id):
+		var delta: Vector2 = new_pos - last_position[id]
+		if delta.length() >= MIN_FACING_MOVE_DISTANCE:
+			updated_facing = FacingUtil.from_delta(delta)
+	last_position[id] = new_pos
+	facing[id] = updated_facing
+	return updated_facing != previous_facing
 
 ## --- Shared figure drawing --------------------------------------------------
 

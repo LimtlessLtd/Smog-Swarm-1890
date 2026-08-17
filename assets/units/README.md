@@ -1,6 +1,22 @@
-# Unit art generation pipeline (Phase 6.3.1/6.3.2)
+# Unit art generation pipeline (Phase 6.3.1/6.3.2) — SUPERSEDED
 
-**Status: infrastructure built, images not yet generated.** No tool in this
+**Superseded by `tools/blender_pipeline/` — read that README, not this
+one, for the pipeline actually in use.** The AI-prompt workflow below was
+infrastructure with no execution path (no image-generation tool existed in
+this Claude Code environment), and sat unused. The user explicitly chose
+Blender instead when asked to brainstorm an asset pipeline — **"lets use
+blender only, no API AI Image gen needed"** — which Claude Code CAN drive
+end-to-end (write model script → render headless → PNG lands in
+`assets/units/`), closing the loop the AI-prompt version never could. All
+18 units are generated that way now — see `tools/blender_pipeline/models/
+units/*.py` for the actual model scripts. This file's prompts are kept
+below only as a historical record of the abandoned approach, not as
+something to run.
+
+---
+
+**Original status note, before supersession:** infrastructure built,
+images not yet generated. No tool in this
 Claude Code environment can call an AI image generator — the 18 prompts
 below and the code in `UnitVisuals.gd`/`TacticalEntityLayer.gd` are the
 complete, ready-to-use pipeline; someone with access to an actual
