@@ -20,7 +20,26 @@ extends Node2D
 ## current, an already-hydrated one updates live as the camera zooms
 ## deeper within Tactical view.
 
-const DETAIL_RADIUS: int = 1  ## Hex disk radius hydrated around the camera; 1 = center + its 6 neighbors.
+## Hex disk radius hydrated around the camera — now computed LIVE off the
+## camera's actual visible world extent (_current_detail_radius()) rather
+## than a fixed constant. User report: "it looks like we are only checking
+## if we can see the center of a hex tile before displaying the sub hex
+## tile biomes, instead we should be checking if we can see any part of the
+## hex tile" — the real mechanism was a fixed radius-1 disk (7 hexes)
+## around whichever hex the camera's center point falls in, entirely
+## decoupled from viewport size or zoom: near tactical_zoom_threshold (the
+## LEAST zoomed-in end of Tactical), a full viewport can show on the order
+## of 80-100 hexes, so the great majority of what's visible fell back to a
+## flat, sub-hex-detail-free tile. _hex_qualifies_for_detail() already
+## bounds the EXPENSIVE part of hydration (SubHexGroundView's real-terrain
+## compositing, buildings) to settled/frontier/ZoC-covered hexes regardless
+## of how big this radius is, so widening it mostly just means the cheap
+## qualification check runs over more candidates — the two constants below
+## are a floor (never less generous than the old fixed behavior) and a
+## ceiling (bounds worst-case cost in a late-game, ZoC-saturated colony,
+## where a genuinely large fraction of the wider radius COULD qualify).
+const MIN_DETAIL_RADIUS: int = 1
+const MAX_DETAIL_RADIUS: int = 8
 
 @export var hex_grid_map_path: NodePath
 @export var building_manager_path: NodePath
@@ -48,6 +67,7 @@ var _selected_building: BuildingInstance  ## Cached copy of _unit_command_contro
 var _is_tactical_mode: bool = false
 var _fidelity: GameEnums.TacticalFidelity = GameEnums.TacticalFidelity.HIGH  ## Pushed to every hydrated TacticalHexView; see _on_fidelity_changed().
 var _last_centered_coord: Vector2i = Vector2i.ZERO
+var _last_detail_radius: int = MIN_DETAIL_RADIUS  ## Change-detection cache for _process() only — _refresh_hydrated_neighborhood() itself always recomputes fresh via _current_detail_radius(), so every OTHER call site (building/fog/ZoC signals) stays correct without needing to know about zoom at all.
 var _tactical_views: Dictionary = {}  # Vector2i -> TacticalHexView
 var _wall_layer: Node2D
 var _wall_markers: Dictionary = {}  # int (WallSegment.id) -> Line2D
@@ -127,9 +147,35 @@ func _process(_delta: float) -> void:
 	if not _is_tactical_mode or not _hex_grid_map or not _camera:
 		return
 	var centered_coord := _hex_grid_map.world_to_coord(_camera.global_position)
-	if centered_coord != _last_centered_coord:
+	var radius := _current_detail_radius()
+	# Panning (coord changed) is the common trigger; a PURE zoom (radius
+	# changed with the camera otherwise stationary) needs its own check —
+	# zooming out while centered on the same hex still needs MORE hexes
+	# covered, and that wouldn't otherwise fire a refresh at all.
+	if centered_coord != _last_centered_coord or radius != _last_detail_radius:
 		_last_centered_coord = centered_coord
+		_last_detail_radius = radius
 		_refresh_hydrated_neighborhood(centered_coord)
+
+## The hex-disk radius that covers the camera's own current visible world
+## extent, floored/ceilinged by MIN_DETAIL_RADIUS/MAX_DETAIL_RADIUS — see
+## that constant's own doc comment. Same screen_size/zoom math
+## MinimapView._draw_viewport_frame() already uses for the identical
+## question ("how much world is actually on screen right now").
+func _current_detail_radius() -> int:
+	if not _camera or not _camera.is_inside_tree():
+		return MIN_DETAIL_RADIUS
+	var screen_size := _camera.get_viewport().get_visible_rect().size
+	var half_world_extent := screen_size / _camera.zoom / 2.0
+	# hex_disk() is a hexagonal region, a viewport is rectangular — using the
+	# LARGER of the two half-extents over-covers the shorter axis's corners
+	# rather than under-covering the longer axis's edges, a simpler estimate
+	# than a real rectangular hex-region query for what's still just a
+	# coverage bound, not exact geometry.
+	var half_extent := maxf(half_world_extent.x, half_world_extent.y)
+	var hex_spacing := sqrt(3.0) * HexCoord.HEX_SIZE  ## Real center-to-center neighbor distance (HexCoord.axial_to_world()'s own formula) — NOT HexCoord.HEX_SIZE itself, the hex's circumradius.
+	var radius := int(ceil(half_extent / hex_spacing)) + 1  ## +1 so a hex only partially on-screen at the edge still hydrates, instead of popping in only once fully centered.
+	return clampi(radius, MIN_DETAIL_RADIUS, MAX_DETAIL_RADIUS)
 
 ## Pushes the tint change to whichever hydrated TacticalHexView owns each
 ## building — a no-op for a hex that isn't currently hydrated (selecting a
@@ -188,7 +234,7 @@ func _refresh_hydrated_neighborhood(center: Vector2i) -> void:
 	if not _hex_grid_map:
 		return
 	var wanted: Dictionary = {}  # Vector2i -> true
-	for coord in HexCoord.hex_disk(center, DETAIL_RADIUS):
+	for coord in HexCoord.hex_disk(center, _current_detail_radius()):
 		if _hex_qualifies_for_detail(coord):
 			wanted[coord] = true
 

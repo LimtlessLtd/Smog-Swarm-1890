@@ -11,6 +11,7 @@ const BUTTON_HOVER: Color = Color("#5a3d29")
 const BUTTON_PRESSED: Color = Color("#24170f")
 const BUTTON_DISABLED: Color = Color("#43372d")
 const SHADOW_COLOR: Color = Color("#000000", 0.45)
+const DANGER_COLOR: Color = Color("#e05555")  ## Unaffordable resource costs (BuildingIconButton's tooltip), "Not yet researched" — anywhere a cost/prereq blocks an action right now.
 
 static func style_label(label: Label, accent: bool = false, muted: bool = false) -> void:
 	label.add_theme_color_override("font_color", ACCENT_COLOR if accent else (MUTED_COLOR if muted else TEXT_COLOR))

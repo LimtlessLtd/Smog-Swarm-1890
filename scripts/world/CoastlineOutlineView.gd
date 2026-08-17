@@ -16,15 +16,18 @@ extends Node2D
 ##
 ## Computed once from HexCell.biome_type (OCEAN vs. everything else) — the
 ## same data HexMapGenerator's landmass pass (BritishGeographyData) already
-## produced, not a second source of truth. A coastal edge is any hex
-## boundary between a land hex and an ocean-or-off-map neighbor. Drawn via
-## plain CanvasItem.draw_line() calls in a single _draw() (cheap — called
-## once at generation and cached by the renderer afterward, same as any
-## other static _draw() content, not a per-frame cost) rather than a Line2D
-## per segment: there's no single continuous polyline here (Great Britain
-## and Ireland are two disconnected coastlines, each its own separate
-## ring), and one static draw call per edge is simpler than stitching
-## per-loop polylines back together from a flat edge set.
+## produced, not a second source of truth. Segment math itself lives in
+## HexCoord.coastline_segments() (a coastal edge is any hex boundary between
+## a land hex and an ocean-or-off-map neighbor) — MinimapView draws the same
+## shape at minimap scale, so it's a shared static utility rather than a
+## second copy of this algorithm. Drawn via plain CanvasItem.draw_line()
+## calls in a single _draw() (cheap — called once at generation and cached
+## by the renderer afterward, same as any other static _draw() content, not
+## a per-frame cost) rather than a Line2D per segment: there's no single
+## continuous polyline here (Great Britain and Ireland are two disconnected
+## coastlines, each its own separate ring), and one static draw call per
+## edge is simpler than stitching per-loop polylines back together from a
+## flat edge set.
 ##
 ## Parented as a HexGridMap sibling under WorldRoot, same reasoning as
 ## LocalDetailManager/StrategicOverlayManager — shares its coordinate

@@ -27,6 +27,19 @@ extends Control
 ## redraws off a modest fixed-interval Timer instead of every frame —
 ## smooth enough to feel live while panning, far cheaper than full framerate.
 ##
+## Zoom: mouse wheel over the minimap panel adjusts `_zoom_level`
+## independently of the main camera's own zoom — "the mini map... should be
+## able to be zoomed in and out independently of where the camera is, at the
+## moment its so zoomed out its unusable" (user feedback; the minimap always
+## fit the ENTIRE map into one small fixed-size panel before this, which
+## reduced every hex to ~3px regardless of camera state). At `_zoom_level`
+## 1.0 (default) the full world still fits, same as before. Above 1.0, only a
+## `_world_bounds_size / _zoom_level` window is shown, centered on the main
+## camera's current world position (clamped to stay inside the full map) —
+## the window recenters as the camera pans/refreshes (same VIEWPORT_REFRESH_SECONDS
+## timer already redraws off), so zooming in doesn't strand the view on a
+## fixed point while play continues elsewhere.
+##
 ## Spotted-horde markers are NOT drawn here — that marker system is
 ## Strategic-only (StrategicOverlayManager's own HordeMarkerRenderer). This
 ## draws what StrategicOverlayManager already draws (buildings) plus
@@ -42,7 +55,18 @@ extends Control
 ## already-known territory works the same way a building icon does here.
 
 const VIEWPORT_REFRESH_SECONDS: float = 0.1
-const HEX_DOT_HALF_SIZE: float = 1.5   ## Minimap-space pixels, not world-space — every hex draws as the same small flat square regardless of actual hex size.
+
+const MIN_ZOOM: float = 1.0    ## Whole map fits the panel — the pre-zoom behavior.
+## 40, not 8 — "Mini map zoom is still too far away" (user feedback): the
+## real map is 154x179 hexes (HexCoord.gd's own doc comment), so even at 8x
+## the zoomed window was still ~25 hexes wide across this panel's 200px, not
+## meaningfully more useful than the unzoomed view. At 40x the window is
+## ~5 hexes wide — small enough to actually read individual hex/building
+## dots up close.
+const MAX_ZOOM: float = 40.0
+const ZOOM_STEP_FACTOR: float = 1.35  ## Multiplicative per wheel notch — feels smoother than a flat additive step across this range.
+
+const COASTLINE_COLOR: Color = Color(0.75, 0.72, 0.62, 0.85)  ## Matches CoastlineOutlineView.OUTLINE_COLOR — same shape, same look, at minimap scale.
 const BUILDING_DOT_RADIUS: float = 2.5
 const BACKGROUND_COLOR: Color = Color("#1f150f")
 const BORDER_COLOR: Color = Color("#cfa24e")
@@ -63,6 +87,14 @@ var _camera: CameraController
 var _panel_size: Vector2 = Vector2.ZERO
 var _world_bounds_min: Vector2 = Vector2.ZERO
 var _world_bounds_size: Vector2 = Vector2.ONE
+var _coastline_segments: PackedVector2Array = PackedVector2Array()  ## World-space, from HexCoord.coastline_segments() — same shape CoastlineOutlineView draws on the main map, computed once at setup().
+
+var _zoom_level: float = MIN_ZOOM
+## Set fresh at the top of every _draw() call (see _effective_bounds()) —
+## _world_to_minimap() reads these rather than the raw _world_bounds_*
+## fields so every draw call within one frame maps against the same window.
+var _effective_bounds_min: Vector2 = Vector2.ZERO
+var _effective_bounds_size: Vector2 = Vector2.ONE
 
 ## `panel_size` is passed in explicitly rather than read back from this
 ## Control's own `size` — MainHUD's own layout-helper doc comment already
@@ -78,7 +110,19 @@ func setup(hex_grid_map: HexGridMap, building_manager: BuildingManager, fog_of_w
 	_panel_size = panel_size
 	_noise_manager = noise_manager
 
+	# A Control's _draw() calls are NOT clipped to its own rect by default —
+	# every draw call here already stayed inside 0.._panel_size at
+	# MIN_ZOOM (whole map exactly fills the panel), but zooming in shrinks
+	# the effective world-space window (_refresh_effective_bounds()) and any
+	# content OUTSIDE that window — the coastline especially, drawn
+	# unconditionally at full world extent regardless of zoom — maps to
+	# normalized coordinates outside [0,1] and bled past the panel's own
+	# border into the rest of the HUD (a real user screenshot caught this:
+	# the coastline spilling out above the minimap once zoomed in).
+	clip_contents = true
+
 	_compute_world_bounds()
+	_coastline_segments = HexCoord.coastline_segments(_hex_grid_map) if _hex_grid_map else PackedVector2Array()
 
 	if _fog_of_war_manager:
 		_fog_of_war_manager.fog_state_changed.connect(_on_fog_state_changed)
@@ -152,23 +196,83 @@ func _compute_world_bounds() -> void:
 	_world_bounds_min = Vector2(min_x - pad, min_y - pad)
 	_world_bounds_size = Vector2(max_x - min_x + pad * 2.0, max_y - min_y + pad * 2.0)
 
+## Mouse wheel over the panel — zooms the minimap itself, never the main
+## camera (Control.gui_input only fires for events actually over this
+## Control's own rect, so this can't be confused with camera zoom input
+## elsewhere on screen).
+func _gui_input(event: InputEvent) -> void:
+	if not event is InputEventMouseButton or not event.pressed:
+		return
+	if event.button_index == MOUSE_BUTTON_WHEEL_UP:
+		_zoom_level = clampf(_zoom_level * ZOOM_STEP_FACTOR, MIN_ZOOM, MAX_ZOOM)
+	elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+		_zoom_level = clampf(_zoom_level / ZOOM_STEP_FACTOR, MIN_ZOOM, MAX_ZOOM)
+	else:
+		return
+	accept_event()
+	queue_redraw()
+
+## Recomputes the world-space window this draw call maps against — the full
+## map at _zoom_level 1.0, or a `_world_bounds_size / _zoom_level` window
+## centered on the main camera's current position (clamped inside the full
+## map) above that. Called once per _draw(), not per _world_to_minimap()
+## call, so every dot/marker in the same frame maps against one consistent window.
+func _refresh_effective_bounds() -> void:
+	if _zoom_level <= MIN_ZOOM or not _camera or not _camera.is_inside_tree():
+		_effective_bounds_min = _world_bounds_min
+		_effective_bounds_size = _world_bounds_size
+		return
+	var window_size := _world_bounds_size / _zoom_level
+	var center := _camera.get_screen_center_position()
+	var window_min := center - window_size / 2.0
+	window_min.x = clampf(window_min.x, _world_bounds_min.x, _world_bounds_min.x + _world_bounds_size.x - window_size.x)
+	window_min.y = clampf(window_min.y, _world_bounds_min.y, _world_bounds_min.y + _world_bounds_size.y - window_size.y)
+	_effective_bounds_min = window_min
+	_effective_bounds_size = window_size
+
 func _world_to_minimap(world_pos: Vector2) -> Vector2:
-	var normalized := (world_pos - _world_bounds_min) / _world_bounds_size
+	var normalized := (world_pos - _effective_bounds_min) / _effective_bounds_size
 	return normalized * _panel_size
 
+## A hex's real six corners (HexCoord.corner_points() — the exact shape
+## HexCellView/TacticalHexView/CoastlineOutlineView all already draw),
+## mapped through _world_to_minimap() one corner at a time. Replaces an
+## earlier flat-square approximation that had TWO separate bugs, both from
+## treating this as a square-packing problem instead of just drawing the
+## real hex: (1) a user screenshot showed plain squares, not hexes, because
+## draw_rect() was never going to look hex-shaped no matter how it was
+## sized; (2) the square half-size was computed from HexCoord.HEX_SIZE
+## (512, the hex's own CIRCUMRADIUS) when the value that actually matters
+## for tiles to touch is the CENTER-TO-CENTER spacing between neighboring
+## hexes — HexCoord.axial_to_world()'s own formula puts that at
+## sqrt(3)*HEX_SIZE (~887), not HEX_SIZE itself, so the old squares were
+## undersized by a factor of sqrt(3) (~1.73x) and always left a gap
+## regardless of zoom. Drawing the real polygon sidesteps both: adjacent
+## hexes share an edge by construction (same corner-point geometry the main
+## map itself uses, not a size someone has to get right), so there's no
+## spacing constant to derive or get wrong.
+func _hex_polygon_minimap(coord: Vector2i) -> PackedVector2Array:
+	var corners := HexCoord.corner_points(HexCoord.axial_to_world(coord))
+	var mapped := PackedVector2Array()
+	for corner in corners:
+		mapped.append(_world_to_minimap(corner))
+	return mapped
+
 func _draw() -> void:
+	_refresh_effective_bounds()
 	draw_rect(Rect2(Vector2.ZERO, _panel_size), BACKGROUND_COLOR)
 	if not _hex_grid_map:
 		return
+
+	_draw_coastline()
 
 	if _fog_of_war_manager:
 		for cell in _hex_grid_map.get_all_cells():
 			var fog_state := _fog_of_war_manager.get_fog_state(cell.coord)
 			if fog_state == GameEnums.FogState.UNSEEN:
 				continue  ## Never scouted — the minimap shouldn't leak information the main view wouldn't either.
-			var pos := _world_to_minimap(HexCoord.axial_to_world(cell.coord))
 			var color := TerrainVisuals.biome_color(cell.biome_type, cell.soil_fertility) * FogVisuals.tint_color(fog_state)
-			draw_rect(Rect2(pos - Vector2.ONE * HEX_DOT_HALF_SIZE, Vector2.ONE * HEX_DOT_HALF_SIZE * 2.0), color)
+			draw_colored_polygon(_hex_polygon_minimap(cell.coord), color)
 
 	if _building_manager:
 		for instance in _building_manager.get_all_buildings():
@@ -180,6 +284,18 @@ func _draw() -> void:
 	_draw_threat_markers()
 	_draw_viewport_frame()
 	draw_rect(Rect2(Vector2.ZERO, _panel_size), BORDER_COLOR, false, 1.5)
+
+## Unconditional — NOT gated by FogOfWarManager, unlike every other layer
+## this view draws. "We should be able to see an outline of the British
+## Isles on the minimap so users know where they are looking abouts" (user
+## request) — a landmass's own outline shape is public knowledge, the same
+## reasoning CoastlineOutlineView's own doc comment already established for
+## the main map view; this draws the identical HexCoord.coastline_segments()
+## shape at minimap scale so the player always has an orientation reference,
+## even on a mostly-UNSEEN map.
+func _draw_coastline() -> void:
+	for i in range(0, _coastline_segments.size(), 2):
+		draw_line(_world_to_minimap(_coastline_segments[i]), _world_to_minimap(_coastline_segments[i + 1]), COASTLINE_COLOR, 1.0)
 
 ## Iterates every generated cell same as the terrain pass above (cheap at
 ## this scale) rather than trying to enumerate only "interesting" hexes —

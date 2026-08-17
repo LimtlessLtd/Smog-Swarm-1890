@@ -16,16 +16,25 @@ extends RefCounted
 
 const VARIANT_COUNT: int = 3
 
-static var _texture_cache: Dictionary = {}  # int (variant, already wrapped 0..VARIANT_COUNT-1) -> Texture2D (nullable)
+## A whole Horde moves (and faces) as one entity — see
+## TacticalEntityLayer._advance_facing(), called once per horde, not once
+## per rendered figure — so `facing` here is the horde's shared facing, the
+## same for every figure a given call site is drawing this frame.
 
-static func zombie_texture(variant_seed: int) -> Texture2D:
+static var _texture_cache: Dictionary = {}  # "<variant>_<Facing8>" -> Texture2D (nullable)
+
+static func zombie_texture(variant_seed: int, facing: GameEnums.Facing8 = GameEnums.Facing8.S) -> Texture2D:
 	var variant := ((variant_seed % VARIANT_COUNT) + VARIANT_COUNT) % VARIANT_COUNT  # Always non-negative regardless of variant_seed's sign.
-	if not _texture_cache.has(variant):
-		_texture_cache[variant] = _load_texture(variant)
-	return _texture_cache[variant]
+	var cache_key := "%d_%d" % [variant, facing]
+	if not _texture_cache.has(cache_key):
+		_texture_cache[cache_key] = _load_texture(variant, facing)
+	return _texture_cache[cache_key]
 
-static func _load_texture(variant: int) -> Texture2D:
-	var path := "res://assets/zombies/zombie_%d.png" % variant
-	if not ResourceLoader.exists(path):
-		return null
-	return load(path) as Texture2D
+static func _load_texture(variant: int, facing: GameEnums.Facing8) -> Texture2D:
+	var directional_path := "res://assets/zombies/zombie_%d_%s.png" % [variant, FacingUtil.suffix(facing)]
+	if ResourceLoader.exists(directional_path):
+		return load(directional_path) as Texture2D
+	var flat_path := "res://assets/zombies/zombie_%d.png" % variant  # Pre-directional single-facing art, if that's all that's been authored.
+	if ResourceLoader.exists(flat_path):
+		return load(flat_path) as Texture2D
+	return null

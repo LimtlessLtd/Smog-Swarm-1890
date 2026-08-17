@@ -62,14 +62,17 @@ static func building_texture(building_type: GameEnums.BuildingType) -> Texture2D
 		_texture_cache[building_type] = _load_texture(building_type)
 	return _texture_cache[building_type]
 
-## Matches assets/buildings/<key>.svg/.png exactly — see that folder's own
-## file list. Building tree rework (design_doc.md §3): most keys below reuse
-## pre-rework art under a new BuildingType identifier where the old and new
-## building are close enough in kind (e.g. IRON_FOUNDRY -> the old
-## CAST_IRON_FOUNDRY art) — same "enum identifier and asset filename can
-## diverge" convention ResourceVisuals._icon_key() documents for IRON/CONCRETE.
-## Every Tier 2+ building with no real-world predecessor returns "" (no art
-## authored yet, falls back to category_color()) until art lands.
+## Matches assets/buildings/<key>.png exactly (Blender pipeline — see
+## tools/blender_pipeline/README.md; buildings are static, single-facing,
+## no directional suffix). Extended to cover all 42 BuildingCatalog types
+## (previously only 14 — the Building tree rework added 28 more
+## BuildingType values that this function silently never routed to any
+## art, permanently stuck on category_color() regardless of what existed
+## in assets/buildings/). The 14 pre-rework keys below keep their existing,
+## sometimes-divergent filenames (e.g. LUMBER_YARD -> "timber_camp") since
+## real art already exists at those paths; every newly-routed key below is
+## simply the enum's own BuildingCatalog._<key>() function name, no
+## divergence to preserve.
 static func _texture_key(building_type: GameEnums.BuildingType) -> String:
 	match building_type:
 		GameEnums.BuildingType.TOWN_HALL:
@@ -80,10 +83,6 @@ static func _texture_key(building_type: GameEnums.BuildingType) -> String:
 			return "tenant_farm"
 		GameEnums.BuildingType.WOODEN_HOUSES:
 			return "terraced_tenement"
-		# Uses the real "watchtower.png" AI-art asset (a separate, newer file,
-		# not a same-named .png next to the original hand-authored
-		# church_steeple_watchtower.svg) — _load_texture()'s own
-		# .png-then-.svg fallback means this key alone is enough.
 		GameEnums.BuildingType.WATCHTOWER:
 			return "watchtower"
 		GameEnums.BuildingType.COAL_MINE:
@@ -104,6 +103,65 @@ static func _texture_key(building_type: GameEnums.BuildingType) -> String:
 			return "searchlight_tower"
 		GameEnums.BuildingType.GUNPOWDER_MILL:
 			return "saltpetre_powder_mill"
+		# Below: previously unrouted (Building tree rework added these
+		# BuildingType values without ever giving BuildingVisuals a key for
+		# them) — key is just the enum's own catalog function name.
+		GameEnums.BuildingType.CLAY_PIT:
+			return "clay_pit"
+		GameEnums.BuildingType.STEAM_FURNACE:
+			return "steam_furnace"
+		GameEnums.BuildingType.LIMESTONE_QUARRY:
+			return "limestone_quarry"
+		GameEnums.BuildingType.ESTATE_FARM:
+			return "estate_farm"
+		GameEnums.BuildingType.COAL_POWERPLANT:
+			return "coal_powerplant"
+		GameEnums.BuildingType.IRON_ORE_MINE:
+			return "iron_ore_mine"
+		GameEnums.BuildingType.CONCRETE_PLANT:
+			return "concrete_plant"
+		GameEnums.BuildingType.INDUSTRIAL_FARM:
+			return "industrial_farm"
+		GameEnums.BuildingType.TOWER_BLOCKS:
+			return "tower_blocks"
+		GameEnums.BuildingType.ARMORY_AND_BARRACKS:
+			return "armory_and_barracks"
+		GameEnums.BuildingType.SULFUR_MINE:
+			return "sulfur_mine"
+		GameEnums.BuildingType.DEEP_COAL_SHAFTS:
+			return "deep_coal_shafts"
+		GameEnums.BuildingType.SAWMILLS:
+			return "sawmills"
+		GameEnums.BuildingType.STEELWORKS:
+			return "steelworks"
+		GameEnums.BuildingType.MECHANISED_FARM:
+			return "mechanised_farm"
+		GameEnums.BuildingType.ADVANCED_COAL_POWERPLANT:
+			return "advanced_coal_powerplant"
+		GameEnums.BuildingType.HIGH_COMMAND_AND_CAVALRY_DEPOT:
+			return "high_command_and_cavalry_depot"
+		GameEnums.BuildingType.STEAM_EXCAVATOR_DEPOT:
+			return "steam_excavator_depot"
+		GameEnums.BuildingType.HEAVY_COAL_WASHERY_AND_PULVERIZER:
+			return "heavy_coal_washery_and_pulverizer"
+		GameEnums.BuildingType.MECHANIZED_MAINTENANCE_DEPOT:
+			return "mechanized_maintenance_depot"
+		GameEnums.BuildingType.MACADAMIZED_TRANSPORT_HUB:
+			return "macadamized_transport_hub"
+		GameEnums.BuildingType.STEAM_TURBINE_POWER_PLANT:
+			return "steam_turbine_power_plant"
+		GameEnums.BuildingType.TRACTION_WORKS_AND_WORKSHOP:
+			return "traction_works_and_workshop"
+		GameEnums.BuildingType.BESSEMER_SMELTING_COMPLEX:
+			return "bessemer_smelting_complex"
+		GameEnums.BuildingType.AUTOMATED_FREIGHT_MARSHALLING_YARD:
+			return "automated_freight_marshalling_yard"
+		GameEnums.BuildingType.SYNTHETIC_CHEMICAL_REFINERY:
+			return "synthetic_chemical_refinery"
+		GameEnums.BuildingType.CENTRAL_HIGH_VOLTAGE_GRID_STATION:
+			return "central_high_voltage_grid_station"
+		GameEnums.BuildingType.ORDNANCE_AND_ARMAMENT_COMPLEX:
+			return "ordnance_and_armament_complex"
 		_:
 			return ""
 

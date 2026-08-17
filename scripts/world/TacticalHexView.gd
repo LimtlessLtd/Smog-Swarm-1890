@@ -12,25 +12,33 @@ extends Node2D
 ## zoom threshold and pans between hexes; only exists for a hex that has
 ## qualified as settled/frontier.
 ##
-## `fidelity` only affects PROPS — at LOW it collapses every per-species
-## polygon (tree/bush/rock/reed) down to one uniform blob shape, still
-## colored by prop type. MEDIUM and HIGH both draw real per-type polygons
-## unchanged — there's no MEDIUM-vs-HIGH distinction for props/buildings the
-## way there is for units (TacticalEntityLayer). Buildings are NOT
-## simplified at any fidelity — the BuildingVisuals.category_color() box
-## fallback is already the simplest shape that still carries the "which
-## building category is this" signal LOW's own "tell unit from building
-## from zombie" bar depends on. Real per-type sprite art
-## (BuildingVisuals.building_texture()) renders on that same square at
-## every fidelity alike.
+## `fidelity` affects props AND buildings, MEDIUM/HIGH treated identically
+## for both (no MEDIUM-vs-HIGH distinction the way TacticalEntityLayer has
+## for units) — at LOW, props collapse to one uniform blob shape per prop
+## type, and buildings skip their real 2048x2048 sprite in favor of the
+## same BuildingVisuals.category_color() flat-box fallback an unauthored
+## building type already uses (extended from "no art exists" to "art
+## exists but this fidelity band doesn't want it" — one existing fallback
+## covers both). Buildings also skip their smoke/fire particle effects at
+## LOW (BuildingEffectsVisuals — real per-frame CPU particle sims, cut
+## exactly where the most buildings are likely on screen at once); the
+## pulsing light glow stays at every fidelity, it's GPU-shader-only with no
+## per-frame simulation cost. set_fidelity() only rebuilds THESE two things
+## (_rebuild_fidelity_dependent()) — ground (SubHexGroundView's expensive
+## 121-sample real-terrain compositing), the grid outline, the ZoC overlay,
+## and the fog mist overlay never change with fidelity and used to get
+## needlessly torn down and rebuilt on every LOW<->MEDIUM<->HIGH crossing anyway.
 
 var cell: HexCell
 var _props: Array[PropInstance] = []
 var _buildings: Array[BuildingInstance] = []
 var _fidelity: GameEnums.TacticalFidelity = GameEnums.TacticalFidelity.HIGH
 var _zoc_state: ZoneOfControlState
-var _building_containers: Dictionary = {}  # int (BuildingInstance.id) -> Node2D — rebuilt every _redraw(), lets set_building_selected() re-tint one building in place.
+var _building_containers: Dictionary = {}  # int (BuildingInstance.id) -> Node2D — rebuilt every _rebuild_fidelity_dependent(), lets set_building_selected() re-tint one building in place.
+var _props_layer: Node2D  ## Created once in _redraw(); _rebuild_fidelity_dependent() only clears/repopulates ITS children, leaving this node's own position among TacticalHexView's children (and therefore draw order) untouched.
+var _buildings_layer: Node2D  ## Same shape as _props_layer, for buildings.
 var _selected_building: BuildingInstance  ## Threaded through setup() so a hex that dehydrates and rehydrates while its own building stays selected redraws already knowing to highlight it.
+var _fog_state: GameEnums.FogState = GameEnums.FogState.VISIBLE  ## Re-applied to the fog overlay on every _redraw() — that child gets queue_free()'d and rebuilt with everything else, unlike HexCellView's own persistent overlay child.
 
 func _ready() -> void:
 	position = HexCoord.axial_to_world(cell.coord)
@@ -86,9 +94,19 @@ func set_building_selected(instance: BuildingInstance, is_selected: bool) -> voi
 
 ## Dims the whole hydrated hex (terrain, props and buildings together)
 ## rather than the inner ground HexCellView alone, so a remembered-but-not-
-## currently-visible hex reads as one dimmed scene.
+## currently-visible hex reads as one dimmed scene. Also arms/disarms the
+## animated overlay (see FogVisuals.overlay_material()) on the current
+## FogOverlay child, if one exists yet — _redraw() rebuilds it from
+## `_fog_state` every time regardless, so a call arriving before this hex's
+## first _redraw() still takes effect once that runs.
 func set_fog_state(state: GameEnums.FogState) -> void:
+	_fog_state = state
 	modulate = FogVisuals.tint_color(state)
+	var overlay := get_node_or_null("FogOverlay")
+	if overlay:
+		var material := FogVisuals.overlay_material(state)
+		overlay.material = material
+		overlay.visible = material != null
 
 ## Exposed so LocalDetailManager.get_props_at() can hand a hex's live prop
 ## scatter to MovementStepper's callers as steering obstacles. Returns a
@@ -98,38 +116,103 @@ func get_props() -> Array[PropInstance]:
 	return _props.duplicate()
 
 ## Pushed live by LocalDetailManager on every LOW<->MEDIUM<->HIGH band
-## crossing — mirrors set_fog_state()'s "update in place" shape rather than
-## a full dehydrate/rehydrate.
+## crossing — mirrors set_fog_state()'s "update in place" shape, and (unlike
+## before) only touches the parts that actually depend on fidelity; see
+## _rebuild_fidelity_dependent()'s own doc comment.
 func set_fidelity(fidelity: GameEnums.TacticalFidelity) -> void:
 	if fidelity == _fidelity:
 		return
 	_fidelity = fidelity
 	if is_inside_tree():
-		_redraw()
+		_rebuild_fidelity_dependent()
 
 func _redraw() -> void:
 	for child in get_children():
 		child.queue_free()
-	_building_containers.clear()
 
 	var ground := SubHexGroundView.new()
 	ground.setup(cell)
+	# z_index -1, not the default 0 every prop/building/overlay here stays
+	# at: TacticalHexView instances are hydrated as separate siblings under
+	# LocalDetailManager (see that class's own _wall_layer doc comment), so a
+	# building sitting near its hex's edge can visually overlap a
+	# NEIGHBORING hex's own ground tile — with everything at z_index 0, which
+	# one draws on top depended on hydration order, not proximity, so a
+	# building could vanish under a neighbor's ground the moment that
+	# neighbor happened to hydrate later. z_index is a global sort key across
+	# the whole 2D scene (LocalDetailManager's own doc comment), so sinking
+	# ground below zero here guarantees it never outranks ANY building,
+	# regardless of which TacticalHexView either belongs to. This ALSO sinks
+	# HexGridMap's own always-present Strategic-zoom tile below THIS layer
+	# unless that one goes even lower — see HexGridMap._spawn_view()'s own
+	# z_index -2, added after this -1 alone let the flat Strategic tile win
+	# outright and bury the real sub-hex mosaic underneath it.
+	ground.z_index = -1
 	add_child(ground)
 
 	add_child(_build_grid_outline())  # Always-on structural hex boundary — a SEPARATE layer from the ZoC outline below, not the same line reused.
 
 	add_child(_build_zoc_overlay())  # Ground-level tint — drawn before props/buildings so they render on top of it, not under.
 
+	_props_layer = Node2D.new()
+	_props_layer.name = "Props"
+	add_child(_props_layer)
+
+	_buildings_layer = Node2D.new()
+	_buildings_layer.name = "Buildings"
+	add_child(_buildings_layer)
+
+	_rebuild_fidelity_dependent()
+
+	add_child(_build_fog_overlay())  # Last child — draws above ground/props/buildings alike, same plain sibling-order convention as everything else in this method.
+
+## Rebuilds ONLY the two things that depend on `_fidelity` — props (blob at
+## LOW, real per-type shape at MEDIUM/HIGH) and buildings (flat
+## category-color box at LOW, real sprite+effects at MEDIUM/HIGH; see this
+## class's own doc comment) — by clearing and repopulating _props_layer/
+## _buildings_layer in place. Their own position among this node's children
+## (and therefore draw order relative to ground/outline/ZoC/fog) never
+## changes, so no re-parenting/move_child() bookkeeping is needed the way
+## LocalDetailManager's _wall_layer requires for the same class of problem.
+## Called by _redraw() (fresh hydration) AND set_fidelity() (an
+## already-hydrated hex crossing a fidelity band) — splitting this out of a
+## full _redraw() fixed a real perf issue: every fidelity crossing used to
+## needlessly re-run SubHexGroundView's expensive 121-sample real-terrain
+## compositing and tear down/rebuild every building's particle systems, even
+## though ground/particles-aside-from-fidelity-gating never actually change
+## with fidelity at all.
+func _rebuild_fidelity_dependent() -> void:
+	for child in _props_layer.get_children():
+		child.queue_free()
+	for child in _buildings_layer.get_children():
+		child.queue_free()
+	_building_containers.clear()
+
 	for prop in _props:
-		add_child(_build_prop_node(prop))
+		_props_layer.add_child(_build_prop_node(prop))
 
 	for i in range(_buildings.size()):
 		var building := _buildings[i]
 		var container := _build_building_node(building, i)
-		add_child(container)
+		_buildings_layer.add_child(container)
 		_building_containers[building.id] = container
 		if _selected_building and building.id == _selected_building.id:
 			container.modulate = _SELECTED_TINT
+
+## Animated mist/haze layer (see FogVisuals.overlay_material()'s own doc
+## comment) — rebuilt fresh every _redraw() since this whole node's children
+## are cleared and re-added each time, then immediately synced to
+## `_fog_state` (the value set_fog_state() last pushed, possibly before this
+## particular _redraw() ran).
+func _build_fog_overlay() -> Polygon2D:
+	var overlay := Polygon2D.new()
+	overlay.name = "FogOverlay"
+	overlay.polygon = HexCoord.corner_points(Vector2.ZERO)
+	overlay.visible = false
+	var material := FogVisuals.overlay_material(_fog_state)
+	overlay.material = material
+	overlay.visible = material != null
+	return overlay
 
 ## A genuinely separate, always-visible Line2D (same thin dark stroke
 ## HexCellView's own _outline establishes for Strategic zoom) — never gated
@@ -332,7 +415,14 @@ func _build_building_node(building: BuildingInstance, index: int) -> Node2D:
 	else:
 		var half := BUILDING_HALF_SIZE
 		box.polygon = PackedVector2Array([Vector2(-half, -half), Vector2(half, -half), Vector2(half, half), Vector2(-half, half)])
-		var texture := BuildingVisuals.building_texture(building.definition.building_type)
+		# LOW fidelity skips the real sprite the same way props already
+		# simplify to a blob — a flat category-color box instead of a
+		# 2048x2048 texture, reusing the SAME fallback an unauthored
+		# building type already falls back to (see this class's own doc
+		# comment). MEDIUM/HIGH both show the real sprite.
+		var texture: Texture2D = null
+		if _fidelity != GameEnums.TacticalFidelity.LOW:
+			texture = BuildingVisuals.building_texture(building.definition.building_type)
 		if texture:
 			box.texture = texture
 			box.uv = quad_uv(texture)
@@ -343,7 +433,40 @@ func _build_building_node(building: BuildingInstance, index: int) -> Node2D:
 	container.add_child(box)
 
 	container.position = _resolved_building_position(building, index)
+
+	if not building.is_ruined and not building.is_under_construction:
+		_attach_effects(container, building.definition)
+
 	return container
+
+## Smoke/fire/light particle effects — see BuildingEffectsVisuals' own doc
+## comment for what qualifies a building for which. Ruins have nothing left
+## to smoke or glow; a construction site isn't operating yet either.
+## `_effect_anchor` is a fixed fraction of BUILDING_HALF_SIZE (roughly "roof
+## height"), not a real per-model chimney position — these are deliberately
+## simple, generic effects, not bespoke per-building placement.
+const _EFFECT_ANCHOR_Y: float = -BUILDING_HALF_SIZE * 0.5
+
+func _attach_effects(container: Node2D, definition: BuildingDefinition) -> void:
+	# Particle sims (CPUParticles2D) are a real per-frame CPU cost, unlike
+	# the light glow below (a static Sprite2D + GPU shader, no simulation) —
+	# skipped at LOW fidelity, the band with the most buildings likely on
+	# screen at once, same reasoning the building sprite skip above uses.
+	if _fidelity != GameEnums.TacticalFidelity.LOW:
+		if BuildingEffectsVisuals.has_fire(definition):
+			var fire := BuildingEffectsVisuals.build_fire_particles()
+			fire.position = Vector2(0, _EFFECT_ANCHOR_Y)
+			container.add_child(fire)
+			var smoke := BuildingEffectsVisuals.build_smoke_particles()  ## A real furnace/foundry smokes AND burns — has_fire() implies has_smoke() would also be true, but check independently rather than assuming that stays paired forever.
+			smoke.position = Vector2(0, _EFFECT_ANCHOR_Y)
+			container.add_child(smoke)
+		elif BuildingEffectsVisuals.has_smoke(definition):
+			var smoke := BuildingEffectsVisuals.build_smoke_particles()
+			smoke.position = Vector2(0, _EFFECT_ANCHOR_Y)
+			container.add_child(smoke)
+
+	if BuildingEffectsVisuals.has_light(definition):
+		container.add_child(BuildingEffectsVisuals.build_light_glow())
 
 func _ruin_polygon() -> PackedVector2Array:
 	return PackedVector2Array([Vector2(-10, -6), Vector2(-4, -10), Vector2(3, -7), Vector2(10, -9), Vector2(9, 2), Vector2(4, 10), Vector2(-6, 8), Vector2(-9, 3)])

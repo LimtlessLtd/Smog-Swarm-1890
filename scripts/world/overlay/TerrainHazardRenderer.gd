@@ -19,7 +19,23 @@ func build(layer: Node2D, hex_grid_map: HexGridMap) -> void:
 			layer.add_child(marker)
 
 func _build_marker(cell: HexCell) -> Node2D:
-	var is_impassable := not cell.is_passable()
+	# OCEAN excluded from HexCell.is_passable()'s false result here — "how
+	# come the overworld map sea is red and what are those strange lines
+	# where certain hexes meet?" (user report, screenshot showed the whole
+	# sea solid red with a diagonal grid pattern). Root cause: this marker
+	# was being built for EVERY impassable hex including OCEAN, which is the
+	# large majority of cells on a UK+Ireland bounding-box map — one
+	# Polygon2D fill + Line2D outline per ocean hex, all permanently in the
+	# tree with no fog/zoom gating, translucent-blending into a solid red
+	# wash with the outlines aliasing into the reported "lines" at
+	# zoomed-out scale. Also a real performance cost (StrategicOverlayManager's
+	# own report of lag fully zoomed out): thousands of extra always-drawn
+	# CanvasItems, all on-screen simultaneously at that zoom. OCEAN being
+	# "impassable" is redundant information anyway — it's already obvious
+	# from the tile's own ocean color/texture, unlike MARSH/PEAT_BOG (a real
+	# hazard on what otherwise reads as ordinary land) which still needs the
+	# marker.
+	var is_impassable := not cell.is_passable() and cell.biome_type != GameEnums.BiomeType.OCEAN
 	var show_elevation := cell.elevation >= _ELEVATION_VISIBLE_THRESHOLD
 	if not is_impassable and not show_elevation:
 		return null

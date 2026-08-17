@@ -71,6 +71,22 @@ func get_view(coord: Vector2i) -> HexCellView:
 func _spawn_view(cell: HexCell) -> void:
 	var view := HexCellView.new()
 	view.setup(cell)
+	# z_index -2: this Strategic-zoom tile is NEVER hidden while Tactical is
+	# active (no tactical_mode_changed toggle anywhere hides HexGridMap/
+	# "Cells" — confirmed by grep, not assumed) — it sits permanently
+	# underneath whatever LocalDetailManager hydrates on top of it.
+	# TacticalHexView's own per-hex ground (SubHexGroundView, the real
+	# sub-hex terrain mosaic) sits at z_index -1 for the same "must never
+	# outrank a building" reason (see that class's own comment) — without
+	# this hex's tile ALSO sinking below -1, the two were tied at the
+	# default 0 and only tree-order (HexGridMap added before
+	# LocalDetailManager) kept this flat tile hidden; z_index is a global
+	# sort key (LocalDetailManager's own doc comment), so giving
+	# SubHexGroundView a negative z_index without giving this an even MORE
+	# negative one let this flat single-biome tile win outright and bury
+	# the real sub-hex mosaic — exactly the "sub-hex biomes disappeared,
+	# every hex reads as one biome" regression a user report caught.
+	view.z_index = -2
 	_cell_container.add_child(view)
 	_views[cell.coord] = view
 
