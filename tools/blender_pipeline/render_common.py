@@ -350,7 +350,7 @@ def fence_perimeter(material, count=10, distance=0.85, post_height=0.16, post_ra
              radius=post_radius, depth=post_height)
 
 
-def render_to(output_path: str, category: str, resolution: int = 512):
+def render_to(output_path: str, category: str, resolution: int = 2048):
     """Call once at the end of an asset script, after the model + materials exist."""
     setup_render(resolution)
     add_camera(category)
@@ -370,7 +370,7 @@ def render_to(output_path: str, category: str, resolution: int = 512):
 DIRECTIONS_8 = ["n", "ne", "e", "se", "s", "sw", "w", "nw"]
 
 
-def render_directional_to(output_dir: str, key: str, category: str, resolution: int = 512):
+def render_directional_to(output_dir: str, key: str, category: str, resolution: int = 2048):
     """Renders DIRECTIONS_8 facings of the same built model to
     <output_dir>/<key>_<direction>.png, reusing one Blender session (model built
     once, only the camera moves) rather than re-invoking Blender 8 times."""

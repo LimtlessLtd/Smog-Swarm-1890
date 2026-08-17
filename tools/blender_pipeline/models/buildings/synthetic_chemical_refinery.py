@@ -13,7 +13,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 from render_common import flat_material, part  # noqa: E402
 
 COLUMN_COLOR = (0.5, 0.5, 0.54)
-PIPE_COLOR = (0.35, 0.55, 0.4)  # Green pipework — a color no other building uses, "chemical" flavor.
+PIPE_COLOR = (0.283, 0.616, 0.366)  # Green pipework — a color no other building uses, "chemical" flavor.
 BASE_COLOR = (0.3, 0.29, 0.3)
 
 

@@ -39,6 +39,7 @@ var cell: HexCell
 
 var _polygon: Polygon2D
 var _outline: Line2D
+var _fog_overlay: Polygon2D  ## Animated mist/haze layer — see FogVisuals.overlay_material()'s own doc comment. Hidden (no material) at VISIBLE.
 
 func _ready() -> void:
 	_polygon = Polygon2D.new()
@@ -46,8 +47,11 @@ func _ready() -> void:
 	_outline.width = 1.5
 	_outline.default_color = Color(0.0, 0.0, 0.0, 0.35)
 	_outline.closed = true
+	_fog_overlay = Polygon2D.new()
+	_fog_overlay.visible = false
 	add_child(_polygon)
 	add_child(_outline)
+	add_child(_fog_overlay)  # Last child — draws above both, same plain sibling-order convention the rest of this project's per-hex views use.
 	if cell:
 		_redraw()
 
@@ -61,9 +65,17 @@ func setup(p_cell: HexCell) -> void:
 
 ## Tints the whole tile rather than touching the underlying biome/soil
 ## color, so FogOfWarManager can push updates here without this view
-## needing to know anything about fog logic.
+## needing to know anything about fog logic. Also arms/disarms the animated
+## mist overlay (see FogVisuals.overlay_material()) — `_fog_overlay` may not
+## exist yet if this lands before _ready() (HexGridMap/FogOfWarManager node
+## order isn't guaranteed), same reason `modulate` alone was always safe to
+## set early but this extra step needs a guard.
 func set_fog_state(state: GameEnums.FogState) -> void:
 	modulate = FogVisuals.tint_color(state)
+	if _fog_overlay:
+		var material := FogVisuals.overlay_material(state)
+		_fog_overlay.material = material
+		_fog_overlay.visible = material != null
 
 ## Re-draws against whatever `cell`'s fields currently hold — for a system
 ## that mutates a live HexCell after it was first spawned
@@ -77,6 +89,7 @@ func _redraw() -> void:
 	var points := HexCoord.corner_points(Vector2.ZERO)
 	_polygon.polygon = points
 	_outline.points = points
+	_fog_overlay.polygon = points
 
 	var texture := TerrainVisuals.terrain_texture(cell.biome_type, cell.soil_fertility, cell.terrain_feature)
 	_polygon.texture = texture

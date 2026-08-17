@@ -13,8 +13,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 from render_common import flat_material, part, gable_roof  # noqa: E402
 
 WALL_COLORS = [(0.62, 0.5, 0.36), (0.55, 0.42, 0.3), (0.6, 0.46, 0.34)]  # Slightly varied per house — a real terrace isn't one uniform color.
-ROOF_COLOR = (0.28, 0.22, 0.18)
-DOOR_COLOR = (0.3, 0.18, 0.1)
+ROOF_COLOR = (0.314, 0.213, 0.147)
+DOOR_COLOR = (0.336, 0.144, 0.017)
 
 
 def build():

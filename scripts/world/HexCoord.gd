@@ -305,6 +305,28 @@ static func corner_points(center: Vector2) -> PackedVector2Array:
 		points.append(center + Vector2(HEX_SIZE * cos(angle_rad), HEX_SIZE * sin(angle_rad)))
 	return points
 
+## World-space land/ocean boundary segments (pairs: [p0, p1, p0, p1, ...]) —
+## a coastal edge is any hex boundary between a land hex and an
+## ocean-or-off-map neighbor. Extracted from CoastlineOutlineView's own
+## original _rebuild_segments() so MinimapView can draw the identical
+## coastline shape at minimap scale ("we should be able to see an outline of
+## the British Isles on the minimap so users know where they are looking
+## abouts" — user request) without a second, potentially-drifting copy of
+## this algorithm.
+static func coastline_segments(hex_grid_map: HexGridMap) -> PackedVector2Array:
+	var segments := PackedVector2Array()
+	for cell: HexCell in hex_grid_map.get_all_cells():
+		if cell.biome_type == GameEnums.BiomeType.OCEAN:
+			continue
+		var corners := corner_points(axial_to_world(cell.coord))
+		for i in range(6):
+			var neighbor := hex_grid_map.get_cell(cell.coord + NEIGHBOR_DIRECTIONS[i])
+			var is_coastal_edge := neighbor == null or neighbor.biome_type == GameEnums.BiomeType.OCEAN
+			if is_coastal_edge:
+				segments.append(corners[i])
+				segments.append(corners[(i + 1) % 6])
+	return segments
+
 static func _axial_to_cube(coord: Vector2i) -> Vector3:
 	var x := float(coord.x)
 	var z := float(coord.y)

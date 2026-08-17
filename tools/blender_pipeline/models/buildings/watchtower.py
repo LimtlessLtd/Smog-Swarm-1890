@@ -11,9 +11,9 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from render_common import flat_material, part  # noqa: E402
 
-WOOD_COLOR = (0.42, 0.3, 0.19)   # Lightened from the first pass — too close to ROOF_COLOR's value to read as a separate part.
-PLATFORM_COLOR = (0.3, 0.21, 0.13)
-ROOF_COLOR = (0.55, 0.22, 0.16)  # Warm red-brown, clearly distinct from the wood tone now.
+WOOD_COLOR = (0.47, 0.277, 0.099)   # Lightened from the first pass — too close to ROOF_COLOR's value to read as a separate part.
+PLATFORM_COLOR = (0.336, 0.191, 0.062)
+ROOF_COLOR = (0.616, 0.095, 0.0)  # Warm red-brown, clearly distinct from the wood tone now.
 
 
 def build():

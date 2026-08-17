@@ -11,11 +11,11 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from render_common import flat_material, part, gable_roof, silo, fence_perimeter  # noqa: E402
 
-FIELD_COLOR = (0.46, 0.54, 0.24)
-WALL_COLOR = (0.72, 0.65, 0.5)
-ROOF_COLOR = (0.42, 0.2, 0.15)
-SILO_COLOR = (0.55, 0.53, 0.48)
-FENCE_COLOR = (0.35, 0.24, 0.14)
+FIELD_COLOR = (0.476, 0.605, 0.121)
+WALL_COLOR = (0.806, 0.688, 0.433)
+ROOF_COLOR = (0.47, 0.119, 0.039)
+SILO_COLOR = (0.616, 0.577, 0.479)
+FENCE_COLOR = (0.392, 0.215, 0.055)
 
 
 def build():

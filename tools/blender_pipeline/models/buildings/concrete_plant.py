@@ -11,8 +11,8 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from render_common import flat_material, part  # noqa: E402
 
-CONCRETE_COLOR = (0.68, 0.66, 0.62)
-CONCRETE_DARK_COLOR = (0.5, 0.48, 0.44)
+CONCRETE_COLOR = (0.762, 0.719, 0.633)
+CONCRETE_DARK_COLOR = (0.56, 0.52, 0.441)
 STEEL_COLOR = (0.4, 0.4, 0.42)
 
 

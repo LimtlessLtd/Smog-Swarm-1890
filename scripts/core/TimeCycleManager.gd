@@ -21,8 +21,14 @@ extends Node
 ##     night_phase_started signals.
 ##   - get_seconds_until_next_phase()/get_seconds_until_nightfall(), feeding
 ##     the HUD's "Nightfall in 04:15" countdown.
-##   - A Victorian calendar date (campaign day 1 = 1 January 1890), advancing
-##     with TickManager.current_day.
+##   - A Victorian calendar period (campaign day 1 = 1 January 1890), advancing
+##     with TickManager.current_day. Never shows the exact day-of-month —
+##     "Early/Mid/Late <Month>" per user request, months fixed at 15 days each.
+##   - get_hour_string(), an in-fiction clock ("10pm"/"5am") derived from
+##     TickManager.get_day_progress() rather than a real-time countdown —
+##     "instead of the 20 minute timer it should say which hour of the day we
+##     are in" (user request). The Day phase (progress 0.0-0.5) spans 7am-7pm;
+##     Night (0.5-1.0) spans 7pm-7am, symmetric with it.
 ##   - FogOfWarManager's night vision contraction hook: phase_changed is
 ##     what FogOfWarManager listens to and recomputes against; the actual
 ##     radius math lives there, not here.
@@ -55,11 +61,16 @@ signal night_phase_started
 ## and starts at 1, so day 1 IS 1 Jan 1890 with no offset needed.
 const CAMPAIGN_START_YEAR: int = 1890
 const CAMPAIGN_START_MONTH_INDEX: int = 0  # January, 0-based into MONTH_NAMES.
-const DAYS_PER_MONTH: Array[int] = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]  # 1890 wasn't a leap year, and no campaign runs anywhere near 4 in-fiction years.
+const DAYS_PER_MONTH: int = 15  ## Fixed per user request ("each month has only 15 days") — no real-calendar variation to track.
 const MONTH_NAMES: Array[String] = [
 	"January", "February", "March", "April", "May", "June",
 	"July", "August", "September", "October", "November", "December",
 ]
+
+## Start-of-day/end-of-day clock hours — the Day phase (7am-7pm) is 12
+## in-fiction hours mapped across the first half of TickManager's day
+## progress, Night (7pm-7am) the second half, symmetric with it.
+const DAY_START_HOUR: int = 7
 
 var _current_phase: GameEnums.DayPhase = GameEnums.DayPhase.DAY
 
@@ -112,17 +123,37 @@ func get_seconds_until_nightfall() -> float:
 func get_seconds_until_dawn() -> float:
 	return get_seconds_until_next_phase() if is_night() else 0.0
 
-## "3 February 1890"-style Victorian date. Campaign day N is N-1 whole days
-## after 1 January 1890.
-func get_calendar_date_string() -> String:
+## "Early February 1890"-style Victorian calendar period. Campaign day N is
+## N-1 whole days after 1 January 1890. The exact day-of-month is never
+## surfaced — per user request, only which third of the (fixed 15-day) month
+## it falls in.
+func get_calendar_period_string() -> String:
 	var days_elapsed := TickManager.current_day - 1
-	var year := CAMPAIGN_START_YEAR
-	var month_index := CAMPAIGN_START_MONTH_INDEX
-	var day := 1 + days_elapsed
-	while day > DAYS_PER_MONTH[month_index]:
-		day -= DAYS_PER_MONTH[month_index]
-		month_index += 1
-		if month_index >= MONTH_NAMES.size():
-			month_index = 0
-			year += 1
-	return "%d %s %d" % [day, MONTH_NAMES[month_index], year]
+	var month_count := MONTH_NAMES.size()
+	var months_elapsed := days_elapsed / DAYS_PER_MONTH
+	var year := CAMPAIGN_START_YEAR + (CAMPAIGN_START_MONTH_INDEX + months_elapsed) / month_count
+	var month_index := (CAMPAIGN_START_MONTH_INDEX + months_elapsed) % month_count
+	var day_in_month := (days_elapsed % DAYS_PER_MONTH) + 1  # 1-based.
+	return "%s %s %d" % [_period_name(day_in_month), MONTH_NAMES[month_index], year]
+
+## Thirds of the 15-day month: days 1-5 Early, 6-10 Mid, 11-15 Late.
+func _period_name(day_in_month: int) -> String:
+	var third := DAYS_PER_MONTH / 3
+	if day_in_month <= third:
+		return "Early"
+	elif day_in_month <= third * 2:
+		return "Mid"
+	return "Late"
+
+## "10pm"/"5am"-style in-fiction clock, replacing the old real-time mm:ss
+## countdown per user request. Day progress 0.0 is 7am (DAY_START_HOUR),
+## wrapping through a full 24 in-fiction hours by progress 1.0 — the Day
+## phase (progress < 0.5) lands entirely within 7am-7pm this way, matching
+## "days start at 7am and end at 7pm" exactly (progress 0.5 == 7pm).
+func get_hour_string() -> String:
+	var hour_24 := int(floor(DAY_START_HOUR + TickManager.get_day_progress() * 24.0)) % 24
+	var hour_12 := hour_24 % 12
+	if hour_12 == 0:
+		hour_12 = 12
+	var suffix := "am" if hour_24 < 12 else "pm"
+	return "%d%s" % [hour_12, suffix]

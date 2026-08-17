@@ -12,9 +12,9 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from render_common import flat_material, part, chimney  # noqa: E402
 
-BRICK_RED_COLOR = (0.6, 0.25, 0.16)
-SHED_COLOR = (0.35, 0.32, 0.3)
-DARK_COLOR = (0.2, 0.18, 0.16)
+BRICK_RED_COLOR = (0.672, 0.137, 0.0)
+SHED_COLOR = (0.392, 0.335, 0.297)
+DARK_COLOR = (0.224, 0.188, 0.152)
 
 
 def build():

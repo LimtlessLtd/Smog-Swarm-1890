@@ -13,8 +13,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 from render_common import flat_material, part  # noqa: E402
 
 ROAD_COLOR = (0.42, 0.42, 0.42)
-LINE_COLOR = (0.85, 0.8, 0.6)
-POST_COLOR = (0.3, 0.26, 0.2)
+LINE_COLOR = (0.952, 0.867, 0.526)
+POST_COLOR = (0.336, 0.269, 0.168)
 
 
 def build():

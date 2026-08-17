@@ -12,9 +12,9 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from render_common import flat_material, part, gable_roof  # noqa: E402
 
-WALL_COLOR = (0.5, 0.46, 0.4)   # Lightened — first pass was too close in value to the roof/outline to read as a distinct wall.
-ROOF_COLOR = (0.28, 0.24, 0.2)
-RIFLE_COLOR = (0.4, 0.32, 0.2)
+WALL_COLOR = (0.56, 0.488, 0.381)   # Lightened — first pass was too close in value to the roof/outline to read as a distinct wall.
+ROOF_COLOR = (0.314, 0.245, 0.177)
+RIFLE_COLOR = (0.448, 0.318, 0.123)
 
 
 def build():

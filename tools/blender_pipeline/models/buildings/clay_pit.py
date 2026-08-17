@@ -10,9 +10,9 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from render_common import flat_material, part  # noqa: E402
 
-CLAY_COLOR = (0.55, 0.32, 0.22)
-CLAY_DARK_COLOR = (0.4, 0.22, 0.15)
-WOOD_COLOR = (0.32, 0.22, 0.13)
+CLAY_COLOR = (0.616, 0.247, 0.086)
+CLAY_DARK_COLOR = (0.448, 0.16, 0.048)
+WOOD_COLOR = (0.358, 0.198, 0.053)
 
 
 def build():

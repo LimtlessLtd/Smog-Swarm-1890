@@ -44,24 +44,40 @@ static func display_name(resource_type: GameEnums.ResourceType) -> String:
 ## design_doc.md §2's own grouping (Capacity & Yield / Raw / Processed),
 ## capacity/yield first since that's what the resource bar has always led
 ## with — used anywhere resources are listed so every UI element reads
-## left-to-right the same way.
+## left-to-right the same way. Derived from display_groups() below so the
+## flat order and the grouped one can't drift apart.
 static func display_order() -> Array[GameEnums.ResourceType]:
+	var result: Array[GameEnums.ResourceType] = []
+	for group in display_groups():
+		result.append_array(group["types"])
+	return result
+
+## Three named sections — "Pooled"/"Extracted"/"Processed" — each with a
+## short description of how that section works, per user request ("split
+## the resources into grouped sections that describe how each section
+## works"). Same design_doc.md §2 grouping display_order() used to hardcode
+## directly (Capacity & Yield Pools / Raw Resources / Processed Resources —
+## see GameEnums.ResourceType's own section comments), just with the header
+## text spelled out here instead of left implicit. ResourceBarView is the
+## one real consumer; a plain Array[Dictionary] (not a dedicated class) is
+## enough structure for what's still just static display metadata.
+static func display_groups() -> Array[Dictionary]:
 	return [
-		GameEnums.ResourceType.FOOD,
-		GameEnums.ResourceType.ENERGY,
-		GameEnums.ResourceType.POPULATION,
-		GameEnums.ResourceType.RESEARCH_POINTS,
-		GameEnums.ResourceType.WOOD,
-		GameEnums.ResourceType.CLAY,
-		GameEnums.ResourceType.COAL,
-		GameEnums.ResourceType.LIMESTONE,
-		GameEnums.ResourceType.IRON_ORE,
-		GameEnums.ResourceType.SULFUR,
-		GameEnums.ResourceType.BRICKS,
-		GameEnums.ResourceType.IRON,
-		GameEnums.ResourceType.STEEL,
-		GameEnums.ResourceType.CONCRETE,
-		GameEnums.ResourceType.GUNPOWDER,
+		{
+			"name": "Pooled",
+			"description": "Capacity & civic resources tracked citywide, not tied to one building.",
+			"types": [GameEnums.ResourceType.FOOD, GameEnums.ResourceType.ENERGY, GameEnums.ResourceType.POPULATION, GameEnums.ResourceType.RESEARCH_POINTS],
+		},
+		{
+			"name": "Extracted",
+			"description": "Raw materials mined or harvested directly from the land.",
+			"types": [GameEnums.ResourceType.WOOD, GameEnums.ResourceType.CLAY, GameEnums.ResourceType.COAL, GameEnums.ResourceType.LIMESTONE, GameEnums.ResourceType.IRON_ORE, GameEnums.ResourceType.SULFUR],
+		},
+		{
+			"name": "Processed",
+			"description": "Refined from raw materials at industrial buildings.",
+			"types": [GameEnums.ResourceType.BRICKS, GameEnums.ResourceType.IRON, GameEnums.ResourceType.STEEL, GameEnums.ResourceType.CONCRETE, GameEnums.ResourceType.GUNPOWDER],
+		},
 	]
 
 ## Lazily-loaded, cached icon for the resource bar (see assets/icons/README.md)

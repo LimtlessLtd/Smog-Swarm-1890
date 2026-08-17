@@ -34,7 +34,7 @@ def _parse_args():
     parser.add_argument("--model", required=True, help="Path to a python file defining build()")
     parser.add_argument("--category", required=True, choices=list(render_common.CATEGORY_ELEVATION_DEG.keys()))
     parser.add_argument("--out", required=True, help="Output PNG path")
-    parser.add_argument("--resolution", type=int, default=512)
+    parser.add_argument("--resolution", type=int, default=2048)  # 4x the original 512 — user feedback ("all of them need to be at least 4 times bigger").
     parser.add_argument("--elevation", type=float, default=None, help="Override CATEGORY_ELEVATION_DEG for this run only")
     return parser.parse_args(argv)
 

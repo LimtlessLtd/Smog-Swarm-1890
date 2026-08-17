@@ -13,8 +13,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 from render_common import flat_material, part  # noqa: E402
 
 STEEL_COLOR = (0.42, 0.42, 0.44)
-INSULATOR_COLOR = (0.75, 0.72, 0.65)
-SPARK_COLOR = (0.6, 0.85, 0.95)
+INSULATOR_COLOR = (0.84, 0.782, 0.647)
+SPARK_COLOR = (0.453, 0.844, 1.0)
 
 
 def build():

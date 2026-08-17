@@ -13,7 +13,7 @@ from render_common import flat_material, part  # noqa: E402
 
 STEEL_COLOR = (0.4, 0.38, 0.4)
 COAL_COLOR = (0.18, 0.17, 0.17)
-SHAFT_COLOR = (0.36, 0.32, 0.28)
+SHAFT_COLOR = (0.403, 0.333, 0.262)
 
 
 def _headframe(steel_mat, x_offset):

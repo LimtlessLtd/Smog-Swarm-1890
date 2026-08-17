@@ -13,10 +13,10 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from render_common import flat_material, part, gable_roof  # noqa: E402
 
-WALL_COLOR = (0.55, 0.48, 0.38)
-ROOF_COLOR = (0.32, 0.24, 0.18)
-STABLE_COLOR = (0.42, 0.32, 0.22)
-FLAG_COLOR = (0.4, 0.1, 0.5)  # Violet — the only violet building on the roster, a "command" flourish.
+WALL_COLOR = (0.616, 0.497, 0.328)
+ROOF_COLOR = (0.358, 0.227, 0.129)
+STABLE_COLOR = (0.47, 0.307, 0.144)
+FLAG_COLOR = (0.42, 0.0, 0.56)  # Violet — the only violet building on the roster, a "command" flourish.
 
 
 def build():

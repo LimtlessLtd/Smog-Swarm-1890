@@ -12,9 +12,9 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from render_common import flat_material, part  # noqa: E402
 
-WALL_COLOR = (0.62, 0.56, 0.46)
-DOME_COLOR = (0.32, 0.34, 0.4)   # Blue-grey — a civic/institutional tone distinct from any industrial roof color.
-PAPER_COLOR = (0.85, 0.82, 0.72)
+WALL_COLOR = (0.694, 0.591, 0.418)
+DOME_COLOR = (0.305, 0.34, 0.448)   # Blue-grey — a civic/institutional tone distinct from any industrial roof color.
+PAPER_COLOR = (0.952, 0.896, 0.708)
 
 
 def build():

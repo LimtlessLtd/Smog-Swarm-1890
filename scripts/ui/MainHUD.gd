@@ -153,7 +153,7 @@ func _ready() -> void:
 	_panel_switcher = HUDPanelSwitcher.new(_save_load_view, _tech_tree_view, _display_options_view, _in_game_menu_view)
 	_build_mode_label()
 	_build_recon_label()
-	_build_bottom_bar(hex_grid_map, _fog_of_war_manager, camera, noise_manager)
+	_build_bottom_bar(hex_grid_map, _fog_of_war_manager, camera, noise_manager, resource_manager)
 	_build_day_phase_view()
 	_build_unit_panel(unit_manager, _wall_manager)
 	# _build_toast() must stay LAST among the node-adding calls above: the
@@ -277,7 +277,7 @@ func _build_recon_label() -> void:
 	HUDStyles.style_label(_recon_label)
 	HUDReconTracker.new(self, _recon_label, _horde_manager, _fog_of_war_manager)
 
-func _build_bottom_bar(hex_grid_map: HexGridMap, fog_of_war_manager: FogOfWarManager, camera: CameraController, noise_manager: NoiseManager) -> void:
+func _build_bottom_bar(hex_grid_map: HexGridMap, fog_of_war_manager: FogOfWarManager, camera: CameraController, noise_manager: NoiseManager, resource_manager: ResourceManager) -> void:
 	var bar := HBoxContainer.new()
 	bar.name = "BottomBar"
 	bar.add_theme_constant_override("separation", MARGIN)
@@ -298,6 +298,7 @@ func _build_bottom_bar(hex_grid_map: HexGridMap, fog_of_war_manager: FogOfWarMan
 	build_menu.building_selected.connect(_on_building_selected)
 	build_menu.wall_placement_selected.connect(_on_wall_placement_selected)
 	build_menu.infrastructure_placement_selected.connect(_on_infrastructure_placement_selected)
+	build_menu.setup(_tech_manager, resource_manager)
 
 	var minimap := MinimapView.new()
 	minimap.name = "Minimap"

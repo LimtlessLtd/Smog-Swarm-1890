@@ -13,9 +13,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 from render_common import flat_material, part  # noqa: E402
 
 STEEL_COLOR = (0.32, 0.3, 0.3)
-PLATFORM_COLOR = (0.24, 0.22, 0.22)
-LAMP_HOUSING_COLOR = (0.18, 0.17, 0.16)
-LENS_COLOR = (0.9, 0.85, 0.6)
+PLATFORM_COLOR = (0.269, 0.225, 0.225)
+LAMP_HOUSING_COLOR = (0.202, 0.181, 0.161)
+LENS_COLOR = (1.0, 0.917, 0.5)
 
 
 def build():

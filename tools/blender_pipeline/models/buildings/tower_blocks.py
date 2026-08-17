@@ -12,7 +12,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 from render_common import flat_material, part  # noqa: E402
 
 WALL_COLORS = [(0.6, 0.52, 0.42), (0.52, 0.46, 0.4), (0.65, 0.56, 0.46)]
-WINDOW_COLOR = (0.5, 0.56, 0.6)
+WINDOW_COLOR = (0.487, 0.598, 0.672)
 
 
 def build():

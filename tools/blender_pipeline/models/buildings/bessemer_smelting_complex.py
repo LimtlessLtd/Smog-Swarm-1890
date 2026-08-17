@@ -20,9 +20,9 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from render_common import flat_material, part  # noqa: E402
 
-VESSEL_COLOR = (0.58, 0.52, 0.46)
-BASE_COLOR = (0.34, 0.32, 0.3)
-SPARK_COLOR = (0.95, 0.7, 0.15)
+VESSEL_COLOR = (0.65, 0.543, 0.436)
+BASE_COLOR = (0.381, 0.341, 0.301)
+SPARK_COLOR = (1.0, 0.688, 0.0)
 
 
 def build():

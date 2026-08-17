@@ -12,8 +12,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 from render_common import flat_material, part  # noqa: E402
 
 STEEL_COLOR = (0.42, 0.4, 0.42)
-SULFUR_COLOR = (0.85, 0.78, 0.15)
-SHAFT_COLOR = (0.4, 0.36, 0.3)
+SULFUR_COLOR = (0.952, 0.857, 0.0)
+SHAFT_COLOR = (0.448, 0.379, 0.274)
 
 
 def build():

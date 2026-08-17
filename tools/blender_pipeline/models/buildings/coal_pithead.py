@@ -12,7 +12,7 @@ from render_common import flat_material, part  # noqa: E402
 
 STEEL_COLOR = (0.45, 0.44, 0.46)  # Lightened — the first pass's (0.22,0.21,0.22) was too close to the outline's black to read as a structure.
 COAL_COLOR = (0.14, 0.13, 0.13)
-SHAFT_COLOR = (0.4, 0.35, 0.3)
+SHAFT_COLOR = (0.448, 0.361, 0.274)
 
 
 def build():

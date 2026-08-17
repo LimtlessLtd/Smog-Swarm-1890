@@ -14,7 +14,7 @@ from render_common import flat_material, part, chimney  # noqa: E402
 
 HALL_COLOR = (0.36, 0.34, 0.34)
 DARK_COLOR = (0.2, 0.19, 0.19)
-TOWER_COLOR = (0.55, 0.53, 0.5)
+TOWER_COLOR = (0.616, 0.573, 0.51)
 
 
 def build():

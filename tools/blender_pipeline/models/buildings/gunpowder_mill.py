@@ -12,9 +12,9 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from render_common import flat_material, part  # noqa: E402
 
-BRICK_COLOR = (0.42, 0.28, 0.24)
-BARREL_COLOR = (0.34, 0.24, 0.15)
-BAND_COLOR = (0.5, 0.46, 0.4)
+BRICK_COLOR = (0.47, 0.24, 0.175)
+BARREL_COLOR = (0.381, 0.22, 0.074)
+BAND_COLOR = (0.56, 0.488, 0.381)
 
 
 def build():

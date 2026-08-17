@@ -11,9 +11,9 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from render_common import flat_material, part  # noqa: E402
 
-STONE_LIGHT_COLOR = (0.78, 0.76, 0.7)
-STONE_MID_COLOR = (0.62, 0.6, 0.55)
-STONE_DARK_COLOR = (0.42, 0.4, 0.36)
+STONE_LIGHT_COLOR = (0.874, 0.832, 0.709)
+STONE_MID_COLOR = (0.694, 0.654, 0.554)
+STONE_DARK_COLOR = (0.47, 0.432, 0.356)
 
 
 def build():

@@ -11,9 +11,9 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from render_common import flat_material, part  # noqa: E402
 
-CRATE_COLOR = (0.42, 0.32, 0.18)
-CRATE_DARK_COLOR = (0.3, 0.22, 0.12)
-TARP_COLOR = (0.25, 0.32, 0.24)
+CRATE_COLOR = (0.47, 0.309, 0.084)
+CRATE_DARK_COLOR = (0.336, 0.208, 0.047)
+TARP_COLOR = (0.237, 0.358, 0.22)
 
 
 def build():

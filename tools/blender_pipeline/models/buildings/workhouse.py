@@ -12,9 +12,9 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from render_common import flat_material, part, gable_roof  # noqa: E402
 
-BRICK_COLOR = (0.58, 0.3, 0.22)
-ROOF_COLOR = (0.24, 0.2, 0.18)
-WINDOW_COLOR = (0.55, 0.6, 0.62)
+BRICK_COLOR = (0.65, 0.201, 0.073)
+ROOF_COLOR = (0.269, 0.199, 0.165)
+WINDOW_COLOR = (0.554, 0.654, 0.694)
 
 
 def build():

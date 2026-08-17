@@ -12,8 +12,8 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from render_common import flat_material, part  # noqa: E402
 
-TOWER_COLOR = (0.4, 0.38, 0.36)
-DARK_COLOR = (0.2, 0.19, 0.18)
+TOWER_COLOR = (0.448, 0.407, 0.365)
+DARK_COLOR = (0.224, 0.203, 0.183)
 COAL_COLOR = (0.14, 0.13, 0.13)
 
 

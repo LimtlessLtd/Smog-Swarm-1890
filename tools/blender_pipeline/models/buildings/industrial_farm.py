@@ -12,9 +12,9 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from render_common import flat_material, part, silo  # noqa: E402
 
-FIELD_COLOR = (0.5, 0.56, 0.26)
-SILO_COLOR = (0.62, 0.6, 0.55)
-SILO_DARK_COLOR = (0.45, 0.43, 0.4)
+FIELD_COLOR = (0.53, 0.627, 0.142)
+SILO_COLOR = (0.694, 0.654, 0.554)
+SILO_DARK_COLOR = (0.504, 0.464, 0.403)
 
 
 def build():

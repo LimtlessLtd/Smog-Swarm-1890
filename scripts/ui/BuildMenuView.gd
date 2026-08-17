@@ -2,23 +2,24 @@ class_name BuildMenuView
 extends PanelContainer
 
 ## Build menu — the UI for BuildingManager.place_building_at_world(). One
-## card per BuildingCatalog definition, grouped into a column per category;
-## clicking one arms placement mode by emitting building_selected. This
-## view only knows about *selecting* a type — it has no idea what a hex or
-## a world position is; BuildPlacementController is what turns a selection
-## into an actual placed building.
+## 60x60 icon per BuildingCatalog definition, grouped into a grid per
+## category; clicking one arms placement mode by emitting building_selected.
+## This view only knows about *selecting* a type — it has no idea what a hex
+## or a world position is; BuildPlacementController is what turns a
+## selection into an actual placed building.
 ##
 ## All categories visible at once, no tabs — every category is its own
-## always-visible column (header + a row of building cards) inside one
+## always-visible column (header + an icon grid) inside one
 ## horizontally-scrolling strip, per user feedback ("too many clicks having
 ## to scroll to the right tab, just display all the tabs all the time").
 ##
-## Cards, not bare-text buttons — per user feedback ("display the pictures
-## of the building... how much each building costs, the upkeep it
-## requires, and what it actually does"), each card shows the building's
-## real art (BuildingVisuals.building_texture(), same texture
-## TacticalHexView renders), its name, and a compact cost/upkeep/effect
-## summary, all visible without hovering.
+## Icon-only, not text cards — per user feedback ("should just show the icon
+## of the building, and then when you mouse over each building, it should
+## show a tooltip that displays all the information"): each 60x60
+## BuildingIconButton carries its full name/cost/upkeep/effect breakdown in
+## a hover tooltip (that class's own _make_custom_tooltip()) instead of
+## always-visible text, so many more buildings fit the same bottom-bar
+## footprint than the old card layout could.
 ##
 ## Merged into one bottom bar with the minimap — this view doesn't position
 ## or size itself (MainHUD._build_bottom_bar() does, sizing it to
@@ -47,25 +48,48 @@ const CATEGORY_ORDER: Array[GameEnums.BuildingCategory] = [
 	GameEnums.BuildingCategory.AGRICULTURE,
 ]
 
-## Card size settled after two rounds of user feedback: an early pass
-## shrunk cards down to 92/28/11/9 ("reduce the size of the building
-## cards... its currently very large"), which then clipped multi-clause
-## details text off the bottom of the screen ("make each building card...
-## large enough so the text fits"). This is the middle ground — wide/tall
-## enough that a typical details string ("+3 Bricks/day; Houses 6
-## population; Trains: Melee, Ranged") wraps to 2-3 lines instead of 4-5.
-## MainHUD.BOTTOM_BAR_HEIGHT was raised to match, verified together via a
-## live screenshot (autowrap line count is a real-font-metrics question,
-## not something static reasoning settles on its own).
-const _CARD_WIDTH: float = 128.0
-const _CARD_ICON_SIZE: float = 32.0
-const _CARD_NAME_FONT_SIZE: int = 12
-const _CARD_DETAILS_FONT_SIZE: int = 10
+## Fixed row count, unbounded columns — a category grid grows SIDEWAYS as
+## more buildings land in it (Industry & Extraction alone has over two
+## dozen), using the same horizontal ScrollContainer the whole bar already
+## scrolls with, rather than growing taller than MainHUD.BOTTOM_BAR_HEIGHT's
+## fixed budget (vertical scrolling is deliberately disabled on that
+## container — see _ready()'s own comment). 3 rows, not 2 — "have 3 rows of
+## buildings instead of 2" (user feedback) — trades some of each category's
+## width for less of it, closer to fitting the whole bar without a
+## horizontal scrollbar at typical window widths (not guaranteed at every
+## width: 60x60 icons at Industry & Extraction's own 26-building count still
+## need 9 columns even at 3 rows).
+const _ICON_GRID_ROWS: int = 3
+const _ICON_SPACING: float = 4.0  ## Tightened from 6.0 — "reduce the padding and spacing as its taking up too much room" (user feedback).
+
+var _tech_manager: TechManager
+var _resource_manager: ResourceManager
 
 func _ready() -> void:
 	size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	size_flags_vertical = Control.SIZE_EXPAND_FILL
 	HUDStyles.style_panel(self)
+	_rebuild()
+
+## Optional on both counts, same "unset means a narrower feature just does
+## less" convention every other MainHUD-wired view follows: no tech_manager
+## means every building shows unlocked (fails open — a missing wire
+## shouldn't softlock the whole build menu); no resource_manager means cost
+## lines in tooltips never red-highlight (still shown, just not affordability-checked).
+func setup(tech_manager: TechManager, resource_manager: ResourceManager) -> void:
+	_tech_manager = tech_manager
+	_resource_manager = resource_manager
+	if _tech_manager:
+		_tech_manager.tech_researched.connect(_on_tech_researched)
+	if is_inside_tree():
+		_rebuild()
+
+func _on_tech_researched(_tech_id: StringName) -> void:
+	_rebuild()  ## A newly-researched building_tier tech may have just unlocked one or more icons — cheap enough at this scale (dozens of icons) to just rebuild, same reasoning TacticalHexView._redraw() leans on.
+
+func _rebuild() -> void:
+	for child in get_children():
+		child.queue_free()
 
 	var scroll := ScrollContainer.new()
 	scroll.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
@@ -73,15 +97,15 @@ func _ready() -> void:
 	add_child(scroll)
 
 	var columns := HBoxContainer.new()
-	columns.add_theme_constant_override("separation", 16)
+	columns.add_theme_constant_override("separation", 10)  ## Tightened from 16 — see _ICON_SPACING's own comment.
 	# With vertical scrolling disabled, ScrollContainer would otherwise
 	# stretch `columns` to fill the full bar height and top-align its
-	# (shorter, post-shrink) real content inside that, leaving a visibly
-	# empty gap below the cards while MinimapView (SIZE_SHRINK_CENTER)
-	# sits vertically centered in the same row. SHRINK_CENTER here makes
-	# `columns` request only its own real content height and center within
-	# the leftover space, the same vertical anchor the minimap uses —
-	# "make sure that it lines up with the mini map" (user feedback).
+	# (shorter, real content) inside that, leaving a visibly empty gap below
+	# the icons while MinimapView (SIZE_SHRINK_CENTER) sits vertically
+	# centered in the same row. SHRINK_CENTER here makes `columns` request
+	# only its own real content height and center within the leftover
+	# space, the same vertical anchor the minimap uses — "make sure that it
+	# lines up with the mini map" (user feedback).
 	columns.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	scroll.add_child(columns)
 
@@ -96,7 +120,7 @@ func _ready() -> void:
 
 func _build_category_column(category: GameEnums.BuildingCategory, definitions: Array[BuildingDefinition]) -> Control:
 	var column := VBoxContainer.new()
-	column.add_theme_constant_override("separation", 6)
+	column.add_theme_constant_override("separation", 3)  ## Tightened from 6 — see _ICON_SPACING's own comment.
 
 	var header := Label.new()
 	header.text = _category_name(category)
@@ -104,11 +128,9 @@ func _build_category_column(category: GameEnums.BuildingCategory, definitions: A
 	column.add_child(header)
 
 	var colors := HUDStyles.category_card_colors(_category_color_key(category))
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 8)
-	for definition in definitions:
-		row.add_child(_build_building_card(definition, colors))
-	column.add_child(row)
+	column.add_child(_build_icon_grid(definitions, func(definition: BuildingDefinition) -> Control:
+		return _build_building_icon(definition, colors)
+	))
 
 	return column
 
@@ -118,58 +140,70 @@ func _build_category_column(category: GameEnums.BuildingCategory, definitions: A
 ## user feedback ("Defense Works & Walls should be combined into one
 ## category... red and white") — same shared red/white
 ## category_card_colors("defense_walls") regardless of which underlying
-## system a given card arms. Wall cards are just two, not a per-tier list:
+## system a given card arms. Header shortened to "Defenses & Walls" per
+## later user feedback. Wall icons are just two, not a per-tier list:
 ## WallManager.place_wall_line() only places fresh Wooden segments —
 ## upgrade_segment(), reached by selecting an existing wall, is the only
 ## way to a Brick/Concrete tier. "Gate" is the same Wooden segment/cost,
 ## just intrinsically weaker (WallSegment.is_gate's own doc comment) — a
 ## deliberate weak point the player places on purpose, not a difference
-## this menu needs to price separately.
+## this menu needs to price separately. Neither Wall icon is ever
+## research-locked here (see class doc's setup() comment on tech_manager
+## scope — only BuildingCatalog definitions carry a `tier` this menu checks).
 func _build_defense_and_walls_column() -> Control:
 	var column := VBoxContainer.new()
-	column.add_theme_constant_override("separation", 6)
+	column.add_theme_constant_override("separation", 3)  ## Tightened from 6 — see _ICON_SPACING's own comment.
 
 	var header := Label.new()
-	header.text = "Defense Works & Walls"
+	header.text = "Defenses & Walls"
 	HUDStyles.style_label(header, true)
 	column.add_child(header)
 
 	var colors := HUDStyles.category_card_colors("defense_walls")
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 8)
-	for definition in BuildingCatalog.get_definitions_in_category(GameEnums.BuildingCategory.DEFENSE_WORKS):
-		row.add_child(_build_building_card(definition, colors))
-	row.add_child(HUDStyles.build_card(
-		"Wooden Wall",
-		WallVisuals.tier_texture(WallCatalog.WOODEN),
-		"Cost: %s\nClick+drag to draw — auto-splits into ≤100m pieces." % HUDStyles.format_resource_dict(WallCatalog.get_build_cost(WallCatalog.WOODEN)),
-		func() -> void: wall_placement_selected.emit(false),
-		true, _CARD_WIDTH, _CARD_ICON_SIZE, colors, _CARD_NAME_FONT_SIZE, _CARD_DETAILS_FONT_SIZE,
+	var items: Array = []
+	items.append_array(BuildingCatalog.get_definitions_in_category(GameEnums.BuildingCategory.DEFENSE_WORKS))
+	items.append("wooden_wall")
+	items.append("gate")
+	column.add_child(_build_icon_grid(items, func(item) -> Control:
+		if item is BuildingDefinition:
+			return _build_building_icon(item, colors)
+		var is_gate: bool = item == "gate"
+		return _build_wall_icon(is_gate, colors)
 	))
-	row.add_child(HUDStyles.build_card(
-		"Gate",
-		WallVisuals.tier_texture(WallCatalog.WOODEN),
-		"Cost: %s\nSame as a Wooden Wall, deliberately weaker." % HUDStyles.format_resource_dict(WallCatalog.get_build_cost(WallCatalog.WOODEN)),
-		func() -> void: wall_placement_selected.emit(true),
-		true, _CARD_WIDTH, _CARD_ICON_SIZE, colors, _CARD_NAME_FONT_SIZE, _CARD_DETAILS_FONT_SIZE,
-	))
-	column.add_child(row)
 
 	return column
+
+func _build_wall_icon(is_gate: bool, colors: Dictionary) -> Control:
+	var cost_text := HUDStyles.format_resource_dict(WallCatalog.get_build_cost(WallCatalog.WOODEN))
+	var tooltip := func() -> String:
+		var lines: Array[String] = []
+		lines.append("[b]%s[/b]" % ("Gate" if is_gate else "Wooden Wall"))
+		lines.append("Cost: %s" % cost_text)
+		lines.append("Gate: same cost, deliberately weaker." if is_gate else "Click+drag to draw — auto-splits into ≤100m pieces.")
+		return "\n".join(lines)
+
+	var icon := BuildingIconButton.new()
+	icon.setup(
+		WallVisuals.tier_texture(WallCatalog.WOODEN), true, colors,
+		func() -> void: wall_placement_selected.emit(is_gate),
+		tooltip,
+	)
+	return icon
 
 ## Road/Railway/Canal/Bridge — a wholly separate placement flow
 ## (SupplyLinePlacementController, hex-click-chain) the same way Walls are,
 ## so this gets its own column rather than folding into
 ## _build_defense_and_walls_column() (Infrastructure isn't a defensive
-## structure). Each card only ever arms tier 0 — same "fresh placement
+## structure). Each icon only ever arms tier 0 — same "fresh placement
 ## stays base-tier-only, upgrade_segment() is the only way to advance it"
 ## precedent Walls already established; no dedicated art exists yet for any
-## of the four (null icon_texture — HUDStyles.build_card falls back to a
-## plain category-color box, same as every other unauthored-art case in
-## this project).
+## of the four (null icon_texture — BuildingIconButton just shows the
+## category-color box with no image, same as every other unauthored-art
+## case in this project). Never research-locked here — same reasoning
+## _build_defense_and_walls_column() documents.
 func _build_infrastructure_column() -> Control:
 	var column := VBoxContainer.new()
-	column.add_theme_constant_override("separation", 6)
+	column.add_theme_constant_override("separation", 3)  ## Tightened from 6 — see _ICON_SPACING's own comment.
 
 	var header := Label.new()
 	header.text = "Infrastructure"
@@ -177,22 +211,25 @@ func _build_infrastructure_column() -> Control:
 	column.add_child(header)
 
 	var colors := HUDStyles.category_card_colors("infrastructure")
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 8)
-	for line_type in [GameEnums.SupplyLineType.ROAD, GameEnums.SupplyLineType.RAILWAY, GameEnums.SupplyLineType.CANAL, GameEnums.SupplyLineType.BRIDGE]:
-		row.add_child(HUDStyles.build_card(
-			SupplyLineCatalog.get_display_name(line_type, 0),
-			null,
-			"Cost: %s/hex\n%s\nClick a hex, then an adjacent hex to connect it." % [
-				HUDStyles.format_resource_dict(SupplyLineCatalog.get_build_cost(line_type, 0)),
-				_describe_infrastructure_bonus(line_type),
-			],
-			func() -> void: infrastructure_placement_selected.emit(line_type),
-			true, _CARD_WIDTH, _CARD_ICON_SIZE, colors, _CARD_NAME_FONT_SIZE, _CARD_DETAILS_FONT_SIZE,
-		))
-	column.add_child(row)
+	var line_types: Array[GameEnums.SupplyLineType] = [GameEnums.SupplyLineType.ROAD, GameEnums.SupplyLineType.RAILWAY, GameEnums.SupplyLineType.CANAL, GameEnums.SupplyLineType.BRIDGE]
+	column.add_child(_build_icon_grid(line_types, func(line_type: GameEnums.SupplyLineType) -> Control:
+		return _build_infrastructure_icon(line_type, colors)
+	))
 
 	return column
+
+func _build_infrastructure_icon(line_type: GameEnums.SupplyLineType, colors: Dictionary) -> Control:
+	var tooltip := func() -> String:
+		var lines: Array[String] = []
+		lines.append("[b]%s[/b]" % SupplyLineCatalog.get_display_name(line_type, 0))
+		lines.append("Cost: %s/hex" % HUDStyles.format_resource_dict(SupplyLineCatalog.get_build_cost(line_type, 0)))
+		lines.append(_describe_infrastructure_bonus(line_type))
+		lines.append("Click a hex, then an adjacent hex to connect it.")
+		return "\n".join(lines)
+
+	var icon := BuildingIconButton.new()
+	icon.setup(null, true, colors, func() -> void: infrastructure_placement_selected.emit(line_type), tooltip)
+	return icon
 
 func _describe_infrastructure_bonus(line_type: GameEnums.SupplyLineType) -> String:
 	var bonus_percent := int(round((SupplyLineCatalog.get_speed_multiplier(line_type, 0) - 1.0) * 100.0))
@@ -200,26 +237,51 @@ func _describe_infrastructure_bonus(line_type: GameEnums.SupplyLineType) -> Stri
 		return "+%d%% Speed — only buildable across water." % bonus_percent
 	return "+%d%% Speed, ignores terrain penalty." % bonus_percent
 
-func _build_building_card(definition: BuildingDefinition, colors: Dictionary = {}) -> Control:
-	return HUDStyles.build_card(
-		definition.display_name,
-		BuildingVisuals.building_texture(definition.building_type),
-		_describe_building(definition),
-		_on_building_button_pressed.bind(definition.building_type),
-		true, _CARD_WIDTH, _CARD_ICON_SIZE, colors, _CARD_NAME_FONT_SIZE, _CARD_DETAILS_FONT_SIZE,
-	)
+## Distributes `items` round-robin into `_ICON_GRID_ROWS` fixed HBoxContainer
+## rows stacked in a VBoxContainer — a FIXED-HEIGHT, unbounded-WIDTH grid
+## (see _ICON_GRID_ROWS's own doc comment for why: GridContainer's native
+## "fixed columns, wrap downward" shape would blow through
+## MainHUD.BOTTOM_BAR_HEIGHT the moment a category holds more than a
+## handful of buildings). `build_icon` is a Callable(item) -> Control so
+## this one layout helper serves BuildingDefinition icons, wall icons, and
+## infrastructure icons alike.
+func _build_icon_grid(items: Array, build_icon: Callable) -> Control:
+	var rows: Array[HBoxContainer] = []
+	var grid := VBoxContainer.new()
+	grid.add_theme_constant_override("separation", _ICON_SPACING)
+	for row_index in range(_ICON_GRID_ROWS):
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", _ICON_SPACING)
+		rows.append(row)
+		grid.add_child(row)
 
-## Covers cost, upkeep, and effect (production/training/housing) per user
-## feedback ("how much each building costs, the upkeep it requires, and
-## what it actually does e.g. how much of x does it produce daily, does it
-## produce units and if so what kind") in one compact multi-line string.
-func _describe_building(definition: BuildingDefinition) -> String:
+	for i in range(items.size()):
+		rows[i % _ICON_GRID_ROWS].add_child(build_icon.call(items[i]))
+
+	return grid
+
+func _build_building_icon(definition: BuildingDefinition, colors: Dictionary) -> Control:
+	var unlocked := not _tech_manager or _tech_manager.is_building_tier_unlocked(definition.tier)
+	var icon := BuildingIconButton.new()
+	icon.setup(
+		BuildingVisuals.building_texture(definition.building_type), unlocked, colors,
+		_on_building_button_pressed.bind(definition.building_type),
+		func() -> String: return _describe_building_tooltip(definition, unlocked),
+	)
+	return icon
+
+## Covers cost (red-highlighted per-resource where unaffordable — "highlight
+## in red which resources the user cannot afford to spend", user feedback),
+## upkeep, effect (production/training/housing), and unlock state in one
+## BBCode block for BuildingIconButton's tooltip.
+func _describe_building_tooltip(definition: BuildingDefinition, unlocked: bool) -> String:
 	var lines: Array[String] = []
-	lines.append("Cost: %s" % HUDStyles.format_resource_dict(definition.construction_cost))
+	lines.append("[b]%s[/b]" % definition.display_name)
+	lines.append("Cost: %s" % _format_cost_bbcode(definition.construction_cost))
 	# ENERGY/POPULATION entries are one-time capacity draws
-	# (CapacityAllocator), not a recurring "/day" cost — excluded
-	# here the same way _describe_effect()/_add_capacity_stats() (UnitPanelView)
-	# keep them out of their own "/day" lines.
+	# (CapacityAllocator), not a recurring "/day" cost — excluded here the
+	# same way _describe_effect()/_add_capacity_stats() (UnitPanelView) keep
+	# them out of their own "/day" lines.
 	var recurring_upkeep: Dictionary = {}
 	for resource_type in definition.daily_upkeep:
 		if not CapacityAllocator.CAPACITY_RESOURCE_TYPES.has(resource_type):
@@ -228,14 +290,32 @@ func _describe_building(definition: BuildingDefinition) -> String:
 	if not upkeep.is_empty():
 		lines.append("Upkeep: %s/day" % upkeep)
 	lines.append(_describe_effect(definition))
+	if not unlocked:
+		lines.append("[color=#%s]Not yet researched[/color]" % HUDStyles.DANGER_COLOR.to_html(false))
 	return "\n".join(lines)
+
+## Same shape as HUDStyles.format_resource_dict() but wraps any resource the
+## player currently can't afford in [color=...] — needs _resource_manager
+## (optional; without it, every cost renders in the plain, un-highlighted
+## style HUDStyles.format_resource_dict() already produces).
+func _format_cost_bbcode(costs: Dictionary) -> String:
+	if not _resource_manager:
+		return HUDStyles.format_resource_dict(costs)
+	var parts: Array[String] = []
+	for resource_type in costs:
+		var amount := float(costs[resource_type])
+		var text := "%s %s" % [String.num(amount, 1).rstrip("0").rstrip("."), ResourceVisuals.display_name(resource_type)]
+		if _resource_manager.get_amount(resource_type) < amount:
+			text = "[color=#%s]%s[/color]" % [HUDStyles.DANGER_COLOR.to_html(false), text]
+		parts.append(text)
+	return ", ".join(parts)
 
 ## The "what it actually does" line — production/training/housing all read
 ## directly off the same BuildingDefinition fields the rest of the game
 ## simulates from, so this can't drift out of sync with real behavior.
 ## Falls back to a plain structural description for buildings with none of
-## the above (Town Hall, Watchtower, Ammo Dump, ...) so a card is never
-## left with a blank third line.
+## the above (Town Hall, Watchtower, Ammo Dump, ...) so a tooltip is never
+## left without a "what does this do" line.
 func _describe_effect(definition: BuildingDefinition) -> String:
 	var parts: Array[String] = []
 	for resource_type in definition.daily_output:
@@ -270,7 +350,7 @@ func _describe_effect(definition: BuildingDefinition) -> String:
 ## the minimap out of any renderable space (a Control's size can never go
 ## below its own computed minimum). The full roster is still visible,
 ## per-unit, with real art/cost/upkeep, the moment a can_train_units
-## building is selected (UnitPanelView's own training grid) — this card
+## building is selected (UnitPanelView's own training grid) — this tooltip
 ## only needs to answer "what KIND". Every can_train_units building trains
 ## off the SAME UnitCatalog roster today (UnitManager.train_unit() takes no
 ## building-specific filter), so this is accurate for Garrison and any

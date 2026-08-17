@@ -218,8 +218,9 @@ static func sample_at_hex(coord: Vector2i, world_pos: Vector2) -> Dictionary:
 ## hex coordinate (not an arbitrary world-space tile grid) because the
 ## thing that already decides "which hexes are worth this extra detail
 ## right now" is LocalDetailManager's existing Tactical-hydration radius
-## (DETAIL_RADIUS) — this rides on that existing system instead of a second
-## proximity tracker. Every fine tile covers the same
+## (_current_detail_radius(), viewport-derived, not a fixed constant) —
+## this rides on that existing system instead of a second proximity
+## tracker. Every fine tile covers the same
 ## HexCoord.SUB_HEX_GRID_SPAN square sample_grid() already samples across,
 ## so swapping which raster answers a given sample is transparent to every caller.
 ##

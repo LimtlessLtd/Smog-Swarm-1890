@@ -11,8 +11,8 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from render_common import flat_material, part, wheel  # noqa: E402
 
-HULL_COLOR = (0.44, 0.32, 0.2)
-TRACK_COLOR = (0.16, 0.15, 0.14)
+HULL_COLOR = (0.493, 0.299, 0.105)
+TRACK_COLOR = (0.179, 0.16, 0.14)
 SCOOP_COLOR = (0.5, 0.48, 0.46)
 
 
