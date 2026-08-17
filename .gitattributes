@@ -1,0 +1,6 @@
+# Baked terrain mesh chunks are raw little-endian binary (see
+# tools/geo_bake/vector_mesh_format.py). Git's heuristic already classifies
+# them as binary because the header's reserved field is always zero, but
+# stating it means a chunk that happened to contain no NUL byte could never
+# be line-ending-converted into corrupt geometry on a checkout.
+*.tmesh binary
