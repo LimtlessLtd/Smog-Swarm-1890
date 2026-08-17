@@ -48,9 +48,13 @@ def main():
     if args.elevation is not None:
         render_common.CATEGORY_ELEVATION_DEG[args.category] = args.elevation
 
-    os.makedirs(args.out_dir, exist_ok=True)
-    render_common.render_directional_to(args.out_dir, args.key, args.category, args.resolution)
-    print(f"Rendered {len(render_common.DIRECTIONS_8)} facings to {args.out_dir}/{args.key}_*.png")
+    # Absolute path — see render.py's matching comment: Blender's own relative-path
+    # resolution for scene.render.filepath doesn't reliably match the launching
+    # shell's os.getcwd() on Windows for an unsaved .blend.
+    out_dir = os.path.abspath(args.out_dir)
+    os.makedirs(out_dir, exist_ok=True)
+    render_common.render_directional_to(out_dir, args.key, args.category, args.resolution)
+    print(f"Rendered {len(render_common.DIRECTIONS_8)} facings to {out_dir}/{args.key}_*.png")
 
 
 if __name__ == "__main__":

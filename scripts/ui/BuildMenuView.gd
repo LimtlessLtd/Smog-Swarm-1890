@@ -196,11 +196,11 @@ func _build_wall_icon(is_gate: bool, colors: Dictionary) -> Control:
 ## _build_defense_and_walls_column() (Infrastructure isn't a defensive
 ## structure). Each icon only ever arms tier 0 — same "fresh placement
 ## stays base-tier-only, upgrade_segment() is the only way to advance it"
-## precedent Walls already established; no dedicated art exists yet for any
-## of the four (null icon_texture — BuildingIconButton just shows the
-## category-color box with no image, same as every other unauthored-art
-## case in this project). Never research-locked here — same reasoning
-## _build_defense_and_walls_column() documents.
+## precedent Walls already established. Icon art comes from
+## SupplyLineVisuals.line_texture() (falls back to the category-color box
+## with no image if a texture is missing, same contract every other
+## *Visuals.gd texture lookup follows). Never research-locked here — same
+## reasoning _build_defense_and_walls_column() documents.
 func _build_infrastructure_column() -> Control:
 	var column := VBoxContainer.new()
 	column.add_theme_constant_override("separation", 3)  ## Tightened from 6 — see _ICON_SPACING's own comment.
@@ -228,7 +228,7 @@ func _build_infrastructure_icon(line_type: GameEnums.SupplyLineType, colors: Dic
 		return "\n".join(lines)
 
 	var icon := BuildingIconButton.new()
-	icon.setup(null, true, colors, func() -> void: infrastructure_placement_selected.emit(line_type), tooltip)
+	icon.setup(SupplyLineVisuals.line_texture(line_type), true, colors, func() -> void: infrastructure_placement_selected.emit(line_type), tooltip)
 	return icon
 
 func _describe_infrastructure_bonus(line_type: GameEnums.SupplyLineType) -> String:
