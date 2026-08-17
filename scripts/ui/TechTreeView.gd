@@ -19,7 +19,20 @@ extends Panel
 signal research_requested(tech_id: StringName)
 signal closed
 
-const LIST_HEIGHT := 280.0
+## Was a flat 280.0 — measured directly at the catalog's current 49 entries
+## (13 core + 36 generated per-unit upgrades, PR #74): the list's own real
+## content stacks to 5270px, a ~19:1 content-to-viewport ratio. A
+## ScrollContainer pages by its own height per track-click, so that ratio
+## made a single click jump ~4-5 rows with a scrollbar thumb only ~5% of the
+## track tall — measured as the actual cause of a real playtest finding
+## ("8 attempts never landed on Militia Regimental Drill", the prerequisite
+## for every combat unit). Sized off the real viewport instead of a
+## hand-picked constant so the ratio — and thus click/thumb granularity —
+## stays reasonable regardless of catalog size or window size; LIST_HEIGHT_MIN
+## keeps a usable floor on a very small window.
+const LIST_HEIGHT_FRACTION := 0.7
+const LIST_HEIGHT_MIN := 280.0
+var _list_height: float = LIST_HEIGHT_MIN
 
 ## Declaration order groups related nodes together (both wall tiers, then
 ## every unit tier in order, then every building tier, then Seafaring
@@ -50,6 +63,7 @@ var _scroll: ScrollContainer
 func _ready() -> void:
 	visible = false
 	HUDStyles.style_panel(self)
+	_list_height = _compute_list_height()
 
 	_layout = VBoxContainer.new()
 	_layout.add_theme_constant_override("separation", 6)
@@ -62,7 +76,7 @@ func _ready() -> void:
 	_layout.add_child(title)
 
 	_scroll = ScrollContainer.new()
-	_scroll.custom_minimum_size = Vector2(0, LIST_HEIGHT)
+	_scroll.custom_minimum_size = Vector2(0, _list_height)
 	_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED  ## Without this, description text runs off the right edge into a horizontal scrollbar instead of wrapping — disabling horizontal scroll forces children to respect this container's width, which is what makes autowrap_mode below work at all.
 	_layout.add_child(_scroll)
 	_list = VBoxContainer.new()
@@ -80,14 +94,39 @@ func _ready() -> void:
 ## content instead of trusting a hand-picked constant — see
 ## DisplayOptionsView.get_content_min_size()'s own doc comment for why
 ## (same reasoning, same pattern). Unlike that panel, `_scroll`'s own
-## LIST_HEIGHT is intentionally fixed (the tech list can outgrow the panel
-## by design — that's what the internal scrollbar is for), so this reports
-## _layout's minimum size AS IF _scroll only needed LIST_HEIGHT, not its
-## potentially-much-taller full content — get_combined_minimum_size()
-## already does exactly that for a ScrollContainer with a custom_minimum_size
-## set, so no special-casing is needed here beyond just asking _layout.
+## `_list_height` is intentionally capped below the tech list's full content
+## height (the list can outgrow the viewport by design — that's what the
+## internal scrollbar is for), so this reports _layout's minimum size AS IF
+## _scroll only needed `_list_height`, not its potentially-much-taller full
+## content — get_combined_minimum_size() already does exactly that for a
+## ScrollContainer with a custom_minimum_size set (confirmed directly: at 49
+## entries stacking to 5270px, _scroll's own combined_minimum_size still
+## measured exactly `_list_height`, not 5270), so no special-casing is
+## needed here beyond just asking _layout.
 func get_content_min_size() -> Vector2:
 	return _layout.get_combined_minimum_size()
+
+## `_list_height` used to be a flat 280.0 — see that var's own doc comment
+## for the real measured problem that caused. Sized to most of the viewport
+## (LIST_HEIGHT_FRACTION) so the scroll:viewport ratio — and thus
+## click/thumb granularity — stays sane at any catalog size, but clamped
+## below `viewport.y - 312.0` so a very tall list still leaves the panel
+## fully on-screen: `_place_center()`'s CENTER_VERTICAL_BIAS keeps the panel
+## centered `(BOTTOM_BAR_HEIGHT + MARGIN) / 2.0` (116.0) above true screen
+## center, so both the panel's top edge and its bottom edge (clear of
+## MainHUD's bottom bar) hit the same margin algebraically — solving
+## `panel_height <= viewport.y - 2 * 116.0` for `_list_height` given the
+## ~64px of fixed title/button/separator overhead measured via
+## get_content_min_size() at LIST_HEIGHT_MIN, plus _place_center()'s own
+## 16px panel-background margin, lands on `viewport.y - 312.0`.
+func _compute_list_height() -> float:
+	var viewport_height := get_viewport_rect().size.y
+	# maxf() guards a very small viewport where viewport_height - 312.0 would
+	# otherwise fall below LIST_HEIGHT_MIN, making clampf()'s min > max (a
+	# window so small the panel can't be kept fully on-screen anyway, so the
+	# floor wins rather than clampf() silently collapsing to its max arg).
+	var max_reasonable := maxf(LIST_HEIGHT_MIN, viewport_height - 312.0)
+	return clampf(viewport_height * LIST_HEIGHT_FRACTION, LIST_HEIGHT_MIN, max_reasonable)
 
 func setup(tech_manager: TechManager) -> void:
 	_tech_manager = tech_manager
