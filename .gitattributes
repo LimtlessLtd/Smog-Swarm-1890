@@ -4,3 +4,5 @@
 # stating it means a chunk that happened to contain no NUL byte could never
 # be line-ending-converted into corrupt geometry on a checkout.
 *.tmesh binary
+
+*.import -text
