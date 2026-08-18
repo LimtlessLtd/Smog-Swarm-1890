@@ -132,7 +132,7 @@ func _redraw() -> void:
 
 	var ground := SubHexGroundView.new()
 	ground.setup(cell)
-	# z_index -1, not the default 0 every prop/building/overlay here stays
+	# z_index -2, not the default 0 every prop/building/overlay here stays
 	# at: TacticalHexView instances are hydrated as separate siblings under
 	# LocalDetailManager (see that class's own _wall_layer doc comment), so a
 	# building sitting near its hex's edge can visually overlap a
@@ -145,9 +145,14 @@ func _redraw() -> void:
 	# regardless of which TacticalHexView either belongs to. This ALSO sinks
 	# HexGridMap's own always-present Strategic-zoom tile below THIS layer
 	# unless that one goes even lower — see HexGridMap._spawn_view()'s own
-	# z_index -2, added after this -1 alone let the flat Strategic tile win
-	# outright and bury the real sub-hex mosaic underneath it.
-	ground.z_index = -1
+	# z_index, which stays one step below this for that reason.
+	#
+	# Was -1 until TerrainMeshView took that band. The whole stack moved down
+	# one rather than the mesh moving up: everything at 0 and above is an
+	# entity, so -1 is the only key the mesh can hold without outranking a
+	# building, and two ground layers sharing one key resolves by tree order
+	# — the exact failure mode this comment already records.
+	ground.z_index = -2
 	add_child(ground)
 
 	add_child(_build_grid_outline())  # Always-on structural hex boundary — a SEPARATE layer from the ZoC outline below, not the same line reused.

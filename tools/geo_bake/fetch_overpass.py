@@ -47,13 +47,29 @@ out geom;
 """.strip()
 
 
+## Shortest exact decimal that still carries a decimal point. The point
+## matters only for backward compatibility: every tile cached before
+## subdivision existed was written with "%.1f", so an integer-valued
+## coordinate has to stay "-2.0" and not become "-2" or four already-fetched
+## tiles orphan themselves. Everything else is unchanged ("51.3" -> "51.3"),
+## and a subdivided coordinate now survives that could not before ("51.55"
+## would have collided with 51.5 under "%.1f").
+def _fmt_coord(value: float) -> str:
+    text = f"{value:g}"
+    return text if "." in text else f"{text}.0"
+
+
 def _cache_path(min_lat: float, min_lon: float, max_lat: float, max_lon: float) -> str:
-    name = f"{min_lat:.1f}_{min_lon:.1f}_{max_lat:.1f}_{max_lon:.1f}.json"
+    name = "_".join(_fmt_coord(v) for v in (min_lat, min_lon, max_lat, max_lon)) + ".json"
     return os.path.join(_CACHE_DIR, name)
 
 
 def fetch_tile(min_lat: float, min_lon: float, max_lat: float, max_lon: float) -> dict:
-    """Fetch (or load from cache) one bbox's worth of OSM land-cover/water data."""
+    """Fetch (or load from cache) one bbox's worth of OSM land-cover/water data.
+
+    Returns an empty result on failure; see the comment at the bottom for why
+    that empty result is deliberately NOT cached.
+    """
     os.makedirs(_CACHE_DIR, exist_ok=True)
     path = _cache_path(min_lat, min_lon, max_lat, max_lon)
     if os.path.exists(path):
@@ -83,10 +99,9 @@ def fetch_tile(min_lat: float, min_lon: float, max_lat: float, max_lon: float) -
     # stall on a single stubborn tile for several minutes -- a smaller
     # 0.5-degree tile_degrees (see fetch_bbox_tiled's own default) is the
     # main fix for reliability; this is just a bound on the worst case,
-    # not the primary lever. A tile that still fails after 2 tries is
-    # left empty (graceful degradation -- that sub-area falls back to the
-    # old flat default, not a bake failure) rather than blocking the rest
-    # of a long corridor-wide run.
+    # not the primary lever. A tile that still fails after 2 tries returns
+    # empty for THIS run rather than blocking the rest of a long
+    # corridor-wide run -- but it is NOT written to the cache. See below.
     result = None
     for attempt in range(2):
         try:
@@ -97,14 +112,80 @@ def fetch_tile(min_lat: float, min_lon: float, max_lat: float, max_lon: float) -
             wait = 4.0 * (2 ** attempt)
             print(f"  WARN: Overpass tile {bbox} attempt {attempt + 1} failed ({exc}), retrying in {wait:.0f}s", flush=True)
             time.sleep(wait)
+
+    # A FAILED tile is never cached. Writing `{"elements": []}` on failure
+    # makes a network error indistinguishable from ground that genuinely
+    # has no mapped features, and the cache-hit path above then returns it
+    # forever -- the tile is poisoned and no re-run can heal it. 22 of the
+    # 113 cached tiles were poisoned exactly this way, including south
+    # Manchester, Liverpool, Oxford and the Peak District, and each one
+    # bakes into a 40x40 km rectangle of flat default MOORLAND. That was
+    # survivable when the rasters were the product and the cost was a
+    # slightly wrong pixel; the vector mesh IS the terrain, so it is not.
+    # Not writing means the next run retries, which is what "resumable"
+    # has to mean for a fetch that can fail.
     if result is None:
-        print(f"  ERROR: Overpass tile {bbox} failed after all retries -- leaving this tile empty", flush=True)
-        result = {"elements": []}
+        print(f"  ERROR: Overpass tile {bbox} failed after all retries -- NOT cached, re-run to retry", flush=True)
+        return {"elements": []}
 
     with open(path, "w", encoding="utf-8") as f:
         json.dump(result, f)
     time.sleep(2.0)  # courtesy delay -- shared public instance
     return result
+
+
+## Smallest bbox edge, in degrees, that subdivision will produce. ~7 km of
+## latitude. Started at 0.125 and had to come down: Liverpool and the
+## Manchester/Peak fringe still answered 504 at 0.15 degrees, which is the
+## first split of a 0.3-degree tile, so the floor was stopping subdivision
+## one step before the size that actually works over the densest ground.
+_MIN_SUBDIVIDE_DEGREES = 0.0625
+
+
+def fetch_tile_subdivided(min_lat: float, min_lon: float, max_lat: float, max_lon: float,
+                          _depth: int = 0) -> dict:
+    """fetch_tile, but a failure splits the bbox into quadrants and retries
+    each, down to _MIN_SUBDIVIDE_DEGREES.
+
+    The public Overpass instance answers 504 Gateway Timeout when a query
+    covers too much dense ground, which is not a transient error -- retrying
+    the same 0.5-degree bbox over Manchester or north-west London fails again
+    every time, which is how those tiles came to be missing in the first
+    place. Quartering the area is the lever that actually works.
+
+    Each quadrant caches under its own name, and the cache is addressed by
+    bbox rather than by a fixed grid, so a subdivided region is discovered by
+    a later bake exactly like any other tile. Returns the merged elements.
+    """
+    mid_lat = (min_lat + max_lat) / 2.0
+    mid_lon = (min_lon + max_lon) / 2.0
+    quadrants = [(lo_lat, lo_lon, hi_lat, hi_lon)
+                 for lo_lat, hi_lat in ((min_lat, mid_lat), (mid_lat, max_lat))
+                 for lo_lon, hi_lon in ((min_lon, mid_lon), (mid_lon, max_lon))]
+
+    # A bbox that succeeded only after splitting has no cache file of its own,
+    # only its quadrants'. Without this check, every later run re-requests the
+    # parent, waits out both retries and both backoffs, and fails again before
+    # reaching the quadrants it already has -- resumption would cost a
+    # guaranteed ~15s per healed tile forever.
+    already_split = any(os.path.exists(_cache_path(*q)) for q in quadrants)
+    if not already_split:
+        result = fetch_tile(min_lat, min_lon, max_lat, max_lon)
+        if os.path.exists(_cache_path(min_lat, min_lon, max_lat, max_lon)):
+            return result
+
+    span = min(max_lat - min_lat, max_lon - min_lon)
+    if span / 2.0 < _MIN_SUBDIVIDE_DEGREES:
+        print(f"  ERROR: {min_lat},{min_lon},{max_lat},{max_lon} failed at the "
+              f"{span:g}-degree subdivision floor -- left uncached", flush=True)
+        return {"elements": []}
+
+    if not already_split:
+        print(f"  splitting {min_lat},{min_lon},{max_lat},{max_lon} into quadrants", flush=True)
+    merged: list = []
+    for quadrant in quadrants:
+        merged.extend(fetch_tile_subdivided(*quadrant, _depth + 1).get("elements", []))
+    return {"elements": merged}
 
 
 def elements_to_features(result: dict) -> list[dict]:

@@ -33,7 +33,7 @@ const VIEWS: Array[Dictionary] = [
 		"name": "01_whole_corridor",
 		"center": Vector2(131072.0, 94208.0),
 		"span": 57344.0,
-		"caption": "the whole baked corridor, 104 chunks (~560 km tall)",
+		"caption": "the whole baked corridor, Manchester to the south coast (~560 km tall)",
 	},
 	{
 		"name": "02_manchester_4096",
