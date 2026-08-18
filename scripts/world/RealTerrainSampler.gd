@@ -93,6 +93,23 @@ static var _images_loaded: bool = false
 static var _raster_origin_world: Vector2 = Vector2.ZERO
 static var _origin_computed: bool = false
 
+## Bake biome code -> GameEnums.BiomeType, falling back to MOORLAND for a code
+## this build doesn't know (an older raster, or a newer bake appending a code).
+## Public because the baked vector mesh (TerrainMeshChunkData) carries the same
+## codes and needs the same table — _BIOME_BY_CODE is private and a second copy
+## of it elsewhere could silently diverge from the Python dict it's aligned to.
+static func biome_from_code(code: int) -> GameEnums.BiomeType:
+	if code < 0 or code >= _BIOME_BY_CODE.size():
+		return GameEnums.BiomeType.MOORLAND
+	return _BIOME_BY_CODE[code]
+
+## Bake terrain_feature code -> GameEnums.TerrainFeature, NONE for an unknown
+## code. Same reasoning as biome_from_code().
+static func feature_from_code(code: int) -> GameEnums.TerrainFeature:
+	if code < 0 or code >= _FEATURE_BY_CODE.size():
+		return GameEnums.TerrainFeature.NONE
+	return _FEATURE_BY_CODE[code]
+
 ## True once both baked images have loaded successfully — callers (e.g.
 ## HexMapGenerator) use this to fall back to a flat default rather than
 ## sampling garbage if the bake hasn't been run/committed yet.
@@ -168,8 +185,8 @@ static func sample_at(world_pos: Vector2) -> Dictionary:
 	var elevation_m := float(r * 256 + g + b / 256.0) - 32768.0
 
 	return {
-		"biome_type": _BIOME_BY_CODE[biome_code] if biome_code < _BIOME_BY_CODE.size() else GameEnums.BiomeType.MOORLAND,
-		"terrain_feature": _FEATURE_BY_CODE[feature_code] if feature_code < _FEATURE_BY_CODE.size() else GameEnums.TerrainFeature.NONE,
+		"biome_type": biome_from_code(biome_code),
+		"terrain_feature": feature_from_code(feature_code),
 		"elevation_m": elevation_m,
 		"elevation": clampf(elevation_m / ELEVATION_METRES_AT_SCALE_TOP, 0.0, 1.0),
 	}
@@ -271,8 +288,8 @@ static func _sample_fine(coord: Vector2i, world_pos: Vector2) -> Dictionary:
 	var feature_code := int(round(color.g * 255.0))
 	var elevation_sample := sample_at(world_pos)  ## Elevation always comes from the coarse raster — see this section's own doc comment.
 	return {
-		"biome_type": _BIOME_BY_CODE[biome_code] if biome_code < _BIOME_BY_CODE.size() else GameEnums.BiomeType.MOORLAND,
-		"terrain_feature": _FEATURE_BY_CODE[feature_code] if feature_code < _FEATURE_BY_CODE.size() else GameEnums.TerrainFeature.NONE,
+		"biome_type": biome_from_code(biome_code),
+		"terrain_feature": feature_from_code(feature_code),
 		"elevation_m": elevation_sample.get("elevation_m", 0.0),
 		"elevation": elevation_sample.get("elevation", 0.0),
 	}
