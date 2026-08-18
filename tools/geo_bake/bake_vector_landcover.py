@@ -77,7 +77,7 @@ import sys
 import time
 
 import numpy as np
-from shapely import constrained_delaunay_triangles, set_precision, voronoi_polygons
+from shapely import constrained_delaunay_triangles, make_valid, set_precision, voronoi_polygons
 from shapely.geometry import LineString, MultiPoint, Polygon, box
 from shapely.ops import polygonize, unary_union
 from shapely.strtree import STRtree
@@ -162,6 +162,40 @@ PRIORITY = ["WATERWAY", "INDUSTRIAL", "URBAN", "WETLAND", "WOODLAND", "HEATHLAND
 ## bake_landcover.py's own convention, where biome code 0 doubles as "no real
 ## polygon ever touched this pixel".
 DEFAULT_CLASS = "MOORLAND"
+
+
+def _discard_stale(out_dir: str, chunk_x: int, chunk_y: int) -> None:
+    """Remove a chunk that this run did not produce.
+
+    A chunk that fails or yields nothing used to leave the PREVIOUS run's file
+    in place, so the output directory silently mixed generations: after the
+    tile cache was repaired, 7 chunks threw and the engine went on loading
+    their pre-repair versions -- 5 files on disk that no run had written,
+    including two of Manchester's, and nothing said so. The verifier counted
+    110 chunks against the bake's own reported 105, which is the only reason
+    it was noticed.
+    """
+    path = os.path.join(out_dir, chunk_filename(chunk_x, chunk_y))
+    if os.path.exists(path):
+        os.remove(path)
+        print(f"    removed stale {os.path.basename(path)} (this run produced nothing for it)",
+              flush=True)
+
+
+def _snap(geometry):
+    """set_precision onto the QUANT_WU grid, repairing the input first.
+
+    Returns None if the geometry cannot be snapped at all, so a caller can
+    drop one class rather than lose the whole chunk.
+    """
+    try:
+        return set_precision(geometry, QUANT_WU)
+    except Exception:  # noqa: BLE001 -- GEOSException is not importable by name here
+        pass
+    try:
+        return set_precision(make_valid(geometry), QUANT_WU)
+    except Exception:  # noqa: BLE001
+        return None
 
 
 def _tile_bbox_from_name(name: str) -> tuple[float, float, float, float]:
@@ -369,8 +403,16 @@ def build_chunk_mesh(chunk_x: int, chunk_y: int, transform, tile_cache: _TileGeo
         g = unary_union(candidates).intersection(chunk)
         if g.is_empty:
             continue
-        g = set_precision(g.simplify(tol, preserve_topology=True), QUANT_WU)
-        if g.is_empty or not g.is_valid:
+        # make_valid() between simplify and set_precision, not after.
+        # preserve_topology=True keeps a ring from crossing ITSELF but does not
+        # guarantee a valid polygon once thousands of unioned OSM features are
+        # involved, and set_precision on an invalid input throws
+        # "TopologyException: side location conflict" rather than returning
+        # anything -- which failed 7 chunks outright, including two of
+        # Manchester's, the first time the healed tile cache made them dense
+        # enough to hit it.
+        g = _snap(g.simplify(tol, preserve_topology=True))
+        if g is None or g.is_empty or not g.is_valid:
             continue
         keep = [p for p in _parts(g) if p.area >= min_area]
         if not keep:
@@ -458,8 +500,12 @@ def bake(q_range: tuple[int, int], r_range: tuple[int, int], limit: int | None =
     transform = fit_affine()
 
     tile_names = sorted(n for n in os.listdir(OVERPASS_CACHE) if n.endswith(".json"))
-    # A tile that failed every retry was cached as {"elements": []} (16 bytes);
-    # keeping it in the list only costs a pointless parse.
+    # A tile the server genuinely has nothing for comes back as a ~258-byte
+    # response whose elements list is empty; keeping it in the list only costs
+    # a pointless parse. A tile that FAILED is no longer written at all
+    # (fetch_overpass.fetch_tile), so it is absent here rather than
+    # indistinguishable from an empty one -- which is what let 22 poisoned
+    # tiles bake into flat rectangles before that was fixed.
     tile_names = [n for n in tile_names
                   if os.path.getsize(os.path.join(OVERPASS_CACHE, n)) > 64]
     print(f"\n=== Step 2: {len(tile_names)} non-empty cached Overpass tiles ===")
@@ -497,9 +543,11 @@ def bake(q_range: tuple[int, int], r_range: tuple[int, int], limit: int | None =
         except Exception as exc:  # noqa: BLE001
             print(f"  [{n}/{len(all_chunks)}] chunk {cx},{cy} FAILED: {type(exc).__name__}: {exc}",
                   flush=True)
+            _discard_stale(out_dir, cx, cy)
             skipped += 1
             continue
         if mesh is None:
+            _discard_stale(out_dir, cx, cy)
             skipped += 1
             continue
 

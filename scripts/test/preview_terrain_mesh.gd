@@ -14,8 +14,11 @@ extends SceneTree
 ## MOORLAND take TerrainVisuals.soil_color() in game, which would introduce a
 ## per-panel colour difference unrelated to the boundary shapes being compared.
 
-const PANEL_W: int = 900
-const PANEL_H: int = 900
+## Longer edge of one panel, in pixels. The other edge follows the world
+## rect's own aspect -- a panel is never forced square. Forcing it was why the
+## whole-corridor view came out mostly empty: that region is roughly 1:2, so a
+## square frame spent half its width on background.
+const MAX_PANEL_PX: int = 900
 const GUTTER: int = 8
 
 ## SubHexGroundView's own render grid: this many cells across
@@ -30,10 +33,12 @@ const MAX_RASTER_HEXES: int = 80
 
 const VIEWS: Array[Dictionary] = [
 	{
+		# No center/span: framed from the baked chunks that actually exist, so
+		# the image cannot drift out of date as coverage changes, and cannot
+		# frame empty space that was never baked.
 		"name": "01_whole_corridor",
-		"center": Vector2(131072.0, 94208.0),
-		"span": 57344.0,
-		"caption": "the whole baked corridor, 104 chunks (~560 km tall)",
+		"fit_baked": true,
+		"caption": "every baked chunk, framed to their own extent",
 	},
 	{
 		"name": "02_manchester_4096",
@@ -75,10 +80,6 @@ func _init() -> void:
 		out_dir = user_args[0]
 	DirAccess.make_dir_recursive_absolute(out_dir)
 
-	root.content_scale_mode = Window.CONTENT_SCALE_MODE_DISABLED
-	root.content_scale_factor = 1.0
-	root.size = Vector2i(PANEL_W, PANEL_H)
-
 	print("[preview] rendering %d views to %s" % [VIEWS.size(), out_dir])
 	for view in VIEWS:
 		await _render_view(view, out_dir)
@@ -87,24 +88,33 @@ func _init() -> void:
 
 
 func _render_view(view: Dictionary, out_dir: String) -> void:
-	var center: Vector2 = view["center"]
-	var span: float = view["span"]
-	var rect := Rect2(center - Vector2(span, span) * 0.5, Vector2(span, span))
+	var rect: Rect2
+	if view.get("fit_baked", false):
+		rect = _baked_extent()
+		if rect.size == Vector2.ZERO:
+			push_error("[preview] no baked chunks found, skipping %s" % view["name"])
+			return
+	else:
+		var span: float = view["span"]
+		rect = Rect2(view["center"] - Vector2(span, span) * 0.5, Vector2(span, span))
 
+	var panel_size := _panel_size_for(rect)
 	var hexes := _hexes_in(rect)
 	var raster_ok := hexes.size() <= MAX_RASTER_HEXES
 
 	var mesh_image := await _grab(_make_panel(
-		_Panel.MODE_MESH, rect, hexes, "VECTOR MESH  (this PR)", view["caption"]))
+		_Panel.MODE_MESH, rect, panel_size, hexes, "VECTOR MESH  (this PR)", view["caption"]))
 
 	var composite: Image
 	if raster_ok:
 		var raster_image := await _grab(_make_panel(
-			_Panel.MODE_RASTER, rect, hexes, "RASTER SQUARES  (today)", view["caption"]))
-		composite = Image.create(PANEL_W * 2 + GUTTER, PANEL_H, false, raster_image.get_format())
+			_Panel.MODE_RASTER, rect, panel_size, hexes, "RASTER SQUARES  (today)", view["caption"]))
+		var whole := Rect2i(Vector2i.ZERO, panel_size)
+		composite = Image.create(panel_size.x * 2 + GUTTER, panel_size.y, false,
+			raster_image.get_format())
 		composite.fill(Color(0.0, 0.0, 0.0))
-		composite.blit_rect(raster_image, Rect2i(0, 0, PANEL_W, PANEL_H), Vector2i(0, 0))
-		composite.blit_rect(mesh_image, Rect2i(0, 0, PANEL_W, PANEL_H), Vector2i(PANEL_W + GUTTER, 0))
+		composite.blit_rect(raster_image, whole, Vector2i.ZERO)
+		composite.blit_rect(mesh_image, whole, Vector2i(panel_size.x + GUTTER, 0))
 	else:
 		composite = mesh_image
 
@@ -113,27 +123,73 @@ func _render_view(view: Dictionary, out_dir: String) -> void:
 	if error != OK:
 		push_error("[preview] save_png failed for %s (%d)" % [path, error])
 		return
-	print("[preview] %s  span=%.0f wu  hexes=%d  %s" % [
-		view["name"], span, hexes.size(),
-		"side-by-side" if raster_ok else "mesh only (too many hexes to raster)"])
+	print("[preview] %s  %.0fx%.0f wu -> %dx%d px  hexes=%d  %s" % [
+		view["name"], rect.size.x, rect.size.y, composite.get_width(), composite.get_height(),
+		hexes.size(), "side-by-side" if raster_ok else "mesh only (too many hexes to raster)"])
 
 
-func _make_panel(mode: int, rect: Rect2, hexes: Array, title: String, caption: String) -> _Panel:
+## Pixel size for one panel: MAX_PANEL_PX on the world rect's longer edge, the
+## other edge to matching aspect, so the frame is filled by the region rather
+## than padded out to a square.
+func _panel_size_for(rect: Rect2) -> Vector2i:
+	if rect.size.x >= rect.size.y:
+		return Vector2i(MAX_PANEL_PX, maxi(1, roundi(MAX_PANEL_PX * rect.size.y / rect.size.x)))
+	return Vector2i(maxi(1, roundi(MAX_PANEL_PX * rect.size.x / rect.size.y)), MAX_PANEL_PX)
+
+
+## World rect covering every baked chunk on disk.
+func _baked_extent() -> Rect2:
+	var dir := DirAccess.open(TerrainMeshChunkData.CHUNK_DIR)
+	if dir == null:
+		return Rect2()
+	var lo := Vector2i(1 << 30, 1 << 30)
+	var hi := Vector2i(-(1 << 30), -(1 << 30))
+	var found := false
+	for file in dir.get_files():
+		if not file.ends_with(".tmesh"):
+			continue
+		var parts := file.trim_suffix(".tmesh").split("_")
+		if parts.size() != 3:
+			continue
+		var address := Vector2i(int(parts[1]), int(parts[2]))
+		lo = Vector2i(mini(lo.x, address.x), mini(lo.y, address.y))
+		hi = Vector2i(maxi(hi.x, address.x), maxi(hi.y, address.y))
+		found = true
+	if not found:
+		return Rect2()
+	var size := TerrainMeshChunkData.CHUNK_SIZE_WU
+	return Rect2(Vector2(lo) * size, Vector2(hi - lo + Vector2i.ONE) * size)
+
+
+func _make_panel(mode: int, rect: Rect2, panel_size: Vector2i, hexes: Array,
+		title: String, caption: String) -> _Panel:
 	var panel := _Panel.new()
 	panel.mode = mode
 	panel.world_rect = rect
 	panel.hexes = hexes
 	panel.title = title
 	panel.caption = caption
-	panel.panel_size = Vector2(PANEL_W, PANEL_H)
+	panel.panel_size = Vector2(panel_size)
 	panel.grid_n = RASTER_GRID_N
-	panel.view_scale = float(PANEL_W) / rect.size.x
+	panel.view_scale = float(panel_size.x) / rect.size.x
 	return panel
 
 
-## Draws `panel` into the root viewport and reads the frame back.
+## Renders `panel` through a SubViewport sized exactly to it.
+##
+## Not the root window: a window does not necessarily become the size it is
+## asked for, and the readback is of whatever size it actually is. That is why
+## a 900x900 panel was arriving as a 1920x1080 PNG with the terrain occupying
+## a corner of it. A SubViewport is exactly its own size and clips to it, so
+## the image is the panel and nothing else -- geometry that overhangs the
+## world rect is cut rather than bleeding across the rest of the frame.
 func _grab(panel: Node2D) -> Image:
-	root.add_child(panel)
+	var viewport := SubViewport.new()
+	viewport.size = Vector2i(panel.panel_size)
+	viewport.transparent_bg = false
+	viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	viewport.add_child(panel)
+	root.add_child(viewport)
 	panel.queue_redraw()
 	# Two idle frames before the readback: the first lets _draw() run, the
 	# second guarantees what it emitted reached the frame frame_post_draw fires
@@ -141,9 +197,9 @@ func _grab(panel: Node2D) -> Image:
 	await process_frame
 	await process_frame
 	await RenderingServer.frame_post_draw
-	var image := root.get_texture().get_image()
-	root.remove_child(panel)
-	panel.queue_free()
+	var image := viewport.get_texture().get_image()
+	root.remove_child(viewport)
+	viewport.queue_free()
 	return image
 
 

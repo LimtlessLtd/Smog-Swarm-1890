@@ -47,7 +47,17 @@ static func soil_fertility_at(hex_coord: Vector2i, local_position: Vector2, fall
 	var sample := SubHexTerrainQuery.sample_at_world_within(hex_coord, world_pos)
 	if sample.is_empty():
 		return fallback
-	var biome: GameEnums.BiomeType = sample.get("biome_type", GameEnums.BiomeType.MOORLAND)
+	return soil_for_biome_at(sample.get("biome_type", GameEnums.BiomeType.MOORLAND), world_pos)
+
+
+## The same rule soil_fertility_at() applies, for a caller that ALREADY knows
+## which biome is at `world_pos` and so does not need the terrain lookup that
+## resolves it. TerrainMeshView's triangles carry their own biome, and routing
+## them back through soil_fertility_at() would re-derive from the raster the
+## very thing the vector mesh already states — and would disagree with it
+## wherever the two representations differ, which is the whole point of the
+## vector terrain epic.
+static func soil_for_biome_at(biome: GameEnums.BiomeType, world_pos: Vector2) -> GameEnums.SoilFertility:
 	match biome:
 		GameEnums.BiomeType.URBAN:
 			return GameEnums.SoilFertility.NOT_ARABLE
