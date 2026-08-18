@@ -4,10 +4,9 @@ extends Node2D
 ## Close-zoom detail for one hex (Tactical view). Composes a scatter of
 ## placeholder props and every BuildingInstance in this hex rendered at its
 ## own precise position, instead of one flat tile standing in for the whole
-## ~5x5 mile area. Ground is SubHexGroundView — real sub-hex land-cover/
-## elevation/water data (RealTerrainSampler) composited from the same 11
-## terrain SVGs Strategic's own HexCellView uses. Falls back to the flat
-## HexCellView tile if the terrain bake hasn't been run/committed.
+## ~5x5 mile area. Draws NO ground of its own — TerrainMeshView owns the
+## ground for the whole world, not per hex, and HexGridMap's flat tile shows
+## through wherever no mesh chunk is baked.
 ## Spawned/freed by LocalDetailManager as the camera crosses the tactical
 ## zoom threshold and pans between hexes; only exists for a hex that has
 ## qualified as settled/frontier.
@@ -24,10 +23,9 @@ extends Node2D
 ## exactly where the most buildings are likely on screen at once); the
 ## pulsing light glow stays at every fidelity, it's GPU-shader-only with no
 ## per-frame simulation cost. set_fidelity() only rebuilds THESE two things
-## (_rebuild_fidelity_dependent()) — ground (SubHexGroundView's expensive
-## 121-sample real-terrain compositing), the grid outline, the ZoC overlay,
-## and the fog mist overlay never change with fidelity and used to get
-## needlessly torn down and rebuilt on every LOW<->MEDIUM<->HIGH crossing anyway.
+## (_rebuild_fidelity_dependent()) — the grid outline and the ZoC overlay
+## never change with fidelity and used to get needlessly torn down and rebuilt
+## on every LOW<->MEDIUM<->HIGH crossing anyway.
 
 var cell: HexCell
 var _props: Array[PropInstance] = []
@@ -38,7 +36,6 @@ var _building_containers: Dictionary = {}  # int (BuildingInstance.id) -> Node2D
 var _props_layer: Node2D  ## Created once in _redraw(); _rebuild_fidelity_dependent() only clears/repopulates ITS children, leaving this node's own position among TacticalHexView's children (and therefore draw order) untouched.
 var _buildings_layer: Node2D  ## Same shape as _props_layer, for buildings.
 var _selected_building: BuildingInstance  ## Threaded through setup() so a hex that dehydrates and rehydrates while its own building stays selected redraws already knowing to highlight it.
-var _fog_state: GameEnums.FogState = GameEnums.FogState.VISIBLE  ## Re-applied to the fog overlay on every _redraw() — that child gets queue_free()'d and rebuilt with everything else, unlike HexCellView's own persistent overlay child.
 
 func _ready() -> void:
 	position = HexCoord.axial_to_world(cell.coord)
@@ -92,21 +89,20 @@ func set_building_selected(instance: BuildingInstance, is_selected: bool) -> voi
 		var base := _building_base_modulate(instance)
 		container.modulate = _SELECTED_TINT * base if is_selected else base
 
-## Dims the whole hydrated hex (terrain, props and buildings together)
-## rather than the inner ground HexCellView alone, so a remembered-but-not-
-## currently-visible hex reads as one dimmed scene. Also arms/disarms the
-## animated overlay (see FogVisuals.overlay_material()) on the current
-## FogOverlay child, if one exists yet — _redraw() rebuilds it from
-## `_fog_state` every time regardless, so a call arriving before this hex's
-## first _redraw() still takes effect once that runs.
+## Dims this hex's ENTITIES — props and buildings — so a remembered-but-not-
+## currently-visible hex reads as one dimmed scene. It no longer dims terrain,
+## because this node no longer draws any: TerrainMeshView owns that, and
+## HexCellView's overlay (lifted to FogVisuals.TERRAIN_OVERLAY_Z_INDEX) fogs it.
+## modulate still reaches the entities because they sit at z_index 0 and above,
+## which is over that overlay's band rather than under it.
+##
+## This node used to add a second mist overlay of its own. That was harmless
+## while it was the only thing over its hex, but stacking it on HexCellView's
+## now-opaque one darkened an explored hex roughly twice as much as an
+## identical hex the camera had not hydrated — a seam that moved with the
+## camera. One overlay per hex, owned by the view that exists for every hex.
 func set_fog_state(state: GameEnums.FogState) -> void:
-	_fog_state = state
 	modulate = FogVisuals.tint_color(state)
-	var overlay := get_node_or_null("FogOverlay")
-	if overlay:
-		var material := FogVisuals.overlay_material(state)
-		overlay.material = material
-		overlay.visible = material != null
 
 ## Exposed so LocalDetailManager.get_props_at() can hand a hex's live prop
 ## scatter to MovementStepper's callers as steering obstacles. Returns a
@@ -130,31 +126,15 @@ func _redraw() -> void:
 	for child in get_children():
 		child.queue_free()
 
-	var ground := SubHexGroundView.new()
-	ground.setup(cell)
-	# z_index -2, not the default 0 every prop/building/overlay here stays
-	# at: TacticalHexView instances are hydrated as separate siblings under
-	# LocalDetailManager (see that class's own _wall_layer doc comment), so a
-	# building sitting near its hex's edge can visually overlap a
-	# NEIGHBORING hex's own ground tile — with everything at z_index 0, which
-	# one draws on top depended on hydration order, not proximity, so a
-	# building could vanish under a neighbor's ground the moment that
-	# neighbor happened to hydrate later. z_index is a global sort key across
-	# the whole 2D scene (LocalDetailManager's own doc comment), so sinking
-	# ground below zero here guarantees it never outranks ANY building,
-	# regardless of which TacticalHexView either belongs to. This ALSO sinks
-	# HexGridMap's own always-present Strategic-zoom tile below THIS layer
-	# unless that one goes even lower — see HexGridMap._spawn_view()'s own
-	# z_index, which stays one step below this for that reason.
-	#
-	# Was -1 until TerrainMeshView took that band. The whole stack moved down
-	# one rather than the mesh moving up: everything at 0 and above is an
-	# entity, so -1 is the only key the mesh can hold without outranking a
-	# building, and two ground layers sharing one key resolves by tree order
-	# — the exact failure mode this comment already records.
-	ground.z_index = -2
-	add_child(ground)
-
+	# No ground layer here. This used to build a SubHexGroundView — an 11x11
+	# grid of square terrain sprites per hex — and TerrainMeshView then drew
+	# the real polygon geometry on top of it. "remove all of the sub hex tile
+	# biome square tiles please and just use the polygon derived map" (user,
+	# 2026-08-18): the squares are gone, and ground is now exactly two layers,
+	# neither of them per-hex — TerrainMeshView's vector mesh at z_index -1,
+	# over HexGridMap's flat per-hex tile at -3 wherever no chunk is baked.
+	# The -2 band this occupied is deliberately left vacant rather than
+	# reclaimed; anything added there would sit between them.
 	add_child(_build_grid_outline())  # Always-on structural hex boundary — a SEPARATE layer from the ZoC outline below, not the same line reused.
 
 	add_child(_build_zoc_overlay())  # Ground-level tint — drawn before props/buildings so they render on top of it, not under.
@@ -169,7 +149,6 @@ func _redraw() -> void:
 
 	_rebuild_fidelity_dependent()
 
-	add_child(_build_fog_overlay())  # Last child — draws above ground/props/buildings alike, same plain sibling-order convention as everything else in this method.
 
 ## Rebuilds ONLY the two things that depend on `_fidelity` — props (blob at
 ## LOW, real per-type shape at MEDIUM/HIGH) and buildings (flat
@@ -182,10 +161,10 @@ func _redraw() -> void:
 ## Called by _redraw() (fresh hydration) AND set_fidelity() (an
 ## already-hydrated hex crossing a fidelity band) — splitting this out of a
 ## full _redraw() fixed a real perf issue: every fidelity crossing used to
-## needlessly re-run SubHexGroundView's expensive 121-sample real-terrain
-## compositing and tear down/rebuild every building's particle systems, even
-## though ground/particles-aside-from-fidelity-gating never actually change
-## with fidelity at all.
+## needlessly re-run the square ground's expensive 121-sample real-terrain
+## compositing (since removed entirely) and tear down/rebuild every
+## building's particle systems, even though neither actually changes with
+## fidelity at all.
 func _rebuild_fidelity_dependent() -> void:
 	for child in _props_layer.get_children():
 		child.queue_free()
@@ -204,27 +183,13 @@ func _rebuild_fidelity_dependent() -> void:
 		if _selected_building and building.id == _selected_building.id:
 			container.modulate = _SELECTED_TINT
 
-## Animated mist/haze layer (see FogVisuals.overlay_material()'s own doc
-## comment) — rebuilt fresh every _redraw() since this whole node's children
-## are cleared and re-added each time, then immediately synced to
-## `_fog_state` (the value set_fog_state() last pushed, possibly before this
-## particular _redraw() ran).
-func _build_fog_overlay() -> Polygon2D:
-	var overlay := Polygon2D.new()
-	overlay.name = "FogOverlay"
-	overlay.polygon = HexCoord.corner_points(Vector2.ZERO)
-	overlay.visible = false
-	var material := FogVisuals.overlay_material(_fog_state)
-	overlay.material = material
-	overlay.visible = material != null
-	return overlay
-
 ## A genuinely separate, always-visible Line2D (same thin dark stroke
 ## HexCellView's own _outline establishes for Strategic zoom) — never gated
 ## by DisplaySettings.show_zoc_tactical or anything else. Fixes a bug where
 ## toggling off the ZoC display option also erased the ONLY hex-boundary
-## line in Tactical view: SubHexGroundView's real sub-hex terrain has no
-## outline of its own, so _build_zoc_overlay()'s Military ZoC outline
+## line in Tactical view: the terrain under this draws no hex boundary of
+## its own — deliberately, since TerrainMeshView's geometry does not know
+## about hexes at all — so _build_zoc_overlay()'s Military ZoC outline
 ## (below) was doing double duty as the de facto hex grid on most settled
 ## hexes, and unticking ZoC incidentally erased grid lines that have
 ## nothing to do with it.

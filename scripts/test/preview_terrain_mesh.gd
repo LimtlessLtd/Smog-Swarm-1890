@@ -1,8 +1,10 @@
 extends SceneTree
 
-## Renders the same world rect twice, side by side: left as SubHexGroundView
-## draws it today (11x11 squares per hex, clipped to the hexagon), right from
-## the baked .tmesh triangles. Writes PNGs; changes no game state and is never
+## Renders the same world rect twice, side by side: left as the square
+## per-hex ground used to draw it (11x11 squares per hex, clipped to the
+## hexagon), right from the baked .tmesh triangles. The left panel is now a
+## historical reference -- SubHexGroundView was deleted once the mesh became
+## the only ground -- which is exactly why this reimplements it inline. Writes PNGs; changes no game state and is never
 ## loaded by the game.
 ##
 ##   godot --path . -s scripts/test/preview_terrain_mesh.gd -- <out_dir>
@@ -21,10 +23,10 @@ extends SceneTree
 const MAX_PANEL_PX: int = 900
 const GUTTER: int = 8
 
-## SubHexGroundView's own render grid: this many cells across
+## The deleted square ground's render grid: this many cells across
 ## HexCoord.SUB_HEX_GRID_SPAN. Duplicated rather than read across the class
-## boundary -- this script must keep showing what that view draws today even
-## once that view is replaced, which is the whole point of the comparison.
+## boundary -- written that way so this script would keep working once that
+## view was replaced, which is now the case.
 const RASTER_GRID_N: int = 11
 
 ## Above this many hexes in view, the raster panel's per-cell polygon clipping
@@ -281,7 +283,7 @@ class _Panel:
 		draw_string(font, Vector2(14.0, 46.0), caption,
 			HORIZONTAL_ALIGNMENT_LEFT, -1, 14, Color(0.75, 0.78, 0.82))
 
-	## Reproduces SubHexGroundView: a grid_n x grid_n grid of squares per hex,
+	## Reproduces the deleted square ground: a grid_n x grid_n grid per hex,
 	## each intersected with the hexagon. That intersection is what produces the
 	## cut-off squares along every hex border.
 	func _draw_raster() -> void:
@@ -295,8 +297,8 @@ class _Panel:
 			if samples.size() < grid_n * grid_n:
 				continue
 
-			# Flat hex fill under the grid, standing in for HexCellView. Both
-			# SubHexGroundView and this panel skip a sub-cell whose sample came
+			# Flat hex fill under the grid, standing in for HexCellView. Both the
+			# original square ground and this panel skip a sub-cell whose sample came
 			# back empty -- which happens near the hex's corners, where the
 			# square sample grid pokes outside the hexagon -- so without a layer
 			# beneath, those skips read as holes that the game does not have.

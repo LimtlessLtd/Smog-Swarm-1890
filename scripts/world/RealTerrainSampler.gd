@@ -57,8 +57,8 @@ const _ELEVATION_PATH: String = "res://assets/terrain_data/elevation.png"
 ## CORRIDOR_Q/CORRIDOR_R exactly. A hex outside this range has no baked
 ## data at all — sample_at()/majority_biome() return {} for it (NOT
 ## clamped to the nearest edge pixel, which would silently substitute
-## wrong data); HexMapGenerator/SubHexGroundView both treat an empty result
-## as "fall back to the flat default."
+## wrong data); HexMapGenerator treats an empty result as "fall back to the
+## flat default."
 const _CORRIDOR_Q: Vector2i = Vector2i(55, 105)
 const _CORRIDOR_R: Vector2i = Vector2i(85, 160)
 
@@ -195,17 +195,20 @@ static func sample_at(world_pos: Vector2) -> Dictionary:
 ## own real-world footprint (HexCoord.HEX_SIZE radius). Returns an Array of
 ## n*n Dictionaries (sample_at()'s own shape), row-major. Prefers a fine
 ## per-hex tile when one has been baked for `coord` (see "Fine per-hex
-## tiles" below) — this is SubHexGroundView's own call site, gated to only
-## exist for Tactical-hydrated/nearby hexes (LocalDetailManager's existing
-## proximity system), so fine detail streams in "only when you're nearby"
-## for free, riding on that existing mechanism.
+## tiles" below).
+##
+## Since the square per-hex ground was removed this has ONE caller left,
+## majority_biome() at n=5, and nothing renders from it — the fine tiles it
+## prefers now only sharpen each hex's single generated biome_type. The
+## Tactical-zoom consumer this was built for (a per-frame 11x11 render grid,
+## streamed by LocalDetailManager proximity) no longer exists.
 static func sample_grid(coord: Vector2i, n: int) -> Array:
 	var center := HexCoord.axial_to_world(coord)
 	var result: Array = []
 	if n <= 1:
 		result.append(sample_at_hex(coord, center))
 		return result
-	var span := HexCoord.SUB_HEX_GRID_SPAN  # Shared with SubHexGroundView's own render grid — see that constant's own doc comment (HexCoord.gd).
+	var span := HexCoord.SUB_HEX_GRID_SPAN  # See that constant's own doc comment (HexCoord.gd) for why the span circumscribes the hex rather than fitting inside it.
 	var step := span / float(n - 1)
 	var start := -span * 0.5
 	for row in range(n):
@@ -295,10 +298,10 @@ static func _sample_fine(coord: Vector2i, world_pos: Vector2) -> Dictionary:
 	}
 
 ## Majority-vote biome + mean elevation across a 5x5 sample grid for one
-## hex — HexMapGenerator's per-hex real-data derivation. A coarser grid
-## than sample_grid()'s Tactical-rendering use (SubHexGroundView) since
-## this only needs to feed ONE scalar biome_type per hex, not visible
-## sub-hex variation.
+## hex — HexMapGenerator's per-hex real-data derivation, and since the
+## square per-hex ground was removed, sample_grid()'s only caller. 5x5 is
+## deliberately coarse: this feeds ONE scalar biome_type per hex, and no
+## renderer reads it.
 static func majority_biome(coord: Vector2i) -> Dictionary:
 	var samples := sample_grid(coord, 5)
 	var counts: Dictionary = {}

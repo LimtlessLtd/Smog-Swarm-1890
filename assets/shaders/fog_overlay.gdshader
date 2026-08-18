@@ -1,7 +1,7 @@
 shader_type canvas_item;
 
-// Animated fog/haze overlay drawn on top of a hex's ground (HexCellView for
-// Strategic zoom, TacticalHexView for Tactical) — replaces the old flat
+// Animated fog/haze overlay drawn on top of a hex's ground (HexCellView, one
+// per land hex, at FogVisuals.TERRAIN_OVERLAY_Z_INDEX) — replaces the old flat
 // modulate-only fog tint with visible motion, per user request ("fog of war
 // should be cloudy misty animations moving over an area to indicate to the
 // user they have no vision there... obscured tiles need to have visibly
@@ -10,14 +10,33 @@ shader_type canvas_item;
 // one per mode, reused across every tile rather than one material per hex):
 //   0 = UNSEEN  — dense, fast-drifting mist. Never-scouted: reads as thick
 //       cloud cover, not just a dark tile.
-//   1 = EXPLORED — sparse, slow-drifting haze. Remembered terrain still
-//       dimly visible underneath (HexCellView/TacticalHexView's own
-//       modulate tint already darkens it) — this only needs to signal "no
-//       LIVE vision right now", not hide the memory entirely.
+//   1 = EXPLORED — sparse, slow-drifting haze, terrain still readable under it.
 // No VISIBLE mode: FogVisuals.overlay_material() returns null for it, and
 // callers simply don't add/show this overlay there at all.
+//
+// THIS SHADER'S ALPHA IS THE ONLY THING HIDING THE TERRAIN. It used to lean on
+// the hex view's own `modulate` to do the darkening and only add motion on top,
+// which stopped working the moment terrain moved to TerrainMeshView: that mesh
+// is a single world-wide layer, not a child of any hex, so no per-hex modulate
+// can reach it. It also never worked the way that comment claimed even for the
+// hex's own tile — assigning COLOR unconditionally in fragment() discards the
+// vertex color Godot folds `modulate` into, so this overlay was ALWAYS drawing
+// at full strength regardless of the tint on the node above it.
+//
+// Hence: UNSEEN is fully opaque (the noise varies the cloud's COLOR, never its
+// alpha), and EXPLORED has an alpha FLOOR rather than fading to nothing where
+// the noise happens to be thin. Alpha that dips toward 0 is exactly how the
+// whole baked corridor stayed legible at day 1 through "unseen" fog.
 
 uniform int fog_mode = 0;
+
+// Scales the final alpha. 1.0 for land, where the fog's job is to hide.
+// SeaView uses a lower value: where the sea is, is public knowledge (the same
+// reasoning CoastlineOutlineView records for drawing the coastline through
+// fog), so its haze only needs to stop unexplored water reading brighter than
+// the explored land beside it. Applied as a multiply rather than a separate
+// shader so land and sea cannot drift apart in look.
+uniform float opacity : hint_range(0.0, 1.0) = 1.0;
 
 // Sampled in WORLD space (see vertex() below), not UV: the overlay Polygon2D
 // this shader is assigned to has no texture, and an untextured Polygon2D
@@ -74,8 +93,18 @@ void fragment() {
 	// width, the same density the old (broken) UV*6.0 approach intended.
 	vec2 uv = world_pos * 0.006;
 	float speed = fog_mode == 0 ? 1.0 : 0.3;
-	float density = fog_mode == 0 ? 0.95 : 0.45;
+	float n = clamp(drifting_fbm(uv, TIME * speed), 0.0, 1.0);
+
+	// The noise drives COLOR, between a cloud-shadow tone and a lit-mist one.
+	// UNSEEN's shadow is near-black rather than black so thick cloud still
+	// reads as cloud rather than as a hole punched in the map.
+	vec3 shadow = fog_mode == 0 ? vec3(0.05, 0.06, 0.07) : vec3(0.0);
 	vec3 mist_color = fog_mode == 0 ? vec3(0.72, 0.75, 0.78) : vec3(0.5, 0.53, 0.56);
-	float n = drifting_fbm(uv, TIME * speed);
-	COLOR = vec4(mist_color, clamp(n, 0.0, 1.0) * density);
+
+	// EXPLORED_FLOOR reproduces exactly what FogVisuals.tint_color(EXPLORED)'s
+	// 0.45 multiply used to do to the tile beneath (1.0 - 0.45), so remembered
+	// terrain keeps the brightness it had before this overlay took over the
+	// darkening; the noise only thickens the haze from there.
+	float alpha = fog_mode == 0 ? 1.0 : mix(0.55, 0.75, n);
+	COLOR = vec4(mix(shadow, mist_color, n), alpha * opacity);
 }

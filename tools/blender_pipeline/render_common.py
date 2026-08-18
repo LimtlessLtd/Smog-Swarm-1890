@@ -210,6 +210,90 @@ def add_camera(category: str, yaw_deg: float = None, distance: float = 10.0, ort
     return cam_obj
 
 
+# Fraction of the fitted frame left empty on EACH side by frame_content().
+# Not cosmetic padding: the Freestyle outline is stroked along the silhouette
+# at OUTLINE_THICKNESS_FRACTION of the render resolution and is centered on
+# that edge, so about half its width falls outside the geometry bounds this
+# fit is computed from. Fitting the geometry exactly would shave the outline
+# off wherever the model touches the frame edge. 0.04 covers half of a 0.018
+# stroke with room left for Cycles' antialiasing.
+CONTENT_MARGIN_FRACTION = 0.04
+
+
+def content_bounds(cam_obj):
+    """(min_x, max_x, min_y, max_y) of every mesh vertex in the scene, expressed
+    in the camera's own view plane. None if the scene has no mesh geometry.
+
+    Real vertices rather than each object's bound_box: a bound_box is the
+    object's LOCAL axis-aligned box, and transforming its 8 corners bounds a
+    rotated object only loosely — gable_roof() and sash() are both 45-degree-ish
+    rotated primitives, which is exactly the case that over-estimates."""
+    view = cam_obj.matrix_world.inverted()
+    depsgraph = bpy.context.evaluated_depsgraph_get()
+    xs, ys = [], []
+    for obj in bpy.context.scene.objects:
+        if obj.type != 'MESH':
+            continue
+        evaluated = obj.evaluated_get(depsgraph)
+        mesh = evaluated.to_mesh()
+        matrix = view @ evaluated.matrix_world
+        for vertex in mesh.vertices:
+            point = matrix @ vertex.co
+            xs.append(point.x)
+            ys.append(point.y)
+        evaluated.to_mesh_clear()
+    if not xs:
+        return None
+    return min(xs), max(xs), min(ys), max(ys)
+
+
+def frame_content(cam_obj, ortho_scale: float = None) -> float:
+    """Re-aim the camera at the content's own centre and size the frame to it.
+    Returns the content's span in world units (the un-margined ortho_scale that
+    would fit it), so a caller can measure without rendering.
+
+    add_camera() always aims at the world origin at a fixed ortho_scale=3.0,
+    which framed every asset by where its author happened to build it rather
+    than by how big it is. Measured across the shipped art before this existed:
+    a building filled 23.6-48.6% of the frame's longest side and a resource icon
+    15.1-45.9%, so a 2048x2048 icon scaled into ResourceBarView's 20x20 slot was
+    delivering a ~3px glyph.
+
+    Pass ortho_scale to frame at a fixed size instead of this model's own —
+    that is how a whole category keeps its authored relative sizes (every asset
+    centred, one shared frame size) rather than every asset being blown up to
+    fill the frame equally and a watchtower ending up as wide as a farm."""
+    # add_camera()'s angled path aims via a TRACK_TO constraint, which re-solves
+    # the rotation from wherever the camera currently IS — so translating the
+    # camera with it still attached just swings it back onto the world origin
+    # and undoes the centring. Bake the constraint's solved orientation into the
+    # camera's own transform first, then drop it; an ortho camera that already
+    # points the right way needs no aim target, and its framing then depends
+    # only on where it sits in its own view plane.
+    bpy.context.view_layer.update()  # resolve TRACK_TO before reading matrix_world
+    solved = cam_obj.matrix_world.copy()
+    for constraint in list(cam_obj.constraints):
+        cam_obj.constraints.remove(constraint)
+    cam_obj.matrix_world = solved
+
+    bounds = content_bounds(cam_obj)
+    if bounds is None:
+        return cam_obj.data.ortho_scale
+    min_x, max_x, min_y, max_y = bounds
+
+    # Content is NOT centred to begin with: an angled camera projects a model
+    # built around the world origin well below frame centre, which is why
+    # searchlight_tower's ink sat at y=585 of 2048 rather than straddling 1024.
+    basis = cam_obj.matrix_world.to_3x3()
+    cam_obj.location += basis @ mathutils.Vector(
+        ((min_x + max_x) / 2.0, (min_y + max_y) / 2.0, 0.0))
+
+    span = max(max_x - min_x, max_y - min_y)
+    cam_obj.data.ortho_scale = (span if ortho_scale is None else ortho_scale) * (
+        1.0 + 2.0 * CONTENT_MARGIN_FRACTION)
+    return span
+
+
 def add_flat_light():
     """Purely cosmetic — matches LIGHT_EULER so an interactive .blend viewer sees
     roughly what the toon shader fakes, but contributes nothing to the actual render:
@@ -403,10 +487,24 @@ def fence_perimeter(material, count=10, distance=0.85, post_height=0.16, post_ra
              radius=post_radius, depth=post_height)
 
 
-def render_to(output_path: str, category: str, resolution: int = 2048):
-    """Call once at the end of an asset script, after the model + materials exist."""
+def measure_content_span(category: str) -> float:
+    """The ortho_scale that would exactly fit this model at `category`'s camera
+    angle. Builds no image — the two-pass driver in render_category.py runs this
+    over a whole category to find the one frame size that fits all of it."""
+    return frame_content(add_camera(category))
+
+
+def render_to(output_path: str, category: str, resolution: int = 2048,
+              fit: bool = False, ortho_scale: float = None):
+    """Call once at the end of an asset script, after the model + materials exist.
+
+    fit=True sizes the frame to the model instead of add_camera()'s fixed 3.0;
+    pass ortho_scale alongside it to centre on this model but frame at a size
+    shared with the rest of its category (see frame_content)."""
     setup_render(resolution)
-    add_camera(category)
+    cam_obj = add_camera(category)
+    if fit:
+        frame_content(cam_obj, ortho_scale)
     add_flat_light()
     bpy.context.scene.render.filepath = output_path
     bpy.ops.render.render(write_still=True)

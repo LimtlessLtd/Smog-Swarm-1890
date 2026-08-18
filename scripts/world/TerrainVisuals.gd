@@ -29,7 +29,13 @@ static func biome_color(biome: GameEnums.BiomeType, soil: GameEnums.SoilFertilit
 		GameEnums.BiomeType.WETLAND:
 			return Color(0.33, 0.40, 0.28)
 		GameEnums.BiomeType.OCEAN:
-			return Color(0.10, 0.18, 0.28)  ## Deeper/darker than WATERWAY's river-blue — open sea, not a fordable river.
+			## Still deeper than WATERWAY's river-blue — open sea, not a fordable
+			## river — but lifted from (0.10, 0.18, 0.28), which was chosen when
+			## nothing actually drew the sea and it only ever showed as a minimap
+			## pixel. SeaView now paints it full-screen under a haze that mixes
+			## ~40% grey into it, and at the old value that composited to a muddy
+			## near-grey rather than "the sea should be blue" (user, 2026-08-18).
+			return Color(0.16, 0.30, 0.46)
 		GameEnums.BiomeType.WOODLAND:
 			return Color(0.20, 0.34, 0.16)  ## Deep forest canopy green, distinctly darker/denser than Moorland's open grass.
 		GameEnums.BiomeType.HEATHLAND:

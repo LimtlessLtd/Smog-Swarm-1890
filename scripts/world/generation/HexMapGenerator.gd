@@ -30,7 +30,8 @@ extends RefCounted
 ## minority of real river/canal pixels sampled within it — deliberate,
 ## disclosed limitation (see _apply_real_terrain()'s own doc comment).
 ## That would re-introduce hex-tile-locking one layer down; real sub-hex
-## river geometry is SubHexGroundView's job (Tactical-zoom rendering).
+## river geometry is TerrainMeshView's job — the baked vector mesh carries
+## the real OSM waterway polygons, unquantized and not cut at a hex edge.
 
 ## Stamping order, low to high priority — later entries win where features
 ## overlap a hex. Settlements are stamped last on purpose: real cities are

@@ -31,8 +31,9 @@ extends Node2D
 ## LEAST zoomed-in end of Tactical), a full viewport can show on the order
 ## of 80-100 hexes, so the great majority of what's visible fell back to a
 ## flat, sub-hex-detail-free tile. _hex_qualifies_for_detail() already
-## bounds the EXPENSIVE part of hydration (SubHexGroundView's real-terrain
-## compositing, buildings) to settled/frontier/ZoC-covered hexes regardless
+## bounds the EXPENSIVE part of hydration (buildings; the square ground's
+## real-terrain compositing until that was removed, after which ground stopped
+## being per-hex at all) to settled/frontier/ZoC-covered hexes regardless
 ## of how big this radius is, so widening it mostly just means the cheap
 ## qualification check runs over more candidates — the two constants below
 ## are a floor (never less generous than the old fixed behavior) and a

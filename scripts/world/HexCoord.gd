@@ -63,10 +63,12 @@ const HEX_SIZE: float = 512.0
 ## spec) need the exact same real-world/world-unit conversion.
 const WORLD_UNITS_PER_REAL_METER: float = 0.1025599
 
-## Real-world sampling/rendering footprint shared by RealTerrainSampler.
-## sample_grid() and SubHexGroundView's own sub-cell grid — a single source
-## of truth so the two can't silently drift (both previously hardcoded
-## their own separate "HEX_SIZE * 1.6" literal).
+## Real-world sampling/rendering footprint, shared by RealTerrainSampler.
+## sample_grid() and (until the square per-hex ground was removed) that
+## ground's own sub-cell grid — a single source of truth so the two couldn't
+## silently drift (both previously hardcoded their own separate
+## "HEX_SIZE * 1.6" literal). TerrainMeshView.TEXTURE_WORLD_SIZE still
+## divides this by that grid's 11, so it also fixes terrain texture density.
 ##
 ## 1.6x HEX_SIZE (819.2) is SMALLER than a pointy-top hex's own bounding
 ## box at this circumradius (887 wide x 1024 tall — see corner_points()'s
@@ -79,19 +81,19 @@ const WORLD_UNITS_PER_REAL_METER: float = 0.1025599
 ## one on the other, netting out to "looks about right, but the overhang is
 ## real and visible at the corners." 2.0x HEX_SIZE is the smallest span
 ## whose square fully CIRCUMSCRIBES the hex's own bounding box in both
-## dimensions, so paired with SubHexGroundView's hex-shaped clip mask (see
-## that class's own doc comment), the grid truly covers the whole hex with
-## zero gaps, and the clip mask removes whatever the square's own corners
-## still poke past the hex's real boundary.
+## dimensions, so paired with the hex-shaped clip mask the square ground
+## used, the grid covered the whole hex with zero gaps and the mask removed
+## whatever the square's own corners still poked past the hex's real
+## boundary. Only sample_grid() still spans this; nothing renders on it.
 const SUB_HEX_GRID_SPAN: float = HEX_SIZE * 2.0
 
 ## Sub-Hex Mechanical Layer (todo.md, [[sub-hex-mechanical-layer-epic]]
 ## memory) — the target real-world size of one MECHANICAL sub-hex cell
 ## (movement/extraction/vision/ZoC/horde-AI granularity, Phase 2 onward),
 ## deliberately decoupled from SUB_HEX_GRID_SPAN's rendering/sampling
-## resolution above (SubHexGroundView's 11x11 render grid, ~93 world units/
-## ~909m per cell — fine for a mesh redrawn every frame, nowhere near
-## mechanically granular). 30m chosen so play can zoom in on individual
+## resolution above (the removed square ground's 11x11 render grid, ~93
+## world units/~909m per cell — fine for a mesh redrawn every frame, nowhere
+## near mechanically granular). 30m chosen so play can zoom in on individual
 ## units/buildings while the simulation still reasons at real street/field-
 ## boundary scale, not a ~1km blur.
 const SUB_HEX_CELL_SIZE_METERS: float = 30.0
@@ -136,8 +138,7 @@ static func world_to_sub_hex(pos: Vector2) -> Dictionary:
 ## (SUB_HEX_GRID_SPAN necessarily pokes past a hex's true hexagonal
 ## boundary into whichever neighbor sits there — see that constant's own
 ## doc comment). A caller iterating a grid explicitly centered on one hex
-## (SubHexGroundView's render grid, SubHexTerrainQuery's own
-## sample_at_world_within()) needs every sample locked to THAT hex, not
+## (SubHexTerrainQuery's own sample_at_world_within()) needs every sample locked to THAT hex, not
 ## silently re-resolved to a neighbor near the edges.
 static func sub_hex_index_within(hex_coord: Vector2i, pos: Vector2) -> Vector2i:
 	var hex_center := axial_to_world(hex_coord)

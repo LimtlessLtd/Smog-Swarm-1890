@@ -34,8 +34,8 @@ extends RefCounted
 ## arrived as SubHexTerrainOverride (Town Hall founding, its first real
 ## consumer). Every lookup here consults it, so all four sub-hex readers
 ## (BuildingManager placement legality, SubHexPortalGraph passability,
-## SubHexSoilQuery, SubHexGroundView) see a mutation without their own
-## override branch. Overrides are applied to a DUPLICATE of the cached
+## SubHexSoilQuery, and the since-removed square per-hex ground) see a
+## mutation without their own override branch. Overrides are applied to a DUPLICATE of the cached
 ## sample, never in place — _cache holds raw baked-raster data only, so a
 ## disc that later grows or is cleared can't leave a stale paved sub-cell
 ## behind.
@@ -93,8 +93,9 @@ static func sample_at_world(world_pos: Vector2) -> Dictionary:
 
 ## Same idea, but `hex_coord` is supplied, not re-derived from `world_pos` —
 ## for a caller iterating a sample grid explicitly centered on one hex
-## (SubHexGroundView's render grid) where a position near the grid's own
-## edge/corner may geometrically overhang into a neighboring hex
+## (SubHexSoilQuery, and formerly the square ground's render grid) where a
+## position near the grid's own edge/corner may geometrically overhang into
+## a neighboring hex
 ## (HexCoord.SUB_HEX_GRID_SPAN's own doc comment) but must still resolve
 ## against THIS hex, not silently drift to that neighbor's data.
 static func sample_at_world_within(hex_coord: Vector2i, world_pos: Vector2) -> Dictionary:
