@@ -1,4 +1,11 @@
-# Technical Specifications & Game Design Document: The Smog & The Swarm (1890s-1920s Era Post-Zombie Apocalypse Industrial Revolution British Empire) - v4.5
+# Technical Specifications & Game Design Document: The Smog & The Swarm (1890s-1920s Era Post-Zombie Apocalypse Industrial Revolution British Empire) - v4.6
+
+> **v4.6 (2026-08-18)** reconciles §5 with what the terrain pipeline actually does.
+> Biomes are a real vector polygon partition, not a splatmap; the land-cover source is
+> OpenStreetMap rather than CORINE; elevation comes from AWS/Mapzen Terrain Tiles rather
+> than SRTM directly; and the pipeline is deterministic geometry, not "AI terrain
+> synthesis". Everything else is unchanged. Where the doc still describes something not
+> yet built, it is marked **PLANNED**; `todo.md` remains the authority on status.
 
 ---
 
@@ -20,6 +27,10 @@
 * **WATERWAY** - IMPASSABLE for all ground units & zombies. Traversable ONLY via Bridges.
   * **Resources:** None
 * **OCEAN** - IMPASSABLE for all ground units & zombies
+  * **Resources:** None
+* **URBAN** - No modifier defined. **OPEN DECISION** — the land-cover bake classifies and renders real OSM built-up area as its own biome, but this list never gave it a movement rule, so `HexPathfinder._BIOME_COST_MULTIPLIER` falls through to its 1.0 default and units cross a city at full speed.
+  * **Resources:** None
+* **INDUSTRIAL** - No modifier defined. **OPEN DECISION**, same as URBAN — real OSM industrial land is classified, rendered, and currently free to cross.
   * **Resources:** None
 
 ### Terrain vs. Infrastructure Speed Stacking Rule
@@ -245,26 +256,33 @@ Rather than using complex 3D terrain meshes, height is managed via discrete 2D i
 
 Biome boundaries operate completely independently of the 5mi hex grid:
 
-* **Continuous Blending:** Biomes (Farmland, Moorland, Highland, Wetland, Woodland, Heathland) are stored as continuous 2D weightmaps (splatmaps) rather than locked hex tiles.
+* **Real Vector Boundaries:** Biomes (Farmland, Moorland, Highland, Wetland, Woodland, Heathland, Urban, Industrial, Waterway) are stored as a **continuous triangle mesh carrying the real OpenStreetMap polygon geometry** — a wood is wood-shaped, a river is a river-shaped ribbon, and neither is quantised to a sample grid nor cut off at a hex edge.
+  * **This supersedes the splatmap plan earlier versions of this document specified, and the reason matters:** a weightmap is still a raster. Rasterising the source polygons is exactly what produced the visible square artefacts the user reported ("still obviously squares"), and no amount of blending at render time can recover a boundary that was destroyed at bake time. The boundary is now preserved as geometry from OSM all the way to the GPU.
+  * Boundaries between biomes are currently **hard edges** — correct in shape, abrupt in appearance. Weighted multi-texture blending across them is **PLANNED**.
 * **Multi-Biome Hexes:** A single 5mi hex tile can seamlessly blend multiple biomes (e.g., a Wetland valley transitioning into Highland ridges bordered by Woodland).
-* **Coordinate-Based Modifiers:** Movement speed and terrain mechanics evaluate the exact sub-hex biome blend directly beneath a unit's current position.
+* **Coordinate-Based Modifiers:** Movement speed and terrain mechanics evaluate the exact sub-hex biome directly beneath a unit's current position, on a persistent 30m mechanical grid.
+  * **Known divergence:** rendering reads the vector mesh, while the mechanical queries still read the 30m raster. The two can disagree near a boundary by up to the raster's own cell size. Moving mechanics onto the same vector data is **PLANNED**; until then the mesh is authoritative for what the player SEES and the raster for what the rules DO.
+* **The sea** is drawn as its own layer beneath the landmass rather than as hexes — most of a UK+Ireland bounding box is water, and it carries no per-hex detail. It stays partly legible through Fog of War on the same "a coastline is public knowledge" principle the coastline outline already follows.
 
 ---
 
 ### Open-Source Data "Baking" Pipeline
 
-Map generation uses real-world open geospatial data, pre-processed and "baked" into 2D game data by an AI pipeline:
+Map generation uses real-world open geospatial data, pre-processed offline into game data by a deterministic geometry pipeline (`tools/geo_bake/`). No AI synthesis is involved — the output is a function of the input data and the tolerances below, and re-running it reproduces the same bytes.
 
 #### Input Sources
-* **Topography (Elevation):** NASA SRTM / Copernicus DEM (30m elevation data converted into 0–4 integer elevation masks and vector cliff boundaries).
-* **Land Cover (Biomes):** CORINE Land Cover / Copernicus land use data (historical forest, wetland, moorland distributions).
-* **Hydrology & Infrastructure:** OpenStreetMap (OSM) vector data (natural river channels, coastlines, historical road/rail routes). Applied last so rivers, coastlines, roads, rails, and canals are formed correctly on top of the map and not overwritten by other sweeps.
-* **Geology (Resource Nodes):** British Geological Survey (BGS) & Geological Survey Ireland (GSI) spatial data (coal seams, iron ore veins, limestone deposits).
+* **Land Cover (Biomes):** **OpenStreetMap** `landuse` / `natural` / `waterway` vector geometry, read from Geofabrik `.osm.pbf` country extracts (Great Britain + Ireland). OSM is used rather than CORINE because it carries the waterway network the game needs as real vector lines, at a resolution that survives being rendered at true scale.
+* **Topography (Elevation):** **AWS/Mapzen Terrain Tiles** (Terrarium RGB encoding), sampled and thresholded into the 0–4 integer `height_level` masks §5 defines. A DEM is a continuous field already sampled on a grid at source, so it stays raster — only categorical boundaries suffer from rasterisation.
+* **Coastline / Landmass:** **Natural Earth** 10m Admin-0 (GBR + IRL), which decides which hexes are land and which are OCEAN.
+* **Geology (Resource Nodes):** BGS / GSI spatial data — **PLANNED, not implemented.** Resource placement is not currently data-driven.
 
 #### Baking Process
-1. **Raster Quantization:** Raw SRTM DEM height values are processed through threshold filters to output discrete 2D `height_level` masks (0–4) and mark steep slope boundaries as impassable cliff edges.
-2. **Splatmap Generation:** AI terrain synthesis converts land-cover datasets into smooth 2D sub-hex biome weightmaps for Tactical View rendering.
-3. **Hex Feature Aggregation:** Aggregates regional totals across each 5mi hex area to populate strategic resource potentials, dominant terrain profiles, and base travel speeds for the World View.
+1. **Land-cover arrangement (per 4,096-world-unit chunk).** Union the raw OSM features per class, then simplify the merged blob — in that order, because simplifying each feature first destroys anything near the tolerance. Node the entire boundary network into a single planar arrangement, polygonise it into faces, label each face by its highest-priority class, and constrained-Delaunay-triangulate. Building the partition as one arrangement rather than by differencing class against class is what guarantees adjacent faces share bit-identical vertices, so no seams or T-junctions exist to crack open under displaced relief later.
+2. **Waterways are lines, not areas.** A river or canal centreline is simplified and smoothed *before* being buffered to a real-world width, so the ribbon comes out at constant width along a rounded course. Buffering first and simplifying after inflates the ribbon, pinches it below the mechanical sub-cell size, and breaks the bridge-crossing barrier that width floor exists to guarantee.
+3. **Elevation raster.** Terrarium samples → discrete `height_level` masks, plus the highland/escarpment override applied on top of the land-cover class rather than stored in it.
+4. **Hex aggregation.** Majority-vote a single dominant biome per 5mi hex to drive the World View's strategic tile, alongside regional resource potentials and base travel speeds.
+
+Chunks containing no land hex are not baked at all — most of a UK+Ireland bounding box is open sea, and a chunk with no land-cover evidence would otherwise fill with a default biome and paint over the sea.
 
 ---
 

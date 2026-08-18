@@ -20,8 +20,10 @@ extends RefCounted
 ## raw baked-raster cache is never poisoned by a mutation that can move.
 ## That single consult point is why all four existing sub-hex readers
 ## (BuildingManager placement legality, SubHexPortalGraph passability,
-## SubHexSoilQuery, SubHexGroundView's rendered ground) pick this up without
-## each needing their own override branch.
+## SubHexSoilQuery, and the since-removed square per-hex ground) pick this
+## up without each needing their own override branch. Note the renderer is
+## no longer among them — TerrainMeshView draws baked geometry and does not
+## consult this, so an urban disc is invisible until epic Phase 6.
 ##
 ## Deliberately NOT gated on baked-corridor coverage: an override applies
 ## whether or not RealTerrainSampler has real data under it, since a Town
@@ -79,8 +81,9 @@ static func get_founded_hexes() -> Array[Vector2i]:
 	return result
 
 ## True if `world_pos` falls inside `hex_coord`'s urban disc. Squared-distance
-## compare — this runs per sub-cell across SubHexGroundView's whole render
-## grid, so the sqrt in Vector2.distance_to() is worth skipping.
+## compare — this used to run per sub-cell across the square ground's whole
+## 11x11 render grid, and the sqrt in Vector2.distance_to() stays skipped
+## because placement legality still calls it per candidate position.
 static func is_urban_at(hex_coord: Vector2i, world_pos: Vector2) -> bool:
 	var disc: Dictionary = _urban_discs.get(hex_coord, {})
 	if disc.is_empty():

@@ -75,20 +75,18 @@ func _spawn_view(cell: HexCell) -> void:
 	# active (no tactical_mode_changed toggle anywhere hides HexGridMap/
 	# "Cells" — confirmed by grep, not assumed) — it sits permanently
 	# underneath whatever LocalDetailManager hydrates on top of it.
-	# TacticalHexView's own per-hex ground (SubHexGroundView, the real
-	# sub-hex terrain mosaic) sits one step above for the same "must never
-	# outrank a building" reason (see that class's own comment) — without
-	# this hex's tile ALSO sinking below it, the two were tied at the
-	# default 0 and only tree-order (HexGridMap added before
-	# LocalDetailManager) kept this flat tile hidden; z_index is a global
-	# sort key (LocalDetailManager's own doc comment), so giving
-	# SubHexGroundView a negative z_index without giving this an even MORE
-	# negative one let this flat single-biome tile win outright and bury
-	# the real sub-hex mosaic — exactly the "sub-hex biomes disappeared,
-	# every hex reads as one biome" regression a user report caught.
+	# It must also stay below TerrainMeshView's vector ground at -1, which is
+	# the layer that actually draws terrain: z_index is a global sort key
+	# (LocalDetailManager's own doc comment), so a flat single-biome tile
+	# sharing or outranking that key buries the real terrain outright —
+	# exactly the "sub-hex biomes disappeared, every hex reads as one biome"
+	# regression a user report once caught, back when the ground above this
+	# was the per-hex square mosaic.
 	#
-	# Was -2 until TerrainMeshView claimed -1 and the whole ground stack
-	# moved down one to keep that ordering intact.
+	# Since that square ground was removed this tile is no longer redundant
+	# with anything: it is the visible fallback wherever no mesh chunk is
+	# baked, which is why it stays at -3 rather than moving up into the
+	# vacated -2.
 	view.z_index = -3
 	_cell_container.add_child(view)
 	_views[cell.coord] = view

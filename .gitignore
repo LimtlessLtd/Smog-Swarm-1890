@@ -22,5 +22,16 @@ Thumbs.db
 # assets (assets/terrain_data/*.png) ARE committed, same as any other
 # baked game asset.
 tools/geo_bake/cache/
-tools/geo_bake/__pycache__/
 tools/geo_bake/*.log
+
+# Python bytecode from the geo_bake and blender_pipeline scripts. The
+# blender_pipeline caches were tracked until now and re-churned on every
+# render; they are per-interpreter-version build output, not source.
+__pycache__/
+
+# Claude Code's session state: local permission settings and, more
+# importantly, .claude/worktrees/ — full checkouts of this repo, each with
+# its own .git. Committing that nests a repository inside itself. The agent
+# definitions are shared project tooling, so they stay tracked.
+.claude/*
+!.claude/agents/

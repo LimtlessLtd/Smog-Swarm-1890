@@ -28,21 +28,24 @@ extends Node2D
 ## and no runtime re-triangulation when SubHexTerrainOverride writes (Phase 6,
 ## so a Town Hall's urban disc does not yet appear in the mesh).
 
-## Repeat distance for a terrain texture, in world units. Matches
-## SubHexGroundView's own rendered cell (SUB_HEX_GRID_SPAN / its _GRID_N of
-## 11) so texture density is unchanged from what the squares showed -- the
-## point of this class is to change the SHAPE of the boundaries, and a
-## simultaneous change in texture scale would confuse reading whether it
-## worked.
+## Repeat distance for a terrain texture, in world units. The divisor is the
+## 11x11 render grid the deleted SubHexGroundView drew per hex, kept so
+## texture density is unchanged from what the squares showed -- the point of
+## this class was to change the SHAPE of the boundaries, and a simultaneous
+## change in texture scale would have confused reading whether it worked.
 const TEXTURE_WORLD_SIZE: float = HexCoord.SUB_HEX_GRID_SPAN / 11.0
 
-## Terrain sits below every entity. -1 is the band TacticalHexView's square
-## ground used to occupy; both it and HexGridMap's flat Strategic tile moved
-## down one when this class took the band, so this draws over them rather
-## than fighting them for the same key (z_index is a GLOBAL sort key, so
-## sharing one with another ground layer resolves by tree order and would
-## flicker as hexes hydrate).
-const GROUND_Z_INDEX: int = -1
+## Terrain sits below every entity, and since the square per-hex ground was
+## removed this is the only layer that draws real terrain. HexGridMap's flat
+## per-hex tile stays at -3 and shows through wherever no chunk is baked, so it
+## must stay below this (z_index is a GLOBAL sort key, so two ground layers
+## sharing one resolve by tree order and would flicker as hexes hydrate).
+##
+## Moved -1 -> -2 to free -1 for FogVisuals.TERRAIN_OVERLAY_Z_INDEX. Fog is a
+## per-hex polygon and this is one world-wide layer, so the only way fog can
+## cover terrain now is by drawing OVER it; at -1 this mesh outranked every
+## hex's fog and the whole baked corridor was legible at day 1.
+const GROUND_Z_INDEX: int = -2
 
 ## Chunks are kept loaded this far outside the visible rect, so panning does
 ## not stream at the screen edge. Half a chunk.
@@ -53,10 +56,26 @@ const LOAD_MARGIN_WU: float = 2048.0
 ## bounded while panning; a chunk covers 40 km, so the queue is rarely deep.
 const CHUNKS_BUILT_PER_FRAME: int = 1
 
-## Above this many chunks in view the camera is too far out for the mesh to
-## read as anything but noise, and building them would cost far more than it
-## shows. Strategic zoom keeps HexGridMap's flat per-hex tiles.
-const MAX_CHUNKS_IN_VIEW: int = 9
+## Safety bound on one frame's wanted-set, derived from the widest framing
+## Tactical can actually produce rather than picked: viewport /
+## tactical_zoom_threshold is the visible rect at the least zoomed-in end of
+## the band, and that plus both load margins is the most this can legitimately
+## be asked for. So it never fires during normal play -- it exists to stop a
+## pathological threshold or viewport from queueing hundreds of chunks.
+##
+## Was a flat 9, which switched the mesh off for the first 5 scroll clicks of
+## Tactical at 1280x720 and 9 at 1920x1080 (measured against the real 0.1875
+## threshold, not estimated). That was invisible while SubHexGroundView's
+## squares were still underneath to catch it; with the squares gone those
+## clicks would have shown HexGridMap's flat per-hex tile instead of terrain,
+## so the bound has to follow the band it guards rather than sit inside it.
+func _max_chunks_in_view() -> int:
+	var threshold := maxf(_camera.tactical_zoom_threshold, 0.0001)  ## An export set to 0 would divide to INF and make the cap meaningless.
+	var widest := get_viewport_rect().size / threshold
+	var span := (widest + Vector2.ONE * LOAD_MARGIN_WU * 2.0) / TerrainMeshChunkData.CHUNK_SIZE_WU
+	# +1 per axis: a rect N chunks across straddles N+1 columns unless it
+	# happens to start exactly on a chunk boundary.
+	return int(ceilf(span.x) + 1.0) * int(ceilf(span.y) + 1.0)
 
 @export var camera_path: NodePath
 
@@ -119,7 +138,7 @@ func _sync_wanted_chunks() -> void:
 	var hi := TerrainMeshChunkData.chunk_address(rect.end)
 	var span_x := hi.x - lo.x + 1
 	var span_y := hi.y - lo.y + 1
-	if span_x * span_y > MAX_CHUNKS_IN_VIEW:
+	if span_x * span_y > _max_chunks_in_view():
 		_clear_all()
 		return
 
@@ -155,7 +174,8 @@ func _clear_all() -> void:
 
 ## One Node2D per chunk holding one MeshInstance2D per (biome, soil) pair.
 ## Grouping is what keeps this to a handful of draw calls for ~40,000
-## triangles -- SubHexGroundView needs 121 Sprite2D nodes for a single hex.
+## triangles, over a chunk that spans 40 km -- the square ground this replaced
+## needed 121 Sprite2D nodes to cover a single hex.
 ##
 ## A chunk with no baked file is recorded as an empty node rather than
 ## retried: outside the baked corridor there is nothing to load, and without
@@ -207,8 +227,8 @@ func _build_chunk(address: Vector2i) -> void:
 ## evaluates a FastNoiseLite field, and per triangle it measured 85 ms of a
 ## 145 ms chunk build. The noise varies over hex-scale distances, so sampling
 ## it per ~25-wu triangle was resolving detail the field does not contain;
-## one answer per rendered texture cell is exactly the granularity
-## SubHexGroundView's square grid already had.
+## one answer per rendered texture cell is exactly the granularity the square
+## grid this replaced already had.
 func _soil_at(biome: GameEnums.BiomeType, world_pos: Vector2, cache: Dictionary) -> GameEnums.SoilFertility:
 	var cell := Vector2i((world_pos / TEXTURE_WORLD_SIZE).floor())
 	var key := Vector3i(int(biome), cell.x, cell.y)

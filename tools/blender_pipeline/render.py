@@ -33,9 +33,17 @@ def _parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--model", required=True, help="Path to a python file defining build()")
     parser.add_argument("--category", required=True, choices=list(render_common.CATEGORY_ELEVATION_DEG.keys()))
-    parser.add_argument("--out", required=True, help="Output PNG path")
+    parser.add_argument("--out", help="Output PNG path (not needed with --measure)")
     parser.add_argument("--resolution", type=int, default=2048)  # 4x the original 512 — user feedback ("all of them need to be at least 4 times bigger").
     parser.add_argument("--elevation", type=float, default=None, help="Override CATEGORY_ELEVATION_DEG for this run only")
+    parser.add_argument("--fit", action="store_true",
+                        help="Centre on the model and size the frame to it, instead of "
+                             "add_camera()'s fixed ortho_scale")
+    parser.add_argument("--ortho-scale", type=float, default=None,
+                        help="With --fit: frame at this size rather than this model's own, "
+                             "so a whole category keeps its relative sizes")
+    parser.add_argument("--measure", action="store_true",
+                        help="Print the model's fitted ortho_scale and exit without rendering")
     return parser.parse_args(argv)
 
 
@@ -56,6 +64,15 @@ def main():
     if args.elevation is not None:
         render_common.CATEGORY_ELEVATION_DEG[args.category] = args.elevation
 
+    if args.measure:
+        # Machine-readable and prefixed: Blender writes its own startup banner and
+        # per-module noise to the same stdout, so render_category.py needs a line
+        # it can match rather than "the last thing printed".
+        print(f"ORTHO_SPAN {render_common.measure_content_span(args.category):.6f}")
+        return
+    if not args.out:
+        raise SystemExit("--out is required unless --measure is given")
+
     # Absolute path, not args.out as-given: Blender's own scene.render.filepath
     # resolution for a relative path (no leading "//") does NOT reliably match
     # Python's os.getcwd() on Windows for an unsaved .blend — measured directly,
@@ -66,7 +83,9 @@ def main():
     out_path = os.path.abspath(args.out)
     out_dir = os.path.dirname(out_path)
     os.makedirs(out_dir, exist_ok=True)
-    render_common.render_to(out_path, args.category, args.resolution)
+    render_common.render_to(out_path, args.category, args.resolution,
+                            fit=args.fit or args.ortho_scale is not None,
+                            ortho_scale=args.ortho_scale)
     print(f"Rendered {out_path}")
 
 

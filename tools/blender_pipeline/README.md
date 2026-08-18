@@ -65,6 +65,62 @@ purple, just light blue." `render_common.setup_render()` forces `Standard`
 — if a future edit to that function ever drops it, every role-accent color
 across the whole roster silently mutes again.
 
+## Content framing (`--fit` / `render_category.py`)
+
+`add_camera()` frames every asset the same way: aimed at the world origin
+at `ortho_scale = 3.0`. That framing is about where the model was built,
+not how big it is, and the shipped art paid for it — measured across all
+of it before this existed:
+
+| category | fill of the frame's longest side (min / median / max) |
+| --- | --- |
+| icons | 15.1% / 19.3% / 45.9% |
+| buildings | 23.6% / 33.8% / 48.6% |
+| props | 15.1% / 19.5% / 20.1% |
+| units | 31.0% / 44.6% / 62.5% |
+| zombies | 28.6% / 39.0% / 45.5% |
+| walls, infrastructure | 73.4% / ~80% / 83.1% |
+
+Walls and infrastructure were already fine because `CATEGORY_ORTHO_SCALE`
+tightens them; nothing else had an equivalent. A 15.1% icon is the extreme
+case — `assets/icons/cast_iron.png` carried 310px of ink on a 2048px
+canvas, which `ResourceBarView` then aspect-fits into a 20x20 slot, so the
+player saw a **~3px glyph**.
+
+`render_common.frame_content()` fixes it at the source: it re-aims the
+camera at the content's own centre and sizes `ortho_scale` to the content's
+projected bounds plus `CONTENT_MARGIN_FRACTION`. Drive it per category:
+
+```
+python tools/blender_pipeline/render_category.py --category icons     --fit per-asset
+python tools/blender_pipeline/render_category.py --category buildings --fit shared
+```
+
+**The two `--fit` modes are not interchangeable, and which one is right is
+a property of how the game draws the category, not a preference.**
+
+- `per-asset` blows each asset up to fill its own frame. Right for icons:
+  they are UI glyphs in a fixed 20x20 box and have no size relationship to
+  preserve — coal rendering 3x larger than cast_iron in the same HUD row
+  was a defect.
+- `shared` measures the whole category first and renders it all at the
+  largest span found, so every asset is re-centred and the category grows
+  by one common factor. Right for buildings: `TacticalHexView` maps each
+  onto one identical fixed-size quad (`BUILDING_HALF_SIZE`), so a sprawling
+  `mechanised_farm` reading as bigger than a `watchtower` is real
+  information that `per-asset` would flatten away.
+
+Units and zombies are still unfitted, and they need a third answer before
+anyone runs this over them: `render_directional.py` renders 8 facings of
+one model, so re-centring per facing would make a unit visibly wobble as
+it turns. They need one fit computed across all 8 facings, not eight
+independent ones.
+
+`CONTENT_MARGIN_FRACTION` is not cosmetic padding. Freestyle strokes the
+outline centred on the silhouette, so roughly half its width falls outside
+the geometry bounds the fit is computed from — fit the geometry exactly and
+the outline gets shaved off wherever the model meets the frame edge.
+
 ## Directional facing (8-way)
 
 `render_directional.py` sweeps the camera through `DIRECTIONS_8` yaw

@@ -29,9 +29,12 @@ extends Node2D
 ## fewer pixels — reads as a genuinely varied, textured surface instead of
 ## a flat color.
 ##
-## Fog tinting (set_fog_state(), below) composes identically over either a
-## flat-color or a textured hex — modulate multiplies whatever the node
-## already rendered, independent of how that came to be.
+## This view also carries the fog overlay for its hex (set_fog_state(), below),
+## and that overlay is now the ONLY thing fogging terrain for the whole game:
+## it is lifted to FogVisuals.TERRAIN_OVERLAY_Z_INDEX so it covers
+## TerrainMeshView's world-wide mesh, not just this node's own tile. One
+## consequence worth knowing: a hex with no HexCellView has no fog either, and
+## HexGridMap deliberately skips spawning one for OCEAN hexes.
 
 const GROUND_TILE_SIZE: float = 128.0  ## World units per texture repeat — a quarter of HexCoord.HEX_SIZE, so a hex's true-scale footprint shows several repeats rather than one giant stretched copy.
 
@@ -40,6 +43,14 @@ var cell: HexCell
 var _polygon: Polygon2D
 var _outline: Line2D
 var _fog_overlay: Polygon2D  ## Animated mist/haze layer — see FogVisuals.overlay_material()'s own doc comment. Hidden (no material) at VISIBLE.
+## Last state set_fog_state() was given, replayed in _ready(). FogOfWarManager
+## pushes every hex's opening UNSEEN before this node's children exist
+## (HexGridMap/FogOfWarManager node order isn't guaranteed), so without
+## storing it that first push is dropped and the hex never fogs at all. It
+## used to survive because set_fog_state() also set `modulate`, which is safe
+## on a bare node; the overlay now owns the darkening, so nothing else covers
+## for a missed call.
+var _fog_state: GameEnums.FogState = GameEnums.FogState.VISIBLE
 
 func _ready() -> void:
 	_polygon = Polygon2D.new()
@@ -49,9 +60,17 @@ func _ready() -> void:
 	_outline.closed = true
 	_fog_overlay = Polygon2D.new()
 	_fog_overlay.visible = false
+	# Absolute, not inherited: this node sits at -3 (below the terrain mesh) but
+	# its fog has to cover that mesh, which is a world-wide layer and not a
+	# child of any hex. z_as_relative would keep the overlay pinned under this
+	# node's own depth and leave the terrain unfogged — the exact bug this
+	# escapes. See FogVisuals.TERRAIN_OVERLAY_Z_INDEX.
+	_fog_overlay.z_as_relative = false
+	_fog_overlay.z_index = FogVisuals.TERRAIN_OVERLAY_Z_INDEX
 	add_child(_polygon)
 	add_child(_outline)
 	add_child(_fog_overlay)  # Last child — draws above both, same plain sibling-order convention the rest of this project's per-hex views use.
+	_apply_fog()
 	if cell:
 		_redraw()
 
@@ -63,19 +82,28 @@ func setup(p_cell: HexCell) -> void:
 	if is_inside_tree():
 		_redraw()
 
-## Tints the whole tile rather than touching the underlying biome/soil
-## color, so FogOfWarManager can push updates here without this view
-## needing to know anything about fog logic. Also arms/disarms the animated
-## mist overlay (see FogVisuals.overlay_material()) — `_fog_overlay` may not
-## exist yet if this lands before _ready() (HexGridMap/FogOfWarManager node
-## order isn't guaranteed), same reason `modulate` alone was always safe to
-## set early but this extra step needs a guard.
+## Arms/disarms the fog overlay, so FogOfWarManager can push updates here
+## without this view needing to know anything about fog logic. `_fog_overlay`
+## may not exist yet if this lands before _ready() (HexGridMap/FogOfWarManager
+## node order isn't guaranteed), hence the guard.
+##
+## No longer sets `modulate` from FogVisuals.tint_color(). The overlay is now
+## opaque at UNSEEN and alpha-floored at EXPLORED (see fog_overlay.gdshader),
+## covering the same hexagon this node draws, so a tint underneath would darken
+## this tile a second time and leave it visibly dimmer than the terrain mesh
+## beside it — which the overlay dims once. tint_color() is still what dims
+## a hex's ENTITIES: TacticalHexView keeps applying it to its own props and
+## buildings, which draw above the overlay's band and so are not covered by it.
 func set_fog_state(state: GameEnums.FogState) -> void:
-	modulate = FogVisuals.tint_color(state)
-	if _fog_overlay:
-		var material := FogVisuals.overlay_material(state)
-		_fog_overlay.material = material
-		_fog_overlay.visible = material != null
+	_fog_state = state
+	_apply_fog()
+
+func _apply_fog() -> void:
+	if not _fog_overlay:
+		return  ## Pushed before _ready(); _ready() replays _fog_state itself.
+	var material := FogVisuals.overlay_material(_fog_state)
+	_fog_overlay.material = material
+	_fog_overlay.visible = material != null
 
 ## Re-draws against whatever `cell`'s fields currently hold — for a system
 ## that mutates a live HexCell after it was first spawned

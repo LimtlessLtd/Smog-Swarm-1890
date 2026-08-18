@@ -1,8 +1,8 @@
 """Bakes real OSM land-cover vector data into a continuous triangle mesh.
 
 Replaces the rasterize-then-sample path for CATEGORICAL land-cover data.
-bake_landcover.py projects real OSM polygon rings onto a pixel grid, and
-SubHexGroundView then draws one axis-aligned quad per sampled pixel -- so the
+bake_landcover.py projects real OSM polygon rings onto a pixel grid, and the
+old per-hex ground then drew one axis-aligned quad per sampled pixel -- so the
 squares the user reported ("is not seamless at all, just has various
 gradients of two biomes but they're still obviously squares") are a
 rasterization artifact, not a rendering choice. No shader gradient can undo
@@ -70,9 +70,11 @@ any in-game UI -- see todo.md.
 """
 
 import argparse
+import io
 import json
 import math
 import os
+import re
 import sys
 import time
 
@@ -94,7 +96,68 @@ HEX_SIZE_WU = 512.0
 HEX_AREA_WU = 3.0 * math.sqrt(3.0) / 2.0 * HEX_SIZE_WU ** 2
 
 OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "assets", "terrain_data", "mesh")
+## Default tile cache. fetch_overpass.py writes here; extract_pbf.py writes an
+## equivalent set covering all of GB+Ireland to cache/tiles_pbf, and --cache
+## selects between them. Both hold the same Overpass-shaped JSON under the same
+## <minlat>_<minlon>_<maxlat>_<maxlon> filenames, so nothing below this line
+## knows or cares which source produced a tile.
 OVERPASS_CACHE = os.path.join(os.path.dirname(__file__), "cache", "overpass")
+PBF_CACHE = os.path.join(os.path.dirname(__file__), "cache", "tiles_pbf")
+
+
+## BritishGeographyData.gd, parsed rather than duplicated. That file's
+## _LAND_RLE is the game's own land/ocean truth (HexMapGenerator builds every
+## OCEAN hex from it), so restating it here as a Python literal would create a
+## second source that silently drifts the first time the coastline is re-baked.
+LAND_RLE_GD = os.path.join(os.path.dirname(__file__), "..", "..",
+                           "scripts", "world", "data", "BritishGeographyData.gd")
+
+
+def land_chunks() -> set:
+    """Chunk addresses containing any part of a LAND hex.
+
+    Chunks with none are pure open sea. Baking them is worse than useless: with
+    no land-cover features to label faces, every face falls to DEFAULT_CLASS and
+    a 40km square of the North Sea renders as solid moorland on top of SeaView's
+    blue. Measured on a full-map run before this filter existed: 21 of the first
+    126 chunks written were pure sea. It also cuts the grid from 1,802 chunks to
+    272, since most of a UK+Ireland bounding box is water.
+
+    A hex's own EXTENT is used, not just its centre -- a coastal hex centred in
+    one chunk still covers ground in the next, and missing that would carve
+    straight-edged bites out of the coast.
+    """
+    text = io.open(LAND_RLE_GD, encoding="utf-8").read()
+    body = text.split("const _LAND_RLE: Array = [", 1)[1]
+    half_w = HEX_SIZE_WU * math.sqrt(3.0) / 2.0
+    half_h = HEX_SIZE_WU
+    chunks = set()
+    for line in body.splitlines():
+        if line.strip() == "]":
+            break
+        row = re.match(r"\s*\[(-?\d+),\s*\[(.*)\]\],?\s*", line)
+        if not row:
+            continue
+        r = int(row.group(1))
+        for lo, hi in re.findall(r"Vector2i\((-?\d+),\s*(-?\d+)\)", row.group(2)):
+            for q in range(int(lo), int(hi) + 1):
+                x, y = axial_to_world_py(q, r)
+                for cx in range(int(math.floor((x - half_w) / CHUNK_SIZE_WU)),
+                                int(math.floor((x + half_w) / CHUNK_SIZE_WU)) + 1):
+                    for cy in range(int(math.floor((y - half_h) / CHUNK_SIZE_WU)),
+                                    int(math.floor((y + half_h) / CHUNK_SIZE_WU)) + 1):
+                        chunks.add((cx, cy))
+    if not chunks:
+        raise SystemExit(f"parsed no land hexes from {LAND_RLE_GD} -- has its format changed?")
+    return chunks
+
+
+def axial_to_world_py(q: int, r: int) -> tuple:
+    """HexCoord.axial_to_world. Duplicated from geo_projection.axial_to_world
+    only to avoid an import cycle at module scope."""
+    return (HEX_SIZE_WU * (math.sqrt(3.0) * q + math.sqrt(3.0) / 2.0 * r),
+            HEX_SIZE_WU * 1.5 * r)
+
 
 ## 4096 world units square (~24.6 hexes). Sized so the densest measured chunk
 ## stays inside the wire format's uint16 vertex index range: Manchester city
@@ -103,8 +166,8 @@ CHUNK_SIZE_WU = 4096.0
 
 ## Boundary simplification tolerance. The user asked for triangles "of
 ## differing sizes (mostly smaller but also up to same size as current
-## tactical view biome tiles)"; one SubHexGroundView rendered cell is
-## SUB_HEX_GRID_SPAN/_GRID_N = 1024/11 = 93.1 world units, so ~93 wu is the
+## tactical view biome tiles)"; one of those square rendered cells was
+## SUB_HEX_GRID_SPAN/11 = 1024/11 = 93.1 world units, so ~93 wu is the
 ## stated upper bound. Swept 60/150/300/600 real m against that: 300m lands
 ## p95 edge length at 93.6 wu -- at the bound, with 95% smaller. 60m gave
 ## 7,587 triangles/hex (31x today's 242) for detail far below the bound;
@@ -116,6 +179,42 @@ SIMPLIFY_TOLERANCE_M = 300.0
 ## boundary is never coarser than the question being asked of it. Also the
 ## wire format's quantization step.
 QUANT_WU = 1.0
+
+## --- Waterway ribbon geometry -------------------------------------------
+## A waterway arrives as a LINE and is buffered into a ribbon. Both numbers
+## below are in real metres; the ribbon is 45m wide, i.e. 4.62 wu.
+##
+## The width floor is 1.5 sub-cells because WATERWAY is impassable-without-a-
+## Bridge (HexPathfinder.is_water_crossing_blocked()): a ribbon narrower than
+## one 30m sub-cell can fall between sampled cells and silently reopen the
+## crossings that rule exists to close.
+SUB_CELL_M = 30.0  # HexCoord.SUB_HEX_CELL_SIZE_METERS
+TYPICAL_RIVER_WIDTH_M = 40.0
+WATERWAY_HALF_WIDTH_WU = max(TYPICAL_RIVER_WIDTH_M, SUB_CELL_M * 1.5) * 0.5 * WU_PER_REAL_M
+
+## Simplification happens on the CENTRELINE, before buffering, and the merged
+## ribbon is then simplified only a little (a fraction of its own half-width).
+##
+## Simplifying the buffered ribbon at SIMPLIFY_TOLERANCE_M instead -- which is
+## what every other class gets, and what this used to do -- moves vertices by
+## up to 30.8 wu across a shape only 4.62 wu wide, i.e. 6.7x its own width.
+## Measured on one Manchester tile: river area went 58,558 -> 120,729 wu2
+## (+106%) and mean width 4.52 -> 9.33 wu, so rivers drew at roughly double
+## their true width with the width wandering along their length. Worse, it
+## pinched as much as it bulged -- eroding the result by 1.0 wu broke it into
+## 36 pieces where the same erosion leaves the centreline-simplified version
+## in 10. Those pinch points are narrower than the 30m sub-cell the width
+## floor above exists to guarantee, so this was a hole in the water barrier
+## and not only an ugly river.
+##
+## Chaikin smoothing runs after the simplify: Douglas-Peucker leaves an
+## angular polyline, and a river that turns in hard corners reads as wrong
+## even at the correct width. One iteration is enough to round the corners
+## without chasing the noise the simplify just removed.
+WATERWAY_LINE_TOLERANCE_M = 60.0
+WATERWAY_SMOOTH_ITERATIONS = 1
+WATERWAY_BUFFER_RESOLUTION = 8  ## Segments per quarter-circle on bends/caps. Was 2, which is visibly faceted at this width.
+WATERWAY_SIMPLIFY_FRACTION = 0.25  ## Of WATERWAY_HALF_WIDTH_WU.
 
 ## Input FEATURE parts below this are dropped before they reach the boundary
 ## network -- 0.04 km2, a 200x200m patch, which at a 300m simplification
@@ -222,7 +321,8 @@ class _TileGeometryCache:
     a chunk evicts tiles it is still using and reparses them.
     """
 
-    def __init__(self, capacity: int = 8):
+    def __init__(self, cache_dir: str, capacity: int = 16):
+        self.cache_dir = cache_dir
         self.capacity = capacity
         self._entries: dict[str, dict] = {}
         self._order: list[str] = []
@@ -234,7 +334,7 @@ class _TileGeometryCache:
             self._order.append(name)
             return self._entries[name]
 
-        path = os.path.join(OVERPASS_CACHE, name)
+        path = os.path.join(self.cache_dir, name)
         with open(path, "r", encoding="utf-8") as f:
             raw = json.load(f)
         entry = _build_tile_geometry(elements_to_features(raw), transform)
@@ -247,6 +347,42 @@ class _TileGeometryCache:
         return entry
 
 
+def _chaikin(coords, iterations: int):
+    """Corner-cutting subdivision: replace each vertex with two points at 1/4
+    and 3/4 along its adjacent segments, keeping the endpoints pinned.
+
+    Chosen over a spline because it cannot overshoot -- every output point is a
+    convex combination of two input points, so a smoothed centreline stays
+    inside the polyline's own hull and can never wander off the real river.
+    Each iteration roughly doubles the vertex count, which is why
+    WATERWAY_SMOOTH_ITERATIONS is 1.
+    """
+    points = list(coords)
+    for _ in range(iterations):
+        smoothed = [points[0]]
+        for a, b in zip(points, points[1:]):
+            smoothed.append((0.75 * a[0] + 0.25 * b[0], 0.75 * a[1] + 0.25 * b[1]))
+            smoothed.append((0.25 * a[0] + 0.75 * b[0], 0.25 * a[1] + 0.75 * b[1]))
+        smoothed.append(points[-1])
+        points = smoothed
+    return points
+
+
+def _waterway_ribbon(line: LineString, half_width: float):
+    """Centreline -> simplify -> smooth -> buffer, in that order. See
+    WATERWAY_LINE_TOLERANCE_M for why the order is the whole point.
+
+    preserve_topology=False on the line simplify: a LINE cannot collapse to
+    nothing the way a thin polygon can (its endpoints are pinned), so the
+    guard that protects small polygons buys nothing here and only keeps
+    vertices the buffer would then have to round off.
+    """
+    simplified = line.simplify(WATERWAY_LINE_TOLERANCE_M * WU_PER_REAL_M, preserve_topology=False)
+    if WATERWAY_SMOOTH_ITERATIONS and len(simplified.coords) > 2:
+        simplified = LineString(_chaikin(simplified.coords, WATERWAY_SMOOTH_ITERATIONS))
+    return simplified.buffer(half_width, resolution=WATERWAY_BUFFER_RESOLUTION)
+
+
 def _build_tile_geometry(features: list[dict], transform) -> dict:
     """Classify, project to world space, and build shapely geometry for one
     tile's features.
@@ -257,15 +393,12 @@ def _build_tile_geometry(features: list[dict], transform) -> dict:
     modelling true real-world width" -- which is exactly the approximation
     this bake exists to drop.
 
-    The width is floored at 1.5 sub-cells because WATERWAY is
-    impassable-without-a-Bridge (HexPathfinder.is_water_crossing_blocked()).
-    A ribbon narrower than one 30m sub-cell could fall between sampled cells
-    and leave gaps in that barrier, silently reopening exactly the crossings
-    the rule exists to close.
+    The centreline is simplified and smoothed BEFORE it is buffered, so the
+    ribbon comes out at a constant width along a rounded path. See
+    WATERWAY_LINE_TOLERANCE_M for what happens when the ribbon is simplified
+    after buffering instead.
     """
-    SUB_CELL_M = 30.0  # HexCoord.SUB_HEX_CELL_SIZE_METERS
-    TYPICAL_RIVER_WIDTH_M = 40.0
-    half_width = max(TYPICAL_RIVER_WIDTH_M, SUB_CELL_M * 1.5) * 0.5 * WU_PER_REAL_M
+    half_width = WATERWAY_HALF_WIDTH_WU
 
     by_class: dict[str, list] = {}
     skipped = 0
@@ -286,7 +419,7 @@ def _build_tile_geometry(features: list[dict], transform) -> dict:
         world = [apply_affine(transform, lon, lat) for lon, lat in ring]
         try:
             if is_line:
-                geom = LineString(world).buffer(half_width, resolution=2)
+                geom = _waterway_ribbon(LineString(world), half_width)
             else:
                 geom = Polygon(world)
                 if not geom.is_valid:
@@ -411,7 +544,13 @@ def build_chunk_mesh(chunk_x: int, chunk_y: int, transform, tile_cache: _TileGeo
         # anything -- which failed 7 chunks outright, including two of
         # Manchester's, the first time the healed tile cache made them dense
         # enough to hit it.
-        g = _snap(g.simplify(tol, preserve_topology=True))
+        # WATERWAY gets a tolerance scaled to its own ribbon width, not the
+        # shared one: `tol` is 6.7x the ribbon's full width, which inflates it,
+        # pinches it, and breaks the water barrier (see
+        # WATERWAY_LINE_TOLERANCE_M). Its centreline was already simplified
+        # before buffering, so there is little left here to remove anyway.
+        cls_tol = WATERWAY_HALF_WIDTH_WU * WATERWAY_SIMPLIFY_FRACTION if cls == "WATERWAY" else tol
+        g = _snap(g.simplify(cls_tol, preserve_topology=True))
         if g is None or g.is_empty or not g.is_valid:
             continue
         keep = [p for p in _parts(g) if p.area >= min_area]
@@ -420,6 +559,25 @@ def build_chunk_mesh(chunk_x: int, chunk_y: int, transform, tile_cache: _TileGeo
         g = unary_union(keep).intersection(chunk)
         if not g.is_empty:
             merged[cls] = g
+
+    # A chunk with no land-cover features at all is not written. It would
+    # otherwise bake as a full grid of DEFAULT_CLASS faces -- measured: "0
+    # feats, 1225 faces, 4750 tris" -- i.e. 40km of solid default MOORLAND
+    # asserted from no evidence whatsoever. These chunks are open sea (the
+    # North Sea and Irish Sea edges of the corridor) or ground the Overpass
+    # fetch never covered, and painting either of them green is wrong: over sea
+    # it hides SeaView, and over unfetched land it claims a biome nobody
+    # sampled. Writing nothing lets the layer below show through, which is
+    # SeaView's blue over water and HexGridMap's own flat tile over land --
+    # each already the correct answer for its case.
+    #
+    # This does NOT clean up the coastline inside chunks that DO have features:
+    # their sea still labels as DEFAULT_CLASS, because OSM land-cover says
+    # nothing about open water and _LAND_RLE's own coastline is quantized to
+    # whole hexes (which is what epic phase 1b exists to replace). Real
+    # coastline geometry is that phase's job, not a filter here.
+    if n_features == 0:
+        return None
 
     # Step 3: one noded line network -> faces.
     lines = [chunk.boundary]
@@ -495,11 +653,11 @@ def build_chunk_mesh(chunk_x: int, chunk_y: int, transform, tile_cache: _TileGeo
 
 
 def bake(q_range: tuple[int, int], r_range: tuple[int, int], limit: int | None = None,
-         out_dir: str = OUTPUT_DIR) -> None:
+         out_dir: str = OUTPUT_DIR, cache_dir: str = OVERPASS_CACHE) -> None:
     print("=== Step 1: fit lon/lat -> world affine ===")
     transform = fit_affine()
 
-    tile_names = sorted(n for n in os.listdir(OVERPASS_CACHE) if n.endswith(".json"))
+    tile_names = sorted(n for n in os.listdir(cache_dir) if n.endswith(".json"))
     # A tile the server genuinely has nothing for comes back as a ~258-byte
     # response whose elements list is empty; keeping it in the list only costs
     # a pointless parse. A tile that FAILED is no longer written at all
@@ -507,8 +665,8 @@ def bake(q_range: tuple[int, int], r_range: tuple[int, int], limit: int | None =
     # indistinguishable from an empty one -- which is what let 22 poisoned
     # tiles bake into flat rectangles before that was fixed.
     tile_names = [n for n in tile_names
-                  if os.path.getsize(os.path.join(OVERPASS_CACHE, n)) > 64]
-    print(f"\n=== Step 2: {len(tile_names)} non-empty cached Overpass tiles ===")
+                  if os.path.getsize(os.path.join(cache_dir, n)) > 64]
+    print(f"\n=== Step 2: {len(tile_names)} non-empty cached tiles ===")
 
     # World-space extent of the requested axial range, then the chunk grid over it.
     from geo_projection import axial_to_world
@@ -522,14 +680,33 @@ def bake(q_range: tuple[int, int], r_range: tuple[int, int], limit: int | None =
     max_cx = int(math.floor(max(xs) / CHUNK_SIZE_WU))
     min_cy = int(math.floor(min(ys) / CHUNK_SIZE_WU))
     max_cy = int(math.floor(max(ys) / CHUNK_SIZE_WU))
-    all_chunks = [(cx, cy) for cy in range(min_cy, max_cy + 1) for cx in range(min_cx, max_cx + 1)]
+    # Blocked iteration, not row-major. A 0.5-degree tile is ~5,640 wu against a
+    # 4096 wu chunk, so a full-map row spans ~38 tiles; row-major would evict and
+    # reparse essentially every tile once per row, against a cache that holds 8.
+    # That is the same cache-thrash shape that once cost 136s of a 156s chunk
+    # (tile fetch inside the per-class loop), and at map scale it would dominate
+    # the whole bake. A BLOCK_CHUNKS-square block spans ~3x3 tiles, so the
+    # working set stays inside the cache and each tile is parsed a handful of
+    # times instead of once per row.
+    BLOCK_CHUNKS = 4
+    all_chunks = []
+    for block_y in range(min_cy, max_cy + 1, BLOCK_CHUNKS):
+        for block_x in range(min_cx, max_cx + 1, BLOCK_CHUNKS):
+            for cy in range(block_y, min(block_y + BLOCK_CHUNKS, max_cy + 1)):
+                for cx in range(block_x, min(block_x + BLOCK_CHUNKS, max_cx + 1)):
+                    all_chunks.append((cx, cy))
+    keep = land_chunks()
+    before = len(all_chunks)
+    all_chunks = [c for c in all_chunks if c in keep]
+    print(f"  {before} chunks in the grid, {len(all_chunks)} contain land "
+          f"({before - len(all_chunks)} pure-sea chunks skipped)")
     if limit is not None:
         all_chunks = all_chunks[:limit]
     print(f"q={q_range} r={r_range} -> chunk grid x {min_cx}..{max_cx}, y {min_cy}..{max_cy} "
           f"({len(all_chunks)} chunks of {CHUNK_SIZE_WU:.0f} wu)")
 
     os.makedirs(out_dir, exist_ok=True)
-    cache = _TileGeometryCache()
+    cache = _TileGeometryCache(cache_dir)
 
     print(f"\n=== Step 3: bake {len(all_chunks)} chunks ===")
     written = skipped = 0
@@ -590,7 +767,7 @@ def bake(q_range: tuple[int, int], r_range: tuple[int, int], limit: int | None =
         hexes = written * CHUNK_SIZE_WU * CHUNK_SIZE_WU / HEX_AREA_WU
         print(f"  {total_tris} triangles, {total_verts} vertices, {total_bytes/1024/1024:.1f} MB")
         print(f"  {total_bytes/1024/hexes:.1f} KB/hex, {total_tris/hexes:.0f} tris/hex "
-              f"(SubHexGroundView draws 242 tris/hex today)")
+              f"(the square ground this replaced drew 242 tris/hex)")
         print(f"  worst chunk: {max_verts_seen} verts (uint16 index limit is 65536)")
         print(f"  extrapolated to the ~4,692 land hexes of MAP_BOUNDS: "
               f"{total_bytes/1024/hexes*4692/1024:.0f} MB")
@@ -605,5 +782,17 @@ if __name__ == "__main__":
     ap.add_argument("--limit", type=int, default=None,
                     help="bake at most N chunks -- for validating the pipeline before a long run")
     ap.add_argument("--out", default=OUTPUT_DIR)
+    ap.add_argument("--cache", default=OVERPASS_CACHE,
+                    help="tile cache to read (default: the Overpass one; pass "
+                         "cache/tiles_pbf for the full GB+Ireland extract)")
+    ap.add_argument("--full-map", action="store_true",
+                    help="cover BritishGeographyData.MAP_BOUNDS instead of the corridor. "
+                         "Only useful with a --cache that actually spans it")
     args = ap.parse_args()
-    bake(tuple(args.q), tuple(args.r), limit=args.limit, out_dir=args.out)
+    q_range, r_range = tuple(args.q), tuple(args.r)
+    if args.full_map:
+        # BritishGeographyData.MAP_BOUNDS = Rect2i(0, 0, 154, 179), inclusive of
+        # its last row/column. Kept here rather than imported because that value
+        # lives in GDScript; if it moves, this is the one line to follow it.
+        q_range, r_range = (0, 153), (0, 178)
+    bake(q_range, r_range, limit=args.limit, out_dir=args.out, cache_dir=args.cache)
