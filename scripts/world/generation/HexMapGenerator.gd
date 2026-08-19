@@ -1,7 +1,7 @@
 class_name HexMapGenerator
 extends RefCounted
 
-## Builds the full HexCell grid in five passes:
+## Builds the full HexCell grid in these passes:
 ##   1. Landmass     — every hex in bounds defaults to OCEAN; hexes inside
 ##                      BritishGeographyData's landmass silhouette get a
 ##                      REAL biome/elevation instead, sampled from open
@@ -21,7 +21,10 @@ extends RefCounted
 ##   3. Soil noise    — layered noise varies fertility within open
 ##                      countryside for the "granular soil fertility"
 ##                      requirement, independent of named regions.
-##   4. Partitioning  — DistrictPartitioner splits each hex into its
+##   4. Mountain passes — MountainPassCarver lowers the lowest saddle of any
+##                      ridge that would otherwise seal walkable ground off
+##                      entirely, now that Level 4 MOUNTAIN is impassable.
+##   5. Partitioning  — DistrictPartitioner splits each hex into its
 ##                      civic/industrial/wilderness sub-districts.
 ## Kept separate from HexGridMap so the *algorithm* that populates the grid
 ## is swappable/testable independently of the *runtime container* that owns it.
@@ -94,6 +97,12 @@ func generate() -> Dictionary:
 				_apply_feature(cells, feature)
 
 	_apply_soil_noise(cells)
+	# After every elevation-setting pass (real terrain + the MOUNTAIN_RANGE
+	# feature stamp's own elevation floor) and before anything reads
+	# passability: design_doc.md §5 makes Level 4 impassable, and this lowers
+	# the ridge saddles that would otherwise seal walkable ground behind it.
+	# See MountainPassCarver's own doc comment.
+	MountainPassCarver.carve(cells)
 
 	var partitioner := DistrictPartitioner.new()
 	for cell: HexCell in cells.values():

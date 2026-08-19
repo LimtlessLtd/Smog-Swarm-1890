@@ -13,7 +13,7 @@ extends Node2D
 ## implemented by its own collaborator under scripts/world/overlay/
 ## (BuildingMarkerRenderer, UnitMarkerRenderer, HordeMarkerRenderer,
 ## FrontierMarkerRenderer, WallMarkerRenderer, ZoneOfControlMarkerRenderer,
-## ThreatMarkerRenderer, AttackAlertRenderer, TerrainHazardRenderer), each
+## ThreatMarkerRenderer, AttackAlertRenderer), each
 ## depending only on the manager(s) it actually needs. This class resolves
 ## the NodePath exports, builds one Node2D layer per category (Display
 ## Options visibility, below), constructs each renderer against its own
@@ -77,7 +77,6 @@ var _horde_layer: Node2D
 var _attack_layer: Node2D
 var _threat_layer: Node2D
 var _zoc_layer: Node2D
-var _terrain_layer: Node2D
 
 func _ready() -> void:
 	_building_layer = _new_layer("BuildingLayer")
@@ -88,11 +87,9 @@ func _ready() -> void:
 	_attack_layer = _new_layer("AttackLayer")
 	_threat_layer = _new_layer("ThreatLayer")
 	_zoc_layer = _new_layer("ZocLayer")
-	_terrain_layer = _new_layer("TerrainLayer")
 
 	if hex_grid_map_path != NodePath():
 		_hex_grid_map = get_node(hex_grid_map_path)
-		TerrainHazardRenderer.new().build(_terrain_layer, _hex_grid_map)
 
 	_frontier_renderer = FrontierMarkerRenderer.new(_frontier_layer, _hex_grid_map)
 
@@ -190,7 +187,10 @@ func _sync_layer_visibility() -> void:
 	_attack_layer.visible = DisplaySettings.show_attack_alerts
 	_threat_layer.visible = DisplaySettings.show_threat_meter_world
 	_zoc_layer.visible = DisplaySettings.show_zoc_world
-	_terrain_layer.visible = DisplaySettings.show_terrain_hazards
+	# No terrain-hazard layer here any more: elevation/impassability moved to
+	# ElevationReliefView, which is NOT gated on Tactical zoom the way this
+	# whole node is. DisplaySettings.show_terrain_hazards still owns that
+	# toggle, it is just read there instead.
 
 func _on_tactical_mode_changed(is_tactical: bool) -> void:
 	visible = not is_tactical

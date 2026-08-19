@@ -31,12 +31,13 @@ extends Resource
 @export var point_b: Vector2 = Vector2.ZERO  ## World-space end of this piece's line.
 @export var tier: int = WallCatalog.WOODEN
 @export var current_hp: float = 0.0
-## A Gate is the same segment at the same tier, blocks/sieges a horde
-## exactly like a solid wall (WallManager.damage_segment() doesn't
-## distinguish it) — the only difference is get_max_hp() below applying
-## WallCatalog.GATE_HP_FRACTION. Not a separate tier or building type: same
-## cost, same upgrade/repair path, just intrinsically weaker at whatever
-## tier it is.
+## A Gate is the same segment at the same tier and sieges a horde exactly
+## like solid wall (WallManager.damage_segment() doesn't distinguish it).
+## Three differences, all of them elsewhere: get_max_hp() below scales it
+## against the run it replaces, WallManager.get_blocking_segment() lets the
+## PLAYER'S OWN units through it while hordes are still stopped, and it is a
+## single fixed-length piece rather than a chopped chain (WallCatalog.
+## GATE_LENGTH_SEGMENTS). Not a separate tier or building type.
 @export var is_gate: bool = false
 @export var id: int = 0
 
@@ -54,9 +55,18 @@ func _init(p_hex_a: Vector2i = Vector2i.ZERO, p_hex_b: Vector2i = Vector2i.ZERO,
 	# passes the actual saved value instead.
 	current_hp = p_current_hp if p_current_hp >= 0.0 else get_max_hp()
 
+## A wall PIECE gets its tier's flat HP regardless of length (see
+## WallManager._cost_for_length()'s own note on why cost scales with length
+## but HP does not). A gate is a single piece standing in for
+## GATE_LENGTH_SEGMENTS of them, so it is measured against what those would
+## have held: GATE_HP_FRACTION of it. At the shipped numbers that leaves a
+## gate tougher than any one wall piece and well under half of the run it
+## replaces — a weak point in the line, not a free hole in it.
 func get_max_hp() -> float:
 	var base := WallCatalog.get_max_hp(tier)
-	return base * WallCatalog.GATE_HP_FRACTION if is_gate else base
+	if not is_gate:
+		return base
+	return base * float(WallCatalog.GATE_LENGTH_SEGMENTS) * WallCatalog.GATE_HP_FRACTION
 
 func connects(coord: Vector2i) -> bool:
 	return hex_a == coord or hex_b == coord

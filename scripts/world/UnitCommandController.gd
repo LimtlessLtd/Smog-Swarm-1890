@@ -37,6 +37,15 @@ signal building_instance_selected(instance: BuildingInstance)
 signal wall_segment_selected(segment: WallSegment)
 signal selection_cleared
 signal patrol_recording_changed(is_recording: bool, waypoint_count: int)
+## Player-facing, already-worded message about an order that could not be
+## carried out — today only "no route" (relayed from
+## UnitOrderController.move_order_unreachable). Relayed rather than wired
+## straight from UnitOrderController to MainHUD: MainHUD already holds this
+## controller as the player's command surface, and giving it a second
+## NodePath into the movement layer would widen an already-wide class for
+## one toast. The wording lives here because this is the class that talks to
+## the player; UnitOrderController stays UI-agnostic and emits raw data.
+signal order_feedback(message: String)
 
 const _SELECTION_RING_RADIUS := 16.0
 const _SELECTION_RING_COLOR := Color(1.0, 0.9, 0.2, 0.9)
@@ -81,6 +90,7 @@ func _ready() -> void:
 	if unit_order_controller_path != NodePath():
 		_unit_order_controller = get_node(unit_order_controller_path)
 		_unit_order_controller.unit_order_issued.connect(_on_unit_order_issued)
+		_unit_order_controller.move_order_unreachable.connect(_on_move_order_unreachable)
 	if building_manager_path != NodePath():
 		_building_manager = get_node(building_manager_path)
 		_building_manager.building_removed.connect(_on_building_removed)
@@ -432,6 +442,12 @@ func _process(_delta: float) -> void:
 ## controller owns that), so an order change reaches it by re-emitting the
 ## SAME unit_selected signal a fresh selection uses — UnitPanelView
 ## re-renders identically either way. Only for the currently selected unit.
+## Names the unit, since several can be under orders at once and a bare
+## "no route" would not say which one stopped.
+func _on_move_order_unreachable(instance: UnitInstance, _destination: Vector2i) -> void:
+	var display_name := instance.definition.display_name if instance and instance.definition else "Unit"
+	order_feedback.emit("%s cannot find a route to that location." % display_name)
+
 func _on_unit_order_issued(instance: UnitInstance, _order: GameEnums.UnitOrderType) -> void:
 	if instance == _selected_unit:
 		unit_selected.emit(instance)

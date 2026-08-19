@@ -108,10 +108,19 @@ static func advance_toward_hex(hex_coord: Vector2i, local_position: Vector2, tar
 	if time_to_arrive <= available_seconds:
 		return {"hex_coord": target_hex, "local_position": target_local_offset, "arrived": true, "seconds_used": time_to_arrive}
 
+	# Steering runs on the TRUE direction to the target and the wobble is
+	# applied to its RESULT, not the other way round. Wobbling first fed
+	# steer_around_obstacles() a heading that swings ~13 degrees either side
+	# every few frames, which flips the sign of `lateral` (the obstacle's
+	# side relative to travel) whenever the swing crosses the obstacle's own
+	# bearing -- so the avoidance push reversed left/right at the wobble's
+	# own frequency and the entity shook in place instead of going round.
+	# Steering against the un-wobbled heading makes the chosen side a
+	# function of position alone, which changes smoothly.
 	var direction := to_target / distance
-	direction = _wobbled_direction(direction, world_pos, wobble_seed)
 	if not obstacles.is_empty():
-		direction = steer_around_obstacles(world_pos, direction, entity_radius, obstacles)
+		direction = steer_around_obstacles(world_pos, direction, entity_radius, obstacles, wobble_seed)
+	direction = _wobbled_direction(direction, world_pos, wobble_seed)
 	var new_world_pos := world_pos + direction * safe_speed * available_seconds
 	return {"hex_coord": hex_coord, "local_position": new_world_pos - HexCoord.axial_to_world(hex_coord), "arrived": false, "seconds_used": available_seconds}
 
@@ -166,7 +175,14 @@ static func _wobbled_direction(direction: Vector2, world_pos: Vector2, wobble_se
 ## placement) — an entity briefly getting stuck or grazing an obstacle near
 ## cluttered terrain is an accepted edge case of a cheap local steering
 ## behavior, not a bug to chase down with a full local pathfinding search.
-static func steer_around_obstacles(from: Vector2, desired_direction: Vector2, entity_radius: float, obstacles: Array[Dictionary]) -> Vector2:
+## `tie_break_seed` picks which way to go around an obstacle the entity is
+## on an exactly dead-on collision course with, where `lateral` is zero and
+## carries no side to prefer. Derived from the entity's own stable seed
+## rather than from `desired_direction`, so it answers the same way on every
+## frame of the same approach -- a direction-derived choice inverts the
+## instant the heading crosses the obstacle's bearing, which is a second way
+## to produce the same left-right shake the wobble ordering above caused.
+static func steer_around_obstacles(from: Vector2, desired_direction: Vector2, entity_radius: float, obstacles: Array[Dictionary], tie_break_seed: float = 0.0) -> Vector2:
 	var avoidance := Vector2.ZERO
 	for obstacle in obstacles:
 		var to_obstacle: Vector2 = obstacle["position"] - from
@@ -178,7 +194,8 @@ static func steer_around_obstacles(from: Vector2, desired_direction: Vector2, en
 		var lateral_distance := lateral.length()
 		if lateral_distance >= clearance:
 			continue  ## Our straight line already clears this obstacle.
-		var push := -lateral / lateral_distance if lateral_distance > 0.001 else Vector2(-desired_direction.y, desired_direction.x)  ## Dead-on collision course — pick either perpendicular side; ambiguous is fine, just needs to not be zero.
+		var side := 1.0 if sin(tie_break_seed) >= 0.0 else -1.0  ## Stable per entity — see tie_break_seed's own doc comment above.
+		var push := -lateral / lateral_distance if lateral_distance > 0.001 else Vector2(-desired_direction.y, desired_direction.x) * side
 		avoidance += push * (clearance - lateral_distance)
 	if avoidance == Vector2.ZERO:
 		return desired_direction

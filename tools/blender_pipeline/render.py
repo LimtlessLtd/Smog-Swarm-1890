@@ -42,6 +42,11 @@ def _parse_args():
     parser.add_argument("--ortho-scale", type=float, default=None,
                         help="With --fit: frame at this size rather than this model's own, "
                              "so a whole category keeps its relative sizes")
+    parser.add_argument("--span-x", type=float, default=None,
+                        help="With --span-y: render a wide strip framed to exactly this "
+                             "world-space width (walls/gates — see render_common.render_strip_to)")
+    parser.add_argument("--span-y", type=float, default=None,
+                        help="With --span-x: the strip's world-space thickness")
     parser.add_argument("--measure", action="store_true",
                         help="Print the model's fitted ortho_scale and exit without rendering")
     return parser.parse_args(argv)
@@ -83,9 +88,14 @@ def main():
     out_path = os.path.abspath(args.out)
     out_dir = os.path.dirname(out_path)
     os.makedirs(out_dir, exist_ok=True)
-    render_common.render_to(out_path, args.category, args.resolution,
-                            fit=args.fit or args.ortho_scale is not None,
-                            ortho_scale=args.ortho_scale)
+    if (args.span_x is None) != (args.span_y is None):
+        raise SystemExit("--span-x and --span-y must be given together")
+    if args.span_x is not None:
+        render_common.render_strip_to(out_path, args.category, args.span_x, args.span_y)
+    else:
+        render_common.render_to(out_path, args.category, args.resolution,
+                                fit=args.fit or args.ortho_scale is not None,
+                                ortho_scale=args.ortho_scale)
     print(f"Rendered {out_path}")
 
 

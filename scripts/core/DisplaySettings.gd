@@ -41,9 +41,11 @@ var show_threat_meter_world: bool = true
 var show_zoc_world: bool = true
 ## Elevation/impassable-terrain overlay. "We need to make elevation and
 ## impassable terrain obvious to the user" (user report) — consulted by
-## `StrategicOverlayManager`'s own TerrainLayer. Defaults ON: this is
-## safety-relevant information ("can my unit actually walk there"), same
-## reasoning every other marker layer here defaults ON.
+## `ElevationReliefView`, which draws at BOTH zooms (it moved off
+## `StrategicOverlayManager`'s TerrainLayer precisely because that node hides
+## itself in Tactical, so the view the player fights in showed none of this).
+## Defaults ON: this is safety-relevant information ("can my unit actually
+## walk there"), same reasoning every other marker layer here defaults ON.
 var show_terrain_hazards: bool = true
 
 ## Consulted by `MinimapView` — the Threat Meter's other surface (the hex

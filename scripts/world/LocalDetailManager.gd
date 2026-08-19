@@ -349,10 +349,11 @@ func _on_fog_state_changed(coord: Vector2i, state: GameEnums.FogState) -> void:
 ## Mirrors WallMarkerRenderer's own shape (a Line2D from hex_a's world
 ## center to hex_b's, recolored in place on placed/upgraded/breached/
 ## repaired) — same geometry is correct at any zoom, a wall runs between two
-## hex centers through their shared edge. The only real difference is
-## TACTICAL_WIDTH_SCALE: WallVisuals.line_width() is tuned to read at
-## Strategic's zoomed-way-out scale, a hairline against a 512-unit Tactical
-## hex. No fog-of-war/hydration gating (matching StrategicOverlayManager's
+## hex centers through their shared edge. The only real difference is the
+## width: WallVisuals.line_width() is tuned to read at Strategic's
+## zoomed-way-out scale and would be a hairline against a 512-unit Tactical
+## hex, so this uses WallVisuals.tactical_width() — the width the strip art
+## is authored to be drawn at. No fog-of-war/hydration gating (matching StrategicOverlayManager's
 ## own precedent for walls — a wall is always the player's own construction,
 ## nothing to spot about your own perimeter): _wall_layer's own visibility
 ## (Tactical-mode-only) is enough gating.
@@ -377,23 +378,14 @@ func _build_wall_marker(segment: WallSegment) -> Line2D:
 	_apply_wall_segment_look(body, segment)
 	return body
 
-## Line2D.texture_mode = LINE_TEXTURE_TILE only tiles when the node's own
-## texture_repeat is ENABLED or MIRROR — neither this function nor
-## StrategicOverlayManager's equivalent set it, so it sat at the project
-## default (Disabled), clamping to the texture's edge pixels instead of
-## repeating.
+## Art, tiling mode, tint and geometry all come from
+## WallVisuals.apply_segment_look() — the Strategic marker and the placement
+## preview call the same function, so a wall cannot look like one thing here
+## and another there (they had already drifted: only one of the three used
+## to set texture_repeat, without which LINE_TEXTURE_TILE clamps to the
+## texture's edge pixels instead of repeating). Only the WIDTH is this
+## class's own decision, and only legacy dimming is layered on afterwards.
 func _apply_wall_segment_look(body: Line2D, segment: WallSegment) -> void:
-	var breached := segment.is_breached()
-	var texture := WallVisuals.tier_texture(segment.tier) if not breached else null
-	body.texture = texture
-	body.texture_mode = Line2D.LINE_TEXTURE_TILE
-	body.texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
-	body.default_color = Color.WHITE if texture else (WallVisuals.breached_color() if breached else (WallVisuals.gate_color() if segment.is_gate else WallVisuals.tier_color(segment.tier)))
-	# See WallVisuals.UV_SCALE's own doc comment: the raw segment length is
-	# too short in LOCAL-point terms for Line2D's own pixel-to-unit UV
-	# tiling to show more than a sliver of a 4128px-wide texture. Sets
-	# points/position/scale/width together so this and the segment's
-	# freehand placement geometry can't drift apart.
-	WallVisuals.apply_line_geometry(body, segment.point_a, segment.point_b, WallVisuals.line_width(segment.tier, breached) * WallVisuals.TACTICAL_WIDTH_SCALE)
+	WallVisuals.apply_segment_look(body, segment, WallVisuals.tactical_width(segment.is_breached()))
 	var is_legacy := _wall_manager != null and _wall_manager.is_legacy_segment(segment)
 	body.modulate = WallVisuals.legacy_modulate() if is_legacy else WallVisuals.outer_modulate()

@@ -124,6 +124,8 @@ static func _build_field(hex_grid_map: HexGridMap, logistics_network: LogisticsN
 				continue
 			if HexPathfinder.is_water_crossing_blocked(hex_grid_map, logistics_network, current, neighbor):
 				continue
+			if HexPathfinder.is_boundary_impassable(hex_grid_map, current, neighbor):
+				continue
 			var step_cost := HexPathfinder.get_step_cost(neighbor, current, hex_grid_map.get_cell(current), logistics_network)
 			var candidate: float = cost[current] + step_cost
 			if candidate < cost.get(neighbor, INF):

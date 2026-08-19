@@ -163,6 +163,13 @@ func _ready() -> void:
 	# running the game, not the headless tests alone).
 	_build_toast()
 
+	# Connected here rather than where _unit_command_controller is resolved
+	# above: _toast does not exist until _build_toast(), which has to stay
+	# last for draw order (see its own comment) — connecting to _toast.show
+	# any earlier binds a Callable on a null.
+	if _unit_command_controller:
+		_unit_command_controller.order_feedback.connect(_toast.show)
+
 	_placement_feedback = HUDPlacementFeedback.new(_mode_label, _toast)
 	if _building_manager:
 		_placement_feedback.wire_building_manager(_building_manager)

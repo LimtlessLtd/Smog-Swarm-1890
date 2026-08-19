@@ -18,13 +18,30 @@ extends Resource
 func _init(p_coord: Vector2i = Vector2i.ZERO) -> void:
 	coord = p_coord
 
+## design_doc.md §5's discrete height band for this hex's own elevation.
+## Derived on demand, never stored — see ElevationLevels' own doc comment.
+func height_level() -> int:
+	return ElevationLevels.level_for(elevation, biome_type == GameEnums.BiomeType.OCEAN)
+
 ## Marshes, peat bogs and steep escarpments are natural barriers/chokepoints
 ## until reclaimed (drained or bridged). Open OCEAN — the map represents the
 ## whole UK+Ireland — is impassable too, on the same "not walkable, needs a
 ## future system to cross" footing; unlike a marsh, nothing reclaims it,
 ## only a future Naval Logistics/ships system will let a unit or horde
 ## cross it.
+##
+## Level 4 MOUNTAIN joins them (design_doc.md §5: "IMPASSABLE for all ground
+## units, vehicles, and zombies"), which had never been implemented — real
+## summit elevation was sampled, stored, and then ignored by every rule.
+## Adding it here rather than in each caller means the one check pathfinding,
+## the horde flow field, wall placement and building placement already share
+## picks it up at once. Measured before committing to it
+## (scripts/test/verify_elevation.gd): it must not sever the landmass, and
+## the numbers that decide how much of the map it claims live in
+## ElevationLevels._METRE_THRESHOLDS.
 func is_passable() -> bool:
+	if ElevationLevels.is_impassable(height_level()):
+		return false
 	return terrain_feature != GameEnums.TerrainFeature.MARSH and terrain_feature != GameEnums.TerrainFeature.PEAT_BOG and biome_type != GameEnums.BiomeType.OCEAN
 
 func is_frontier() -> bool:

@@ -35,14 +35,34 @@ static func breached_color() -> Color:
 static func gate_color() -> Color:
 	return Color(0.80, 0.64, 0.20)
 
-## Tactical-scale multiplier over line_width()'s own Strategic-zoom values
-## (3.0 + tier*2.0 world units — sized to read at Strategic's zoomed-way-out
-## scale). Same rescale reasoning as TacticalHexView.BUILDING_HALF_SIZE's own
-## doc comment: a Strategic-scale line width against a 512-unit hex would be
-## a hairline, not a wall. Shared (not LocalDetailManager-only) so
-## WallPlacementController's live preview renders at the same width the
-## real wall will.
-const TACTICAL_WIDTH_SCALE: float = 8.0
+## How the strip art in assets/walls/ maps onto a drawn wall, and the reason
+## the wall stopped being a thin line inside a fat invisible band.
+##
+## Line2D tiles a texture along its length at a fixed texture-PIXELS-to-
+## local-UNITS rate and stretches the texture's full HEIGHT across the
+## line's width. So the art's aspect ratio and the drawn width are one
+## decision, not two: pick a world length for one repeat, and the width that
+## does not distort it follows. Authoring at one aspect and drawing at
+## another is what squashed the old art, on top of it having occupied ~7% of
+## its own image height to begin with ("Wall assets need to look more
+## substantial, thicker" — user report).
+##
+## One repeat covers exactly one full-length wall PIECE. Each piece is its
+## own Line2D starting the texture over at u=0, so a repeat per piece is
+## what makes the pattern of a chained wall line up piece to piece instead
+## of restarting mid-motif. tools/blender_pipeline/models/walls/strip.py
+## holds the other half of this contract.
+const TILE_WORLD_LENGTH: float = WallCatalog.MAX_SEGMENT_LENGTH_WORLD_UNITS
+
+## span_y / span_x of the authored strips — see strip.STRIP_HEIGHT.
+const STRIP_ASPECT_RATIO: float = 0.5
+
+## The width every wall and gate is drawn at in Tactical view. Derived, not
+## tuned: it is whatever keeps the art undistorted at TILE_WORLD_LENGTH.
+## Per-TIER thickness is authored into the art's own band depth instead —
+## drawing a wider line per tier would stretch a fixed-height texture by a
+## different amount per tier, which reads as blur, not as mass.
+const TACTICAL_WALL_WIDTH: float = TILE_WORLD_LENGTH * STRIP_ASPECT_RATIO
 
 ## Line thickness scales with tier — a Concrete wall should visibly read as
 ## sturdier than a Wooden one even before the player checks its HP. A
@@ -53,6 +73,12 @@ const TACTICAL_WIDTH_SCALE: float = 8.0
 static func line_width(tier: int, breached: bool) -> float:
 	var base := 3.0 + float(tier) * 2.0
 	return base * 0.5 if breached else base
+
+## Tactical-view width. Constant across tiers by construction (see
+## TACTICAL_WALL_WIDTH); only a breach changes it, keeping line_width()'s own
+## "still there, but visibly compromised" convention.
+static func tactical_width(breached: bool) -> float:
+	return TACTICAL_WALL_WIDTH * 0.5 if breached else TACTICAL_WALL_WIDTH
 
 ## A "legacy inner" wall (WallManager.is_legacy_segment()) — still fully
 ## functional, but no longer the settlement's outermost defended edge.
@@ -83,44 +109,89 @@ static func outer_modulate() -> Color:
 ## site (WallMarkerRenderer._apply_look()) — `Line2D` tiles a texture along
 ## its own length natively, no UV-mapping pitfall the way a `Polygon2D`
 ## would have (see TerrainVisuals/HexCellView's own documented bug on that).
-static var _texture_cache: Dictionary = {}  # int (WallCatalog tier) -> Texture2D (nullable)
+static var _texture_cache: Dictionary = {}  # String (asset key) -> Texture2D (nullable)
 
 static func tier_texture(tier: int) -> Texture2D:
-	if not _texture_cache.has(tier):
-		_texture_cache[tier] = _load_texture(tier)
-	return _texture_cache[tier]
+	return _cached_texture(_texture_key(tier))
 
-## Line2D's LINE_TEXTURE_TILE mode maps texture PIXELS to world UNITS 1:1
-## for its UV tiling (u = cumulative local-point distance /
-## texture.get_width()) — independent of texture_repeat (that only
-## controls whether u wrapping past 1.0 repeats or clamps). The wall art is
-## 4128px wide (`assets/walls/wall_*.png`), but a placed wall PIECE is at
-## most `WallCatalog.MAX_SEGMENT_LENGTH_WORLD_UNITS` (~10.26 world units,
-## freehand walls are chopped into short pieces — see that constant's own
-## doc comment) long. Fed straight in, a segment's own points only ever
-## span u ∈ [0, 10.26/4128] ≈ [0, 0.0025] of the texture — a sliver a few
-## pixels wide, stretched across the whole segment, reads as a near-flat
-## color. Not a tiling-density tuning issue; the segment geometry itself
-## was never long enough in LOCAL-point terms for Line2D's own fixed
-## pixel-to-unit convention to show more than a sliver, regardless of
-## texture_repeat.
+## A Gate has its own art rather than a tinted wall: it is a different
+## structure (two piers and a pair of doors), it is a fixed three segments
+## long, and it does not repeat — "There should be a seperate gate asset and
+## it needs to be 3 wall segments long... but it shouldnt be repeatable/
+## stretch like walls, you place 1 gate at a time" (user spec). gate_color()
+## stays as the fallback tint for a tier whose gate art is not authored yet.
+static func gate_texture(tier: int) -> Texture2D:
+	return _cached_texture(_gate_texture_key(tier))
+
+## The right art for whatever this segment actually is — nothing at all for a
+## breached one, which keeps its flat alarm-red line (see tier_texture()'s
+## own doc comment).
+static func segment_texture(segment: WallSegment) -> Texture2D:
+	if segment.is_breached():
+		return null
+	return gate_texture(segment.tier) if segment.is_gate else tier_texture(segment.tier)
+
+## Everything about how one segment LOOKS, applied to a Line2D: art, tiling
+## mode, tint and geometry. Shared by the Strategic marker, the Tactical
+## marker and the placement preview, which previously each carried their own
+## copy of this and had already drifted (only one of the three set
+## texture_repeat). `final_width` stays the caller's decision because that is
+## the one thing which genuinely differs between the zoom levels.
 ##
-## Fixed the same way a mismatched map-scale-vs-detail-scale problem always
-## is: render in a coordinate space where the numbers actually work, then
-## compensate with the node's own `scale` so final on-screen geometry is
-## unchanged. `apply_line_geometry()` below feeds Line2D inflated LOCAL
-## points (real segment vector * UV_SCALE) and sets the node's own
-## `scale = 1/UV_SCALE` to shrink it back to the segment's true world size —
-## Line2D bakes its UV from the pre-scale `points` array, so this changes
-## how many times the texture tiles across the segment WITHOUT changing
-## where either endpoint actually renders. `width` gets the same UV_SCALE
-## compensation for the same reason (Line2D width is also a local-space
-## value the node's scale later shrinks). 1000.0 chosen so a max-length
-## (~10.26 unit) piece shows ~2.5 tile repeats (10.26*1000/4128) — enough to
-## read as a genuine repeating material rather than either a sliver or a
-## single over-stretched copy; a shorter piece shows proportionally fewer,
-## still a real (if partial) slice of the art rather than a flat color.
-const UV_SCALE: float = 1000.0
+## Tiling mode is the substantive difference between a wall and a gate: a
+## wall REPEATS along whatever length it was drawn at, a gate is one object
+## stretched onto its own fixed length exactly once.
+static func apply_segment_look(body: Line2D, segment: WallSegment, final_width: float) -> void:
+	var texture := segment_texture(segment)
+	body.texture = texture
+	body.texture_mode = Line2D.LINE_TEXTURE_STRETCH if segment.is_gate else Line2D.LINE_TEXTURE_TILE
+	body.texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
+	# Line2D multiplies the texture by default_color, so it has to be white
+	# wherever real art is in play or the art comes out tinted.
+	if texture:
+		body.default_color = Color.WHITE
+	elif segment.is_breached():
+		body.default_color = breached_color()
+	elif segment.is_gate:
+		body.default_color = gate_color()
+	else:
+		body.default_color = tier_color(segment.tier)
+	apply_line_geometry(body, segment.point_a, segment.point_b, final_width)
+
+static func _cached_texture(key: String) -> Texture2D:
+	if not _texture_cache.has(key):
+		_texture_cache[key] = _load_texture(key)
+	return _texture_cache[key]
+
+## Line2D's LINE_TEXTURE_TILE mode maps texture PIXELS to local UNITS 1:1
+## for its UV tiling (u = cumulative local-point distance /
+## texture.get_width()) — independent of texture_repeat (that only controls
+## whether u wrapping past 1.0 repeats or clamps). A placed wall PIECE is at
+## most WallCatalog.MAX_SEGMENT_LENGTH_WORLD_UNITS (~10.26 world units)
+## long, so fed straight in, a segment spans u in [0, 10.26/2048] — a sliver
+## a few pixels wide stretched across the whole segment, which reads as a
+## near-flat colour. Not a tiling-density tuning problem: the geometry was
+## never long enough in LOCAL-point terms for Line2D's fixed pixel-to-unit
+## convention to show more than a sliver, whatever texture_repeat said.
+##
+## Fixed the way a mismatched map-scale-vs-detail-scale problem always is:
+## render in a coordinate space where the numbers work, then compensate with
+## the node's own `scale` so the final on-screen geometry is unchanged.
+## apply_line_geometry() feeds Line2D inflated LOCAL points (real segment
+## vector * UV_SCALE) and sets `scale = 1/UV_SCALE` to shrink it back —
+## Line2D bakes its UV from the pre-scale `points`, so this changes how many
+## times the texture tiles WITHOUT moving either endpoint. `width` takes the
+## same compensation for the same reason.
+##
+## DERIVED from the art and TILE_WORLD_LENGTH rather than hand-tuned, which
+## is what makes "one repeat per full-length piece" true rather than
+## approximately true: at STRIP_WIDTH_PX pixels per repeat, u reaches 1.0
+## exactly when the real distance reaches TILE_WORLD_LENGTH. The previous
+## hand-picked 1000.0 was fitted to a 4128px-wide texture that no longer
+## exists, and silently became ~5 repeats per piece when the art was
+## re-rendered at 2048.
+const STRIP_WIDTH_PX: float = 2048.0
+const UV_SCALE: float = STRIP_WIDTH_PX / TILE_WORLD_LENGTH
 
 ## Sets `body`'s points/position/scale/width so it renders as the true
 ## `point_a` -> `point_b` segment on screen while giving Line2D's own
@@ -141,19 +212,26 @@ static func apply_line_geometry(body: Line2D, point_a: Vector2, point_b: Vector2
 	body.points = PackedVector2Array([Vector2.ZERO, (point_b - point_a) * UV_SCALE])
 	body.width = final_width * UV_SCALE
 
-static func _texture_key(tier: int) -> String:
+static func _tier_key(tier: int) -> String:
 	match tier:
 		WallCatalog.WOODEN:
-			return "wall_wooden"
+			return "wooden"
 		WallCatalog.BRICK:
-			return "wall_brick"
+			return "brick"
 		WallCatalog.CONCRETE:
-			return "wall_concrete"
+			return "concrete"
 		_:
 			return ""
 
-static func _load_texture(tier: int) -> Texture2D:
-	var key := _texture_key(tier)
+static func _texture_key(tier: int) -> String:
+	var key := _tier_key(tier)
+	return "" if key.is_empty() else "wall_%s" % key
+
+static func _gate_texture_key(tier: int) -> String:
+	var key := _tier_key(tier)
+	return "" if key.is_empty() else "gate_%s" % key
+
+static func _load_texture(key: String) -> Texture2D:
 	if key.is_empty():
 		return null
 	var path := "res://assets/walls/%s.png" % key

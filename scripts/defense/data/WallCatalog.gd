@@ -14,13 +14,37 @@ const CONCRETE: int = 2
 const MAX_TIER: int = CONCRETE
 
 ## A Gate segment (WallSegment.is_gate) is the traditional weak point of a
-## fortification — same tier, same build cost, same siege/repair/upgrade
-## path as a solid wall, just a fraction of its max HP. Applied by
-## WallSegment.get_max_hp(), not here — this class stays the single "what
-## does tier N cost/hold" source of truth, a segment layers its own gate
-## modifier on top rather than this table needing to know about individual
-## segment state. Balancing number, not an architecture decision.
+## fortification — same tier, same build cost per unit length, same siege/
+## repair/upgrade path as a solid wall, just a fraction of the HP the wall it
+## replaces would have had. Applied by WallSegment.get_max_hp(), not here —
+## this class stays the single "what does tier N cost/hold" source of truth,
+## a segment layers its own gate modifier on top rather than this table
+## needing to know about individual segment state. Balancing number, not an
+## architecture decision.
 const GATE_HP_FRACTION: float = 0.4
+
+## "It needs to be 3 wall segments long... it shouldnt be repeatable/stretch
+## like walls, you place 1 gate at a time" (user spec). A gate is therefore
+## ONE WallSegment of a fixed length, not a chain of pieces: it is a single
+## structure with a single door, and chopping it would give a player three
+## independently-breachable thirds of a gate.
+##
+## It is the one exception to MAX_SEGMENT_LENGTH_WORLD_UNITS above, which
+## exists so a breach costs the player a short piece rather than a whole
+## drawn run. A gate is already the short, deliberately weak piece.
+const GATE_LENGTH_SEGMENTS: int = 3
+const GATE_LENGTH_WORLD_UNITS: float = MAX_SEGMENT_LENGTH_WORLD_UNITS * float(GATE_LENGTH_SEGMENTS)
+
+static func get_gate_display_name(tier: int) -> String:
+	match tier:
+		WOODEN:
+			return "Wooden Gate"
+		BRICK:
+			return "Brick Gate"
+		CONCRETE:
+			return "Concrete Gate"
+		_:
+			return "Unknown Gate"
 
 ## "Each wall segment should be no longer than 100 meters MAXIMUM, if it
 ## goes beyond 100 meters it should be split up into multiple segments...
