@@ -22,9 +22,18 @@ extends Node2D
 ## triangle's size nor restarts at a chunk or hex boundary; a triangle is a
 ## window onto one continuous ground texture rather than a tile of its own.
 ##
-## What this does NOT do yet, and where it goes: no blending across a biome
-## boundary (Phase 3's N-texture weighted shader -- today a boundary is a hard
-## edge, correct in shape but abrupt), no elevation displacement (Phase 4),
+## Biome boundaries are crossfaded rather than cut. Each triangle bordering a
+## different biome is drawn a second time in that neighbour's texture, faded
+## from half opacity on the shared edge to nothing at its opposite corner,
+## and the neighbour does the same back -- see TerrainBoundaryBlend. This is
+## NOT Phase 3's N-texture weighted shader, and deliberately not: the request
+## was for the boundary to soften, not for the biome to ("I just want the
+## edges blurred over a gradient at the very edge of each biome change
+## though, don't apply it to the entire biome"), and a per-fragment weight
+## field would have to be baked and would touch every pixel of every biome
+## interior to change the few near a line.
+##
+## Still not done, and where it goes: no elevation displacement (Phase 4),
 ## and no runtime re-triangulation when SubHexTerrainOverride writes (Phase 6,
 ## so a Town Hall's urban disc does not yet appear in the mesh).
 ##
@@ -209,6 +218,10 @@ func _build_chunk(address: Vector2i) -> void:
 	var soil_cache: Dictionary = {}
 	var vertices := data.vertices
 	var indices := data.indices
+	# One byte per triangle, for TerrainBoundaryBlend: it must not fade a
+	# biome into ground this pass dropped.
+	var kept := PackedByteArray()
+	kept.resize(data.triangle_count())
 	for tri in data.triangle_count():
 		var base := tri * 3
 		var a := vertices[indices[base]]
@@ -217,6 +230,7 @@ func _build_chunk(address: Vector2i) -> void:
 		var centroid := (a + b + c) / 3.0
 		if not _is_on_land(centroid):
 			continue
+		kept[tri] = 1
 		var biome := RealTerrainSampler.biome_from_code(data.triangle_biomes[tri])
 		# Soil is resolved at the triangle's centroid, not per vertex: it only
 		# selects which of a biome's SVG variants to use, and a per-vertex
@@ -233,28 +247,71 @@ func _build_chunk(address: Vector2i) -> void:
 	for key: Vector2i in triangles_by_key:
 		container.add_child(_build_surface(key.x, key.y, triangles_by_key[key]))
 
+	# After every base surface, so the crossfade draws over the hard edges
+	# rather than under them. Same z_index throughout — MeshInstance2D
+	# siblings resolve by tree order, and add_child() appends.
+	_build_blend_surfaces(container, data, kept, soil_cache)
 
-## True where `world_pos` falls on a land hex.
-##
-## BritishGeographyData's land RLE is the same source HexMapGenerator decides
-## OCEAN from and the same one CoastlineOutlineView traces, so culling against
-## it puts the mesh's edge exactly on the coastline already drawn rather than
-## inventing a second, disagreeing shoreline. That shoreline is hex-resolution,
-## so a triangle straddling the coast is kept or dropped whole by which hex its
-## centroid lands in -- an overhang bounded by one triangle (tens of world
-## units against a 512-wu hex), not the 4096-wu chunk rectangle this replaces.
-## A real sub-hex coastline is epic Phase 1b; it belongs in the bake, not here.
-##
-## The dictionary is expanded from the RLE on every get_landmass_hexes() call
-## and holds ~4,700 entries, so it is built once for the whole class rather
-## than per chunk -- a chunk build asks this question tens of thousands of
-## times.
-static var _land_hexes: Dictionary = {}
 
+## Draws each biome a second time in a fixed-width strip just inside whichever
+## different biome it borders, fading out across that strip — see
+## TerrainBoundaryBlend for what a crossing is, why the mix is symmetric, and
+## why the width is in world units rather than in triangles.
+##
+## Keyed by (neighbour biome, soil) exactly like the base surfaces, so the
+## whole chunk's crossfade still costs a handful of draw calls rather than
+## one per boundary triangle.
+##
+## Soil for the fading texture is sampled at the SHARED EDGE's midpoint, not
+## at the triangle's centroid: this is the neighbour biome's art bleeding
+## across its own boundary, so the variant it picks should be the one in use
+## on the neighbour's side of the line.
+func _build_blend_surfaces(container: Node2D, data: TerrainMeshChunkData,
+		kept: PackedByteArray, soil_cache: Dictionary) -> void:
+	var crossings := TerrainBoundaryBlend.find_crossings(data, kept)
+	if crossings.is_empty():
+		return
+
+	var vertices := data.vertices
+	var points_by_key: Dictionary = {}  ## Vector2i(biome, soil) -> Array[Vector2]
+	var alphas_by_key: Dictionary = {}  ## Same keys -> Array[float], one per point.
+	for i in range(0, crossings.size(), TerrainBoundaryBlend.CROSSING_STRIDE):
+		var edge_a := vertices[crossings[i + 1]]
+		var edge_b := vertices[crossings[i + 2]]
+		var opposite := vertices[crossings[i + 3]]
+		var biome := RealTerrainSampler.biome_from_code(crossings[i + 4])
+		var soil := _soil_at(biome, (edge_a + edge_b) * 0.5, soil_cache)
+		var key := Vector2i(int(biome), int(soil))
+
+		var band_alphas: Array = []
+		var band := TerrainBoundaryBlend.band(edge_a, edge_b, opposite, band_alphas)
+		if band.is_empty():
+			continue
+
+		var points: Array = points_by_key.get(key, [])
+		if points.is_empty():
+			points_by_key[key] = points
+			alphas_by_key[key] = []
+		# Element by element: append_array() takes an Array, and `band` is a
+		# PackedVector2Array — passing one where the other is expected is a
+		# runtime error, not a compile-time one.
+		for point in band:
+			points.append(point)
+		(alphas_by_key[key] as Array).append_array(band_alphas)
+
+	for key: Vector2i in points_by_key:
+		container.add_child(_build_surface(key.x, key.y, points_by_key[key], alphas_by_key[key]))
+
+
+## True where `world_pos` falls on a land hex — see LandMask, which owns this
+## test so this layer and the detail scatter drawn over it cull identically.
+##
+## The mask is hex-resolution, so a triangle straddling the coast is kept or
+## dropped whole by which hex its centroid lands in — an overhang bounded by
+## one triangle (tens of world units against a 512-wu hex), not the 4096-wu
+## chunk rectangle this replaces.
 func _is_on_land(world_pos: Vector2) -> bool:
-	if _land_hexes.is_empty():
-		_land_hexes = BritishGeographyData.get_landmass_hexes()
-	return _land_hexes.has(HexCoord.world_to_axial(world_pos))
+	return LandMask.is_land(world_pos)
 
 
 ## SubHexSoilQuery.soil_for_biome_at() memoized per TEXTURE_WORLD_SIZE cell.
@@ -284,8 +341,14 @@ func _soil_at(biome: GameEnums.BiomeType, world_pos: Vector2, cache: Dictionary)
 ## quantized to a 1.0-wu grid and never differenced against a neighbour on
 ## the CPU, so the precision that broke Godot's ear-clipper at ~1.2e5 in
 ## scripts/test/preview_terrain_mesh.gd does not arise.
+##
+## `alphas`, when given, is one opacity per point and makes this a crossfade
+## surface rather than an opaque one — see _build_blend_surfaces(). Empty
+## (every base surface) leaves ARRAY_COLOR off entirely rather than filling
+## it with white, so nothing about how the interior of a biome renders
+## changes.
 func _build_surface(biome: GameEnums.BiomeType, soil: GameEnums.SoilFertility,
-		world_points: Array) -> MeshInstance2D:
+		world_points: Array, alphas: Array = []) -> MeshInstance2D:
 	# Both packed arrays are sized once and filled by index -- no append, so
 	# no reallocation across tens of thousands of vertices.
 	var count := world_points.size()
@@ -302,6 +365,12 @@ func _build_surface(biome: GameEnums.BiomeType, soil: GameEnums.SoilFertility,
 	arrays.resize(Mesh.ARRAY_MAX)
 	arrays[Mesh.ARRAY_VERTEX] = points
 	arrays[Mesh.ARRAY_TEX_UV] = uvs
+	if not alphas.is_empty():
+		var colors := PackedColorArray()
+		colors.resize(count)
+		for i in count:
+			colors[i] = Color(1.0, 1.0, 1.0, alphas[i])
+		arrays[Mesh.ARRAY_COLOR] = colors
 
 	var mesh := ArrayMesh.new()
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
