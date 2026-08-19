@@ -10,6 +10,7 @@
 [ext_resource type="PackedScene" path="res://scenes/world/FogOfWarManager.tscn" id="8"]
 [ext_resource type="PackedScene" path="res://scenes/persistence/SaveLoadManager.tscn" id="9"]
 [ext_resource type="PackedScene" path="res://scenes/world/BuildPlacementController.tscn" id="10"]
+[ext_resource type="Script" path="res://scripts/world/TerrainDetailView.gd" id="35"]
 [ext_resource type="PackedScene" path="res://scenes/ui/MainHUD.tscn" id="11"]
 [ext_resource type="PackedScene" path="res://scenes/tech/TechManager.tscn" id="12"]
 [ext_resource type="PackedScene" path="res://scenes/economy/DiscontentManager.tscn" id="13"]
@@ -61,6 +62,10 @@ hex_grid_map_path = NodePath("../HexGridMap")
 
 [node name="ReliefTileView" type="Node2D" parent="WorldRoot"]
 script = ExtResource("34")
+camera_path = NodePath("../../CameraController")
+
+[node name="TerrainDetailView" type="Node2D" parent="WorldRoot"]
+script = ExtResource("35")
 camera_path = NodePath("../../CameraController")
 
 [node name="CameraController" parent="." instance=ExtResource("2")]
@@ -193,6 +198,7 @@ camera_path = NodePath("../../CameraController")
 fog_of_war_path = NodePath("../../FogOfWarManager")
 wall_manager_path = NodePath("../../WallManager")
 unit_command_controller_path = NodePath("../UnitCommandController")
+terrain_detail_view_path = NodePath("../TerrainDetailView")
 
 [node name="StrategicOverlayManager" parent="WorldRoot" instance=ExtResource("7")]
 hex_grid_map_path = NodePath("../HexGridMap")

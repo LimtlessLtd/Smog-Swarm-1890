@@ -28,13 +28,11 @@ extends Node2D
 ## on every LOW<->MEDIUM<->HIGH crossing anyway.
 
 var cell: HexCell
-var _props: Array[PropInstance] = []
 var _buildings: Array[BuildingInstance] = []
 var _fidelity: GameEnums.TacticalFidelity = GameEnums.TacticalFidelity.HIGH
 var _zoc_state: ZoneOfControlState
 var _building_containers: Dictionary = {}  # int (BuildingInstance.id) -> Node2D — rebuilt every _rebuild_fidelity_dependent(), lets set_building_selected() re-tint one building in place.
-var _props_layer: Node2D  ## Created once in _redraw(); _rebuild_fidelity_dependent() only clears/repopulates ITS children, leaving this node's own position among TacticalHexView's children (and therefore draw order) untouched.
-var _buildings_layer: Node2D  ## Same shape as _props_layer, for buildings.
+var _buildings_layer: Node2D
 var _selected_building: BuildingInstance  ## Threaded through setup() so a hex that dehydrates and rehydrates while its own building stays selected redraws already knowing to highlight it.
 
 func _ready() -> void:
@@ -51,9 +49,8 @@ func _ready() -> void:
 ## meaning "no LogisticsNetwork wired". `selected_building` defaults to
 ## null, meaning nothing of this hex's is currently selected —
 ## LocalDetailManager passes its live value in on every hydrate.
-func setup(p_cell: HexCell, props: Array[PropInstance], buildings: Array[BuildingInstance], fog_state: GameEnums.FogState = GameEnums.FogState.VISIBLE, fidelity: GameEnums.TacticalFidelity = GameEnums.TacticalFidelity.HIGH, zoc_state: ZoneOfControlState = null, selected_building: BuildingInstance = null) -> void:
+func setup(p_cell: HexCell, buildings: Array[BuildingInstance], fog_state: GameEnums.FogState = GameEnums.FogState.VISIBLE, fidelity: GameEnums.TacticalFidelity = GameEnums.TacticalFidelity.HIGH, zoc_state: ZoneOfControlState = null, selected_building: BuildingInstance = null) -> void:
 	cell = p_cell
-	_props = props
 	_buildings = buildings
 	_fidelity = fidelity
 	_zoc_state = zoc_state
@@ -104,13 +101,6 @@ func set_building_selected(instance: BuildingInstance, is_selected: bool) -> voi
 func set_fog_state(state: GameEnums.FogState) -> void:
 	modulate = FogVisuals.tint_color(state)
 
-## Exposed so LocalDetailManager.get_props_at() can hand a hex's live prop
-## scatter to MovementStepper's callers as steering obstacles. Returns a
-## defensive copy, same "caller reads, doesn't own" convention as
-## BuildingManager.get_buildings_at().
-func get_props() -> Array[PropInstance]:
-	return _props.duplicate()
-
 ## Pushed live by LocalDetailManager on every LOW<->MEDIUM<->HIGH band
 ## crossing — mirrors set_fog_state()'s "update in place" shape, and (unlike
 ## before) only touches the parts that actually depend on fidelity; see
@@ -137,11 +127,7 @@ func _redraw() -> void:
 	# reclaimed; anything added there would sit between them.
 	add_child(_build_grid_outline())  # Always-on structural hex boundary — a SEPARATE layer from the ZoC outline below, not the same line reused.
 
-	add_child(_build_zoc_overlay())  # Ground-level tint — drawn before props/buildings so they render on top of it, not under.
-
-	_props_layer = Node2D.new()
-	_props_layer.name = "Props"
-	add_child(_props_layer)
+	add_child(_build_zoc_overlay())  # Ground-level tint — drawn before buildings so they render on top of it, not under.
 
 	_buildings_layer = Node2D.new()
 	_buildings_layer.name = "Buildings"
@@ -150,11 +136,12 @@ func _redraw() -> void:
 	_rebuild_fidelity_dependent()
 
 
-## Rebuilds ONLY the two things that depend on `_fidelity` — props (blob at
-## LOW, real per-type shape at MEDIUM/HIGH) and buildings (flat
+## Rebuilds the one thing that depends on `_fidelity` — buildings (flat
 ## category-color box at LOW, real sprite+effects at MEDIUM/HIGH; see this
-## class's own doc comment) — by clearing and repopulating _props_layer/
-## _buildings_layer in place. Their own position among this node's children
+## class's own doc comment) — by clearing and repopulating _buildings_layer
+## in place. Scatter props used to be the other; they now live in
+## TerrainDetailView, which draws them per streamed chunk rather than per hex
+## (see that class for why). Its position among this node's children
 ## (and therefore draw order relative to ground/outline/ZoC/fog) never
 ## changes, so no re-parenting/move_child() bookkeeping is needed the way
 ## LocalDetailManager's _wall_layer requires for the same class of problem.
@@ -166,14 +153,9 @@ func _redraw() -> void:
 ## building's particle systems, even though neither actually changes with
 ## fidelity at all.
 func _rebuild_fidelity_dependent() -> void:
-	for child in _props_layer.get_children():
-		child.queue_free()
 	for child in _buildings_layer.get_children():
 		child.queue_free()
 	_building_containers.clear()
-
-	for prop in _props:
-		_props_layer.add_child(_build_prop_node(prop))
 
 	for i in range(_buildings.size()):
 		var building := _buildings[i]
@@ -238,66 +220,6 @@ func _update_zoc_overlay_on(container: Node2D) -> void:
 	var has_civilian := _zoc_state != null and _zoc_state.has_civilian_coverage
 	(container.get_node("MilitaryOutline") as Line2D).visible = has_military and DisplaySettings.show_zoc_tactical
 	(container.get_node("CivilianFill") as Polygon2D).visible = has_civilian and DisplaySettings.show_zoc_tactical
-
-## Real per-species prop art (PropVisuals.prop_texture()), Sprite2D-scaled-
-## to-a-target-diameter same as TacticalEntityLayer._build_unit_figure()/
-## _build_zombie_figure() — a prop's own species silhouette has no
-## pre-existing quad to texture onto (each _prop_polygon() shape is an
-## irregular hand-drawn silhouette, not a quad), so a standalone sprite is
-## correct here rather than a UV-mapped Polygon2D. Only consulted at
-## MEDIUM/HIGH — LOW keeps its uniform procedural blob regardless. Falls
-## back to the procedural polygon per-prop wherever no art exists yet.
-const PROP_SPRITE_DIAMETER: float = 20.0
-
-func _build_prop_node(prop: PropInstance) -> Node2D:
-	var texture := PropVisuals.prop_texture(prop.prop_type) if _fidelity != GameEnums.TacticalFidelity.LOW else null
-	if texture:
-		var sprite := Sprite2D.new()
-		sprite.texture = texture
-		sprite.position = prop.local_position
-		sprite.rotation = prop.rotation
-		var largest_dim := maxf(texture.get_width(), texture.get_height())
-		sprite.scale = Vector2.ONE * ((PROP_SPRITE_DIAMETER * prop.scale) / largest_dim)
-		return sprite
-
-	var shape := Polygon2D.new()
-	shape.polygon = _low_fidelity_blob() if _fidelity == GameEnums.TacticalFidelity.LOW else _prop_polygon(prop.prop_type)
-	shape.color = _prop_color(prop.prop_type)
-	shape.position = prop.local_position
-	shape.rotation = prop.rotation
-	shape.scale = Vector2.ONE * prop.scale
-	return shape
-
-func _low_fidelity_blob() -> PackedVector2Array:
-	var points := PackedVector2Array()
-	for i in range(6):
-		var angle := TAU * i / 6.0
-		points.append(Vector2(cos(angle), sin(angle)) * 5.0)
-	return points
-
-func _prop_polygon(prop_type: GameEnums.PropType) -> PackedVector2Array:
-	match prop_type:
-		GameEnums.PropType.TREE:
-			return PackedVector2Array([Vector2(0, -10), Vector2(6, 6), Vector2(-6, 6)])
-		GameEnums.PropType.ROCK:
-			return PackedVector2Array([Vector2(-5, 4), Vector2(0, -5), Vector2(5, 4), Vector2(2, 6), Vector2(-2, 6)])
-		GameEnums.PropType.REED:
-			return PackedVector2Array([Vector2(-1, 8), Vector2(1, 8), Vector2(0, -10)])
-		_:  # BUSH
-			return PackedVector2Array([Vector2(-5, 3), Vector2(-3, -4), Vector2(3, -4), Vector2(5, 3), Vector2(0, 5)])
-
-func _prop_color(prop_type: GameEnums.PropType) -> Color:
-	match prop_type:
-		GameEnums.PropType.TREE:
-			return Color(0.20, 0.35, 0.16)
-		GameEnums.PropType.BUSH:
-			return Color(0.28, 0.42, 0.22)
-		GameEnums.PropType.ROCK:
-			return Color(0.45, 0.44, 0.42)
-		GameEnums.PropType.REED:
-			return Color(0.42, 0.46, 0.20)
-		_:
-			return Color(0.3, 0.3, 0.3)
 
 ## Real per-building-type sprite art (BuildingVisuals.building_texture())
 ## replaces the flat category-color square where authored — a plain

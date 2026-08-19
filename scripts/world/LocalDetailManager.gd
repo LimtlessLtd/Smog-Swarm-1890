@@ -55,8 +55,14 @@ const MAX_DETAIL_RADIUS: int = 8
 ## there. See _on_urban_extent_changed() for why the building signals this
 ## class already listens to aren't sufficient on their own.
 @export var settlement_founding_controller_path: NodePath
+## Optional — the scatter props (trees/rocks/etc.) this class forwards to
+## UnitOrderController/HordeManager as steering obstacles via
+## get_props_at(). Unset means those two see no obstacles at all, which is
+## the same thing that used to happen for any hex that was not hydrated.
+@export var terrain_detail_view_path: NodePath
 
 var _hex_grid_map: HexGridMap
+var _terrain_detail_view: TerrainDetailView
 var _building_manager: BuildingManager
 var _logistics_network: LogisticsNetwork
 var _camera: CameraController
@@ -74,6 +80,8 @@ var _wall_layer: Node2D
 var _wall_markers: Dictionary = {}  # int (WallSegment.id) -> Line2D
 
 func _ready() -> void:
+	if terrain_detail_view_path != NodePath():
+		_terrain_detail_view = get_node(terrain_detail_view_path)
 	if hex_grid_map_path != NodePath():
 		_hex_grid_map = get_node(hex_grid_map_path)
 	if building_manager_path != NodePath():
@@ -221,15 +229,19 @@ func _hex_qualifies_for_detail(coord: Vector2i) -> bool:
 			return true
 	return false
 
-## Props only exist as live PropInstance objects while their hex is
-## hydrated — returns [] for a dehydrated/unqualified/off-map hex rather
-## than an error. MovementStepper's callers (UnitOrderController/
-## HordeManager) use this to gather steering obstacles — prop avoidance
-## only applies near the camera, which is also the only place a player can
-## actually see it happen.
+## Forwarded to TerrainDetailView, which owns the scatter now — this class
+## used to generate its own per-hex props and hand them to TacticalHexView,
+## but that scatter was per macro hex and only existed on settled/frontier
+## ground (see TerrainDetailView for both problems). Kept as a forward rather
+## than repointing UnitOrderController/HordeManager, so the two callers keep
+## asking the manager that owns hex hydration rather than growing a second
+## NodePath into a rendering layer.
+##
+## Returns [] with no detail view wired, or for a hex whose terrain chunk is
+## not streamed — prop avoidance only applies near the camera, which is also
+## the only place a player can see it happen.
 func get_props_at(coord: Vector2i) -> Array[PropInstance]:
-	var view: TacticalHexView = _tactical_views.get(coord)
-	return view.get_props() if view else []
+	return _terrain_detail_view.get_props_at(coord) if _terrain_detail_view else []
 
 func _refresh_hydrated_neighborhood(center: Vector2i) -> void:
 	if not _hex_grid_map:
@@ -260,7 +272,7 @@ func _hydrate_hex(coord: Vector2i) -> void:
 	if _logistics_network:
 		zoc_state = _logistics_network.get_zoc_state(coord)
 	var view := TacticalHexView.new()
-	view.setup(cell, LocalDetailGenerator.generate(cell), buildings, fog_state, _fidelity, zoc_state, _selected_building)
+	view.setup(cell, buildings, fog_state, _fidelity, zoc_state, _selected_building)
 	add_child(view)
 	# Keep _wall_layer as the LAST child of THIS node — add_child() above
 	# always appends, which would otherwise push _wall_layer back behind
