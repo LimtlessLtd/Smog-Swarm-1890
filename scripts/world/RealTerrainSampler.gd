@@ -333,16 +333,42 @@ static func _sample_fine(coord: Vector2i, world_pos: Vector2) -> Dictionary:
 		"elevation": elevation_sample.get("elevation", 0.0),
 	}
 
-## Majority-vote biome + mean elevation across a 5x5 sample grid for one
+## Majority-vote biome + PEAK elevation across a 5x5 sample grid for one
 ## hex — HexMapGenerator's per-hex real-data derivation, and since the
 ## square per-hex ground was removed, sample_grid()'s only caller. 5x5 is
 ## deliberately coarse: this feeds ONE scalar biome_type per hex, and no
 ## renderer reads it.
+##
+## Elevation is the MAXIMUM of the samples, not their mean. A hex is about 25
+## square miles, and averaging that area flattens every summit out of
+## existence: the hex holding Cross Fell (893 m real) averaged 567 m, so it
+## read as Level 3 Highland and NO hex anywhere in the playable corridor ever
+## reached the 600 m Level 4 threshold. design_doc.md §5's impassable-mountain
+## rule, and MountainPassCarver with it, had nothing to act on.
+##
+## Max rather than an explicit high percentile, which is the more obvious
+## choice and was measured against it. The elevation raster this samples is
+## written by bake_landcover.py with `step = 4` and a nearest-neighbour
+## upsample, so it holds 4x4 blocks of identical values — about 15 distinct
+## values per hex however densely this grid samples. A percentile over that is
+## unstable (p90 gave 4/3/5 mountain hexes along the Pennines at n=5/7/9,
+## purely from which samples happened to land on which block), while the max
+## is identical at every density and agrees exactly with an independent
+## measurement against the far finer z12 data (8 of 25 Pennine hexes genuinely
+## reach 600 m).
+##
+## It is also not a point maximum in practice, which is what would make "one
+## summit blocks 25 square miles" the wrong rule: each block already averages
+## roughly 3.5 km of ground, so the max of the blocks is closer to "some
+## substantial upland part of this hex is above the line" than to a single
+## peak. **If bake_landcover.py's step-4 upsample is ever fixed** (giving true
+## ~878 m resolution) that stops being true, the max becomes genuinely
+## point-like, and this should move to an explicit percentile — revisit here,
+## not at the threshold.
 static func majority_biome(coord: Vector2i) -> Dictionary:
 	var samples := sample_grid(coord, 5)
 	var counts: Dictionary = {}
-	var elevation_sum := 0.0
-	var elevation_count := 0
+	var elevation_peak := 0.0
 	var water_feature_present := false
 	var best_water_feature := GameEnums.TerrainFeature.NONE
 	for sample in samples:
@@ -350,8 +376,7 @@ static func majority_biome(coord: Vector2i) -> Dictionary:
 			continue
 		var biome: GameEnums.BiomeType = sample["biome_type"]
 		counts[biome] = counts.get(biome, 0) + 1
-		elevation_sum += sample["elevation"]
-		elevation_count += 1
+		elevation_peak = maxf(elevation_peak, sample["elevation"])
 		# Real river/canal geometry does NOT get to flip this hex's own
 		# biome_type to WATERWAY from a plurality vote (see
 		# HexMapGenerator's own doc comment) — but sub-hex rendering still
@@ -374,7 +399,7 @@ static func majority_biome(coord: Vector2i) -> Dictionary:
 
 	return {
 		"biome_type": best_biome,
-		"elevation": elevation_sum / maxf(1.0, float(elevation_count)),
+		"elevation": elevation_peak,
 		"has_water_feature": water_feature_present,
 		"water_feature_type": best_water_feature,
 	}

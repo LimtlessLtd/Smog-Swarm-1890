@@ -188,9 +188,31 @@ func _apply_feature(cells: Dictionary, feature: GeographyFeature) -> void:
 				cell.biome_type = GameEnums.BiomeType.URBAN
 				cell.soil_fertility = GameEnums.SoilFertility.NOT_ARABLE
 			GeographyFeature.FeatureType.MOUNTAIN_RANGE:
+				# Elevation is NOT overridden here. This used to do
+				# `cell.elevation = maxf(cell.elevation, 0.75)` — a flat 750 m
+				# stamped along each range's hand-drawn hex line, which clears
+				# ElevationLevels' 600 m MOUNTAIN threshold and so made every
+				# hex on the line impassable to units, vehicles and hordes
+				# alike (design_doc.md §5).
+				#
+				# Measured against the baked z12 elevation, taking the PEAK of a
+				# 9x9 sample per hex (the most generous reading):
+				#   Pennines   25 hexes,  8 genuinely >= 600 m, median peak 577 m
+				#   Chilterns   8 hexes,  0 genuinely >= 600 m, median peak 240 m
+				#   Cotswolds  11 hexes,  0 genuinely >= 600 m, median peak 225 m
+				# The Chilterns and Cotswolds are chalk and limestone
+				# escarpments a few hundred metres high; the override was
+				# putting impassable walls across southern England, while the
+				# genuinely mountainous Lake District, Snowdonia and Highlands
+				# carried no such stamp at all because no hand-drawn line
+				# reaches them. Real sampled elevation now decides the height
+				# band everywhere, so the high Pennine hexes stay Level 4 and
+				# the rest read as the high, slow ground they actually are.
+				#
+				# The rest of the stamp stays: these ARE upland, and biome/
+				# terrain_feature/soil are not what the elevation data answers.
 				cell.biome_type = GameEnums.BiomeType.HIGHLAND
 				cell.terrain_feature = GameEnums.TerrainFeature.ESCARPMENT
-				cell.elevation = maxf(cell.elevation, 0.75)
 				cell.soil_fertility = GameEnums.SoilFertility.POOR
 			GeographyFeature.FeatureType.WATERWAY:
 				cell.biome_type = GameEnums.BiomeType.WATERWAY
