@@ -24,9 +24,14 @@ extends Node2D
 ## Per CLAUDE.md §3 none of that should have read HexCell at all.
 ##
 ## The replacement is a hillshade at raster resolution (see ReliefImageBuilder
-## for what that resolution actually is and why it is the data's own limit),
-## which shades by SLOPE. Slope is what the eye reads as height, and it needs
-## no band boundary, no legend, and no hex.
+## for what that resolution actually is), which shades by SLOPE. Slope is what
+## the eye reads as height, and it needs no band boundary, no legend, and no hex.
+##
+## This is the COARSE, whole-map half. ReliefTileView draws 30 m per-hex tiles
+## on top of it in Tactical, for the hexes actually on screen; this layer covers
+## the entire corridor in one texture and is what Strategic zoom needs. Both are
+## gated on the same DisplaySettings.show_terrain_hazards, since they are two
+## resolutions of one cue rather than two features.
 ##
 ## NOT fog-gated, on the precedent CoastlineOutlineView and SeaView already
 ## set: the shape of the land — where the coast is, where the mountains are —

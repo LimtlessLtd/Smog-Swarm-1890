@@ -35,3 +35,12 @@ __pycache__/
 # definitions are shared project tooling, so they stay tracked.
 .claude/*
 !.claude/agents/
+
+# Diagnostic images written by the relief tooling (preview_relief.gd,
+# compare_relief_slope.py, the tile stitcher). Regenerated on demand and only
+# meaningful while tuning the bake constants -- the tools are the artefact, not
+# their output.
+tools/geo_bake/*_preview.png
+tools/geo_bake/*_comparison.png
+tools/geo_bake/*_preview.png.import
+tools/geo_bake/*_comparison.png.import
