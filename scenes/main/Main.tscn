@@ -33,6 +33,7 @@
 [ext_resource type="Script" path="res://scripts/world/TerrainMeshView.gd" id="31"]
 [ext_resource type="Script" path="res://scripts/world/SeaView.gd" id="32"]
 [ext_resource type="Script" path="res://scripts/world/ElevationReliefView.gd" id="33"]
+[ext_resource type="Script" path="res://scripts/world/ReliefTileView.gd" id="34"]
 
 [node name="Main" type="Node2D"]
 script = ExtResource("27")
@@ -57,6 +58,10 @@ hex_grid_map_path = NodePath("../HexGridMap")
 [node name="ElevationReliefView" type="Node2D" parent="WorldRoot"]
 script = ExtResource("33")
 hex_grid_map_path = NodePath("../HexGridMap")
+
+[node name="ReliefTileView" type="Node2D" parent="WorldRoot"]
+script = ExtResource("34")
+camera_path = NodePath("../../CameraController")
 
 [node name="CameraController" parent="." instance=ExtResource("2")]
 position = Vector2(124572, 92352)

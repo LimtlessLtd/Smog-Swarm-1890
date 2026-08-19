@@ -110,6 +110,45 @@ def encode_png_rgb8(width: int, height: int, rgb_bytes: bytes) -> bytes:
     )
 
 
+def encode_png_gray8(width: int, height: int, gray_bytes: bytes) -> bytes:
+    """8-bit greyscale PNG (colour type 0). gray_bytes is row-major, 1 byte/pixel.
+
+    A third the size of the same data written through encode_png_rgb8 with
+    the value repeated across R/G/B, before compression even runs. Used by
+    bake_fine_relief.py, whose output is a single shading channel per pixel
+    and which writes ~3,876 tiles -- the factor of three is the difference
+    between a repo addition measured in tens of megabytes and one measured
+    in hundreds.
+
+    Filter type 1 (Sub) rather than 0 (None), unlike encode_png_rgb8 above:
+    a hillshade is a smooth field where horizontally adjacent bytes are
+    usually within a step or two of each other, so encoding each as a
+    difference from its left neighbour leaves zlib a stream of small values
+    instead of a stream of absolute ones. Measured on real relief tiles,
+    this is a large compression win; on the RGB rasters that function
+    writes (packed classification codes and Terrarium's high-entropy low
+    byte) the same filter helps little, which is why it is not applied
+    there too.
+    """
+    assert len(gray_bytes) == width * height, "gray_bytes size mismatch"
+    ihdr = struct.pack(">IIBBBBB", width, height, 8, 0, 0, 0, 0)
+    scanlines = bytearray()
+    for y in range(height):
+        row = gray_bytes[y * width:(y + 1) * width]
+        scanlines.append(1)  # filter type 1 (Sub)
+        prev = 0
+        for value in row:
+            scanlines.append((value - prev) & 0xFF)
+            prev = value
+    idat = zlib.compress(bytes(scanlines), level=9)
+    return (
+        _PNG_SIGNATURE
+        + _chunk(b"IHDR", ihdr)
+        + _chunk(b"IDAT", idat)
+        + _chunk(b"IEND", b"")
+    )
+
+
 if __name__ == "__main__":
     # Self-test: round-trip a small synthetic image through encode+decode.
     import random

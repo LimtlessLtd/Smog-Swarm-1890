@@ -13,14 +13,19 @@ extends RefCounted
 ## applied to a visual: a hex that is mostly dry with one marsh strip now
 ## shows the strip, not a hex-shaped verdict about the strip.
 ##
-## 878 m/pixel is the real ceiling on this, not a chosen shortcut — the
-## fine per-hex tiles (RealTerrainSampler's "Fine per-hex tiles" section)
-## bake biome and terrain_feature at 30 m but deliberately do NOT bake
-## elevation, so there is no finer elevation data in the project to draw.
-## Crisper relief at Tactical zoom needs a fine elevation bake in
-## tools/geo_bake, not a change here; bilinear filtering on the resulting
-## texture (ElevationReliefView sets it) is what keeps the interpolation
-## between real samples smooth rather than blocky in the meantime.
+## This is the COARSE half of a two-layer scheme, and its real resolution is
+## worse than its pixel count suggests. bake_landcover.py writes the elevation
+## raster at WORLD_UNITS_PER_PIXEL but samples it with `step = 4` and a
+## NEAREST-NEIGHBOUR upsample, so the file holds 4x4 blocks of identical
+## values: a ~3,510 m sampling interval, about 3x3 real values per hex.
+## Measured on the shipped file — pixels at x%4 in {0,1,2} are identical to
+## their right neighbour 100% of the time.
+##
+## ReliefTileView draws the detail on top of this, from per-hex 30 m tiles
+## (tools/geo_bake/bake_fine_relief.py), for the hexes actually on screen in
+## Tactical. What stays here is the whole-map layer: it covers the entire
+## corridor for one texture and is what a Strategic overview needs, where 30 m
+## detail is well under a pixel anyway.
 ##
 ## Two cues are composited into the one RGBA image, so one texture and one
 ## draw call carry both:
@@ -140,14 +145,19 @@ static func _decode_elevation_metres(image: Image, width: int, height: int) -> P
 
 ## 3x3 box blur over the elevation, run once before any gradient is taken.
 ##
-## Not a stylistic softening — it removes a real artefact. The source terrain
-## tiles quantise elevation, so flat ground carries small step edges between
-## equal-value plateaus, and a gradient operator turns every one of those steps
-## into a lit ridge. Unsmoothed, the shade showed the quantisation as a grid of
-## rectangular terraces across otherwise flat farmland, which reads as terrain
-## that is not there. One pixel of blur is well under the ~878 m sample spacing
-## the real landforms occupy, so hills, scarps and valleys survive it — only
-## the single-sample steps between equal values do not.
+## Not a stylistic softening — it hides a real defect in the input. An earlier
+## version of this comment blamed source-tile quantisation; that was wrong, and
+## measuring the raster (see build()'s own note) found the actual cause:
+## bake_landcover.py's step-4 NEAREST-NEIGHBOUR upsample leaves 4x4 blocks of
+## identical values, and a gradient operator renders every block edge as a lit
+## ridge — a grid of rectangular terraces across otherwise flat farmland.
+##
+## The blur stays because it is the right treatment for THIS raster, whose
+## block structure is baked in and cannot be undone here. The fix at source is
+## bilinear sampling in the bake (terrarium_mosaic.sample_metres() does this,
+## and bake_fine_relief.py's tiles need no such rescue); if bake_landcover.py's
+## elevation step is ever repaired, this blur becomes unnecessary rather than
+## wrong.
 ##
 ## Separable (horizontal then vertical) rather than a 9-tap kernel per pixel:
 ## same result, two passes of three taps instead of one of nine.
