@@ -9,18 +9,20 @@ extends Control
 ## editor session to lay out a Control tree by hand" convention MainHUD's
 ## own header comment documents).
 ##
-## Owns a private, UNWIRED SaveLoadManager purely for
-## get_campaign_names()/get_slot_names() (plain `user://saves` directory
-## listing, no manager NodePaths needed for either) — this scene has no
-## live BuildingManager/ResourceManager/etc. to load state INTO yet.
-## "Continue" therefore can't call SaveLoadManager.load_game() directly;
-## it records the chosen campaign/slot on the GameLaunchState autoload and
-## changes scene to Main.tscn, whose own `_ready()` consumes it and
-## performs the real load once every manager SaveLoadManager needs
+## Owns a private, UNWIRED SaveLoadManager purely for its read-only
+## listing API — get_campaign_names()/get_slot_names()/the thumbnail
+## getters are all plain `user://saves` file access, needing none of the
+## manager NodePaths this scene has nothing to fill with. Neither menu
+## entry acts on the game directly: this scene has no live
+## BuildingManager/ResourceManager/etc. to load state INTO, and no live
+## game to save FROM (which is why there is no Save screen here at all,
+## only CampaignBrowserView's Load). Both "New Game" (a campaign name,
+## from NewCampaignView) and "Continue" (a campaign plus a slot, from
+## CampaignBrowserView) instead record what the player picked on the
+## GameLaunchState autoload and change scene to Main.tscn, whose own
+## `_ready()` consumes it once every manager SaveLoadManager needs
 ## actually exists (see GameLaunchState's own doc comment for the full
-## handoff). Same reasoning is why the embedded SaveLoadView here has its
-## Save button hidden (SaveLoadView.set_save_enabled(false)) — there's
-## nothing live to save FROM this screen.
+## handoff).
 ##
 ## Display Options works identically to its in-game counterpart with zero
 ## special-casing: DisplaySettings is a plain autoload, independent of
@@ -28,9 +30,14 @@ extends Control
 
 const MENU_WIDTH := 260.0
 const OVERLAY_SIZE := Vector2(340.0, 320.0)
+## Fallback only, like OVERLAY_SIZE — _place_center() resizes both to their
+## real content. Larger because the campaign/save browser's rows carry
+## screenshots rather than one line of text each.
+const BROWSER_SIZE := Vector2(420.0, 420.0)
 
 var _save_load_manager: SaveLoadManager
-var _save_load_view: SaveLoadView
+var _campaign_browser_view: CampaignBrowserView
+var _new_campaign_view: NewCampaignView
 var _display_options_view: DisplayOptionsView
 
 func _ready() -> void:
@@ -78,13 +85,19 @@ func _ready() -> void:
 	_save_load_manager.name = "SaveLoadManager"
 	add_child(_save_load_manager)
 
-	_save_load_view = SaveLoadView.new()
-	_save_load_view.name = "SaveLoadView"
-	add_child(_save_load_view)
-	_place_center(_save_load_view, OVERLAY_SIZE)
-	_save_load_view.setup(_save_load_manager)
-	_save_load_view.set_save_enabled(false)
-	_save_load_view.load_requested.connect(_on_load_requested)
+	_campaign_browser_view = CampaignBrowserView.new()
+	_campaign_browser_view.name = "CampaignBrowserView"
+	add_child(_campaign_browser_view)
+	_place_center(_campaign_browser_view, BROWSER_SIZE)
+	_campaign_browser_view.setup(_save_load_manager)
+	_campaign_browser_view.load_requested.connect(_on_load_requested)
+
+	_new_campaign_view = NewCampaignView.new()
+	_new_campaign_view.name = "NewCampaignView"
+	add_child(_new_campaign_view)
+	_place_center(_new_campaign_view, OVERLAY_SIZE)
+	_new_campaign_view.setup(_save_load_manager)
+	_new_campaign_view.campaign_confirmed.connect(_on_campaign_confirmed)
 
 	_display_options_view = DisplayOptionsView.new()
 	_display_options_view.name = "DisplayOptionsView"
@@ -132,18 +145,26 @@ func _place_center(control: Control, fallback_size: Vector2) -> void:
 		, CONNECT_ONE_SHOT)
 
 func _on_new_game_pressed() -> void:
+	_display_options_view.close()
+	_campaign_browser_view.close()
+	_new_campaign_view.open()
+
+func _on_campaign_confirmed(campaign_name: String) -> void:
+	GameLaunchState.request_new_campaign(campaign_name)
 	get_tree().change_scene_to_file("res://scenes/main/Main.tscn")
 
 func _on_continue_pressed() -> void:
 	_display_options_view.close()
-	_save_load_view.open()
+	_new_campaign_view.close()
+	_campaign_browser_view.open()
 
 func _on_load_requested(campaign_name: String, slot_name: String) -> void:
 	GameLaunchState.request_load(campaign_name, slot_name)
 	get_tree().change_scene_to_file("res://scenes/main/Main.tscn")
 
 func _on_display_options_pressed() -> void:
-	_save_load_view.close()
+	_campaign_browser_view.close()
+	_new_campaign_view.close()
 	_display_options_view.open()
 
 func _on_exit_pressed() -> void:

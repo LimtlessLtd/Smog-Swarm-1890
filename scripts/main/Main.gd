@@ -23,25 +23,31 @@ extends Node2D
 
 ## "There should be a 'Main Menu' that has all the save/load functionality
 ## on it" (user request) — MainMenu.tscn is the project's boot scene; its
-## own "Continue" screen can't load state into managers that don't exist
-## yet there, so it records which campaign/slot on the GameLaunchState
-## autoload and changes scene to THIS one. Consuming it here (rather than
-## in SaveLoadManager itself) keeps GameLaunchState a dumb data-holder —
-## same "owns neither, only reads/writes what's passed in" split every
-## other cross-system reference in this project keeps — and reuses this
-## exact `_ready()`'s own "runs after every sibling manager's `_ready()`"
-## guarantee the camera-recenter logic below already depends on:
-## SaveLoadManager.load_game() needs every manager it restores into to
-## already exist.
+## own New Game / Continue screens can't touch managers that don't exist
+## yet there, so they record the chosen campaign (and, for Continue, a
+## slot) on the GameLaunchState autoload and change scene to THIS one.
+## Consuming it here (rather than in SaveLoadManager itself) keeps
+## GameLaunchState a dumb data-holder — same "owns neither, only
+## reads/writes what's passed in" split every other cross-system reference
+## in this project keeps — and reuses this exact `_ready()`'s own "runs
+## after every sibling manager's `_ready()`" guarantee the camera-recenter
+## logic below already depends on: SaveLoadManager.load_game() needs every
+## manager it restores into to already exist.
 @export var camera_path: NodePath
 @export var building_manager_path: NodePath
-@export var save_load_manager_path: NodePath  ## Optional — unset just means a GameLaunchState pending-load request is silently skipped rather than crashing (same "gracefully skip it" convention every optional NodePath in this project follows).
+@export var save_load_manager_path: NodePath  ## Optional — unset just means a GameLaunchState launch request is silently skipped rather than crashing (same "gracefully skip it" convention every optional NodePath in this project follows).
 
 func _ready() -> void:
-	if GameLaunchState.has_pending_load() and save_load_manager_path != NodePath():
+	if save_load_manager_path != NodePath() and GameLaunchState.has_pending_launch():
 		var save_load_manager: SaveLoadManager = get_node(save_load_manager_path)
-		var pending := GameLaunchState.consume_pending_load()
-		save_load_manager.load_game(pending["campaign"], pending["slot"])
+		var launch := GameLaunchState.consume_pending_launch()
+		# Set FIRST, and for both launch paths: it decides which campaign
+		# folder this session's saves land in, and load_game() below reads
+		# out of the campaign it names. A New Game carries a campaign and no
+		# slot, so it sets this and stops there.
+		save_load_manager.set_active_campaign(launch["campaign"])
+		if not (launch["slot"] as String).is_empty():
+			save_load_manager.load_game(launch["slot"])
 		# Deliberately falls through to the same camera recenter below —
 		# SaveGameData doesn't capture camera position at all (nothing to
 		# restore), so a freshly-loaded game needs exactly the same
