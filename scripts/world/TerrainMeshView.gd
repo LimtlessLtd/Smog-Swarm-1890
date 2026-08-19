@@ -27,6 +27,16 @@ extends Node2D
 ## edge, correct in shape but abrupt), no elevation displacement (Phase 4),
 ## and no runtime re-triangulation when SubHexTerrainOverride writes (Phase 6,
 ## so a Town Hall's urban disc does not yet appear in the mesh).
+##
+## Triangles on ocean hexes are dropped at build time (_is_on_land()). A baked
+## chunk is a 4096-wu RECTANGLE and the bake fills its whole extent, so a
+## coastal chunk carries real triangles well past the coast -- which rendered
+## as walkable ground over open sea once the mesh went in ("if you are zoomed
+## into tactical view mode, the sea renders as walkable ground tiles and
+## biomes instead of being just pure sea", user report). SeaView cannot cover
+## it: sea is one map-wide polygon at z -5/-4 and this layer is -2, so the
+## mesh always wins wherever it draws. Dropping the triangles is what lets the
+## sea below actually show through.
 
 ## Repeat distance for a terrain texture, in world units. The divisor is the
 ## 11x11 render grid the deleted SubHexGroundView drew per hex, kept so
@@ -204,11 +214,14 @@ func _build_chunk(address: Vector2i) -> void:
 		var a := vertices[indices[base]]
 		var b := vertices[indices[base + 1]]
 		var c := vertices[indices[base + 2]]
+		var centroid := (a + b + c) / 3.0
+		if not _is_on_land(centroid):
+			continue
 		var biome := RealTerrainSampler.biome_from_code(data.triangle_biomes[tri])
 		# Soil is resolved at the triangle's centroid, not per vertex: it only
 		# selects which of a biome's SVG variants to use, and a per-vertex
 		# answer could not be honoured by a single-texture surface anyway.
-		var soil := _soil_at(biome, (a + b + c) / 3.0, soil_cache)
+		var soil := _soil_at(biome, centroid, soil_cache)
 		var key := Vector2i(int(biome), int(soil))
 		var points: Array = triangles_by_key.get(key, [])
 		if points.is_empty():
@@ -219,6 +232,29 @@ func _build_chunk(address: Vector2i) -> void:
 
 	for key: Vector2i in triangles_by_key:
 		container.add_child(_build_surface(key.x, key.y, triangles_by_key[key]))
+
+
+## True where `world_pos` falls on a land hex.
+##
+## BritishGeographyData's land RLE is the same source HexMapGenerator decides
+## OCEAN from and the same one CoastlineOutlineView traces, so culling against
+## it puts the mesh's edge exactly on the coastline already drawn rather than
+## inventing a second, disagreeing shoreline. That shoreline is hex-resolution,
+## so a triangle straddling the coast is kept or dropped whole by which hex its
+## centroid lands in -- an overhang bounded by one triangle (tens of world
+## units against a 512-wu hex), not the 4096-wu chunk rectangle this replaces.
+## A real sub-hex coastline is epic Phase 1b; it belongs in the bake, not here.
+##
+## The dictionary is expanded from the RLE on every get_landmass_hexes() call
+## and holds ~4,700 entries, so it is built once for the whole class rather
+## than per chunk -- a chunk build asks this question tens of thousands of
+## times.
+static var _land_hexes: Dictionary = {}
+
+func _is_on_land(world_pos: Vector2) -> bool:
+	if _land_hexes.is_empty():
+		_land_hexes = BritishGeographyData.get_landmass_hexes()
+	return _land_hexes.has(HexCoord.world_to_axial(world_pos))
 
 
 ## SubHexSoilQuery.soil_for_biome_at() memoized per TEXTURE_WORLD_SIZE cell.

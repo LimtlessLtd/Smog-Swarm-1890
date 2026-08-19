@@ -62,6 +62,15 @@ const _ELEVATION_PATH: String = "res://assets/terrain_data/elevation.png"
 const _CORRIDOR_Q: Vector2i = Vector2i(55, 105)
 const _CORRIDOR_R: Vector2i = Vector2i(85, 160)
 
+## The baked corridor's inclusive axial range, for tooling that needs to walk
+## exactly the hexes real data exists for (scripts/test/verify_boundary_connectivity.gd)
+## rather than re-declaring a second copy of the range that could drift.
+static func get_corridor_q() -> Vector2i:
+	return _CORRIDOR_Q
+
+static func get_corridor_r() -> Vector2i:
+	return _CORRIDOR_R
+
 const _BIOME_BY_CODE: Array[GameEnums.BiomeType] = [
 	GameEnums.BiomeType.MOORLAND,
 	GameEnums.BiomeType.FARMLAND,
@@ -116,6 +125,33 @@ static func feature_from_code(code: int) -> GameEnums.TerrainFeature:
 static func is_available() -> bool:
 	_ensure_loaded()
 	return _landcover_image != null and _elevation_image != null
+
+## The decoded rasters and the world position of their (0,0) pixel, for a
+## caller that needs to walk the WHOLE raster rather than ask about one
+## position — ReliefImageBuilder synthesises a hillshade from every
+## elevation pixel at once, and 550k individual sample_at() calls to do that
+## would each redo _ensure_loaded()/_ensure_origin() and rebuild a Dictionary
+## per pixel. Public accessors rather than the `_`-prefixed statics directly:
+## cross-class reads of another class's private fields are forbidden
+## (CLAUDE.md §1), and these also guarantee the lazy load has run.
+##
+## Returns null before the bake exists — same "not available" contract
+## is_available() already exposes. Callers must not mutate the returned
+## Image; it is the live cached one every sample_at() reads.
+static func get_elevation_image() -> Image:
+	_ensure_loaded()
+	return _elevation_image
+
+static func get_landcover_image() -> Image:
+	_ensure_loaded()
+	return _landcover_image
+
+## World position of raster pixel (0,0) — pixel (px,py) covers world
+## `get_raster_origin_world() + Vector2(px, py) * WORLD_UNITS_PER_PIXEL`,
+## the exact inverse of _pixel_for_world().
+static func get_raster_origin_world() -> Vector2:
+	_ensure_origin()
+	return _raster_origin_world
 
 static func _ensure_loaded() -> void:
 	if _images_loaded:

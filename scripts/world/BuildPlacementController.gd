@@ -29,11 +29,15 @@ extends Node2D
 ## placement, offset to stay aligned with the hex under the cursor rather
 ## than moving with it.
 ##
-## Accessibility: green/red for placeable/blocked is carried by the
-## building preview's own tint, but that alone would fail anyone who can't
-## distinguish the two tints at low opacity — _ghost_indicator (small
-## hexagon vs. diamond) is a fixed badge near the box's corner so the
-## shape signal survives independent of how the color reads.
+## Placeable/blocked is carried by the preview's own green/red tint plus
+## the hex outline, and by nothing else. A separate shape badge (a small
+## hexagon/diamond offset past the box's bottom-right corner) used to
+## double the signal for anyone who can't distinguish the two tints;
+## removed on user report — "theres a green/red diamond off to the bottom
+## right of where the building is being placed, im not sure what it is for
+## and what its supposed to be indicating." A cue nobody can interpret
+## isn't redundancy, and an unexplained mark offset away from the cursor
+## reads as part of the placement rather than as a status light.
 ##
 ## Placement is restricted to Tactical zoom (CameraController.is_tactical_zoom(),
 ## the existing hard-cut threshold). Selecting a building type while
@@ -48,7 +52,6 @@ signal placement_ended
 
 const _VALID_COLOR := Color(0.20, 0.75, 0.30, 0.85)
 const _BLOCKED_COLOR := Color(0.80, 0.20, 0.15, 0.85)
-const _INDICATOR_RADIUS := 10.0
 const _GHOST_BUILDING_ALPHA := 0.55  ## Landed on 55% opacity (45% transparent) after actually looking at it: 80%+ transparent made the preview nearly invisible against textured terrain, the exact problem this feature exists to fix. Tinted green/red on top (see _update_ghost()), not a neutral white — the color signal needs to read at a glance, not just the shape.
 
 @export var hex_grid_map_path: NodePath
@@ -65,7 +68,6 @@ var _pending_type: GameEnums.BuildingType = GameEnums.BuildingType.LUMBER_YARD
 var _ghost_outline: Line2D
 var _ghost_building: Polygon2D  ## The actual building footprint at its real size/texture, semi-transparent, tracking the cursor exactly.
 var _ghost_building_outline: Line2D  ## Same reasoning as TacticalHexView's own building outline: a semi-transparent fill alone reads poorly against similarly-toned terrain, an outline doesn't.
-var _ghost_indicator: Polygon2D  ## Small hexagon (valid) or diamond (blocked) — the shape half of the color pairing.
 var _reject_player: AudioStreamPlayer
 
 func _ready() -> void:
@@ -90,9 +92,6 @@ func _ready() -> void:
 	_ghost_building_outline.closed = true
 	_ghost_building_outline.width = 3.0
 	add_child(_ghost_building_outline)
-
-	_ghost_indicator = Polygon2D.new()
-	add_child(_ghost_indicator)
 
 	_reject_player = AudioStreamPlayer.new()
 	_reject_player.stream = AlertTones.negative_tone()
@@ -199,19 +198,12 @@ func _update_ghost(world_pos: Vector2) -> void:
 	_ghost_building_outline.points = box_points
 	_ghost_building_outline.default_color = color  ## Full opacity, unlike the fill — same "outline makes the shape legible regardless of fill/terrain color" reasoning as TacticalHexView's real building outline, doubly true here since the fill is deliberately translucent.
 
-	# Badge sits just outside the box's own corner rather than on top of it,
-	# so it stays legible against the (semi-transparent, art-covered) box
-	# instead of getting lost inside it.
-	_ghost_indicator.position = Vector2(half + _INDICATOR_RADIUS + 6.0, half + _INDICATOR_RADIUS + 6.0)
-	_ghost_indicator.color = color
-	_ghost_indicator.polygon = _hexagon_points(_INDICATOR_RADIUS) if can_place else _diamond_points(_INDICATOR_RADIUS)
 
 func _set_ghost_visible(is_visible: bool) -> void:
 	var actually_visible := is_visible and _is_tactical_zoom()
 	_ghost_outline.visible = actually_visible
 	_ghost_building.visible = actually_visible
 	_ghost_building_outline.visible = actually_visible
-	_ghost_indicator.visible = actually_visible
 	if actually_visible:
 		_update_ghost(get_global_mouse_position())
 
@@ -221,13 +213,3 @@ func _offset_polygon(points: PackedVector2Array, offset: Vector2) -> PackedVecto
 	for i in range(points.size()):
 		result[i] = points[i] + offset
 	return result
-
-func _hexagon_points(radius: float) -> PackedVector2Array:
-	var points := PackedVector2Array()
-	for i in range(6):
-		var angle := deg_to_rad(60.0 * i - 30.0)
-		points.append(Vector2(radius * cos(angle), radius * sin(angle)))
-	return points
-
-func _diamond_points(radius: float) -> PackedVector2Array:
-	return PackedVector2Array([Vector2(0, -radius), Vector2(radius, 0), Vector2(0, radius), Vector2(-radius, 0)])

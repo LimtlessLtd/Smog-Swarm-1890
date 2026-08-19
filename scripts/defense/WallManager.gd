@@ -85,13 +85,24 @@ func get_segments_at(coord: Vector2i) -> Array[WallSegment]:
 ## Restricted to pieces registered under from_hex/to_hex (WallSegment.connects())
 ## for efficiency — a piece can only block a crossing near the specific
 ## hex(es) its own endpoints fall in.
-func get_blocking_segment(from_hex: Vector2i, to_hex: Vector2i, from_world: Vector2, to_world: Vector2) -> WallSegment:
+##
+## `ignore_gates` is what makes a Gate a gate. The player's own units pass
+## it (true), a horde does not (false, the default) — "friendly military
+## units can pass through gates with no problems, zombies cannot pass
+## through gates" (user report). Before this, a Gate blocked a unit's route
+## exactly like solid wall, which left gates with no function at all on the
+## player's side and could seal a garrison inside its own starting
+## perimeter. A gate still SIEGES identically (damage_segment() has never
+## looked at is_gate) — this is a movement rule, not a combat one.
+func get_blocking_segment(from_hex: Vector2i, to_hex: Vector2i, from_world: Vector2, to_world: Vector2, ignore_gates: bool = false) -> WallSegment:
 	var candidates := get_segments_at(from_hex)
 	if to_hex != from_hex:
 		for segment in get_segments_at(to_hex):
 			if not candidates.has(segment):
 				candidates.append(segment)
 	for segment in candidates:
+		if ignore_gates and segment.is_gate:
+			continue
 		if not segment.is_breached() and Geometry2D.segment_intersects_segment(from_world, to_world, segment.point_a, segment.point_b) != null:
 			return segment
 	return null
@@ -211,6 +222,65 @@ func place_wall_line(world_a: Vector2, world_b: Vector2, tier: int = WallCatalog
 		placed.append(_register_freehand_segment(point_a, point_b, tier, is_gate))
 	return placed
 
+## Where a gate anchored at `anchor` and aimed at `toward` actually ends.
+## Static and public so WallPlacementController's preview draws the exact
+## piece place_gate() would build — a preview that is merely "about right"
+## is worse than none, because the player aims with it.
+##
+## Length is fixed at WallCatalog.GATE_LENGTH_WORLD_UNITS: the cursor picks
+## the DIRECTION only. A gate is one manufactured object, not a run of wall
+## drawn to taste.
+static func gate_endpoint(anchor: Vector2, toward: Vector2) -> Vector2:
+	var direction := toward - anchor
+	if direction.length_squared() <= 0.0001:
+		direction = Vector2.RIGHT  ## Degenerate aim (cursor exactly on the anchor) — any direction beats a zero-length gate.
+	return anchor + direction.normalized() * WallCatalog.GATE_LENGTH_WORLD_UNITS
+
+## Places ONE gate, at its own fixed length, aimed from `anchor` toward
+## `toward`. Deliberately NOT routed through place_wall_line(): that chops
+## anything longer than MAX_SEGMENT_LENGTH_WORLD_UNITS into independent
+## pieces, which for a gate would mean three separately-breachable thirds of
+## a door and three copies of the gate art laid end to end. Returns the
+## placed segment, or null if the ground rejected it (the caller reports the
+## reason, which placement_rejected has already carried).
+func place_gate(anchor: Vector2, toward: Vector2, tier: int = WallCatalog.WOODEN) -> WallSegment:
+	if not _hex_grid_map:
+		return null
+	var end := gate_endpoint(anchor, toward)
+	var error := get_placement_error_for_points(anchor, end, tier)
+	if not error.is_empty():
+		placement_rejected.emit(_hex_grid_map.world_to_coord(anchor), _hex_grid_map.world_to_coord(end), error)
+		return null
+	if _resource_manager:
+		_resource_manager.spend(_cost_for_length(tier, anchor.distance_to(end)))
+	return _register_freehand_segment(anchor, end, tier, true)
+
+## The point a unit should aim at to cross from `from_hex` into `to_hex`
+## when a Gate stands on that edge, as an offset from `to_hex`'s own centre
+## (the same shape SubHexPortalGraph.portal_offset_for_step() returns, so a
+## caller substitutes one for the other). Null when no usable gate is there.
+##
+## Without this a unit walks at the sub-hex portal instead and crosses the
+## defensive line wherever that lands — visually straight through the solid
+## wall beside its own gate. Breached gates are skipped: a hole in the line
+## is not somewhere to aim, and the wall either side of it is what a unit
+## still has to get around.
+func get_gate_crossing_offset(from_hex: Vector2i, to_hex: Vector2i) -> Variant:
+	var boundary := (HexCoord.axial_to_world(from_hex) + HexCoord.axial_to_world(to_hex)) * 0.5
+	var best: WallSegment = null
+	var best_distance := INF
+	for segment in get_segments_at(from_hex) + get_segments_at(to_hex):
+		if not segment.is_gate or segment.is_breached():
+			continue
+		var midpoint := (segment.point_a + segment.point_b) * 0.5
+		var distance := midpoint.distance_to(boundary)
+		if distance < best_distance:
+			best_distance = distance
+			best = segment
+	if not best:
+		return null
+	return (best.point_a + best.point_b) * 0.5 - HexCoord.axial_to_world(to_hex)
+
 ## Free/seeded placement (seed_starting_defenses()) — same chopping as
 ## place_wall_line() but bypasses the cost check and never spends resources.
 ## Terrain/map-bounds validity is still checked so a malformed core-hex
@@ -245,11 +315,12 @@ func _register_freehand_segment(point_a: Vector2, point_b: Vector2, tier: int, i
 ## other piece of the opening move is (bypasses the cost check, registered
 ## directly) — this is the game's own starting state, not a player purchase.
 ##
-## A subset of boundary edges are Gates instead of solid wall: the whole
-## ring only ever blocks a HORDE (walls never block the player's own
-## units/logistics), so a plain gap would just be a hole a horde walks
-## through uncontested. A Gate still sieges like any other segment, just at
-## a fraction of the HP. Each DISTINCT source hex's own first boundary edge
+## A subset of boundary edges carry a Gate in the middle of an otherwise
+## solid run. The ring stops hordes AND the player's own units
+## (get_blocking_segment()), so without a gate the starting garrison would
+## be sealed inside its own free perimeter — a plain gap instead would be a
+## hole a horde walks through uncontested. A Gate still sieges like any
+## other segment, just at a fraction of the HP. Each DISTINCT source hex's own first boundary edge
 ## is reserved as solid (not just one global reservation) — a global
 ## reservation only guarantees one solid wall total, which can leave an
 ## entire disconnected ring at 100% Gates if a different ring's own edges
@@ -272,9 +343,11 @@ func seed_starting_defenses() -> void:
 
 	var boundary_edges: Array[Vector2i] = []  # outside-hex half of each (core_hex, outside_hex) pair, paired 1:1 with boundary_sources
 	var boundary_sources: Array[Vector2i] = []
+	var boundary_directions: Array[int] = []  # Which of the six HexCoord.NEIGHBOR_DIRECTIONS the pair sits on — identifies the shared EDGE, see _seed_boundary_edge().
 	var seen_edges: Dictionary = {}  # String ("q,r-q,r") -> true — dedup within this pass
 	for core_coord in core_hexes:
-		for neighbor in HexCoord.neighbors(core_coord):
+		for direction_index in range(6):
+			var neighbor: Vector2i = core_coord + HexCoord.NEIGHBOR_DIRECTIONS[direction_index]
 			if core_set.has(neighbor):
 				continue  ## Interior edge between two core hexes — not a boundary.
 			var cell := _hex_grid_map.get_cell(neighbor)
@@ -295,6 +368,7 @@ func seed_starting_defenses() -> void:
 			seen_edges[key] = true
 			boundary_sources.append(core_coord)
 			boundary_edges.append(neighbor)
+			boundary_directions.append(direction_index)
 
 	var gate_eligible_indices: Array[int] = []
 	var reserved_source: Dictionary = {}  # Vector2i -> true, one reservation per distinct source hex
@@ -311,11 +385,48 @@ func seed_starting_defenses() -> void:
 		gate_indices[gate_eligible_indices[i]] = true
 
 	for i in boundary_edges.size():
-		# Each boundary EDGE seeds as a chain of <=100m pieces
-		# (_seed_wall_line(), hex-center to hex-center), same as any player-
-		# drawn wall would. gate_indices is keyed per EDGE, not per piece —
-		# every piece along a "gate" edge seeds as a Gate.
-		_seed_wall_line(HexCoord.axial_to_world(boundary_sources[i]), HexCoord.axial_to_world(boundary_edges[i]), WallCatalog.WOODEN, gate_indices.has(i))
+		_seed_boundary_edge(boundary_sources[i], boundary_directions[i], gate_indices.has(i))
+
+## Seeds one boundary edge: a chain of <=100m wall pieces laid ALONG THE
+## SHARED HEX EDGE, with a single Gate centred on it when `with_gate`.
+##
+## Along the edge, not from hex centre to hex centre. The old version drew
+## the wall down the line between the two centres — i.e. along the direction
+## anything crossing would be travelling, not across it. That is not a
+## perimeter, and it does not block: get_blocking_segment() asks whether the
+## travel line intersects the wall's line, and Geometry2D.segment_intersects_segment()
+## reports nothing for two collinear segments, so a horde walking straight
+## down that edge passed through its own free starting wall untouched. Laid
+## across the boundary, a crossing meets it square and the intersection is
+## unambiguous.
+##
+## The gate goes in the MIDDLE of the edge because that is exactly where a
+## centre-to-centre crossing passes through it — which is what makes
+## get_gate_crossing_offset() able to aim a unit at a door rather than at a
+## wall. The rest of the edge is ordinary solid wall: a gate is a door in a
+## line, not a whole open side.
+func _seed_boundary_edge(core_coord: Vector2i, direction_index: int, with_gate: bool) -> void:
+	var corners := HexCoord.corner_points(HexCoord.axial_to_world(core_coord))
+	var edge_a: Vector2 = corners[direction_index]
+	var edge_b: Vector2 = corners[(direction_index + 1) % 6]
+	if not with_gate:
+		_seed_wall_line(edge_a, edge_b, WallCatalog.WOODEN, false)
+		return
+	var midpoint := (edge_a + edge_b) * 0.5
+	var along := (edge_b - edge_a).normalized()
+	var half_gate := along * WallCatalog.GATE_LENGTH_WORLD_UNITS * 0.5
+	_seed_wall_line(edge_a, midpoint - half_gate, WallCatalog.WOODEN, false)
+	_seed_gate(midpoint - half_gate, midpoint + half_gate)
+	_seed_wall_line(midpoint + half_gate, edge_b, WallCatalog.WOODEN, false)
+
+## The gate half of _seed_boundary_edge(), free and un-chopped — the same
+## "validate terrain, skip rather than fail" contract _seed_wall_line() has.
+func _seed_gate(point_a: Vector2, point_b: Vector2) -> void:
+	var cell_a := _hex_grid_map.get_cell(_hex_grid_map.world_to_coord(point_a))
+	var cell_b := _hex_grid_map.get_cell(_hex_grid_map.world_to_coord(point_b))
+	if not cell_a or not cell_b or not cell_a.is_passable() or not cell_b.is_passable():
+		return
+	_register_freehand_segment(point_a, point_b, WallCatalog.WOODEN, true)
 
 func get_upgrade_error(segment: WallSegment) -> String:
 	if not segment:

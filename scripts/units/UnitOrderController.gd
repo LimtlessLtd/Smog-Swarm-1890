@@ -18,8 +18,11 @@ extends Node
 ## (Sub-Hex Mechanical Layer Phase 2a, todo.md,
 ## [[sub-hex-mechanical-layer-epic]] memory) rather than the hex's plain
 ## geometric center, falling back to the center only when no portal exists
-## for that edge. Units are still never blocked by walls (only
-## HordeManager's hordes are) — pre-existing asymmetry.
+## for that edge. Solid wall blocks a unit's route (HexPathfinder.find_path()'s
+## own wall_manager argument excludes those edges, and _blocked_by_wall()
+## re-checks each crossing live); a Gate does not — that asymmetry is what
+## gives gates a purpose on the player's side, and it is the only movement
+## difference between the two. See WallManager.get_blocking_segment().
 ##
 ## LOGIC_TICK_SECONDS no longer gates movement — it only drives
 ## _regen_if_friendly() at a fixed real-world rate.
@@ -52,6 +55,15 @@ extends Node
 ## everywhere it's read.
 
 signal unit_order_issued(instance: UnitInstance, order: GameEnums.UnitOrderType)
+## No route exists from where this unit is standing to `destination` — the
+## goal is impassable, off-map, or walled/sealed off from it. Emitted once
+## per (unit, destination), not once per failed replan: without a route the
+## unit simply stands still, which is indistinguishable from a bug unless
+## something says so ("if you attempt to tell a unit to go to a place and it
+## cant find a valid path there, there should be a message displayed on the
+## screen momentarily", user report). UnitCommandController relays it to the
+## HUD; nothing here knows what a toast is.
+signal move_order_unreachable(instance: UnitInstance, destination: Vector2i)
 signal unit_arrived(instance: UnitInstance, coord: Vector2i)
 signal unit_moved(instance: UnitInstance, from_coord: Vector2i, to_coord: Vector2i)
 
@@ -87,6 +99,15 @@ const ENTITY_RADIUS: float = 20.0  ## Clearance radius a moving unit/squad prese
 ## fallback mainly matters for local-only obstacles the route can't route
 ## around, since a hex is much bigger than a single building's footprint.
 const STUCK_UNSTICK_SECONDS: float = 3.0
+
+## Hard bound on how many times one _advance_toward() call may clear its
+## path and re-plan after finding a wall across the next crossing. The route
+## and the crossing check are deliberately asked the identical question
+## (_blocked_by_wall()), so a re-plan cannot hand back the same refused edge
+## and this should never fire — it exists so that if some future change lets
+## them disagree again, the symptom is a unit that pauses rather than a
+## frame that never ends.
+const MAX_REPLANS_PER_CALL: int = 4
 const STUCK_PROGRESS_FRACTION: float = 0.25  ## Below this fraction of the speed-implied distance, a crossing attempt counts as "not really progressing".
 
 ## Transient (never saved) — unit id -> seconds of near-zero net progress
@@ -94,6 +115,18 @@ const STUCK_PROGRESS_FRACTION: float = 0.25  ## Below this fraction of the speed
 ## resumes, or the unit stops moving for any reason (order change,
 ## HOLD/GARRISON, arrival).
 var _stuck_seconds: Dictionary = {}
+
+## A failed A* search costs a full frontier exhaustion over every reachable
+## hex — the most expensive search the map can produce, since it only
+## returns after running out of frontier. Retrying it every frame for a unit
+## ordered somewhere genuinely unreachable burned that cost ~60x/second per
+## unit, forever. Backing off is safe: the only things that can turn an
+## unreachable goal reachable are a wall breached/demolished or a marsh
+## drained, none of which happen within a frame of each other.
+const REPLAN_RETRY_SECONDS: float = 2.0
+
+var _replan_backoff: Dictionary = {}       ## Transient — unit id -> seconds until the next replan attempt is allowed.
+var _unreachable_reported: Dictionary = {} ## Transient — unit id -> Vector2i destination already announced, so move_order_unreachable fires once per order rather than once per retry.
 
 ## "Military units get increased movement speed" (Day) — no exact design
 ## number, a placeholder balancing multiplier. No Night-time penalty — Night
@@ -208,8 +241,14 @@ func issue_patrol_order(instance: UnitInstance, waypoints: Array[Vector2i], wayp
 	instance.path.clear()
 	return true
 
+## Every order path routes through here, so clearing the transient
+## route-failure state in one place covers move/attack-move/patrol/garrison
+## alike — a fresh order deserves a fresh attempt and, if it fails too, a
+## fresh message.
 func _set_order(instance: UnitInstance, order: GameEnums.UnitOrderType) -> void:
 	instance.order = order
+	_replan_backoff.erase(instance.id)
+	_unreachable_reported.erase(instance.id)
 	unit_order_issued.emit(instance, order)
 
 ## What a one-shot MOVE/ATTACK_MOVE order reverts to on arrival — HOLD,
@@ -268,25 +307,36 @@ func _advance_toward(instance: UnitInstance, destination: Vector2i, destination_
 		var before := HexCoord.axial_to_world(instance.hex_coord) + instance.local_position
 		var result := MovementStepper.advance_toward_hex(instance.hex_coord, instance.local_position, destination, delta, speed, obstacles, ENTITY_RADIUS, float(instance.id), destination_local)
 		instance.local_position = result["local_position"]
-		_update_stuck(instance, before, HexCoord.axial_to_world(instance.hex_coord) + instance.local_position, speed, delta)
+		_update_stuck(instance, before, HexCoord.axial_to_world(instance.hex_coord) + instance.local_position, HexCoord.axial_to_world(destination) + destination_local, speed, delta)
 		if result["arrived"]:
 			unit_arrived.emit(instance, instance.hex_coord)
 			if revert_to_hold_on_arrival:
 				_revert_on_arrival(instance)
 		return
 	if instance.path.is_empty():
-		_replan(instance, destination)
+		_replan_with_backoff(instance, destination, delta)
 	if instance.path.is_empty():
-		return  ## No route found this cycle (e.g. destination currently unreachable) — try again next frame.
+		return  ## No route right now — _replan_with_backoff() owns the retry cadence and the one-shot player-facing report.
 
 	var bypass_obstacles := _is_stuck(instance)
 	var world_pos_before := HexCoord.axial_to_world(instance.hex_coord) + instance.local_position
 	var last_speed := 1.0
+	## The point this frame's LAST crossing attempt was actually aiming at, and
+	## whether any crossing completed. _update_stuck() measures progress toward
+	## the current leg rather than toward `destination`: a route legitimately
+	## walks AWAY from the destination in a straight line whenever it detours
+	## around water or impassable ground, which a destination-relative measure
+	## would read as being stuck. A completed crossing is unambiguous progress
+	## and clears the timer outright — it also moves the aim point, so the
+	## before/after distances either side of it aren't comparable.
+	var leg_target := world_pos_before
+	var crossed_a_boundary := false
+	var replans_this_call := 0
 	var remaining := delta
 	while remaining > 0.0 and not instance.path.is_empty():
 		var next_coord: Vector2i = instance.path[0]
 		var from_coord := instance.hex_coord  ## Captured BEFORE the call below overwrites it — this is the hex actually being left this crossing.
-		var leg_local_offset := destination_local if next_coord == destination else _portal_offset_for_step(from_coord, next_coord)
+		var leg_local_offset := destination_local if next_coord == destination else _crossing_offset(from_coord, next_coord)
 
 		# Live wall re-check — _replan() above only avoids walls that
 		# existed at planning time; a wall built mid-route (or restored
@@ -297,15 +347,19 @@ func _advance_toward(instance: UnitInstance, destination: Vector2i, destination_
 		# leg_local_offset so this checks the SAME line the unit is about
 		# to actually walk (the real portal crossing point), not the plain
 		# hex center a wall near the boundary could otherwise miss.
-		if _wall_manager and _wall_manager.get_blocking_segment(from_coord, next_coord, HexCoord.axial_to_world(from_coord), HexCoord.axial_to_world(next_coord) + leg_local_offset):
+		if _wall_manager and _blocked_by_wall(from_coord, next_coord):
 			instance.path.clear()
-			_replan(instance, destination)
+			_replan_with_backoff(instance, destination, remaining)
 			if instance.path.is_empty():
 				return  ## No route around the new wall right now — try again next frame.
+			replans_this_call += 1
+			if replans_this_call > MAX_REPLANS_PER_CALL:
+				return  ## See MAX_REPLANS_PER_CALL — bail rather than spin.
 			continue  ## Re-read path[0] fresh — it may not even be `next_coord` any more.
 
 		var speed := _movement_speed(instance, from_coord, next_coord)
 		last_speed = speed
+		leg_target = HexCoord.axial_to_world(next_coord) + leg_local_offset
 		var obstacles: Array[Dictionary] = [] if bypass_obstacles else _gather_obstacles(from_coord, next_coord)
 		var result := MovementStepper.advance_toward_hex(from_coord, instance.local_position, next_coord, remaining, speed, obstacles, ENTITY_RADIUS, float(instance.id), leg_local_offset)
 		instance.hex_coord = result["hex_coord"]
@@ -315,13 +369,17 @@ func _advance_toward(instance: UnitInstance, destination: Vector2i, destination_
 			break  ## Used this frame's whole remaining budget without finishing the crossing.
 
 		instance.path.pop_front()
+		crossed_a_boundary = true
 		unit_moved.emit(instance, from_coord, instance.hex_coord)
 		if instance.hex_coord == destination:
 			unit_arrived.emit(instance, instance.hex_coord)
 			if revert_to_hold_on_arrival:
 				_revert_on_arrival(instance)
 	var world_pos_after := HexCoord.axial_to_world(instance.hex_coord) + instance.local_position
-	_update_stuck(instance, world_pos_before, world_pos_after, last_speed, delta)
+	if crossed_a_boundary:
+		_stuck_seconds[instance.id] = 0.0
+	else:
+		_update_stuck(instance, world_pos_before, world_pos_after, leg_target, last_speed, delta)
 
 ## On reaching a waypoint, loops immediately to the next one within the SAME
 ## call whenever the unit is already standing on the current one, so travel
@@ -354,16 +412,64 @@ func _patrol_waypoint_local(instance: UnitInstance, index: int) -> Vector2:
 		return instance.patrol_waypoint_locals[index]
 	return Vector2.ZERO
 
+## Runs _replan() at most every REPLAN_RETRY_SECONDS while it keeps failing,
+## and announces the first failure for this order via move_order_unreachable.
+## A success clears both, so a unit that later gets a route (wall breached,
+## marsh drained) resumes silently.
+func _replan_with_backoff(instance: UnitInstance, destination: Vector2i, delta: float) -> void:
+	var remaining: float = _replan_backoff.get(instance.id, 0.0) - delta
+	if remaining > 0.0:
+		_replan_backoff[instance.id] = remaining
+		return
+	_replan(instance, destination)
+	if not instance.path.is_empty():
+		_replan_backoff.erase(instance.id)
+		_unreachable_reported.erase(instance.id)
+		return
+	_replan_backoff[instance.id] = REPLAN_RETRY_SECONDS
+	if _unreachable_reported.get(instance.id) != destination:
+		_unreachable_reported[instance.id] = destination
+		move_order_unreachable.emit(instance, destination)
+
 func _replan(instance: UnitInstance, destination: Vector2i) -> void:
 	if not _hex_grid_map:
 		return
-	var path := HexPathfinder.find_path(_hex_grid_map, instance.hex_coord, destination, _logistics_network, _wall_manager)
+	var path := HexPathfinder.find_path(_hex_grid_map, instance.hex_coord, destination, _logistics_network, _wall_manager, true)
 	if path.size() > 1:
 		path.remove_at(0)  # path[0] is the unit's own current hex.
 		instance.path = path
 
 ## SubHexPortalGraph.portal_offset_for_step() needs a live HexGridMap — same
 ## null-guard convention _movement_speed() already applies to the same field.
+## A unit is stopped by solid wall but walks through a Gate — see
+## WallManager.get_blocking_segment()'s own `ignore_gates` doc comment.
+##
+## Asks about the CENTRE-TO-CENTRE line, byte-for-byte the same question
+## HexPathfinder.find_path() asks when it decides whether that edge exists at
+## all — including the same `gates_are_passable`. It used to test the line
+## the unit was really about to walk (centre to the leg's own sub-hex portal
+## offset), on the reasoning that this catches a wall sitting near the
+## boundary. It also let the two disagree, and disagreement here is not a
+## missed wall, it is a live-lock: the route keeps returning an edge the
+## crossing check keeps refusing, so the unit clears and re-plans the same
+## path forever without moving. MAX_REPLANS_PER_CALL is the backstop for any
+## future version of that; this is the fix.
+func _blocked_by_wall(from_coord: Vector2i, to_coord: Vector2i) -> bool:
+	return _wall_manager.get_blocking_segment(from_coord, to_coord, HexCoord.axial_to_world(from_coord), HexCoord.axial_to_world(to_coord), true) != null
+
+## Where within `to_coord` this crossing should aim: the Gate's own midpoint
+## if one stands on this edge, otherwise the sub-hex portal
+## (SubHexPortalGraph, Sub-Hex Mechanical Layer Phase 2a) as before. A unit
+## routed through a gate should visibly walk through the gate rather than
+## crossing its own defensive line at whatever point the portal happens to
+## sit at.
+func _crossing_offset(from_coord: Vector2i, to_coord: Vector2i) -> Vector2:
+	if _wall_manager:
+		var gate_offset: Variant = _wall_manager.get_gate_crossing_offset(from_coord, to_coord)
+		if gate_offset != null:
+			return gate_offset
+	return _portal_offset_for_step(from_coord, to_coord)
+
 func _portal_offset_for_step(from_coord: Vector2i, to_coord: Vector2i) -> Vector2:
 	if not _hex_grid_map:
 		return Vector2.ZERO
@@ -389,15 +495,24 @@ func _is_stuck(instance: UnitInstance) -> bool:
 
 ## `speed` is whatever the caller was using for this crossing attempt (the
 ## expected distance-per-second if nothing were in the way) — comparing
-## ACTUAL net displacement against that speed-implied distance, rather than
-## a flat world-units constant, keeps this correct across every terrain/
-## logistics/day speed multiplier already stacked into `speed`.
-func _update_stuck(instance: UnitInstance, before: Vector2, after: Vector2, speed: float, delta: float) -> void:
+## against that speed-implied distance, rather than a flat world-units
+## constant, keeps this correct across every terrain/logistics/day speed
+## multiplier already stacked into `speed`.
+##
+## Measures how much CLOSER TO `leg_target` the unit got, not how far it
+## moved. Raw displacement counts a unit shaking left-right against an
+## obstacle as full-speed travel, so the bypass this timer exists to trigger
+## never fired and the unit vibrated indefinitely — "sometimes units get
+## stuck during a move command, and they seem to vibrate from side to side
+## incredibly fast" (user report). Net approach is zero for that motion no
+## matter how fast it is, which is the property that actually distinguishes
+## being stuck from moving.
+func _update_stuck(instance: UnitInstance, before: Vector2, after: Vector2, leg_target: Vector2, speed: float, delta: float) -> void:
 	if delta <= 0.0:
 		return
-	var moved := before.distance_to(after)
+	var approached := before.distance_to(leg_target) - after.distance_to(leg_target)
 	var expected := maxf(speed, 0.01) * delta
-	if moved < expected * STUCK_PROGRESS_FRACTION:
+	if approached < expected * STUCK_PROGRESS_FRACTION:
 		_stuck_seconds[instance.id] = _stuck_seconds.get(instance.id, 0.0) + delta
 	else:
 		_stuck_seconds[instance.id] = 0.0

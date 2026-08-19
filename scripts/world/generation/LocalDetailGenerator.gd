@@ -34,6 +34,22 @@ const _PROP_COUNT_BY_BIOME: Dictionary = {
 	GameEnums.BiomeType.HEATHLAND: 55,  ## Low shrub cover — denser than tilled Farmland, sparser than a full forest canopy.
 }
 
+## Impassable ground is scattered at this density instead of its biome's
+## own, with a prop type chosen for what is blocking it (_blocking_prop_type()).
+## "We need to indicate to the user better via visual cues/images/shading/
+## polygon based terrain geography and blocking geographic features
+## (mountains, perhaps generated as assets? thick forrests?)" (user report):
+## ElevationReliefView answers that at map scale, but at Tactical zoom the
+## player is looking at the ground itself, and ground you cannot walk on
+## should look like ground you cannot walk on rather than like ordinary moor
+## with an overlay on it. Dense enough to read as a boulder field or reed
+## bed rather than a scatter — roughly double the densest ordinary biome.
+##
+## Applied only where the biome already scatters something (`count > 0`), so
+## it can never start dressing open ocean or city streets, which is what a
+## flat "impassable means this many props" rule would do.
+const _BLOCKING_PROP_COUNT: int = 140
+
 const _SCATTER_RADIUS: float = HexCoord.HEX_SIZE * 0.85  ## Stay inside the hex's own outline. Scales automatically with HexCoord.HEX_SIZE.
 
 ## Real bug fixed (player report: terrain props "that have a right way up
@@ -56,6 +72,9 @@ static func generate(cell: HexCell) -> Array[PropInstance]:
 	var count: int = _PROP_COUNT_BY_BIOME.get(cell.biome_type, 0)
 	if count <= 0:
 		return props
+	var blocking := not cell.is_passable()
+	if blocking:
+		count = _BLOCKING_PROP_COUNT
 
 	var rng := RandomNumberGenerator.new()
 	rng.seed = _hex_seed(cell.coord)
@@ -64,7 +83,7 @@ static func generate(cell: HexCell) -> Array[PropInstance]:
 		var angle := rng.randf_range(0.0, TAU)
 		var radius := rng.randf_range(0.0, _SCATTER_RADIUS)
 		var local_position := Vector2(cos(angle), sin(angle)) * radius
-		var prop := PropInstance.new(_prop_type_for_biome(cell.biome_type, rng), local_position)
+		var prop := PropInstance.new(_blocking_prop_type(cell) if blocking else _prop_type_for_biome(cell.biome_type, rng), local_position)
 		prop.rotation = rng.randf_range(0.0, TAU) if _FREE_ROTATION_PROP_TYPES.has(prop.prop_type) else rng.randf_range(-_ORIENTED_PROP_JITTER_RAD, _ORIENTED_PROP_JITTER_RAD)
 		prop.scale = rng.randf_range(0.8, 1.3)
 		props.append(prop)
@@ -75,6 +94,15 @@ static func generate(cell: HexCell) -> Array[PropInstance]:
 ## same props, regardless of generation/hydration order.
 static func _hex_seed(coord: Vector2i) -> int:
 	return int(coord.x) * 73856093 ^ int(coord.y) * 19349663
+
+## What is physically in the way, rather than what grows there: bare rock on
+## a Level 4 summit, reeds in a marsh or peat bog. One prop type per hex, not
+## a mix — a uniform field reads as a barrier, while a mixed scatter reads as
+## ordinary decorated ground however dense it gets.
+static func _blocking_prop_type(cell: HexCell) -> GameEnums.PropType:
+	if cell.height_level() == ElevationLevels.MOUNTAIN:
+		return GameEnums.PropType.ROCK
+	return GameEnums.PropType.REED
 
 static func _prop_type_for_biome(biome: GameEnums.BiomeType, rng: RandomNumberGenerator) -> GameEnums.PropType:
 	match biome:

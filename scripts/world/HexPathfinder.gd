@@ -88,6 +88,44 @@ static func is_water_crossing_blocked(hex_grid_map: HexGridMap, logistics_networ
 		return false
 	return not (logistics_network and logistics_network.is_bridge_between(from, to))
 
+## True if the real sub-hex terrain along the boundary shared by `from` and
+## `to` is impassable end to end, so no mover can cross between them however
+## passable the two hexes read at macro level.
+##
+## The macro graph knows one passability verdict per hex, aggregated from a
+## 5x5 sample at generation (RealTerrainSampler.majority_biome()). That misses
+## the case the sub-hex layer was built for: two ordinary hexes separated by a
+## marsh seam, a peat strip or a coastal inlet lying exactly along their shared
+## edge. Both hexes vote passable, the edge between them is not, and before
+## this the route crossed anyway — SubHexPortalGraph found the boundary
+## impassable, returned no portals, and portal_offset_for_step() quietly fell
+## back to the hex centre rather than telling anyone the crossing did not
+## exist. That fallback still stands for the case it was written for (a mover
+## needing SOME aim point); this is the separate question of whether the edge
+## belongs in the graph at all, asked before a route is ever built on it.
+##
+## Shared by find_path() below, HordeFlowField._build_field(), and
+## HordeManager._replan_cheap() — the same three neighbor-expansion loops
+## is_water_crossing_blocked() above already had to cover, and for the same
+## reason: _replan_cheap() goes through neither real search, so a rule wired
+## only into the two searches would silently keep letting far hordes step
+## across boundaries nothing can cross.
+##
+## Asks SubHexPortalGraph.has_any_crossing(), NOT find_portals().is_empty() —
+## the two answer the same question but the second builds the whole portal
+## list to do it. Measured (scripts/test/bench_portal_blocking.gd): the
+## find_portals() form cost 2.18 ms per cold edge and stranded ~178
+## SubHexTerrainQuery cache entries per edge, extrapolating to ~25 s and ~2M
+## entries over the corridor, paid lazily mid-session as hordes route into new
+## ground. has_any_crossing() stops at the first passable sample instead.
+##
+## Checked LAST in each expansion loop, after the cheap per-hex and per-edge
+## rejections, so an edge already excluded never pays for it at all.
+static func is_boundary_impassable(hex_grid_map: HexGridMap, from: Vector2i, to: Vector2i) -> bool:
+	if not hex_grid_map:
+		return false
+	return not SubHexPortalGraph.has_any_crossing(hex_grid_map, from, to)
+
 ## A* search from `start` to `goal` over `hex_grid_map`'s cells, weighted by
 ## HexCell.is_passable() (impassable hexes — marsh/peat bog — are never
 ## entered, not even as a detour), excluded across any WATERWAY-touching
@@ -109,7 +147,11 @@ static func is_water_crossing_blocked(hex_grid_map: HexGridMap, logistics_networ
 ## a unit route genuinely goes AROUND a wall. HordeManager's siege-on-
 ## contact behavior is unrelated and unchanged — hordes still want to
 ## smash through, units want to avoid.
-static func find_path(hex_grid_map: HexGridMap, start: Vector2i, goal: Vector2i, logistics_network: LogisticsNetwork = null, wall_manager: WallManager = null) -> Array[Vector2i]:
+##
+## `gates_are_passable` routes THROUGH Gate segments instead of around them
+## — true for the player's own units, false (the default) for a horde. See
+## WallManager.get_blocking_segment()'s own `ignore_gates` doc comment.
+static func find_path(hex_grid_map: HexGridMap, start: Vector2i, goal: Vector2i, logistics_network: LogisticsNetwork = null, wall_manager: WallManager = null, gates_are_passable: bool = false) -> Array[Vector2i]:
 	if not hex_grid_map or not hex_grid_map.has_cell(start) or not hex_grid_map.has_cell(goal):
 		return []
 	var start_cell := hex_grid_map.get_cell(start)
@@ -151,7 +193,9 @@ static func find_path(hex_grid_map: HexGridMap, start: Vector2i, goal: Vector2i,
 				continue
 			if is_water_crossing_blocked(hex_grid_map, logistics_network, current, neighbor):
 				continue
-			if wall_manager and wall_manager.get_blocking_segment(current, neighbor, HexCoord.axial_to_world(current), HexCoord.axial_to_world(neighbor)):
+			if wall_manager and wall_manager.get_blocking_segment(current, neighbor, HexCoord.axial_to_world(current), HexCoord.axial_to_world(neighbor), gates_are_passable):
+				continue
+			if is_boundary_impassable(hex_grid_map, current, neighbor):
 				continue
 			var tentative_g: float = g_score[current] + get_step_cost(current, neighbor, cell, logistics_network)
 			if tentative_g < g_score.get(neighbor, INF):

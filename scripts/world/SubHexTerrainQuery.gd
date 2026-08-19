@@ -109,6 +109,12 @@ static func sample_at_world_within(hex_coord: Vector2i, world_pos: Vector2) -> D
 static func clear_cache() -> void:
 	_cache.clear()
 
+## Live entry count — the cache is unbounded and static, so a caller that
+## fans out over many sub-cells (SubHexPortalGraph walking whole hex edges)
+## needs a way to measure what it strands here. Tests/tooling only.
+static func cache_size() -> int:
+	return _cache.size()
+
 ## Sub-cell passability at `world_pos` resolved against `hex_coord`
 ## specifically (sample_at_world_within() — locks to THIS hex, doesn't
 ## re-derive which hex world_pos geometrically belongs to). Reapplies

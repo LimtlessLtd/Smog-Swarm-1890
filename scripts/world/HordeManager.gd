@@ -584,8 +584,13 @@ func _replan_cheap(horde: Horde) -> void:
 	var candidates: Array[Vector2i] = []
 	for neighbor in HexCoord.neighbors(horde.hex_coord):
 		var cell := _hex_grid_map.get_cell(neighbor)
-		if cell and cell.is_passable() and not HexPathfinder.is_water_crossing_blocked(_hex_grid_map, _logistics_network, horde.hex_coord, neighbor):
-			candidates.append(neighbor)
+		if not cell or not cell.is_passable():
+			continue
+		if HexPathfinder.is_water_crossing_blocked(_hex_grid_map, _logistics_network, horde.hex_coord, neighbor):
+			continue
+		if HexPathfinder.is_boundary_impassable(_hex_grid_map, horde.hex_coord, neighbor):
+			continue
+		candidates.append(neighbor)
 	if candidates.is_empty():
 		return
 	horde.path = [candidates[_rng.randi_range(0, candidates.size() - 1)]]

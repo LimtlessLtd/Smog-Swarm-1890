@@ -8,6 +8,13 @@ extends Node2D
 
 signal generation_completed(cell_count: int)
 
+## Off for a test fixture that calls load_cells() itself instead
+## (scripts/test/verify_gates.gd) — the real HexMapGenerator run now covers
+## the whole UK+Ireland corridor (design_doc.md §1's Real-Geography Vector
+## Terrain epic, 99.9% coverage), which takes far too long for a script that
+## only needs a handful of hexes to check wall/gate geometry against.
+@export var auto_generate_on_ready: bool = true
+
 var _cells: Dictionary = {}  # Vector2i -> HexCell
 var _views: Dictionary = {}  # Vector2i -> HexCellView
 var _cell_container: Node2D
@@ -16,12 +23,20 @@ func _ready() -> void:
 	_cell_container = Node2D.new()
 	_cell_container.name = "Cells"
 	add_child(_cell_container)
-	generate_map()
+	if auto_generate_on_ready:
+		generate_map()
 
 func generate_map() -> void:
-	_clear_views()
 	var generator := HexMapGenerator.new()
-	_cells = generator.generate()
+	load_cells(generator.generate())
+
+## Installs a pre-built coord -> HexCell map directly, bypassing
+## HexMapGenerator entirely. Shares generate_map()'s own view-spawning rule
+## (skip OCEAN) so a hand-built fixture renders/queries identically to a
+## generated one.
+func load_cells(cells: Dictionary) -> void:
+	_clear_views()
+	_cells = cells
 	for coord in _cells:
 		# The map spans the whole UK+Ireland bounding box, most of which is
 		# open OCEAN — a real HexCellView per ocean hex (a Polygon2D/textured

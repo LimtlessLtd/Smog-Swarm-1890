@@ -57,22 +57,15 @@ func _build_marker(segment: WallSegment) -> Node2D:
 
 	return container
 
-## LINE_TEXTURE_TILE + texture_repeat ENABLED for real tileable wall art
-## (WallVisuals.tier_texture()) — Line2D natively tiles a texture along its
-## own length. A breached segment keeps the flat alarm-red look regardless of
-## art (texture cleared, not tiled red). default_color is still set with a
-## texture assigned: Line2D multiplies texture color by default_color, so
-## it's reset to white (no tint) whenever a real texture is in play, tier
-## color only otherwise.
+## Art, tiling mode, tint and geometry come from
+## WallVisuals.apply_segment_look(), shared with the Tactical renderer and
+## the placement preview. Only the width differs here: line_width() is the
+## Strategic-zoom value, deliberately much thinner than the width the art is
+## authored for, since at this zoom a wall is a marker rather than a
+## structure the player is looking at.
 func _apply_look(marker: Node2D, segment: WallSegment) -> void:
 	var body := marker.get_node("Body") as Line2D
-	var breached := segment.is_breached()
-	var texture := WallVisuals.tier_texture(segment.tier) if not breached else null
-	body.texture = texture
-	body.texture_mode = Line2D.LINE_TEXTURE_TILE
-	body.texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
-	body.default_color = Color.WHITE if texture else (WallVisuals.breached_color() if breached else (WallVisuals.gate_color() if segment.is_gate else WallVisuals.tier_color(segment.tier)))
-	WallVisuals.apply_line_geometry(body, segment.point_a, segment.point_b, WallVisuals.line_width(segment.tier, breached))
+	WallVisuals.apply_segment_look(body, segment, WallVisuals.line_width(segment.tier, segment.is_breached()))
 	var is_legacy := _wall_manager != null and _wall_manager.is_legacy_segment(segment)
 	marker.modulate = WallVisuals.legacy_modulate() if is_legacy else WallVisuals.outer_modulate()
 

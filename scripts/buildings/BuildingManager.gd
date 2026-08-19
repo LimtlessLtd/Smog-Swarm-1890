@@ -112,6 +112,25 @@ const _STARTING_LUMBER_YARD_OFFSET := Vector2(150.0, -100.0)
 const _STARTING_FARM_SEARCH_RADIUS: int = 6
 const _NO_FARM_HEX := Vector2i(-1, -1)
 
+## Sub-hex offsets (world units from the Town Hall's own hex centre) the
+## starting farm is looked for at, before falling back to a whole different
+## hex. "Move the Manchester starting farm to a valid biome within the hex
+## tile that the starting manchester town hall exists in" (user report): the
+## old search only ever considered NEIGHBOURING HEXES, because a settlement
+## hex is URBAN and a farm cannot stand on URBAN — but that is a MACRO-hex
+## fact, and a real ~25-square-mile hex around Manchester is not urban all
+## the way across. The sub-hex layer can answer where the green ground
+## inside it actually is, so the farm lands in the player's own starting hex
+## instead of somewhere across the map with no vision of it.
+##
+## Rings, nearest first, so the farm sits close to the Town Hall without
+## being drawn on top of it. The inner radius clears the Town Hall and the
+## free Lumber Yard (_STARTING_LUMBER_YARD_OFFSET, ~180 units out); the
+## outer stays inside the hex's own inradius (HEX_SIZE * sqrt(3)/2 ~ 443) so
+## every candidate is genuinely within this hex rather than over its edge.
+const _STARTING_FARM_RING_RADII: Array[float] = [220.0, 280.0, 340.0, 400.0]
+const _STARTING_FARM_RING_SAMPLES: int = 24
+
 ## Searches outward ring-by-ring (HexCoord.hex_disk() is cumulative) up to
 ## _STARTING_FARM_SEARCH_RADIUS for the nearest hex SMALLHOLDING_FARM can
 ## legally occupy (Town Hall's own hex is always URBAN, which a farm can't be
@@ -146,6 +165,38 @@ func _find_starting_farm_hex(from: Vector2i) -> Vector2i:
 			return HexCoord.distance(from, a) < HexCoord.distance(from, b))
 		return candidates[0]
 	return _NO_FARM_HEX
+
+## Nearest sub-hex offset within `coord` itself that a Smallholding Farm can
+## legally occupy, or null if the hex has no legal green ground at all (a
+## genuinely wall-to-wall built-up hex, or no baked sub-hex data there —
+## SubHexTerrainQuery falls back to the macro biome, which for a settlement
+## hex is URBAN, and the search correctly finds nothing).
+##
+## Ranks by soil within a ring before moving outward, the same "better soil
+## first, then distance" preference _find_starting_farm_hex() applies across
+## hexes — one rule, two granularities.
+func _find_starting_farm_offset(coord: Vector2i) -> Variant:
+	var definition := BuildingCatalog.get_definition(GameEnums.BuildingType.SMALLHOLDING_FARM)
+	if not definition or not _hex_grid_map:
+		return null
+	var cell := _hex_grid_map.get_cell(coord)
+	if not cell:
+		return null
+	for radius in _STARTING_FARM_RING_RADII:
+		var best: Variant = null
+		var best_soil := GameEnums.SoilFertility.NOT_ARABLE
+		for i in range(_STARTING_FARM_RING_SAMPLES):
+			var angle := TAU * float(i) / float(_STARTING_FARM_RING_SAMPLES)
+			var offset := Vector2(cos(angle), sin(angle)) * radius
+			if not get_terrain_placement_error(definition, coord, offset).is_empty():
+				continue
+			var soil := SubHexSoilQuery.soil_fertility_at(coord, offset, cell.soil_fertility)
+			if best == null or soil < best_soil:  ## Lower GameEnums.SoilFertility value == better (LUSH=0).
+				best = offset
+				best_soil = soil
+		if best != null:
+			return best
+	return null
 
 ## Seeds the colony with its first buildings on a fresh start. Without this,
 ## Fog of War leaves the entire map UNSEEN at boot (no vision source
@@ -186,9 +237,17 @@ func seed_starting_buildings() -> void:
 	# Farm — WallManager.seed_starting_defenses() fences this hex only, so the
 	# starting perimeter stays compact instead of a long sprawling wall.
 	_starting_settlement_hexes = [target.coord]
+	var farm := BuildingCatalog.get_definition(GameEnums.BuildingType.SMALLHOLDING_FARM)
+	# Inside the Town Hall's own hex where the sub-hex layer can find legal
+	# ground for it; only if it genuinely cannot does this fall back to the
+	# old outward hex-by-hex search, which puts the farm outside the starting
+	# perimeter and often outside vision entirely.
+	var farm_offset: Variant = _find_starting_farm_offset(target.coord)
+	if farm_offset != null:
+		_register_instance(farm, target.coord, _next_id, farm_offset, true)
+		return
 	var farm_hex := _find_starting_farm_hex(target.coord)
 	if farm_hex != _NO_FARM_HEX:
-		var farm := BuildingCatalog.get_definition(GameEnums.BuildingType.SMALLHOLDING_FARM)
 		_register_instance(farm, farm_hex, _next_id, Vector2.ZERO, true)
 
 func get_starting_settlement_hexes() -> Array[Vector2i]:
@@ -269,21 +328,43 @@ func get_placement_error(building_type: GameEnums.BuildingType, coord: Vector2i,
 	var cell := _hex_grid_map.get_cell(coord)
 	if not cell:
 		return "%s is outside the map." % coord
+	var terrain_error := get_terrain_placement_error(definition, coord, local_position)
+	if not terrain_error.is_empty():
+		return terrain_error
+	if definition.max_per_hex > 0 and _count_at(building_type, coord) >= definition.max_per_hex:
+		return "%s is limited to %d per hex." % [definition.display_name, definition.max_per_hex]
+	if _resource_manager and not _resource_manager.can_afford(definition.construction_cost):
+		return "Not enough resources to build %s." % definition.display_name
+	if _resource_manager and not _resource_manager.can_afford(_capacity.cost(definition)):
+		return "Not enough Energy/Population capacity to build %s." % definition.display_name
+	return ""
+
+## The purely GEOGRAPHIC half of get_placement_error(): can this building
+## stand on this exact spot, ignoring what it costs, what's researched, and
+## what's already there. Split out because seed_starting_buildings() places
+## for free before the player has any resources or research, so it needs
+## terrain legality without the affordability/tier clauses — and asking the
+## same question through a second, hand-copied set of checks is how a seeded
+## building ends up somewhere the player could never have built one.
+##
+## Every clause is resolved at SUB-HEX resolution (SubHexTerrainQuery /
+## SubHexSoilQuery, Sub-Hex Mechanical Layer Phase 3b) against the exact
+## world position, not the macro hex's single majority-voted value: a farm
+## can legally stand on a green patch inside an otherwise URBAN hex, and
+## cannot stand on a marsh inside an otherwise buildable one.
+func get_terrain_placement_error(definition: BuildingDefinition, coord: Vector2i, local_position: Vector2) -> String:
+	var cell := _hex_grid_map.get_cell(coord) if _hex_grid_map else null
+	if not cell:
+		return "%s is outside the map." % coord
 	var world_pos := HexCoord.axial_to_world(coord) + local_position
 	if not SubHexTerrainQuery.is_passable_at(coord, world_pos, cell.is_passable()):
 		return "%s cannot be built on marsh or peat bog until it is drained." % definition.display_name
 	if definition.requires_settlement and not cell.is_settlement:
 		return "%s can only be built within a settlement." % definition.display_name
-	if definition.max_per_hex > 0 and _count_at(building_type, coord) >= definition.max_per_hex:
-		return "%s is limited to %d per hex." % [definition.display_name, definition.max_per_hex]
 	if not definition.allowed_biomes.is_empty() and not definition.allowed_biomes.has(SubHexTerrainQuery.biome_at(coord, world_pos, cell.biome_type)):
 		return "%s cannot be built on this terrain." % definition.display_name
 	if not definition.allowed_soil_fertility.is_empty() and not definition.allowed_soil_fertility.has(SubHexSoilQuery.soil_fertility_at(coord, local_position, cell.soil_fertility)):
 		return "%s needs better soil than this hex has." % definition.display_name
-	if _resource_manager and not _resource_manager.can_afford(definition.construction_cost):
-		return "Not enough resources to build %s." % definition.display_name
-	if _resource_manager and not _resource_manager.can_afford(_capacity.cost(definition)):
-		return "Not enough Energy/Population capacity to build %s." % definition.display_name
 	return ""
 
 ## Resource-only affordability check, deliberately NOT terrain/settlement

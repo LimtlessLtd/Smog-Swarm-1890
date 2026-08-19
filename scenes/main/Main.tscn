@@ -1,4 +1,4 @@
-[gd_scene load_steps=23 format=3]
+[gd_scene load_steps=24 format=3]
 
 [ext_resource type="PackedScene" path="res://scenes/world/HexGridMap.tscn" id="1"]
 [ext_resource type="PackedScene" path="res://scenes/camera/CameraController.tscn" id="2"]
@@ -32,6 +32,7 @@
 [ext_resource type="PackedScene" path="res://scenes/world/SettlementFoundingController.tscn" id="30"]
 [ext_resource type="Script" path="res://scripts/world/TerrainMeshView.gd" id="31"]
 [ext_resource type="Script" path="res://scripts/world/SeaView.gd" id="32"]
+[ext_resource type="Script" path="res://scripts/world/ElevationReliefView.gd" id="33"]
 
 [node name="Main" type="Node2D"]
 script = ExtResource("27")
@@ -51,6 +52,10 @@ script = ExtResource("31")
 camera_path = NodePath("../../CameraController")
 
 [node name="CoastlineOutlineView" parent="WorldRoot" instance=ExtResource("26")]
+hex_grid_map_path = NodePath("../HexGridMap")
+
+[node name="ElevationReliefView" type="Node2D" parent="WorldRoot"]
+script = ExtResource("33")
 hex_grid_map_path = NodePath("../HexGridMap")
 
 [node name="CameraController" parent="." instance=ExtResource("2")]

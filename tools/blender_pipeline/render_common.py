@@ -521,6 +521,59 @@ def render_to(output_path: str, category: str, resolution: int = 2048,
 DIRECTIONS_8 = ["n", "ne", "e", "se", "s", "sw", "w", "nw"]
 
 
+# Vertical resolution of a strip render. The horizontal resolution follows
+# from the requested world-space span so pixels stay square — a strip that is
+# 12x as wide as it is tall comes out 12x as many pixels across.
+STRIP_RESOLUTION_Y = 1024
+
+
+def render_strip_to(output_path: str, category: str, span_x: float, span_y: float,
+                    resolution_y: int = STRIP_RESOLUTION_Y):
+    """Renders a WIDE STRIP framed to an exact world-space rectangle, for the
+    wall and gate textures Line2D maps onto a segment.
+
+    Unlike render_to(), nothing here is fitted to the model: the frame is the
+    contract. `span_x` is exactly one repeat of a tileable wall (so the model
+    must be periodic over that distance AND extend past both frame edges, or
+    the texture will not tile), or the whole length of a one-off asset like a
+    gate. `span_y` is the strip's own thickness, and it is what makes a wall
+    and its gate come out the same thickness on screen: Line2D scales a
+    texture's full HEIGHT onto the line's width, so any transparent margin
+    above and below the wall in the image becomes wasted line width in game.
+
+    That margin is exactly what was wrong with the first generation of this
+    art. The wall models were framed by add_camera()'s fixed ortho_scale in a
+    square 2048x2048 image, so the wall itself occupied ~7% of the image
+    height and read in game as a thin line inside a much wider invisible band
+    ("Wall assets need to look more substantial, thicker", user report) — and
+    it stopped well short of the left and right edges, so it could not repeat
+    ("they MUST touch the edge of the canvas on the right and left edges to
+    be proper repeatable game assets").
+
+    Straight-down only (walls/infrastructure), which is what lets `span_x`
+    and `span_y` mean model X and model Y directly — see add_camera()'s own
+    is_straight_down branch.
+    """
+    setup_render(resolution_y)
+    scene = bpy.context.scene
+    scene.render.resolution_y = resolution_y
+    scene.render.resolution_x = int(round(resolution_y * span_x / span_y))
+    # setup_render() sized the Freestyle stroke against a square frame. On a
+    # strip the short axis is what the stroke has to stay proportionate to,
+    # or the outline eats the asset: at 2048 wide it would be a 37px line on
+    # a 512px-tall image.
+    fs = bpy.context.view_layer.freestyle_settings
+    fs.linesets[0].linestyle.thickness = resolution_y * OUTLINE_THICKNESS_FRACTION
+
+    # ortho_scale sizes the LARGER image dimension, which for a strip is the
+    # width — so this frames exactly span_x across, and span_y follows from
+    # the pixel aspect above.
+    add_camera(category, ortho_scale=span_x)
+    add_flat_light()
+    scene.render.filepath = output_path
+    bpy.ops.render.render(write_still=True)
+
+
 def render_directional_to(output_dir: str, key: str, category: str, resolution: int = 2048):
     """Renders DIRECTIONS_8 facings of the same built model to
     <output_dir>/<key>_<direction>.png, reusing one Blender session (model built

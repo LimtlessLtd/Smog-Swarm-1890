@@ -57,7 +57,104 @@ static func find_portals(hex_grid_map: HexGridMap, hex_a: Vector2i, hex_b: Vecto
 	_cache[key] = portals
 	return portals
 
+## True if ANY point along the shared edge is crossable — the question
+## HexPathfinder.is_boundary_impassable() asks, answered without building the
+## portal list.
+##
+## Separate from find_portals() for cost, measured rather than assumed
+## (scripts/test/bench_portal_blocking.gd): find_portals() must sample the
+## whole edge because it returns every distinct crossing, which is ~167
+## positions at 30 m spacing and measured 2.18 ms per cold edge and ~178
+## stranded SubHexTerrainQuery cache entries per edge — 25 s and ~2M entries
+## extrapolated across the corridor, paid lazily mid-session as hordes route
+## into new ground. "Is there at least one" can stop at the first passable
+## sample instead, and almost every edge is passable at its first sample, so
+## the common case costs two lookups rather than 334.
+##
+## Sampled from the MIDDLE outward for the same reason: the centre of a shared
+## edge is where an ordinary crossing is, so the early-out fires immediately
+## there. A genuinely blocked edge still costs the full sweep — it has to, to
+## prove the negative — but those are the rare ones.
+##
+## Cached as its own boolean per hex pair. It cannot reuse find_portals()'
+## cache (that stores a portal Array; a hit here would mean having done the
+## expensive work this exists to avoid), and at one bool per edge the whole
+## corridor is ~11,600 entries.
+static var _crossing_cache: Dictionary = {}  # Same canonical "<qa>_<ra>_<qb>_<rb>" key as _cache -> bool
+
+static func has_any_crossing(hex_grid_map: HexGridMap, hex_a: Vector2i, hex_b: Vector2i) -> bool:
+	if HexCoord.distance(hex_a, hex_b) != 1:
+		return false
+	var ordered_a := hex_a
+	var ordered_b := hex_b
+	if not _is_canonical_first(hex_a, hex_b):
+		ordered_a = hex_b
+		ordered_b = hex_a
+	var key := "%d_%d_%d_%d" % [ordered_a.x, ordered_a.y, ordered_b.x, ordered_b.y]
+	if _crossing_cache.has(key):
+		return _crossing_cache[key]
+	var result := _compute_has_crossing(hex_grid_map, ordered_a, ordered_b)
+	_crossing_cache[key] = result
+	return result
+
+
+static func _compute_has_crossing(hex_grid_map: HexGridMap, hex_a: Vector2i, hex_b: Vector2i) -> bool:
+	var cell_a := hex_grid_map.get_cell(hex_a) if hex_grid_map else null
+	var cell_b := hex_grid_map.get_cell(hex_b) if hex_grid_map else null
+	if _is_mountain_blocked(cell_a) or _is_mountain_blocked(cell_b):
+		return false
+
+	var center_a := HexCoord.axial_to_world(hex_a)
+	var center_b := HexCoord.axial_to_world(hex_b)
+	var mid := (center_a + center_b) * 0.5
+	var to_b := (center_b - center_a).normalized()
+	var along_edge := Vector2(-to_b.y, to_b.x)
+	var half_edge := HexCoord.HEX_SIZE * 0.5
+	var fallback_passable_a := cell_a == null or cell_a.is_passable()
+	var fallback_passable_b := cell_b == null or cell_b.is_passable()
+
+	# Offset 0 first, then -/+ one step, -/+ two steps, ... out to the edge's
+	# own half-length — the same positions _compute_portals() visits, walked
+	# from the middle outward so the early-out fires on the first sample for
+	# an ordinary open edge.
+	var steps := int(half_edge / _SAMPLE_STEP)
+	for i in range(steps + 1):
+		if _crosses_at(hex_a, hex_b, mid, along_edge, float(i), fallback_passable_a, fallback_passable_b):
+			return true
+		if i > 0 and _crosses_at(hex_a, hex_b, mid, along_edge, -float(i), fallback_passable_a, fallback_passable_b):
+			return true
+	return false
+
+
+## One sample position, `steps` * _SAMPLE_STEP along the edge from its midpoint.
+## Split out because the pair of calls above needs identical arguments in two
+## places, and inlining it as a loop over a ternary array left `offset`
+## untyped — GDScript cannot infer an element type through a conditional
+## expression, which fails to parse rather than falling back to Variant.
+static func _crosses_at(hex_a: Vector2i, hex_b: Vector2i, mid: Vector2, along_edge: Vector2,
+		steps: float, fallback_a: bool, fallback_b: bool) -> bool:
+	var world_pos := mid + along_edge * (steps * _SAMPLE_STEP)
+	return SubHexTerrainQuery.is_passable_at(hex_a, world_pos, fallback_a) \
+			and SubHexTerrainQuery.is_passable_at(hex_b, world_pos, fallback_b)
+
+
 static func _compute_portals(hex_grid_map: HexGridMap, hex_a: Vector2i, hex_b: Vector2i) -> Array[SubHexPortal]:
+	var cell_a := hex_grid_map.get_cell(hex_a) if hex_grid_map else null
+	var cell_b := hex_grid_map.get_cell(hex_b) if hex_grid_map else null
+
+	# The MOUNTAIN clause of passability is decided per macro hex here, not
+	# per sub-cell, and this is the one place in the sub-hex layer where that
+	# is correct rather than a granularity violation (CLAUDE.md §3).
+	# MountainPassCarver lowers a blocking ridge hex's HexCell.elevation at
+	# generation so a pass exists; that carve is written to hex data and is
+	# absent from the baked elevation raster the sub-hex layer samples. Deriving
+	# the mountain verdict from the raster per sub-cell would therefore re-seal
+	# every carved pass and strand exactly the hexes MountainPassCarver exists
+	# to keep reachable. Marsh, peat bog and ocean have no generated exception
+	# and stay per-sub-cell below.
+	if _is_mountain_blocked(cell_a) or _is_mountain_blocked(cell_b):
+		return []
+
 	var center_a := HexCoord.axial_to_world(hex_a)
 	var center_b := HexCoord.axial_to_world(hex_b)
 	var mid := (center_a + center_b) * 0.5
@@ -65,8 +162,6 @@ static func _compute_portals(hex_grid_map: HexGridMap, hex_a: Vector2i, hex_b: V
 	var along_edge := Vector2(-to_b.y, to_b.x)  # Unit vector along the shared edge, perpendicular to the center-to-center line.
 	var half_edge := HexCoord.HEX_SIZE * 0.5  # Regular-hexagon edge length == circumradius; see this file's own doc comment.
 
-	var cell_a := hex_grid_map.get_cell(hex_a)
-	var cell_b := hex_grid_map.get_cell(hex_b)
 	var fallback_passable_a := cell_a == null or cell_a.is_passable()
 	var fallback_passable_b := cell_b == null or cell_b.is_passable()
 
@@ -84,6 +179,12 @@ static func _compute_portals(hex_grid_map: HexGridMap, hex_a: Vector2i, hex_b: V
 		t += _SAMPLE_STEP
 	_flush_run(run_positions, hex_a, hex_b, portals)
 	return portals
+
+## A null cell (off-map) is NOT mountain-blocked — it has no elevation to
+## judge and is already excluded by the macro graph's own has_cell() check.
+static func _is_mountain_blocked(cell: HexCell) -> bool:
+	return cell != null and ElevationLevels.is_impassable(cell.height_level())
+
 
 static func _flush_run(run_positions: Array[Vector2], hex_a: Vector2i, hex_b: Vector2i, out_portals: Array[SubHexPortal]) -> void:
 	if run_positions.is_empty():
@@ -105,6 +206,7 @@ static func _is_canonical_first(hex_a: Vector2i, hex_b: Vector2i) -> bool:
 ## SubHexTerrainQuery.clear_cache() already documents.
 static func clear_cache() -> void:
 	_cache.clear()
+	_crossing_cache.clear()
 
 ## Local offset (relative to `to_hex`'s own center) a mover should aim for
 ## when crossing hex-to-hex from `from_hex` into `to_hex` — the real portal

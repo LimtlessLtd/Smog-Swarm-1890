@@ -122,7 +122,12 @@ func _process(_delta: float) -> void:
 	if not _is_placing:
 		return
 	var snap_on := not Input.is_key_pressed(KEY_ALT)
-	_hint_label.text = "Placing wall — click to place, right-click (or Esc) to finish.  Snap-to-wall: %s (hold Alt to disable)" % ("ON" if snap_on else "OFF")
+	if _pending_is_gate:
+		_hint_label.text = "Placing %s — click to anchor one end, move to aim, click to place.  Snap-to-wall: %s (hold Alt to disable)" % [WallCatalog.get_gate_display_name(_pending_tier), "ON" if snap_on else "OFF"]
+	else:
+		_hint_label.text = "Placing wall — click to place, right-click (or Esc) to finish.  Snap-to-wall: %s (hold Alt to disable)" % ("ON" if snap_on else "OFF")
+	if _pending_is_gate and _has_anchor:
+		_update_preview(get_global_mouse_position())  ## A gate's preview PIVOTS around its anchor, so it has to follow the cursor even between motion events (a held mouse with the camera panning still re-aims it).
 
 func is_placing() -> bool:
 	return _is_placing
@@ -181,7 +186,20 @@ func _on_left_click(world_pos: Vector2) -> void:
 		return
 	if not _wall_manager:
 		return
-	var placed := _wall_manager.place_wall_line(_anchor_point, snapped_pos, _pending_tier, _pending_is_gate)
+	# A gate is one fixed-length object placed one at a time (user spec), so
+	# the second click commits exactly one and the chain does NOT continue
+	# from its far end the way a drawn wall's does — chaining gates would be
+	# the "repeatable/stretch" behaviour a gate is explicitly not supposed to
+	# have. Placement mode stays armed so a player can place another
+	# elsewhere without re-arming from the menu.
+	if _pending_is_gate:
+		if _wall_manager.place_gate(_anchor_point, snapped_pos, _pending_tier) == null:
+			_reject_player.play()
+			return
+		_has_anchor = false
+		_preview_line.visible = false
+		return
+	var placed := _wall_manager.place_wall_line(_anchor_point, snapped_pos, _pending_tier, false)
 	if placed.is_empty():
 		_reject_player.play()  # WallManager already emitted placement_rejected per failed piece, which _on_placement_rejected also plays this for — harmless double-play, avoids a silent "nothing happened" when EVERY piece failed (e.g. the whole segment landed on impassable ground).
 		return  # Keep the same anchor — let the player retry a different endpoint rather than silently advancing past a rejected placement.
@@ -199,14 +217,20 @@ func _on_left_click(world_pos: Vector2) -> void:
 ## found) exactly as before.
 func _update_preview(raw_end_pos: Vector2) -> void:
 	var end_pos := _apply_snap(raw_end_pos)
+	# A gate ignores how far the cursor is and takes only its DIRECTION —
+	# preview through WallManager.gate_endpoint() rather than a local copy of
+	# that rule, so what the player aims with is the piece that gets built.
+	if _pending_is_gate:
+		end_pos = WallManager.gate_endpoint(_anchor_point, end_pos)
 	var can_place := _wall_manager != null and _wall_manager.can_place_wall_piece(_anchor_point, end_pos, _pending_tier)
-	var texture := WallVisuals.tier_texture(_pending_tier)
-	_preview_line.texture = texture
-	_preview_line.texture_mode = Line2D.LINE_TEXTURE_TILE
-	_preview_line.texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
-	WallVisuals.apply_line_geometry(_preview_line, _anchor_point, end_pos, WallVisuals.line_width(_pending_tier, false) * WallVisuals.TACTICAL_WIDTH_SCALE)
-	if texture:
-		_preview_line.default_color = Color.WHITE
+	# The preview is a real WallSegment rather than a hand-assembled Line2D
+	# look, so the gate art, the tiling mode and the width all come from the
+	# same WallVisuals.apply_segment_look() a placed segment gets. Not
+	# registered with WallManager and thrown away every frame — it exists
+	# only to be drawn.
+	var preview_segment := WallSegment.new(Vector2i.ZERO, Vector2i.ZERO, _anchor_point, end_pos, _pending_tier, 0, -1.0, _pending_is_gate)
+	WallVisuals.apply_segment_look(_preview_line, preview_segment, WallVisuals.tactical_width(false))
+	if _preview_line.texture:
 		_preview_line.modulate = _VALID_TINT if can_place else _BLOCKED_TINT
 	else:
 		_preview_line.default_color = _VALID_COLOR if can_place else _BLOCKED_COLOR
