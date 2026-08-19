@@ -13,13 +13,15 @@ extends CanvasLayer
 ## tree by hand.
 ##
 ## This class resolves every NodePath export (below) and constructs the
-## child views, but four cross-cutting concerns are extracted into their own
+## child views, but five cross-cutting concerns are extracted into their own
 ## collaborators under scripts/ui/hud/ rather than living as a flat pile of
 ## handlers here: HUDToastRouter (toast display mechanics), HUDPlacementFeedback
 ## (building/wall placement mode text + construction/repair/rejection
 ## toasts — the largest cluster), HUDReconTracker (the Reconnaissance
 ## countdown label), HUDPanelSwitcher (mutual exclusion between the four
-## centered panels). Each depends only on the manager(s) it actually needs.
+## centered panels), HUDScreenshotCapture (the save-slot thumbnail, and
+## hiding this layer while it is taken). Each depends only on the
+## manager(s) it actually needs.
 ## Tech/save-load/unit-training toasts stay as one-line handlers here — each
 ## already touches exactly one manager and doesn't warrant its own file. See
 ## todo.md's "Technical Debt" section for why this split happened.
@@ -87,6 +89,7 @@ var _mode_label: Label
 var _recon_label: Label
 var _toast: HUDToastRouter
 var _placement_feedback: HUDPlacementFeedback
+var _screenshot_capture: HUDScreenshotCapture
 var _wall_manager: WallManager
 var _wall_placement_controller: WallPlacementController
 var _supply_line_placement_controller: SupplyLinePlacementController
@@ -141,6 +144,11 @@ func _ready() -> void:
 	var noise_manager: NoiseManager = null
 	if noise_manager_path != NodePath():
 		noise_manager = get_node(noise_manager_path)
+
+	# Constructed before the views so a save request can never arrive with
+	# this still null. Takes `self` as the layer to hide during a capture —
+	# this CanvasLayer IS every piece of UI drawn over the world.
+	_screenshot_capture = HUDScreenshotCapture.new(self, get_viewport())
 
 	_build_resource_bar(resource_manager)
 	_build_time_controls()
@@ -524,21 +532,30 @@ func _on_in_game_menu_quit_to_menu() -> void:
 func _on_in_game_menu_exit() -> void:
 	get_tree().quit()
 
-func _on_save_load_view_save_requested(campaign_name: String, slot_name: String) -> void:
-	if _save_load_manager:
-		_save_load_manager.save_game(campaign_name, slot_name)
+## Takes the slot's thumbnail before writing it: HUDScreenshotCapture has
+## to hide this HUD and let one frame draw, so this handler necessarily
+## awaits. That gap is between the player's click and the write, with
+## nothing else able to run in it — SaveLoadView has already closed itself
+## by then, and the world is whatever it was when they pressed Save.
+func _on_save_load_view_save_requested(slot_name: String) -> void:
+	if not _save_load_manager:
+		return
+	var thumbnail: Image = null
+	if _screenshot_capture:
+		thumbnail = await _screenshot_capture.capture()
+	_save_load_manager.save_game(slot_name, thumbnail)
 
-func _on_save_load_view_load_requested(campaign_name: String, slot_name: String) -> void:
+func _on_save_load_view_load_requested(slot_name: String) -> void:
 	if _save_load_manager:
-		_save_load_manager.load_game(campaign_name, slot_name)
+		_save_load_manager.load_game(slot_name)
 
-func _on_game_saved(_campaign_name: String, _slot_name: String) -> void:
+func _on_game_saved(_slot_name: String) -> void:
 	_toast.show("Game saved.")
 
-func _on_game_loaded(_campaign_name: String, _slot_name: String) -> void:
+func _on_game_loaded(_slot_name: String) -> void:
 	_toast.show("Game loaded.")
 
-func _on_load_failed(_campaign_name: String, _slot_name: String, reason: String) -> void:
+func _on_load_failed(_slot_name: String, reason: String) -> void:
 	_toast.show("Load failed: %s" % reason)
 
 func _on_research_requested(tech_id: StringName) -> void:

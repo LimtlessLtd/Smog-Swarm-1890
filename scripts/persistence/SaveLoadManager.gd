@@ -11,21 +11,40 @@ extends Node
 ##
 ## Saves are grouped by a player-named Campaign, with multiple manual save
 ## slots per campaign and multiple independent campaigns coexisting on
-## disk. This class only knows how to list/read/write one campaign+slot at
-## a time; a Save/Load UI screen just calls into this the same way a
-## headless test does.
+## disk.
+##
+## Exactly one campaign is ACTIVE per play session — "when you create a
+## campaign, you choose the name of the campaign at that point. then when
+## you save games, they are all saved under that campaign that you are
+## playing" (user request). The name arrives from the boot screen via
+## GameLaunchState and is applied by Main.gd; save_game()/load_game()
+## therefore take a slot only, and cannot write into or read out of a
+## campaign the player is not currently in. Listing IS campaign-explicit
+## (get_campaign_names()/get_slot_names()), because the boot screen's own
+## browser has to show campaigns it is not in yet.
+##
+## Each save writes a sibling `<slot>.png` screenshot next to `<slot>.res`
+## — a separate file rather than a field on SaveGameData so a browser can
+## show every slot's thumbnail without deserializing whole game states to
+## get at them.
 ##
 ## No elapsed-time/catch-up math: closing the game pauses everything
 ## exactly where it was, and loading resumes there, nothing more —
 ## BackgroundExecutionManager's own background-simulation handling only
 ## covers DURING a play session, not while the application is closed.
 
-signal game_saved(campaign_name: String, slot_name: String)
-signal game_loaded(campaign_name: String, slot_name: String)
-signal load_failed(campaign_name: String, slot_name: String, reason: String)
+signal game_saved(slot_name: String)
+signal game_loaded(slot_name: String)
+signal load_failed(slot_name: String, reason: String)
 
 const SAVE_FORMAT_VERSION: int = 1
 const SAVES_ROOT: String = "user://saves"
+
+## Used when nothing set an active campaign — Main.tscn run directly (a
+## headless test, or F5 on it in the editor) rather than reached through
+## MainMenu.tscn's New Game/Continue. Saving still works and lands
+## somewhere findable instead of failing on an empty folder name.
+const DEFAULT_CAMPAIGN_NAME: String = "Untitled Campaign"
 
 ## Characters that are unsafe in a filename across the platforms Godot's
 ## `user://` maps to. Hand-rolled rather than relying on
@@ -58,6 +77,7 @@ var _reclamation_manager: ReclamationManager
 var _horde_manager: HordeManager
 var _unit_manager: UnitManager
 var _territory_controller: TerritoryController
+var _active_campaign: String = DEFAULT_CAMPAIGN_NAME
 
 func _ready() -> void:
 	if building_manager_path != NodePath():
@@ -84,6 +104,21 @@ func _ready() -> void:
 		_territory_controller = get_node(territory_controller_path)
 	if settlement_founding_controller_path != NodePath():
 		_settlement_founding_controller = get_node(settlement_founding_controller_path)
+
+## Which campaign this session's saves belong to. Set once, by Main.gd, from
+## whatever the boot screen recorded on GameLaunchState.
+##
+## Stored already sanitized rather than raw: the name is BOTH the folder on
+## disk and the label the Save/Load screen shows, and sanitizing only on the
+## way to the filesystem would make a campaign called "Manchester: 1890"
+## display under one name in-game and a different one ("Manchester_ 1890")
+## in the boot screen's browser, which lists real directory names.
+func set_active_campaign(campaign_name: String) -> void:
+	var clean := _sanitize_filename(campaign_name)
+	_active_campaign = DEFAULT_CAMPAIGN_NAME if clean.is_empty() else clean
+
+func get_active_campaign() -> String:
+	return _active_campaign
 
 ## Every campaign with at least one save slot on disk, alphabetical. Empty if
 ## nothing has ever been saved yet.
@@ -118,35 +153,96 @@ func get_slot_names(campaign_name: String) -> Array[String]:
 	result.sort()
 	return result
 
-## Writes the current live game state to `campaign_name`/`slot_name`,
+## Modification time (Unix seconds) of a slot's save file, 0 if it has none.
+## What a save browser sorts and dates entries by — reading `saved_at` off
+## SaveGameData instead would mean deserializing every full game state on
+## disk just to draw a list.
+func get_slot_modified_time(campaign_name: String, slot_name: String) -> int:
+	var path := _slot_path(campaign_name, slot_name)
+	if not FileAccess.file_exists(path):
+		return 0
+	return int(FileAccess.get_modified_time(path))
+
+## The most recently written slot in `campaign_name`, "" if it has none.
+func get_latest_slot_name(campaign_name: String) -> String:
+	var latest := ""
+	var latest_time := -1
+	for slot_name in get_slot_names(campaign_name):
+		var modified := get_slot_modified_time(campaign_name, slot_name)
+		if modified > latest_time:
+			latest_time = modified
+			latest = slot_name
+	return latest
+
+## A slot's saved screenshot, or null when it has none — every save written
+## before screenshots existed, and any whose capture failed. Callers must
+## handle null rather than assume a thumbnail is always there.
+##
+## Image.load() rather than ResourceLoader, same reason RealTerrainSampler
+## and ReliefTileView read their own runtime PNGs that way: these are files
+## written at runtime under user://, which the res:// import pipeline knows
+## nothing about and ResourceLoader reports as missing.
+func get_slot_thumbnail(campaign_name: String, slot_name: String) -> Texture2D:
+	var path := _thumbnail_path(campaign_name, slot_name)
+	if not FileAccess.file_exists(path):
+		return null
+	var image := Image.new()
+	if image.load(path) != OK:
+		return null
+	return ImageTexture.create_from_image(image)
+
+## The image that represents a whole campaign in a campaign browser: its
+## most recent save's screenshot, so the picture shown is the furthest the
+## player has actually got. Null if the campaign has no thumbnails at all.
+func get_campaign_thumbnail(campaign_name: String) -> Texture2D:
+	var latest := get_latest_slot_name(campaign_name)
+	if latest.is_empty():
+		return null
+	return get_slot_thumbnail(campaign_name, latest)
+
+## Writes the current live game state to the active campaign's `slot_name`,
 ## creating both the campaign folder and the slot file if they don't exist
 ## yet (a fresh campaign's first save). Returns whether the write succeeded.
-func save_game(campaign_name: String, slot_name: String) -> bool:
-	var data := _build_save_data(campaign_name, slot_name)
-	var dir_path := _campaign_dir(campaign_name)
+##
+## `thumbnail` is the screenshot to show for this slot in a save browser;
+## null skips it. A thumbnail that fails to write is NOT a failed save —
+## the game state is what matters and it is already on disk by then, so the
+## write below only warns.
+func save_game(slot_name: String, thumbnail: Image = null) -> bool:
+	var data := _build_save_data(_active_campaign, slot_name)
+	var dir_path := _campaign_dir(_active_campaign)
 	var make_dir_err := DirAccess.make_dir_recursive_absolute(dir_path)
 	if make_dir_err != OK and make_dir_err != ERR_ALREADY_EXISTS:
 		push_warning("SaveLoadManager: could not create campaign folder %s (error %d)." % [dir_path, make_dir_err])
 		return false
-	var save_err := ResourceSaver.save(data, _slot_path(campaign_name, slot_name))
+	var save_err := ResourceSaver.save(data, _slot_path(_active_campaign, slot_name))
 	if save_err != OK:
-		push_warning("SaveLoadManager: failed to save %s/%s (error %d)." % [campaign_name, slot_name, save_err])
+		push_warning("SaveLoadManager: failed to save %s/%s (error %d)." % [_active_campaign, slot_name, save_err])
 		return false
-	game_saved.emit(campaign_name, slot_name)
+	if thumbnail != null:
+		var png_err := thumbnail.save_png(_thumbnail_path(_active_campaign, slot_name))
+		if png_err != OK:
+			push_warning("SaveLoadManager: saved %s/%s but its screenshot failed (error %d)." % [_active_campaign, slot_name, png_err])
+	game_saved.emit(slot_name)
 	return true
 
-## Loads `campaign_name`/`slot_name` and restores it into the live game
-## state. Returns whether the load succeeded; emits load_failed with a
+## Loads `slot_name` from the active campaign and restores it into the live
+## game state. Returns whether the load succeeded; emits load_failed with a
 ## human-readable reason otherwise rather than leaving the caller to guess
 ## from a bare `false`.
-func load_game(campaign_name: String, slot_name: String) -> bool:
-	var path := _slot_path(campaign_name, slot_name)
+##
+## Loading ACROSS campaigns is deliberately not possible here: the boot
+## screen's browser picks a campaign, records it plus a slot on
+## GameLaunchState, and Main.gd sets the active campaign before calling
+## this — so an in-game load can only ever reach the campaign being played.
+func load_game(slot_name: String) -> bool:
+	var path := _slot_path(_active_campaign, slot_name)
 	# FileAccess.file_exists(), not ResourceLoader.exists(): the latter checks
 	# against the project's res:// import/resource-path cache, which a
 	# runtime-written user:// save file was never registered in — it reports
 	# false negatives for files that are genuinely there on disk.
 	if not FileAccess.file_exists(path):
-		load_failed.emit(campaign_name, slot_name, "Save not found.")
+		load_failed.emit(slot_name, "Save not found.")
 		return false
 	# CACHE_MODE_IGNORE: always read the file on disk fresh rather than a
 	# stale cached copy — this class is exactly the "please definitely load
@@ -159,10 +255,10 @@ func load_game(campaign_name: String, slot_name: String) -> bool:
 	# not for asserting an expected class.
 	var data := ResourceLoader.load(path, "", ResourceLoader.CACHE_MODE_IGNORE) as SaveGameData
 	if not data:
-		load_failed.emit(campaign_name, slot_name, "Save file is corrupt or unreadable.")
+		load_failed.emit(slot_name, "Save file is corrupt or unreadable.")
 		return false
 	_apply_save_data(data)
-	game_loaded.emit(campaign_name, slot_name)
+	game_loaded.emit(slot_name)
 	return true
 
 func _build_save_data(campaign_name: String, slot_name: String) -> SaveGameData:
@@ -288,6 +384,12 @@ func _campaign_dir(campaign_name: String) -> String:
 
 func _slot_path(campaign_name: String, slot_name: String) -> String:
 	return "%s/%s.res" % [_campaign_dir(campaign_name), _sanitize_filename(slot_name)]
+
+## Sibling of _slot_path() with a .png extension — get_slot_names() only
+## collects ".res" entries, so a thumbnail sharing its slot's basename can't
+## be mistaken for a save slot of its own.
+func _thumbnail_path(campaign_name: String, slot_name: String) -> String:
+	return "%s/%s.png" % [_campaign_dir(campaign_name), _sanitize_filename(slot_name)]
 
 func _sanitize_filename(raw_name: String) -> String:
 	var result := raw_name.strip_edges()

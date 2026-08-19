@@ -249,6 +249,108 @@ static func build_card(display_name: String, icon_texture: Texture2D, details: S
 
 	return card
 
+## Clickable wide row: a thumbnail image on the left, a title and a muted
+## subtitle on the right. The shared shape behind every entry in the save
+## browsers (SaveSlotList's slots, CampaignBrowserView's campaigns) — lives
+## here alongside build_card() for the same reason that one does, so two
+## call sites can't drift apart.
+##
+## Horizontal rather than build_card()'s vertical stack because these list
+## DOWN a narrow panel instead of across a bar, and because a save
+## screenshot is a wide 16:9 image that a square icon slot would letterbox
+## away half of.
+##
+## `thumbnail` null (a save from before screenshots existed, or one whose
+## capture failed) draws a labelled placeholder of the same size rather
+## than collapsing the row — a list whose entries change height depending
+## on whether their picture happens to exist reads as broken.
+static func build_thumbnail_row(title: String, subtitle: String, thumbnail: Texture2D, on_pressed: Callable, thumbnail_size: Vector2 = Vector2(128.0, 72.0)) -> Control:
+	var row := PanelContainer.new()
+	row.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.mouse_filter = Control.MOUSE_FILTER_STOP
+	row.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
+
+	var normal_box := StyleBoxFlat.new()
+	normal_box.bg_color = BUTTON_NORMAL
+	normal_box.border_color = PANEL_BORDER
+	normal_box.border_width_left = 1
+	normal_box.border_width_top = 1
+	normal_box.border_width_right = 1
+	normal_box.border_width_bottom = 1
+	normal_box.corner_radius_top_left = 6
+	normal_box.corner_radius_top_right = 6
+	normal_box.corner_radius_bottom_right = 6
+	normal_box.corner_radius_bottom_left = 6
+	normal_box.content_margin_left = 6.0
+	normal_box.content_margin_right = 6.0
+	normal_box.content_margin_top = 6.0
+	normal_box.content_margin_bottom = 6.0
+	row.add_theme_stylebox_override("panel", normal_box)
+
+	var hover_box := normal_box.duplicate() as StyleBoxFlat
+	hover_box.bg_color = BUTTON_HOVER
+	row.mouse_entered.connect(func() -> void: row.add_theme_stylebox_override("panel", hover_box))
+	row.mouse_exited.connect(func() -> void: row.add_theme_stylebox_override("panel", normal_box))
+	row.gui_input.connect(func(event: InputEvent) -> void:
+		if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+			on_pressed.call()
+	)
+
+	var content := HBoxContainer.new()
+	content.add_theme_constant_override("separation", 8)
+	row.add_child(content)
+
+	if thumbnail != null:
+		var image_rect := TextureRect.new()
+		image_rect.texture = thumbnail
+		image_rect.custom_minimum_size = thumbnail_size
+		# Same EXPAND_IGNORE_SIZE pairing build_card()'s icons need — without
+		# it the rect reports the SOURCE image's resolution as its minimum
+		# size and custom_minimum_size can only grow it, never shrink it.
+		image_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		image_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		image_rect.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		content.add_child(image_rect)
+	else:
+		var placeholder := PanelContainer.new()
+		placeholder.custom_minimum_size = thumbnail_size
+		placeholder.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		var placeholder_box := StyleBoxFlat.new()
+		placeholder_box.bg_color = BUTTON_DISABLED
+		placeholder_box.corner_radius_top_left = 4
+		placeholder_box.corner_radius_top_right = 4
+		placeholder_box.corner_radius_bottom_right = 4
+		placeholder_box.corner_radius_bottom_left = 4
+		placeholder.add_theme_stylebox_override("panel", placeholder_box)
+		var placeholder_label := Label.new()
+		placeholder_label.text = "No image"
+		placeholder_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		placeholder_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		style_label(placeholder_label, false, true)
+		placeholder.add_child(placeholder_label)
+		content.add_child(placeholder)
+
+	var text_column := VBoxContainer.new()
+	text_column.add_theme_constant_override("separation", 2)
+	text_column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	text_column.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	content.add_child(text_column)
+
+	var title_label := Label.new()
+	title_label.text = title
+	title_label.clip_text = true  ## A long slot name must not widen the row past its panel — see TechTreeView's own no-horizontal-scrollbar note.
+	style_label(title_label, true)
+	text_column.add_child(title_label)
+
+	if not subtitle.is_empty():
+		var subtitle_label := Label.new()
+		subtitle_label.text = subtitle
+		subtitle_label.clip_text = true
+		style_label(subtitle_label, false, true)
+		text_column.add_child(subtitle_label)
+
+	return row
+
 ## Muted-fill + saturated-border color pairs, one per BuildMenuView column
 ## — keyed by a plain string (not GameEnums.BuildingCategory directly)
 ## since "Defense Works & Walls combined" isn't a single enum value:
