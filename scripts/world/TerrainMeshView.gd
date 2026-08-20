@@ -215,6 +215,9 @@ func _build_chunk(address: Vector2i) -> void:
 	# array per triangle. Array is a reference and appends in place, and the
 	# one conversion to Packed happens per surface in _build_surface().
 	var triangles_by_key: Dictionary = {}  ## Vector2i(biome, soil) -> Array[Vector2]
+	## Same keys, for the soil crossfade drawn over those base surfaces.
+	var soil_points: Dictionary = {}
+	var soil_alphas: Dictionary = {}  ## Same keys -> Array[float], one per point.
 	var soil_cache: Dictionary = {}
 	var vertices := data.vertices
 	var indices := data.indices
@@ -232,9 +235,10 @@ func _build_chunk(address: Vector2i) -> void:
 			continue
 		kept[tri] = 1
 		var biome := RealTerrainSampler.biome_from_code(data.triangle_biomes[tri])
-		# Soil is resolved at the triangle's centroid, not per vertex: it only
-		# selects which of a biome's SVG variants to use, and a per-vertex
-		# answer could not be honoured by a single-texture surface anyway.
+		# The centroid's soil picks the OPAQUE surface the triangle belongs to.
+		# Where its vertices disagree with that, _add_soil_crossfade() draws
+		# the other variants over the top instead of letting one sample decide
+		# the whole triangle -- see that function.
 		var soil := _soil_at(biome, centroid, soil_cache)
 		var key := Vector2i(int(biome), int(soil))
 		var points: Array = triangles_by_key.get(key, [])
@@ -243,9 +247,20 @@ func _build_chunk(address: Vector2i) -> void:
 		points.append(a)
 		points.append(b)
 		points.append(c)
+		if TerrainVisuals.varies_by_soil(biome):
+			_add_soil_crossfade(biome, soil, a, b, c, soil_cache, soil_points, soil_alphas)
 
 	for key: Vector2i in triangles_by_key:
 		container.add_child(_build_surface(key.x, key.y, triangles_by_key[key]))
+
+	# Over the opaque bases, under the biome-boundary blend. Keys sorted so the
+	# order two variants composite in is the same in every chunk -- dictionary
+	# order is insertion order, which depends on which triangle the build
+	# happened to reach first.
+	var soil_keys: Array = soil_points.keys()
+	soil_keys.sort()
+	for key: Vector2i in soil_keys:
+		container.add_child(_build_surface(key.x, key.y, soil_points[key], soil_alphas[key]))
 
 	# After every base surface, so the crossfade draws over the hard edges
 	# rather than under them. Same z_index throughout — MeshInstance2D
@@ -301,6 +316,61 @@ func _build_blend_surfaces(container: Node2D, data: TerrainMeshChunkData,
 
 	for key: Vector2i in points_by_key:
 		container.add_child(_build_surface(key.x, key.y, points_by_key[key], alphas_by_key[key]))
+
+
+## Redraws one triangle in each soil variant its VERTICES resolve to that the
+## centroid did not, opaque at the vertices holding that soil and transparent
+## at the others — so the change from one variant to the next is a gradient
+## across the triangle instead of a hard edge along it.
+##
+## The centroid-only version this replaces was correct for as long as a
+## triangle was smaller than the thing it was sampling. It is not any more:
+## the 2026-08-19 boundary conditioning welds the field mosaic into regions,
+## which took the median triangle up and left MOORLAND drawing large angular
+## wedges of `moorland_desolate` against `moorland_poor` with the seams
+## following triangulation rather than ground. Same defect as before, made
+## visible by the triangles growing past TEXTURE_WORLD_SIZE (93 wu) — one
+## sample can no longer speak for the area it covers.
+##
+## Continuity across a shared edge is exact, and it is exact because soil is
+## sampled per VERTEX and adjacent triangles share vertices. Where T1's base
+## is POOR and T2's is DESOLATE, along their shared edge T1 draws
+## mix(POOR, DESOLATE, t) and T2 draws mix(DESOLATE, POOR, 1-t) — the same
+## colour. Nothing depends on the two triangles agreeing about their bases.
+##
+## The bases must be OPAQUE for that to hold: two surfaces at alpha 0.5 each
+## composite to 25% background showing through, which is why this is an
+## overlay on a solid surface rather than N surfaces that sum to 1.
+##
+## A triangle whose three vertices hold three DIFFERENT soils composites two
+## overlays, and their order then decides the interior mix. Sorted keys make
+## that order stable rather than correct — with three ratings meeting inside
+## one triangle there is no single right answer, and the case is rare.
+func _add_soil_crossfade(biome: GameEnums.BiomeType, base_soil: GameEnums.SoilFertility,
+		a: Vector2, b: Vector2, c: Vector2, soil_cache: Dictionary,
+		points_by_key: Dictionary, alphas_by_key: Dictionary) -> void:
+	var soil_a := _soil_at(biome, a, soil_cache)
+	var soil_b := _soil_at(biome, b, soil_cache)
+	var soil_c := _soil_at(biome, c, soil_cache)
+	if soil_a == base_soil and soil_b == base_soil and soil_c == base_soil:
+		return
+	var added: Array[int] = []
+	for soil: GameEnums.SoilFertility in [soil_a, soil_b, soil_c]:
+		if soil == base_soil or added.has(int(soil)):
+			continue
+		added.append(int(soil))
+		var key := Vector2i(int(biome), int(soil))
+		var points: Array = points_by_key.get(key, [])
+		if points.is_empty():
+			points_by_key[key] = points
+			alphas_by_key[key] = []
+		points.append(a)
+		points.append(b)
+		points.append(c)
+		(alphas_by_key[key] as Array).append_array([
+			1.0 if soil_a == soil else 0.0,
+			1.0 if soil_b == soil else 0.0,
+			1.0 if soil_c == soil else 0.0])
 
 
 ## True where `world_pos` falls on a land hex — see LandMask, which owns this
