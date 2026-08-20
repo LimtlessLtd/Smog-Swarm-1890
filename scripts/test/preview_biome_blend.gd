@@ -84,3 +84,39 @@ func _shoot(zoom: float, path: String) -> void:
 	await RenderingServer.frame_post_draw
 	get_viewport().get_texture().get_image().save_png(path)
 	print("wrote %s (zoom %.2f)" % [ProjectSettings.globalize_path(path), zoom])
+	_report_surface_cost()
+
+
+## Vertices actually built, split by whether the surface is opaque or a
+## crossfade drawn over one.
+##
+## Both crossfade passes REDRAW triangles that the opaque pass already drew --
+## TerrainBoundaryBlend across a biome boundary, _add_soil_crossfade() across a
+## soil one -- so the only thing that says whether they are affordable is how
+## much they add. A chunk build is capped at one per frame and the densest
+## measured ~90-170 ms, so this is the number that would say if a crossfade had
+## quietly doubled the terrain.
+func _report_surface_cost() -> void:
+	var mesh_view := get_node_or_null("WorldRoot/TerrainMeshView")
+	if mesh_view == null:
+		return
+	var opaque := 0
+	var faded := 0
+	var surfaces := 0
+	for chunk in mesh_view.get_children():
+		for node in chunk.get_children():
+			var instance := node as MeshInstance2D
+			if instance == null or instance.mesh == null:
+				continue
+			var arrays := (instance.mesh as ArrayMesh).surface_get_arrays(0)
+			var count: int = (arrays[Mesh.ARRAY_VERTEX] as PackedVector3Array).size()
+			surfaces += 1
+			if arrays[Mesh.ARRAY_COLOR] != null:
+				faded += count
+			else:
+				opaque += count
+	var total := opaque + faded
+	if total == 0:
+		return
+	print("  surfaces %d, vertices %d opaque + %d crossfade (%.1f%% overdraw)"
+		% [surfaces, opaque, faded, 100.0 * float(faded) / float(opaque)])

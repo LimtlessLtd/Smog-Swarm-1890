@@ -216,6 +216,107 @@ WATERWAY_SMOOTH_ITERATIONS = 1
 WATERWAY_BUFFER_RESOLUTION = 8  ## Segments per quarter-circle on bends/caps. Was 2, which is visibly faceted at this width.
 WATERWAY_SIMPLIFY_FRACTION = 0.25  ## Of WATERWAY_HALF_WIDTH_WU.
 
+## --- Boundary conditioning ----------------------------------------------
+## Run on each class's merged blob BEFORE it is simplified. Added 2026-08-19
+## against a user report that biomes "have such jagged angles and tiny slivers
+## of land"; preview_chunk_mesh.py renders the before/after.
+##
+## The jaggedness was not noisy source data, it was SIMPLIFY_TOLERANCE_M
+## being larger than the features it was applied to. British farmland and
+## woodland arrive from OSM as thousands of individual field/copse polygons
+## roughly 100-300m across, i.e. AT or BELOW the 300m tolerance. Douglas-
+## Peucker with preserve_topology=True refuses to delete a ring outright, so
+## instead of vanishing each one collapses to the 3-4 extreme points that a
+## ring cannot go below -- a spike. That is the shard texture covering the
+## rendered chunk: one triangular splinter per real field.
+##
+## Simply lowering the tolerance keeps the shapes but multiplies vertex count
+## across the whole map. Welding first is better on both counts: a closing
+## merges the field mosaic into contiguous regions, after which the tolerance
+## applies to a REGION's outer boundary -- which is what a 300m tolerance is
+## the right size for -- and the interior boundaries it used to shred are
+## gone rather than simplified.
+##
+## Distances are in real metres. QUANT_WU is 1.0 wu = 9.75m, so anything
+## below ~20m is below the precision grid and does nothing.
+##
+## WATERWAY is exempt from all three: its centreline is already simplified and
+## Chaikin-smoothed before buffering, and the ribbon is only 4.62 wu wide, so
+## an erosion of any useful size would break it into pieces -- the same
+## failure WATERWAY_LINE_TOLERANCE_M records, and a hole in the
+## Bridge-mandatory water barrier rather than only an ugly river.
+
+## Closing (dilate then erode): welds neighbouring same-class features across
+## the lanes, hedge lines and hairline slivers of no-data that separate them
+## in OSM, and fills interior pinholes. Bridges gaps up to 2x this wide.
+FIELD_WELD_M = 90.0
+
+## Opening (erode then dilate): erases what the weld could not join -- thin
+## tendrils, one-field spurs hanging off a region, and slivers narrower than
+## 2x this. At 5km per macro hex an 80m-wide strip of anything is under 2% of
+## one hex and cannot read as its own biome on screen.
+SLIVER_OPEN_M = 40.0
+
+## Classes welded and opened at a fraction of those distances.
+##
+## A weld can only claim ground no HIGHER-priority class covers, because
+## faces are still labelled by PRIORITY afterwards. FARMLAND is last, so a
+## generous weld on it takes nothing but DEFAULT_CLASS -- ground no real
+## polygon ever described -- which is the correct owner for the lane between
+## two fields anyway. A weld on a class near the TOP of the list takes ground
+## from the real classes below it: measured on chunk 29,15, welding WOODLAND
+## at 100m grew it from 6.81% of the chunk to 10.83%, all of it out of
+## farmland, because a 150m gap between two copses is usually a field and not
+## more wood. So the discrete vegetation classes are welded only far enough to
+## close hairline no-data slits, and the built classes likewise.
+##
+## The opening is reduced with it because these are the classes whose real
+## features are smallest: at the full 40m a copse under 80m across is erased,
+## and chunk 29,15 lost woodland outright (6.81% -> 5.95%).
+CONSERVATIVE_CLASSES = {"WOODLAND", "HEATHLAND", "WETLAND", "URBAN", "INDUSTRIAL"}
+CONSERVATIVE_FRACTION = 0.45
+
+## Segments per quarter circle in those buffers. Low on purpose: the simplify
+## immediately after discards the detail, so a higher value only costs time.
+CONDITION_BUFFER_RESOLUTION = 4
+
+## Chaikin corner-cutting on the simplified rings, cyclic (no pinned
+## endpoints, unlike the open centreline in _chaikin). Douglas-Peucker output
+## is an angular polyline and a biome boundary that turns in hard corners
+## reads as wrong even when it is in the right place -- the same reason
+## WATERWAY_SMOOTH_ITERATIONS exists. Each iteration doubles ring vertices.
+SMOOTH_ITERATIONS = 1
+
+## Smoothing applies to EVERY class except WATERWAY. URBAN and INDUSTRIAL were
+## exempted at first, on the argument that a city block and a mill yard are
+## built straight and rounding them trades one wrong shape for another. The
+## render disproved it: the straight edges the exemption preserved are not the
+## real ones. A village's footprint is a small polygon, so the 300m simplify
+## turns it into the same spike it turns a field into, and the exemption only
+## kept those spikes sharp. Smoothed, chunk 30,22's villages read as
+## settlements and URBAN's share moves 8.32% -> 7.98% -- it costs almost no
+## area, because rounding a corner takes only the corner.
+##
+## At 5km per macro hex nothing resolves an individual block anyway, so there
+## was no real straightness being defended.
+
+## An isolated pocket of UNCLAIMED ground smaller than this is given to
+## whichever class it shares the most boundary with. 0.25 km2, a ~500m patch,
+## a tenth of a macro hex across.
+##
+## DEFAULT_CLASS is not a survey result, it is "no OSM polygon covers this" --
+## so a 300m pocket of it enclosed by a city is not moorland in London, it is a
+## street junction nobody drew a landuse polygon over. The conditioning above
+## cannot reach these because they are not part of any class's geometry: they
+## are what is LEFT once every class has been welded, and on chunk 33,27
+## (London) they were the grey city's remaining olive confetti.
+##
+## Only ever absorbs unclaimed ground, so it cannot take area from a real
+## class. Real moorland is safe for the opposite reason: on an actual moor the
+## unclaimed region is one connected part covering most of the chunk (measured
+## 89% on chunk 25,9), which is far above this threshold and stays as it is.
+DEFAULT_ABSORB_AREA_M2 = 250000.0
+
 ## Input FEATURE parts below this are dropped before they reach the boundary
 ## network -- 0.04 km2, a 200x200m patch, which at a 300m simplification
 ## tolerance is already near the noise floor.
@@ -381,6 +482,160 @@ def _waterway_ribbon(line: LineString, half_width: float):
     if WATERWAY_SMOOTH_ITERATIONS and len(simplified.coords) > 2:
         simplified = LineString(_chaikin(simplified.coords, WATERWAY_SMOOTH_ITERATIONS))
     return simplified.buffer(half_width, resolution=WATERWAY_BUFFER_RESOLUTION)
+
+
+def _chaikin_ring(coords, iterations: int):
+    """Chaikin corner-cutting on a CLOSED ring.
+
+    Differs from _chaikin only in being cyclic: a ring has no endpoints to pin,
+    so the first and last vertex are cut like any other. Pinning them instead
+    would leave one hard corner per ring, always at whichever vertex OSM
+    happened to list first.
+    """
+    points = list(coords[:-1]) if coords[0] == coords[-1] else list(coords)
+    if len(points) < 3:
+        return None
+    for _ in range(iterations):
+        cut = []
+        for i, a in enumerate(points):
+            b = points[(i + 1) % len(points)]
+            cut.append((0.75 * a[0] + 0.25 * b[0], 0.75 * a[1] + 0.25 * b[1]))
+            cut.append((0.25 * a[0] + 0.75 * b[0], 0.25 * a[1] + 0.75 * b[1]))
+        points = cut
+    return points + [points[0]]
+
+
+def _smooth_polygon(poly: Polygon, iterations: int):
+    """Chaikin every ring of one polygon, holes included.
+
+    A hole is a boundary between two classes exactly as an exterior is -- the
+    class inside the hole is whatever the arrangement labels it -- so leaving
+    holes angular would smooth a wood's outline and leave the clearing inside
+    it sharp.
+    """
+    shell = _chaikin_ring(list(poly.exterior.coords), iterations)
+    if shell is None:
+        return None
+    holes = []
+    for ring in poly.interiors:
+        cut = _chaikin_ring(list(ring.coords), iterations)
+        if cut is not None:
+            holes.append(cut)
+    try:
+        out = Polygon(shell, holes)
+    except Exception:  # noqa: BLE001 -- a ring too degenerate to close
+        return None
+    return out if out.is_valid else make_valid(out)
+
+
+def _despeckle(geom, cls: str):
+    """Weld the mosaic, then erase what the weld could not join. Runs BEFORE
+    the simplify -- see FIELD_WELD_M for why that order is the whole point.
+
+    Returns the input unchanged for WATERWAY and for an empty geometry. A
+    stage that throws or empties the geometry yields the last good version
+    rather than dropping the class: a chunk missing its farmland is a much
+    worse outcome than a chunk whose farmland is still angular.
+    """
+    if cls == "WATERWAY" or geom.is_empty:
+        return geom
+    scale = CONSERVATIVE_FRACTION if cls in CONSERVATIVE_CLASSES else 1.0
+    weld = FIELD_WELD_M * scale * WU_PER_REAL_M
+    open_d = SLIVER_OPEN_M * scale * WU_PER_REAL_M
+    for out_d, back_d in ((weld, -weld), (-open_d, open_d)):
+        if out_d == 0.0:
+            continue
+        try:
+            # Round joins, not mitre: mitre extends a sharp reflex corner along
+            # its own bisector, which on the spiky input this exists to fix
+            # would lengthen the very spikes being removed.
+            stepped = geom.buffer(out_d, resolution=CONDITION_BUFFER_RESOLUTION) \
+                          .buffer(back_d, resolution=CONDITION_BUFFER_RESOLUTION)
+        except Exception:  # noqa: BLE001
+            continue
+        if not stepped.is_empty and stepped.is_valid:
+            geom = stepped
+    return geom
+
+
+def _smooth(geom, cls: str):
+    """Chaikin every ring. Runs AFTER the simplify, on purpose.
+
+    Smoothing before the simplify would be pointless work: Douglas-Peucker
+    would then pick a subset of the rounded vertices and hand back the same
+    angular polyline it always did, which is what the first version of this
+    did.
+    """
+    if cls == "WATERWAY" or not SMOOTH_ITERATIONS or geom.is_empty:
+        return geom
+    smoothed = [s for s in (_smooth_polygon(p, SMOOTH_ITERATIONS) for p in _parts(geom))
+                if s is not None and not s.is_empty]
+    if not smoothed:
+        return geom
+    joined = unary_union(smoothed)
+    return joined if not joined.is_empty and joined.is_valid else geom
+
+
+def _absorb_unclaimed(merged: dict, chunk: Polygon, max_area: float) -> None:
+    """Give small isolated pockets of unclaimed ground to a neighbouring class,
+    in place. See DEFAULT_ABSORB_AREA_M2.
+
+    "Neighbouring" is decided by SHARED BOUNDARY LENGTH, not by nearest centre
+    or by largest neighbour: a pocket wedged between a city and a wood belongs
+    to whichever one actually wraps it, and boundary length is the only one of
+    the three that says so.
+    """
+    if not merged:
+        return
+    try:
+        unclaimed = chunk.difference(unary_union(list(merged.values())))
+    except Exception:  # noqa: BLE001
+        return
+    gained: dict[str, list] = {}
+    for pocket in _parts(unclaimed):
+        if pocket.area >= max_area:
+            continue
+        best_cls, best_len = None, 0.0
+        for cls, geom in merged.items():
+            # Never into WATERWAY. A pocket inside a meander is bounded mostly
+            # by river, so it would win on shared length every time and the
+            # river would silently fatten -- measured 4.77% -> 5.37% of chunk
+            # 33,27 before this exemption. That is the same widening
+            # WATERWAY_LINE_TOLERANCE_M records, and the ribbon's width is
+            # load-bearing for Bridge-mandatory crossing, not just cosmetic.
+            if cls == "WATERWAY" or not pocket.intersects(geom):
+                continue
+            try:
+                shared = pocket.boundary.intersection(geom.boundary).length
+            except Exception:  # noqa: BLE001
+                continue
+            if shared > best_len:
+                best_cls, best_len = cls, shared
+        if best_cls is not None:
+            gained.setdefault(best_cls, []).append(pocket)
+    for cls, pockets in gained.items():
+        grown = unary_union([merged[cls]] + pockets)
+        if not grown.is_empty and grown.is_valid:
+            merged[cls] = grown
+
+
+def _drop_small(geom, min_area: float):
+    """Remove parts and HOLES below `min_area`.
+
+    Holes matter as much as parts and used not to be filtered at all: a 150m
+    gap left inside a wood is not a clearing anyone can see at this scale, it
+    is one more sliver -- and because the arrangement labels it by containment
+    it comes out as a speck of DEFAULT_CLASS moorland sitting inside the wood.
+    """
+    kept = []
+    for part in _parts(geom):
+        if part.area < min_area:
+            continue
+        holes = [r for r in part.interiors if Polygon(r).area >= min_area]
+        kept.append(Polygon(part.exterior, holes) if len(holes) != len(part.interiors) else part)
+    if not kept:
+        return None
+    return unary_union(kept)
 
 
 def _build_tile_geometry(features: list[dict], transform) -> dict:
@@ -550,13 +805,21 @@ def build_chunk_mesh(chunk_x: int, chunk_y: int, transform, tile_cache: _TileGeo
         # WATERWAY_LINE_TOLERANCE_M). Its centreline was already simplified
         # before buffering, so there is little left here to remove anyway.
         cls_tol = WATERWAY_HALF_WIDTH_WU * WATERWAY_SIMPLIFY_FRACTION if cls == "WATERWAY" else tol
+        # Weld the field mosaic and erase slivers BEFORE simplifying, round
+        # the corners the simplify leaves AFTER it. See FIELD_WELD_M.
+        g = _despeckle(g, cls)
+        if g.is_empty:
+            continue
         g = _snap(g.simplify(cls_tol, preserve_topology=True))
         if g is None or g.is_empty or not g.is_valid:
             continue
-        keep = [p for p in _parts(g) if p.area >= min_area]
-        if not keep:
+        g = _snap(_smooth(g, cls))
+        if g is None or g.is_empty or not g.is_valid:
             continue
-        g = unary_union(keep).intersection(chunk)
+        g = _drop_small(g, min_area)
+        if g is None:
+            continue
+        g = g.intersection(chunk)
         if not g.is_empty:
             merged[cls] = g
 
@@ -578,6 +841,11 @@ def build_chunk_mesh(chunk_x: int, chunk_y: int, transform, tile_cache: _TileGeo
     # coastline geometry is that phase's job, not a filter here.
     if n_features == 0:
         return None
+
+    # Step 2b: hand small isolated pockets of unclaimed ground to a neighbour.
+    # After every class has been welded, not before -- the weld is what turns
+    # a mosaic of gaps into a few isolated pockets in the first place.
+    _absorb_unclaimed(merged, chunk, DEFAULT_ABSORB_AREA_M2 * WU_PER_REAL_M * WU_PER_REAL_M)
 
     # Step 3: one noded line network -> faces.
     lines = [chunk.boundary]
@@ -653,7 +921,8 @@ def build_chunk_mesh(chunk_x: int, chunk_y: int, transform, tile_cache: _TileGeo
 
 
 def bake(q_range: tuple[int, int], r_range: tuple[int, int], limit: int | None = None,
-         out_dir: str = OUTPUT_DIR, cache_dir: str = OVERPASS_CACHE) -> None:
+         out_dir: str = OUTPUT_DIR, cache_dir: str = OVERPASS_CACHE,
+         only_chunks: list[tuple[int, int]] | None = None) -> None:
     print("=== Step 1: fit lon/lat -> world affine ===")
     transform = fit_affine()
 
@@ -700,6 +969,13 @@ def bake(q_range: tuple[int, int], r_range: tuple[int, int], limit: int | None =
     all_chunks = [c for c in all_chunks if c in keep]
     print(f"  {before} chunks in the grid, {len(all_chunks)} contain land "
           f"({before - len(all_chunks)} pure-sea chunks skipped)")
+    if only_chunks:
+        # Explicit addresses bypass the grid entirely rather than filtering it,
+        # so a named chunk still bakes when it falls outside the default
+        # corridor range -- the point of --chunks is sweeping a constant on one
+        # known-interesting chunk without also knowing which q/r covers it.
+        all_chunks = list(only_chunks)
+        print(f"  --chunks overrides the grid: {all_chunks}")
     if limit is not None:
         all_chunks = all_chunks[:limit]
     print(f"q={q_range} r={r_range} -> chunk grid x {min_cx}..{max_cx}, y {min_cy}..{max_cy} "
@@ -788,11 +1064,33 @@ if __name__ == "__main__":
     ap.add_argument("--full-map", action="store_true",
                     help="cover BritishGeographyData.MAP_BOUNDS instead of the corridor. "
                          "Only useful with a --cache that actually spans it")
+    ap.add_argument("--chunks", nargs="+", metavar="X,Y",
+                    help="bake only these chunk addresses, ignoring --q/--r. For sweeping a "
+                         "boundary-conditioning constant on one chunk instead of a 60-minute map")
+    # Overrides so a sweep is one command per value rather than an edit per
+    # value -- every one of these was chosen by baking a few settings of it
+    # onto the same chunk and looking at preview_chunk_mesh.py's output.
+    ap.add_argument("--weld", type=float, help=f"FIELD_WELD_M (default {FIELD_WELD_M})")
+    ap.add_argument("--open", type=float, dest="open_m",
+                    help=f"SLIVER_OPEN_M (default {SLIVER_OPEN_M})")
+    ap.add_argument("--smooth", type=int, help=f"SMOOTH_ITERATIONS (default {SMOOTH_ITERATIONS})")
+    ap.add_argument("--tolerance", type=float,
+                    help=f"SIMPLIFY_TOLERANCE_M (default {SIMPLIFY_TOLERANCE_M})")
     args = ap.parse_args()
+    for name, value in (("FIELD_WELD_M", args.weld), ("SLIVER_OPEN_M", args.open_m),
+                        ("SMOOTH_ITERATIONS", args.smooth),
+                        ("SIMPLIFY_TOLERANCE_M", args.tolerance)):
+        if value is not None:
+            globals()[name] = value
+            print(f"  override {name} = {value}")
+    only_chunks = None
+    if args.chunks:
+        only_chunks = [tuple(int(p) for p in c.split(",")) for c in args.chunks]
     q_range, r_range = tuple(args.q), tuple(args.r)
     if args.full_map:
         # BritishGeographyData.MAP_BOUNDS = Rect2i(0, 0, 154, 179), inclusive of
         # its last row/column. Kept here rather than imported because that value
         # lives in GDScript; if it moves, this is the one line to follow it.
         q_range, r_range = (0, 153), (0, 178)
-    bake(q_range, r_range, limit=args.limit, out_dir=args.out, cache_dir=args.cache)
+    bake(q_range, r_range, limit=args.limit, out_dir=args.out, cache_dir=args.cache,
+         only_chunks=only_chunks)

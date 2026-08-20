@@ -78,6 +78,19 @@ static func terrain_texture(biome: GameEnums.BiomeType, soil: GameEnums.SoilFert
 		_texture_cache[key] = _load_texture(key)
 	return _texture_cache[key]
 
+## True where terrain_texture()/biome_color() actually answer differently for
+## different soil ratings. FARMLAND and MOORLAND resolve to a per-soil SVG
+## (`farmland_lush` etc.) and to soil_color(); every other biome ignores the
+## argument entirely.
+##
+## Lives here rather than in the caller because _texture_key() below is what
+## makes it true — a renderer asking "does soil change what I draw?" must not
+## answer by restating that match statement somewhere else, or the two drift
+## the first time a biome gains soil art.
+static func varies_by_soil(biome: GameEnums.BiomeType) -> bool:
+	return biome == GameEnums.BiomeType.FARMLAND or biome == GameEnums.BiomeType.MOORLAND
+
+
 ## Matches assets/terrain/<key>.svg exactly — see that folder's own file list.
 static func _texture_key(biome: GameEnums.BiomeType, soil: GameEnums.SoilFertility, terrain_feature: GameEnums.TerrainFeature = GameEnums.TerrainFeature.NONE) -> String:
 	match biome:
