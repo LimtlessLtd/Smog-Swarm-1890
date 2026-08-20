@@ -53,13 +53,17 @@ urban) density: ~57 MB for all of GB + Ireland, against ~300 MB for
 equivalent raster coverage and the 42 MB of fine rasters that today cover
 only the corridor.
 
-NOT DONE HERE, and deliberately not half-done: the coastline. This pass
-covers inland land-cover over the baked corridor only, which is why OCEAN
-never appears in PRIORITY below. BritishGeographyData._LAND_RLE is still a
-whole-hex-quantized raster mask, and re-deriving the coast from the Natural
-Earth GB+IRL vectors is its own sub-task -- it needs the land/ocean boundary
-to become the mesh's outer boundary, which this chunk-rectangle domain does
-not model yet.
+Coastline (2026-08-20): the arrangement domain for each chunk is no longer
+the plain CHUNK_SIZE_WU rectangle, it is (rectangle ∩ real coastline) --
+coastline.land_polygon_world(), Natural Earth's GBR+IRL landmass projected
+through the same affine every other class here already uses. OCEAN still
+never appears in PRIORITY: sea is simply ground no chunk's arrangement
+covers, the same "write nothing, let SeaView show through" contract a
+zero-feature chunk already used. BritishGeographyData._LAND_RLE stays
+whole-hex-quantized and is untouched -- it is the game's MECHANICAL
+land/ocean truth (HexMapGenerator, pathfinding, fog), a separate system this
+pass does not touch; see todo.md's "1b" entry for the measured disagreement
+between the two.
 
 DATA ATTRIBUTION: the land-cover geometry this script consumes is
 OpenStreetMap data, ODbL licensed, which REQUIRES "(c) OpenStreetMap
@@ -85,6 +89,7 @@ from shapely.ops import polygonize, unary_union
 from shapely.strtree import STRtree
 
 from bake_landcover import _BIOME_CODE, _LANDUSE_MAP, _NATURAL_MAP
+from coastline import land_polygon_world
 from fetch_overpass import elements_to_features
 from geo_projection import apply_affine, fit_affine, invert_affine, world_to_lonlat
 from vector_mesh_format import ChunkTooLargeError, chunk_filename, decode_chunk, encode_chunk
@@ -727,13 +732,22 @@ def _parts(geom) -> list[Polygon]:
 
 
 def build_chunk_mesh(chunk_x: int, chunk_y: int, transform, tile_cache: _TileGeometryCache,
-                     tile_names: list[str]) -> dict | None:
+                     tile_names: list[str], land) -> dict | None:
     """Arrangement -> labelled faces -> CDT for one chunk. None if the chunk
     produced no geometry at all."""
     origin_x = chunk_x * CHUNK_SIZE_WU
     origin_y = chunk_y * CHUNK_SIZE_WU
-    chunk = set_precision(box(origin_x, origin_y,
-                              origin_x + CHUNK_SIZE_WU, origin_y + CHUNK_SIZE_WU), QUANT_WU)
+    rect = box(origin_x, origin_y, origin_x + CHUNK_SIZE_WU, origin_y + CHUNK_SIZE_WU)
+    # The arrangement domain is (chunk rectangle ∩ real coastline), not the
+    # plain rectangle -- everything below (class merging, the boundary
+    # network, face labelling, CDT) already operates on whatever `chunk` is,
+    # so clipping it here is the entire fix: no other step needs to know
+    # land exists. A chunk that is entirely open sea despite passing
+    # land_chunks()'s coarser hex-based pre-filter produces nothing, same as
+    # a chunk with zero OSM features.
+    chunk = set_precision(rect.intersection(land), QUANT_WU)
+    if chunk.is_empty:
+        return None
 
     tol = SIMPLIFY_TOLERANCE_M * WU_PER_REAL_M
     min_area = MIN_PART_AREA_M2 * WU_PER_REAL_M * WU_PER_REAL_M
@@ -826,19 +840,12 @@ def build_chunk_mesh(chunk_x: int, chunk_y: int, transform, tile_cache: _TileGeo
     # A chunk with no land-cover features at all is not written. It would
     # otherwise bake as a full grid of DEFAULT_CLASS faces -- measured: "0
     # feats, 1225 faces, 4750 tris" -- i.e. 40km of solid default MOORLAND
-    # asserted from no evidence whatsoever. These chunks are open sea (the
-    # North Sea and Irish Sea edges of the corridor) or ground the Overpass
-    # fetch never covered, and painting either of them green is wrong: over sea
-    # it hides SeaView, and over unfetched land it claims a biome nobody
-    # sampled. Writing nothing lets the layer below show through, which is
-    # SeaView's blue over water and HexGridMap's own flat tile over land --
-    # each already the correct answer for its case.
-    #
-    # This does NOT clean up the coastline inside chunks that DO have features:
-    # their sea still labels as DEFAULT_CLASS, because OSM land-cover says
-    # nothing about open water and _LAND_RLE's own coastline is quantized to
-    # whole hexes (which is what epic phase 1b exists to replace). Real
-    # coastline geometry is that phase's job, not a filter here.
+    # asserted from no evidence whatsoever. These chunks are ground the
+    # Overpass/PBF fetch never covered (real open sea within `chunk` was
+    # already clipped away above, by the land-polygon intersection, so this
+    # case is now specifically "on land but unfetched," not "at sea").
+    # Writing nothing lets HexGridMap's flat per-hex tile show through,
+    # which is the correct answer for unfetched land.
     if n_features == 0:
         return None
 
@@ -862,6 +869,17 @@ def build_chunk_mesh(chunk_x: int, chunk_y: int, transform, tile_cache: _TileGeo
     faces = list(polygonize(unary_union(lines)))
     if not faces:
         return None
+
+    # The faces must tile `chunk` (== box ∩ land, since 2026-08-20) exactly,
+    # the same partition invariant verify_terrain_mesh.gd polices in-engine --
+    # except that verifier compares against the plain CHUNK_SIZE_WU box, which
+    # is no longer the right target for a clipped coastal chunk. Its own
+    # coverage check now only catches OVERLAP (> 100%); a HOLE is caught here
+    # instead, where the real land-clipped area is directly available.
+    face_area = sum(f.area for f in faces)
+    if chunk.area > 0 and abs(face_area / chunk.area - 1.0) > 0.001:
+        print(f"  WARN: chunk {chunk_x},{chunk_y} faces cover {face_area / chunk.area * 100:.2f}% "
+              f"of (box ∩ land), expected 100%")
 
     # Step 4: label each face by highest-priority containing class.
     trees = {cls: STRtree(_parts(g)) for cls, g in merged.items()}
@@ -926,6 +944,12 @@ def bake(q_range: tuple[int, int], r_range: tuple[int, int], limit: int | None =
     print("=== Step 1: fit lon/lat -> world affine ===")
     transform = fit_affine()
 
+    print("\n=== Step 1b: real coastline (Natural Earth GBR+IRL) ===")
+    land = land_polygon_world(transform)
+    land_parts = land.geoms if hasattr(land, "geoms") else [land]
+    land_area_km2 = land.area * (1.0 / WU_PER_REAL_M / 1000.0) ** 2
+    print(f"  {len(land_parts)} landmass part(s), area {land_area_km2:,.0f} km2")
+
     tile_names = sorted(n for n in os.listdir(cache_dir) if n.endswith(".json"))
     # A tile the server genuinely has nothing for comes back as a ~258-byte
     # response whose elements list is empty; keeping it in the list only costs
@@ -966,9 +990,35 @@ def bake(q_range: tuple[int, int], r_range: tuple[int, int], limit: int | None =
                     all_chunks.append((cx, cy))
     keep = land_chunks()
     before = len(all_chunks)
-    all_chunks = [c for c in all_chunks if c in keep]
+    full_grid = all_chunks
+
+    # land_chunks() alone is NOT a safe superset of the real coastline -- measured,
+    # not assumed: it is a coarse, cheap first pass off _LAND_RLE's hex mask, and
+    # _LAND_RLE comes from a different, lost transform than the affine every other
+    # class here (including the new coastline) is fit against (see coastline.py's
+    # own doc comment). A chunk land_chunks() calls pure sea can still be touched
+    # by the real, freshly-projected coastline -- first full-map trial run found
+    # 67 such chunks, real coastal ground that would otherwise never reach
+    # build_chunk_mesh() at all, not just be mislabeled inside it. So the grid is
+    # the UNION of both: land_chunks()'s candidates (cheap, keeps the common case
+    # fast) plus any chunk the real landmass's envelope overlaps (STRtree query,
+    # bounding-box precision -- a false positive here just costs one fast empty
+    # build_chunk_mesh() call, not a correctness risk, since the exact intersection
+    # is still what decides the chunk's actual content).
+    land_tree = STRtree(land_parts)
+    real_touch = {c for c in full_grid
+                  if len(land_tree.query(box(c[0] * CHUNK_SIZE_WU, c[1] * CHUNK_SIZE_WU,
+                                             (c[0] + 1) * CHUNK_SIZE_WU, (c[1] + 1) * CHUNK_SIZE_WU)))}
+    missed = sorted(real_touch - keep)
+    all_chunks = [c for c in all_chunks if c in keep or c in real_touch]
     print(f"  {before} chunks in the grid, {len(all_chunks)} contain land "
           f"({before - len(all_chunks)} pure-sea chunks skipped)")
+    if missed:
+        print(f"  land_chunks() (_LAND_RLE) alone would have skipped {len(missed)} chunk(s) the "
+              f"real coastline touches -- added back: {missed[:10]}{' ...' if len(missed) > 10 else ''}")
+    else:
+        print("  land_chunks() (_LAND_RLE) agrees: no chunk it skipped is touched by the real coastline")
+
     if only_chunks:
         # Explicit addresses bypass the grid entirely rather than filtering it,
         # so a named chunk still bakes when it falls outside the default
@@ -992,7 +1042,7 @@ def bake(q_range: tuple[int, int], r_range: tuple[int, int], limit: int | None =
     for n, (cx, cy) in enumerate(all_chunks, start=1):
         t0 = time.time()
         try:
-            mesh = build_chunk_mesh(cx, cy, transform, cache, tile_names)
+            mesh = build_chunk_mesh(cx, cy, transform, cache, tile_names, land)
         except Exception as exc:  # noqa: BLE001
             print(f"  [{n}/{len(all_chunks)}] chunk {cx},{cy} FAILED: {type(exc).__name__}: {exc}",
                   flush=True)
