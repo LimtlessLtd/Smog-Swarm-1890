@@ -98,16 +98,24 @@ func _init() -> void:
 			push_error("%s: %d degenerate (zero-area) triangles" % [name, degenerate])
 			failures += 1
 
-		# The chunk's triangles must tile its whole box. A hole renders as
-		# background showing through and, in Phase 2, as a position with no
-		# terrain class at all. Overlap would push this above 100% and is
-		# equally wrong: the arrangement is a partition, so triangle areas sum
-		# to the box area exactly. Caught a face-area filter that was silently
-		# dropping 3.2% of the map, 6.2% in the densest chunk.
+		# Coverage against the plain box, not against (box ∩ land): this
+		# verifier has no coastline polygon of its own to compare against
+		# since coastline.py's land-polygon clip (2026-08-20), so a coastal
+		# chunk's true expected area is smaller than the box and coverage
+		# legitimately runs anywhere from ~0% (a sliver of land) to 100%
+		# (fully inland). The HOLE side of the partition invariant (faces
+		# must exactly tile chunk == box ∩ land, no gaps) is checked in
+		# Python instead, in build_chunk_mesh(), where the real land polygon
+		# is directly available. Overlap is still checked here: it would push
+		# coverage of the FULL box above 100%, which is wrong regardless of
+		# how much of the box is land -- the arrangement never has any reason
+		# to double-cover ground. Caught a face-area filter that was silently
+		# dropping 3.2% of the map, 6.2% in the densest chunk, before the
+		# coastline clip existed and every chunk's target was the box itself.
 		var box_area := TerrainMeshChunkData.CHUNK_SIZE_WU * TerrainMeshChunkData.CHUNK_SIZE_WU
 		var coverage := area / box_area
-		if absf(coverage - 1.0) > COVERAGE_TOLERANCE:
-			push_error("%s: triangles cover %.2f%% of the chunk box, expected 100%%" % [name, coverage * 100.0])
+		if coverage - 1.0 > COVERAGE_TOLERANCE:
+			push_error("%s: triangles cover %.2f%% of the chunk box, expected <= 100%%" % [name, coverage * 100.0])
 			failures += 1
 		min_coverage = minf(min_coverage, coverage)
 

@@ -221,8 +221,12 @@ func _build_chunk(address: Vector2i) -> void:
 	var soil_cache: Dictionary = {}
 	var vertices := data.vertices
 	var indices := data.indices
-	# One byte per triangle, for TerrainBoundaryBlend: it must not fade a
-	# biome into ground this pass dropped.
+	# One byte per triangle, for TerrainBoundaryBlend.find_crossings()'s
+	# generic "was this triangle drawn" contract. Always 1 now: the bake
+	# itself clips each chunk to (chunk ∩ real coastline) before any
+	# triangle is emitted, so there is no sea triangle left for a renderer
+	# to drop -- see coastline.py. Kept as an array (not deleted outright)
+	# because find_crossings() still wants one; nothing sets a 0 today.
 	var kept := PackedByteArray()
 	kept.resize(data.triangle_count())
 	for tri in data.triangle_count():
@@ -231,8 +235,6 @@ func _build_chunk(address: Vector2i) -> void:
 		var b := vertices[indices[base + 1]]
 		var c := vertices[indices[base + 2]]
 		var centroid := (a + b + c) / 3.0
-		if not _is_on_land(centroid):
-			continue
 		kept[tri] = 1
 		var biome := RealTerrainSampler.biome_from_code(data.triangle_biomes[tri])
 		# The centroid's soil picks the OPAQUE surface the triangle belongs to.
@@ -371,17 +373,6 @@ func _add_soil_crossfade(biome: GameEnums.BiomeType, base_soil: GameEnums.SoilFe
 			1.0 if soil_a == soil else 0.0,
 			1.0 if soil_b == soil else 0.0,
 			1.0 if soil_c == soil else 0.0])
-
-
-## True where `world_pos` falls on a land hex — see LandMask, which owns this
-## test so this layer and the detail scatter drawn over it cull identically.
-##
-## The mask is hex-resolution, so a triangle straddling the coast is kept or
-## dropped whole by which hex its centroid lands in — an overhang bounded by
-## one triangle (tens of world units against a 512-wu hex), not the 4096-wu
-## chunk rectangle this replaces.
-func _is_on_land(world_pos: Vector2) -> bool:
-	return LandMask.is_land(world_pos)
 
 
 ## SubHexSoilQuery.soil_for_biome_at() memoized per TEXTURE_WORLD_SIZE cell.

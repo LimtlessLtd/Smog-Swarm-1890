@@ -87,9 +87,9 @@ static func scatter(data: TerrainMeshChunkData, address: Vector2i,
 		rotations: PackedFloat32Array, scales: PackedFloat32Array) -> void:
 	var cumulative := PackedFloat32Array()
 	var tri_biomes: Array[GameEnums.BiomeType] = []
-	# Weighted triangles are a SUBSET of the chunk's own (ocean and
-	# zero-density biomes drop out), so their index is not the chunk's
-	# triangle index and the mapping back has to be kept explicitly.
+	# Weighted triangles are a SUBSET of the chunk's own (zero-density biomes
+	# drop out), so their index is not the chunk's triangle index and the
+	# mapping back has to be kept explicitly.
 	var tri_indices := PackedInt32Array()
 	var total_weight := 0.0
 
@@ -98,9 +98,6 @@ static func scatter(data: TerrainMeshChunkData, address: Vector2i,
 	# triangle and (implicitly) the right number of props per biome.
 	for tri in data.triangle_count():
 		var points := data.triangle_points(tri)
-		var centroid := (points[0] + points[1] + points[2]) / 3.0
-		if not LandMask.is_land(centroid):
-			continue
 		var biome := RealTerrainSampler.biome_from_code(data.triangle_biomes[tri])
 		var density: float = _DENSITY_BY_BIOME.get(biome, 0.0)
 		if density <= 0.0:
