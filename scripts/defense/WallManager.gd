@@ -94,16 +94,41 @@ func get_segments_at(coord: Vector2i) -> Array[WallSegment]:
 ## player's side and could seal a garrison inside its own starting
 ## perimeter. A gate still SIEGES identically (damage_segment() has never
 ## looked at is_gate) — this is a movement rule, not a combat one.
+## When `ignore_gates` is true and a usable gate stands on this edge, the
+## line tested is the one the mover WILL ACTUALLY WALK -- from `from_world`
+## to the gate -- not the straight `from_world`->`to_world` line.
+##
+## Found by diagnosing a player report that units could not leave a hex they
+## had walled and gated on every side (2026-08-20). A gate only ever helped
+## if it happened to straddle the exact hex-centre-to-hex-centre line: the
+## mover is aimed at the gate by UnitOrderController._crossing_offset()
+## (via get_gate_crossing_offset() below), but the route was tested against
+## the centre line instead, so ANY solid piece sitting on that centre line
+## refused an edge the unit would have walked through the gate. Measured on
+## the reported save: the single terrain-passable, water-free direction out
+## of the unit's hex had a gate on it and was still refused, by one solid
+## piece on the centre line -- sealing the unit into its own hex.
+##
+## Both callers that matter (HexPathfinder.find_path()'s neighbour expansion
+## and UnitOrderController._blocked_by_wall()'s per-crossing re-check) go
+## through this one function, so they keep asking the identical question --
+## the live-lock _blocked_by_wall()'s own doc comment warns about needs them
+## to agree, and re-aiming here moves both at once.
 func get_blocking_segment(from_hex: Vector2i, to_hex: Vector2i, from_world: Vector2, to_world: Vector2, ignore_gates: bool = false) -> WallSegment:
 	var candidates := get_segments_at(from_hex)
 	if to_hex != from_hex:
 		for segment in get_segments_at(to_hex):
 			if not candidates.has(segment):
 				candidates.append(segment)
+	var travel_to := to_world
+	if ignore_gates and to_hex != from_hex:
+		var gate_offset: Variant = get_gate_crossing_offset(from_hex, to_hex)
+		if gate_offset != null:
+			travel_to = HexCoord.axial_to_world(to_hex) + gate_offset
 	for segment in candidates:
 		if ignore_gates and segment.is_gate:
 			continue
-		if not segment.is_breached() and Geometry2D.segment_intersects_segment(from_world, to_world, segment.point_a, segment.point_b) != null:
+		if not segment.is_breached() and Geometry2D.segment_intersects_segment(from_world, travel_to, segment.point_a, segment.point_b) != null:
 			return segment
 	return null
 
@@ -265,10 +290,20 @@ func place_gate(anchor: Vector2, toward: Vector2, tier: int = WallCatalog.WOODEN
 ## wall beside its own gate. Breached gates are skipped: a hole in the line
 ## is not somewhere to aim, and the wall either side of it is what a unit
 ## still has to get around.
+## `get_segments_at()` returns every segment touching a hex, on ANY of its
+## six edges, so "nearest gate to this boundary" alone will happily return a
+## gate standing on a completely different side of the hex and aim a mover at
+## it. A gate on THIS edge lies within half an edge length of that edge's own
+## midpoint (a pointy-top hex's side equals its circumradius, HexCoord.HEX_SIZE),
+## so anything past that is on another edge and must not answer for this one.
+## Without this bound, get_blocking_segment() above would re-aim a crossing at
+## an unrelated gate and open an edge that has no gate at all.
+const _GATE_ON_EDGE_RADIUS: float = HexCoord.HEX_SIZE * 0.5
+
 func get_gate_crossing_offset(from_hex: Vector2i, to_hex: Vector2i) -> Variant:
 	var boundary := (HexCoord.axial_to_world(from_hex) + HexCoord.axial_to_world(to_hex)) * 0.5
 	var best: WallSegment = null
-	var best_distance := INF
+	var best_distance := _GATE_ON_EDGE_RADIUS
 	for segment in get_segments_at(from_hex) + get_segments_at(to_hex):
 		if not segment.is_gate or segment.is_breached():
 			continue
@@ -405,10 +440,21 @@ func seed_starting_defenses() -> void:
 ## get_gate_crossing_offset() able to aim a unit at a door rather than at a
 ## wall. The rest of the edge is ordinary solid wall: a gate is a door in a
 ## line, not a whole open side.
+##
+## `corners[direction_index]/[direction_index + 1]` is NOT the edge facing
+## `HexCoord.NEIGHBOR_DIRECTIONS[direction_index]`: `corner_points()`'s corner
+## i sits at world angle `60*i - 30`, so its edge i faces `60*i`, while
+## `NEIGHBOR_DIRECTIONS[i]` faces `-60*i` — opposite senses, coinciding only at
+## i = 0 and 3 and mirror-swapped (1<->5, 2<->4) otherwise. `k = (6 - i) % 6`
+## is the edge that actually faces NEIGHBOR_DIRECTIONS[i]; verified for all six
+## by scripts/test/check_corner_neighbor_alignment.gd. Seeding has no
+## production caller (only verify_gates.gd), so this was never a live defect —
+## it is corrected here so the test fixture models real geometry.
 func _seed_boundary_edge(core_coord: Vector2i, direction_index: int, with_gate: bool) -> void:
 	var corners := HexCoord.corner_points(HexCoord.axial_to_world(core_coord))
-	var edge_a: Vector2 = corners[direction_index]
-	var edge_b: Vector2 = corners[(direction_index + 1) % 6]
+	var edge_index := (6 - direction_index) % 6
+	var edge_a: Vector2 = corners[edge_index]
+	var edge_b: Vector2 = corners[(edge_index + 1) % 6]
 	if not with_gate:
 		_seed_wall_line(edge_a, edge_b, WallCatalog.WOODEN, false)
 		return

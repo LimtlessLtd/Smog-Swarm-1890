@@ -90,14 +90,38 @@ const ENTITY_RADIUS: float = 20.0  ## Clearance radius a moving unit/squad prese
 
 ## Local steering is a cheap, memoryless nudge — MovementStepper's own doc
 ## comment already notes it's not guaranteed to escape a dense obstacle
-## cluster. Past STUCK_UNSTICK_SECONDS of near-zero net progress, the next
-## crossing attempt bypasses obstacle steering entirely (a direct beeline,
-## briefly clipping through whatever it was stuck on) rather than
-## oscillating forever — a pragmatic escape hatch, not a real local
-## pathfinding search. Walls are avoided at the STRATEGIC route level
-## instead (HexPathfinder.find_path()'s wall_manager param), so this
-## fallback mainly matters for local-only obstacles the route can't route
-## around, since a hex is much bigger than a single building's footprint.
+## cluster. Past STUCK_UNSTICK_SECONDS of near-zero net progress, the unit
+## bypasses obstacle steering entirely (a direct beeline, briefly clipping
+## through whatever it was stuck on) rather than oscillating forever — a
+## pragmatic escape hatch, not a real local pathfinding search. Walls are
+## avoided at the STRATEGIC route level instead (HexPathfinder.find_path()'s
+## wall_manager param), so this fallback mainly matters for local-only
+## obstacles the route can't route around, since a hex is much bigger than a
+## single building's footprint.
+##
+## Measured, not assumed: WOODLAND is dense enough that this matters for a
+## whole biome, not just unlucky prop placement. ENTITY_RADIUS (20) +
+## ObstacleRadii.PROP_RADIUS[TREE] (24) = 44 wu of required clearance, against
+## TerrainDetailScatter's own WOODLAND density comment ("~21-unit gap: canopy,
+## trees touching" between 20-unit-diameter trees, i.e. ~41 wu of mean
+## tree-CENTER spacing) — the entity's clearance requirement is LARGER than
+## the average gap between trees in the game's densest biome, confirmed with
+## a synthetic corridor test (scripts/test/verify_woodland_steering.gd) at
+## realistic WOODLAND density: plain steering never escapes (still 21+ wu
+## short after 235 simulated seconds, a leg that should take ~20s clear).
+##
+## The bypass used to be re-decided fresh every _advance_toward() call from
+## _is_stuck() alone, which reset the instant one frame's progress exceeded
+## STUCK_PROGRESS_FRACTION of expected — exactly what a single bypassed
+## frame produces. The same test with that logic still never got through:
+## 153 stuck/bypass/re-stuck cycles over 600 simulated seconds, flip-flopping
+## at the edge of the cluster instead of clearing it, because obstacle
+## avoidance re-engaged and shoved the unit right back in on the very next
+## frame. _bypassing_obstacles below fixes this by staying sticky: once
+## triggered, bypass stays on until the unit's current position no longer
+## overlaps ANY nearby obstacle's clearance circle, not just until one frame
+## looked like progress. Same test, same corridor: one bypass activation,
+## clear in 23s.
 const STUCK_UNSTICK_SECONDS: float = 3.0
 
 ## Hard bound on how many times one _advance_toward() call may clear its
@@ -115,6 +139,13 @@ const STUCK_PROGRESS_FRACTION: float = 0.25  ## Below this fraction of the speed
 ## resumes, or the unit stops moving for any reason (order change,
 ## HOLD/GARRISON, arrival).
 var _stuck_seconds: Dictionary = {}
+
+## Transient (never saved) — unit id -> true while that unit is in the
+## sticky obstacle-bypass state _effective_obstacles() manages. See
+## STUCK_UNSTICK_SECONDS's own doc comment for why this has to be sticky
+## (persist across calls until genuinely clear) rather than re-derived from
+## _is_stuck() every frame.
+var _bypassing_obstacles: Dictionary = {}
 
 ## A failed A* search costs a full frontier exhaustion over every reachable
 ## hex — the most expensive search the map can produce, since it only
@@ -249,6 +280,7 @@ func _set_order(instance: UnitInstance, order: GameEnums.UnitOrderType) -> void:
 	instance.order = order
 	_replan_backoff.erase(instance.id)
 	_unreachable_reported.erase(instance.id)
+	_bypassing_obstacles.erase(instance.id)
 	unit_order_issued.emit(instance, order)
 
 ## What a one-shot MOVE/ATTACK_MOVE order reverts to on arrival — HOLD,
@@ -276,6 +308,7 @@ func _advance_unit(instance: UnitInstance, delta: float) -> void:
 			## stuck-tracking state — a unit stopped on purpose shouldn't
 			## carry a stale "was stuck" timer into its next order.
 			_stuck_seconds.erase(instance.id)
+			_bypassing_obstacles.erase(instance.id)
 
 ## `revert_to_hold_on_arrival`: true for MOVE/ATTACK_MOVE (a one-shot order
 ## that's "done" once the destination is reached), false for PATROL
@@ -302,9 +335,9 @@ func _advance_toward(instance: UnitInstance, destination: Vector2i, destination_
 	# start == goal that _replan() discards (path.size() > 1 check), so
 	# going through that path would leave the unit permanently stuck.
 	if instance.hex_coord == destination:
-		var obstacles := [] if _is_stuck(instance) else _gather_obstacles(instance.hex_coord, destination)
-		var speed := _movement_speed(instance, instance.hex_coord, destination)
 		var before := HexCoord.axial_to_world(instance.hex_coord) + instance.local_position
+		var obstacles := _effective_obstacles(instance, before, _gather_obstacles(instance.hex_coord, destination))
+		var speed := _movement_speed(instance, instance.hex_coord, destination)
 		var result := MovementStepper.advance_toward_hex(instance.hex_coord, instance.local_position, destination, delta, speed, obstacles, ENTITY_RADIUS, float(instance.id), destination_local)
 		instance.local_position = result["local_position"]
 		_update_stuck(instance, before, HexCoord.axial_to_world(instance.hex_coord) + instance.local_position, HexCoord.axial_to_world(destination) + destination_local, speed, delta)
@@ -318,7 +351,6 @@ func _advance_toward(instance: UnitInstance, destination: Vector2i, destination_
 	if instance.path.is_empty():
 		return  ## No route right now — _replan_with_backoff() owns the retry cadence and the one-shot player-facing report.
 
-	var bypass_obstacles := _is_stuck(instance)
 	var world_pos_before := HexCoord.axial_to_world(instance.hex_coord) + instance.local_position
 	var last_speed := 1.0
 	## The point this frame's LAST crossing attempt was actually aiming at, and
@@ -360,7 +392,8 @@ func _advance_toward(instance: UnitInstance, destination: Vector2i, destination_
 		var speed := _movement_speed(instance, from_coord, next_coord)
 		last_speed = speed
 		leg_target = HexCoord.axial_to_world(next_coord) + leg_local_offset
-		var obstacles: Array[Dictionary] = [] if bypass_obstacles else _gather_obstacles(from_coord, next_coord)
+		var world_pos := HexCoord.axial_to_world(from_coord) + instance.local_position
+		var obstacles := _effective_obstacles(instance, world_pos, _gather_obstacles(from_coord, next_coord))
 		var result := MovementStepper.advance_toward_hex(from_coord, instance.local_position, next_coord, remaining, speed, obstacles, ENTITY_RADIUS, float(instance.id), leg_local_offset)
 		instance.hex_coord = result["hex_coord"]
 		instance.local_position = result["local_position"]
@@ -516,6 +549,38 @@ func _update_stuck(instance: UnitInstance, before: Vector2, after: Vector2, leg_
 		_stuck_seconds[instance.id] = _stuck_seconds.get(instance.id, 0.0) + delta
 	else:
 		_stuck_seconds[instance.id] = 0.0
+
+## Decides which obstacle list a crossing attempt actually steers against —
+## the real, gathered `obstacles`, or an empty bypass — and owns
+## _bypassing_obstacles' sticky lifecycle. See STUCK_UNSTICK_SECONDS's own
+## doc comment for the measured reason this has to stay sticky rather than
+## being re-derived from _is_stuck() every call: a single bypassed frame
+## routinely looks like "progress" by STUCK_PROGRESS_FRACTION's own
+## definition without actually clearing a dense cluster, which re-armed
+## steering on the very next call and shoved the unit right back in.
+func _effective_obstacles(instance: UnitInstance, world_pos: Vector2, obstacles: Array[Dictionary]) -> Array[Dictionary]:
+	if _bypassing_obstacles.get(instance.id, false):
+		if _obstacle_overlaps(world_pos, obstacles):
+			return []
+		_bypassing_obstacles.erase(instance.id)  ## Genuinely clear now -- resume real avoidance.
+		return obstacles
+	if _is_stuck(instance):
+		_bypassing_obstacles[instance.id] = true
+		return []
+	return obstacles
+
+## Whether `world_pos` currently sits inside any obstacle's own clearance
+## circle (entity radius + that obstacle's radius) -- the same clearance
+## test steer_around_obstacles() uses per-obstacle, just evaluated at the
+## entity's actual position rather than along a lookahead line, since this
+## is asking "are we still inside the cluster" rather than "is something in
+## our path".
+func _obstacle_overlaps(world_pos: Vector2, obstacles: Array[Dictionary]) -> bool:
+	for obstacle in obstacles:
+		var clearance: float = ENTITY_RADIUS + float(obstacle["radius"])
+		if world_pos.distance_to(obstacle["position"]) < clearance:
+			return true
+	return false
 
 ## Buildings (always queryable) + props (only where Tactical-hydrated) near
 ## both the hex a unit currently occupies and the one it's walking toward.
