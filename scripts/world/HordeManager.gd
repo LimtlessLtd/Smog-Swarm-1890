@@ -6,9 +6,10 @@ extends Node
 ## HexGridMap/BuildingManager, same pattern as every other top-level manager.
 ##
 ## - Starting-horde seeding: a handful of small hordes placed on frontier
-##   hexes at least MIN_SPAWN_DISTANCE_FROM_SETTLEMENT from any settlement,
-##   seeded deterministically (HORDE_SEED — same fixed-seed family as
-##   HexMapGenerator's terrain/soil noise, 1890/1891/1892).
+##   hexes between MIN_SPAWN_DISTANCE_FROM_SETTLEMENT and MAX_SPAWN_DISTANCE_
+##   FROM_SETTLEMENT of the nearest settlement, seeded deterministically
+##   (HORDE_SEED — same fixed-seed family as HexMapGenerator's terrain/soil
+##   noise, 1890/1891/1892).
 ## - WANDERING drift: each horde picks a random frontier hex within
 ##   DRIFT_TARGET_RADIUS, routes to it via HexPathfinder, then walks there
 ##   continuously in real-time world-space (MovementStepper), not hex-to-hex.
@@ -114,6 +115,27 @@ const STARTING_HORDE_COUNT: int = 3
 const STARTING_HORDE_SIZE_MIN: int = 10
 const STARTING_HORDE_SIZE_MAX: int = 25
 const MIN_SPAWN_DISTANCE_FROM_SETTLEMENT: int = 4  ## Hordes never spawn within this many hexes of a settlement.
+
+## Hordes never spawn farther than this from EVERY settlement, so a fresh
+## horde lands somewhere WANDERING drift and ATTRACTED noise-seeking can
+## plausibly bring into contact with the player rather than off in
+## unreachable wilderness (user report, 2026-08-26: "I've never seen a
+## zombie while playtesting"). _spawnable_coords() previously had no upper
+## bound at all, so with nothing but the +4 lower bound it drew uniformly
+## from EVERY frontier hex on the whole loaded map. Measured on the real
+## "Manchester Campaign" save (scripts/test/diagnose_horde_spawn_distance.gd):
+## the 6 live hordes sat a mean of 25.5 hexes from the nearest settlement
+## (min 6, max 53), drawn from a candidate pool whose OWN mean distance was
+## 31.7 hexes and whose max was 108 — hordes were structurally almost never
+## within reach. 20 is chosen against the mechanics that actually bring a
+## horde into contact: ATTRACTION_AWARENESS_RADIUS (6) is how close a
+## WANDERING horde must get before it beelines on noise, and DRIFT_TARGET_
+## RADIUS (5) is how far one random-walk hop covers — 20 keeps a fresh horde
+## within a few hops of that awareness ring while still reading as "out in
+## the dark" rather than spawned in the player's back yard. Even at this cap
+## 1,615 of the corridor's frontier hexes still qualified in the same
+## measurement (39% of the uncapped pool), so this doesn't starve spawning.
+const MAX_SPAWN_DISTANCE_FROM_SETTLEMENT: int = 20
 
 ## Real-time seconds (scaled by Engine.time_scale) between _check_merges()/
 ## _check_splits(). Doesn't gate movement or siege damage (both continuous,
@@ -372,12 +394,21 @@ func _spawnable_coords() -> Array[Vector2i]:
 	for cell in _hex_grid_map.get_all_cells():
 		if not cell.is_passable() or not cell.is_frontier():
 			continue
-		var far_enough := true
+		# Nearest settlement distance must land in [MIN, MAX] — too close
+		# spawns on top of the player, too far is unreachable wilderness (see
+		# MAX_SPAWN_DISTANCE_FROM_SETTLEMENT's own comment). The MIN check
+		# still short-circuits on the first settlement that rejects a cell;
+		# the MAX check needs the true nearest, so it can only be applied
+		# once every settlement has been checked against MIN.
+		var too_close := false
+		var nearest_distance := MAX_SPAWN_DISTANCE_FROM_SETTLEMENT + 1
 		for settlement_coord in settlement_coords:
-			if HexCoord.distance(cell.coord, settlement_coord) < MIN_SPAWN_DISTANCE_FROM_SETTLEMENT:
-				far_enough = false
+			var distance := HexCoord.distance(cell.coord, settlement_coord)
+			if distance < MIN_SPAWN_DISTANCE_FROM_SETTLEMENT:
+				too_close = true
 				break
-		if far_enough:
+			nearest_distance = mini(nearest_distance, distance)
+		if not too_close and nearest_distance <= MAX_SPAWN_DISTANCE_FROM_SETTLEMENT:
 			result.append(cell.coord)
 	return result
 
