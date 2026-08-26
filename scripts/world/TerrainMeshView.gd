@@ -56,15 +56,17 @@ const TEXTURE_WORLD_SIZE: float = HexCoord.SUB_HEX_GRID_SPAN / 11.0
 
 ## Terrain sits below every entity, and since the square per-hex ground was
 ## removed this is the only layer that draws real terrain. HexGridMap's flat
-## per-hex tile stays at -3 and shows through wherever no chunk is baked, so it
-## must stay below this (z_index is a GLOBAL sort key, so two ground layers
-## sharing one resolve by tree order and would flicker as hexes hydrate).
+## per-hex tile stays one band below this and shows through wherever no chunk
+## is baked (z_index is a GLOBAL sort key, so two ground layers sharing one
+## resolve by tree order and would flicker as hexes hydrate).
 ##
-## Moved -1 -> -2 to free -1 for FogVisuals.TERRAIN_OVERLAY_Z_INDEX. Fog is a
-## per-hex polygon and this is one world-wide layer, so the only way fog can
-## cover terrain now is by drawing OVER it; at -1 this mesh outranked every
-## hex's fog and the whole baked corridor was legible at day 1.
-const GROUND_Z_INDEX: int = -2
+## Originally -1, moved to -2 to free -1 for FogVisuals.TERRAIN_OVERLAY_Z_INDEX
+## (fog is a per-hex polygon and this is one world-wide layer, so the only way
+## fog can cover terrain is by drawing OVER it — at -1 this mesh outranked
+## every hex's fog and the whole baked corridor was legible at day 1), then
+## -2 -> -3 to open a distinct band for TerrainDetailView's props — see
+## SeaView.gd's stack comment for the full list this has to stay in step with.
+const GROUND_Z_INDEX: int = -3
 
 ## Chunks are kept loaded this far outside the visible rect, so panning does
 ## not stream at the screen edge. Half a chunk.

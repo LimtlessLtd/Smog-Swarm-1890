@@ -86,12 +86,12 @@ func get_view(coord: Vector2i) -> HexCellView:
 func _spawn_view(cell: HexCell) -> void:
 	var view := HexCellView.new()
 	view.setup(cell)
-	# z_index -3: this Strategic-zoom tile is NEVER hidden while Tactical is
+	# z_index -4: this Strategic-zoom tile is NEVER hidden while Tactical is
 	# active (no tactical_mode_changed toggle anywhere hides HexGridMap/
 	# "Cells" — confirmed by grep, not assumed) — it sits permanently
 	# underneath whatever LocalDetailManager hydrates on top of it.
-	# It must also stay below TerrainMeshView's vector ground at -1, which is
-	# the layer that actually draws terrain: z_index is a global sort key
+	# It must also stay below TerrainMeshView's vector ground, which is the
+	# layer that actually draws terrain: z_index is a global sort key
 	# (LocalDetailManager's own doc comment), so a flat single-biome tile
 	# sharing or outranking that key buries the real terrain outright —
 	# exactly the "sub-hex biomes disappeared, every hex reads as one biome"
@@ -100,9 +100,9 @@ func _spawn_view(cell: HexCell) -> void:
 	#
 	# Since that square ground was removed this tile is no longer redundant
 	# with anything: it is the visible fallback wherever no mesh chunk is
-	# baked, which is why it stays at -3 rather than moving up into the
-	# vacated -2.
-	view.z_index = -3
+	# baked. See SeaView.gd's stack comment for the full band list this
+	# value has to stay in step with.
+	view.z_index = -4
 	_cell_container.add_child(view)
 	_views[cell.coord] = view
 

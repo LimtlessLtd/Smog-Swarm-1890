@@ -27,11 +27,13 @@ extends Node2D
 ## water from reading as brighter than the explored land beside it.
 
 ## Sea sits below every land layer. The full ground stack, lowest first:
-##   -5 this fill, -4 this haze, -3 HexGridMap's per-hex tile,
-##   -2 TerrainMeshView's vector mesh, -1 FogVisuals.TERRAIN_OVERLAY_Z_INDEX.
-## Anything inserted below -3 will be hidden by land wherever land exists.
-const FILL_Z_INDEX: int = -5
-const HAZE_Z_INDEX: int = -4
+##   -6 this fill, -5 this haze, -4 HexGridMap's per-hex tile,
+##   -3 TerrainMeshView's vector mesh, -2 TerrainDetailView's props,
+##   -1 FogVisuals.TERRAIN_OVERLAY_Z_INDEX (ElevationReliefView/ReliefTileView
+##   tie it deliberately, see their own comments).
+## Anything inserted below -4 will be hidden by land wherever land exists.
+const FILL_Z_INDEX: int = -6
+const HAZE_Z_INDEX: int = -5
 
 ## One hex radius of slack past the outermost hex centre, so the fill reaches
 ## past the last hex's own corners instead of stopping at its centre and

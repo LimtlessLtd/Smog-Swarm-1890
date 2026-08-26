@@ -49,7 +49,10 @@ const TILE_DIR: String = "res://assets/terrain_data/relief"
 ## resolves the same way it already does for the coarse layer: relief draws over
 ## fog. That is deliberate and inherited, not an oversight -- ElevationReliefView
 ## documents why the shape of the land is not fog-gated, and the two halves of
-## one cue must not disagree about it.
+## one cue must not disagree about it. TerrainDetailView's props are the
+## opposite case (tree cover should NOT show through fog) and sit in their own
+## band below the fog overlay rather than sharing this tie -- see that class's
+## own comment.
 const Z_INDEX: int = -1
 
 ## Extra ring of hexes kept loaded outside the visible area, so panning does not
