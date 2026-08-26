@@ -279,16 +279,38 @@ func _describe_building_tooltip(definition: BuildingDefinition, unlocked: bool) 
 	lines.append("[b]%s[/b]" % definition.display_name)
 	lines.append("Cost: %s" % _format_cost_bbcode(definition.construction_cost))
 	# ENERGY/POPULATION entries are one-time capacity draws
-	# (CapacityAllocator), not a recurring "/day" cost — excluded here the
-	# same way _describe_effect()/_add_capacity_stats() (UnitPanelView) keep
-	# them out of their own "/day" lines.
+	# (CapacityAllocator), not a recurring "/day" cost, so they are split OUT
+	# of the Upkeep line rather than mislabeled "/day" — the same split
+	# UnitPanelView._recurring_upkeep_display()/_add_capacity_stats() keep.
+	#
+	# They get their own line rather than being dropped entirely, which is
+	# what this used to do. Capacity is a BLOCKING placement gate
+	# (BuildingManager.get_placement_error()'s "Not enough Energy/Population
+	# capacity" clause, checked through the same ResourceManager.can_afford()
+	# as the material cost), and every non-housing building has drawn real
+	# Population since the Building tree rework. Omitting it produced the
+	# first automated playtest's 145-day hard lock (todo.md, 2026-08-17):
+	# Population sat at 0 from day 5 to day 150 while the colony held
+	# 100,230 Food and 91,485 Wood it had no legal way to spend, and no
+	# build card named the cost that was blocking it. UnitPanelView's unit
+	# cards already carried this line; the build menu — the surface the
+	# player reads BEFORE committing — was the one place missing it.
 	var recurring_upkeep: Dictionary = {}
+	var capacity_cost: Dictionary = {}
 	for resource_type in definition.daily_upkeep:
-		if not CapacityAllocator.CAPACITY_RESOURCE_TYPES.has(resource_type):
+		if CapacityAllocator.CAPACITY_RESOURCE_TYPES.has(resource_type):
+			capacity_cost[resource_type] = definition.daily_upkeep[resource_type]
+		else:
 			recurring_upkeep[resource_type] = definition.daily_upkeep[resource_type]
 	var upkeep := HUDStyles.format_resource_dict(recurring_upkeep)
 	if not upkeep.is_empty():
 		lines.append("Upkeep: %s/day" % upkeep)
+	if not capacity_cost.is_empty():
+		# Routed through _format_cost_bbcode() (not the plain formatter) so an
+		# unaffordable capacity draw red-highlights exactly as an unaffordable
+		# material cost does — the two are the same blocking condition to the
+		# player, and the red is the part that is actually actionable.
+		lines.append("Capacity: %s (one-time)" % _format_cost_bbcode(capacity_cost))
 	lines.append(_describe_effect(definition))
 	if not unlocked:
 		lines.append("[color=#%s]Not yet researched[/color]" % HUDStyles.DANGER_COLOR.to_html(false))

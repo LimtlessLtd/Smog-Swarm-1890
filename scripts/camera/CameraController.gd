@@ -231,9 +231,27 @@ func _handle_zoom_input(event: InputEventMouseButton) -> void:
 ## zoom_factor_per_step for why a flat step doesn't work across a range
 ## this wide.
 func _apply_zoom_factor(factor: float) -> void:
+	set_zoom_level(zoom.x * factor)
+
+## The single place a zoom change is applied: clamps to [min_zoom, max_zoom]
+## and emits tactical_mode_changed/tactical_fidelity_changed on a threshold
+## crossing.
+##
+## Public, because assigning `zoom` directly does NEITHER of those, and until
+## this existed the only route to a zoom change was a real mouse-wheel event.
+## Anything driving the camera without a wheel — the preview/screenshot
+## harnesses in scripts/test/, AgentHarness — therefore had to either
+## synthesise scroll events (AgentHarness does, which is why crossing
+## tactical_zoom_threshold there takes tens of simulated clicks) or poke
+## `zoom` and silently skip the signals. Skipping them is not cosmetic:
+## LocalDetailManager hydrates a hex's props/buildings off
+## tactical_mode_changed and TacticalEntityLayer swaps figure fidelity off
+## tactical_fidelity_changed, so a harness that set `zoom` by hand
+## photographed terrain with neither applied and no error anywhere.
+func set_zoom_level(value: float) -> void:
 	var was_tactical := is_tactical_zoom()
 	var was_fidelity := get_tactical_fidelity()
-	var new_zoom := clampf(zoom.x * factor, min_zoom, max_zoom)
+	var new_zoom := clampf(value, min_zoom, max_zoom)
 	zoom = Vector2(new_zoom, new_zoom)
 	if is_tactical_zoom() != was_tactical:
 		tactical_mode_changed.emit(is_tactical_zoom())

@@ -104,6 +104,31 @@ func _ready() -> void:
 	add_child(_display_options_view)
 	_place_center(_display_options_view, OVERLAY_SIZE)
 
+	add_child(_build_attribution_footer())
+
+## OpenStreetMap's ODbL requires any Produced Work using its data to carry the
+## credit, and this game RENDERS its terrain from OSM geometry — so this is a
+## condition of use, not a courtesy (see DataAttribution's own doc comment).
+## The boot screen is the one surface every player passes through, which makes
+## it the right place for the minimum notice; a fuller per-source breakdown
+## already exists as DataAttribution.FULL_NOTICE for a credits screen when one
+## is built. Bottom-anchored and dim so it reads as a legal footer rather than
+## competing with the menu, and deliberately NOT a button — a notice behind a
+## click is a notice most players never see.
+func _build_attribution_footer() -> Label:
+	var attribution := Label.new()
+	attribution.text = DataAttribution.SHORT_NOTICE
+	attribution.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	attribution.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART  ## The notice is long and the window is resizable; clipping a licence credit is the one failure mode not acceptable here.
+	HUDStyles.style_label(attribution, false, true)
+	attribution.add_theme_font_size_override("font_size", 11)
+	attribution.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE, Control.PRESET_MODE_MINSIZE)
+	attribution.offset_left = 24.0
+	attribution.offset_right = -24.0
+	attribution.offset_top = -44.0
+	attribution.offset_bottom = -12.0
+	return attribution
+
 func _menu_button(text: String, on_pressed: Callable) -> Button:
 	var button := Button.new()
 	button.text = text

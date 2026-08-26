@@ -49,6 +49,15 @@ extends Node2D
 
 signal placement_started(building_type: GameEnums.BuildingType)
 signal placement_ended
+## A click that was refused before BuildingManager was ever consulted, so it
+## emits no placement_rejected of its own and would otherwise report nothing
+## visible. Carries the reason as text because the existing cue is a tone,
+## and a tone is nothing at all to a player with sound off — the first
+## automated playtest logged a 341-point grid sweep at Strategic zoom that
+## produced "no ghost/preview under the cursor, no tile highlight and no
+## error line" (todo.md, 2026-08-17). HUDPlacementFeedback toasts it through
+## the same router every BuildingManager/WallManager rejection already uses.
+signal placement_blocked(reason: String)
 
 const _VALID_COLOR := Color(0.20, 0.75, 0.30, 0.85)
 const _BLOCKED_COLOR := Color(0.80, 0.20, 0.15, 0.85)
@@ -137,7 +146,13 @@ func _attempt_placement(world_pos: Vector2) -> void:
 	if not _building_manager:
 		return
 	if not _is_tactical_zoom():
-		_reject_player.play()  # Zoomed out — inert by design, no BuildingManager call at all.
+		# Zoomed out — inert by design, no BuildingManager call at all, so
+		# nothing downstream emits placement_rejected for this. Say so in
+		# text as well as the tone; see placement_blocked's own comment.
+		_reject_player.play()
+		var definition := BuildingCatalog.get_definition(_pending_type)
+		var display_name := definition.display_name if definition else "buildings"
+		placement_blocked.emit("Zoom in to Tactical view to place %s." % display_name)
 		return
 	var accepted := _building_manager.place_building_at_world(_pending_type, world_pos)
 	if not accepted:
