@@ -121,10 +121,9 @@ func _redraw() -> void:
 	# the real polygon geometry on top of it. "remove all of the sub hex tile
 	# biome square tiles please and just use the polygon derived map" (user,
 	# 2026-08-18): the squares are gone, and ground is now exactly two layers,
-	# neither of them per-hex — TerrainMeshView's vector mesh at z_index -1,
-	# over HexGridMap's flat per-hex tile at -3 wherever no chunk is baked.
-	# The -2 band this occupied is deliberately left vacant rather than
-	# reclaimed; anything added there would sit between them.
+	# neither of them per-hex — TerrainMeshView's vector mesh at GROUND_Z_INDEX,
+	# over HexGridMap's flat per-hex tile one band below it wherever no chunk
+	# is baked. See SeaView.gd's stack comment for the full band list.
 	add_child(_build_grid_outline())  # Always-on structural hex boundary — a SEPARATE layer from the ZoC outline below, not the same line reused.
 
 	add_child(_build_zoc_overlay())  # Ground-level tint — drawn before buildings so they render on top of it, not under.

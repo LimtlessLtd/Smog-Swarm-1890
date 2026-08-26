@@ -60,7 +60,7 @@ func _ready() -> void:
 	_outline.closed = true
 	_fog_overlay = Polygon2D.new()
 	_fog_overlay.visible = false
-	# Absolute, not inherited: this node sits at -3 (below the terrain mesh) but
+	# Absolute, not inherited: this node sits at -4 (below the terrain mesh) but
 	# its fog has to cover that mesh, which is a world-wide layer and not a
 	# child of any hex. z_as_relative would keep the overlay pinned under this
 	# node's own depth and leave the terrain unfogged — the exact bug this

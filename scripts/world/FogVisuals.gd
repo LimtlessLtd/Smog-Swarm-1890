@@ -20,15 +20,17 @@ extends RefCounted
 ## this costs nothing per-hex beyond the one extra draw call).
 
 ## z_index every terrain fog overlay is pinned to, ABOVE TerrainMeshView's
-## GROUND_Z_INDEX and below the 0-and-up entity band. Absolute, not relative:
-## HexCellView sits at -3 and its overlay has to escape that subtree's depth to
-## cover a mesh that is not its child.
+## GROUND_Z_INDEX and TerrainDetailView's props, below the 0-and-up entity
+## band. Absolute, not relative: HexCellView sits at -4 and its overlay has to
+## escape that subtree's depth to cover a mesh that is not its child.
 ##
 ## This band exists because terrain stopped being per-hex. While each hex drew
 ## its own ground, fog was just `modulate` on the node that owned it; a single
 ## world-wide mesh has no per-hex node to tint, so the fog polygon has to be
 ## lifted over it instead. Anything inserted between this and GROUND_Z_INDEX
-## would render as un-foggable terrain.
+## is un-foggable UNLESS it deliberately stays below this value the way
+## TerrainDetailView's props do — see SeaView.gd's stack comment for the full
+## band list.
 const TERRAIN_OVERLAY_Z_INDEX: int = -1
 
 ## Alpha multiplier for SeaView's haze, i.e. the sea reads at roughly 60% of

@@ -34,15 +34,22 @@ extends Node2D
 ## props at so the change of mechanism is not also a change of size.
 const PROP_DIAMETER: float = 20.0
 
-## Below the entities and above the terrain mesh (-2) and the coarse relief
-## (-1). Props are ground dressing: a unit must draw over them, and they must
-## draw over the ground they stand on.
+## Below the entities and above the terrain mesh (-3). Props are ground
+## dressing: a unit must draw over them, and they must draw over the ground
+## they stand on.
 ##
-## z_index is a GLOBAL sort key, so this shares -1 with ElevationReliefView and
-## ReliefTileView and resolves against them by tree order — this node is placed
-## after both in Main.tscn, which is what puts a tree over the hillshade rather
-## than under it.
-const Z_INDEX: int = -1
+## A distinct band below FogVisuals.TERRAIN_OVERLAY_Z_INDEX (-1), not tied to
+## it: unlike ElevationReliefView/ReliefTileView (deliberately ABOVE fog —
+## terrain shape is public knowledge, see that class's doc comment), tree
+## cover is exactly the kind of gameplay detail fog should hide. This is one
+## world-wide streamed layer, not a per-hex node, so — same as the ground
+## mesh below it — the only way fog can cover it is by drawing OVER it, which
+## an equal z_index can't guarantee (a tie resolves by tree/draw order, which
+## is where "fog of war above the trees" broke: this shared -1 with the fog
+## overlay and was added later in Main.tscn, so it always won the tie and drew
+## over the mist regardless of fog state). See SeaView.gd's stack comment for
+## the full band list this has to stay in step with.
+const Z_INDEX: int = -2
 
 ## Chunks are kept loaded this far outside the visible rect so panning does not
 ## stream at the screen edge. Matches TerrainMeshView's own margin: the props

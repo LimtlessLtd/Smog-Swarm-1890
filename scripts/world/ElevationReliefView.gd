@@ -51,10 +51,11 @@ extends Node2D
 ## terrain mesh but below every entity, so props, buildings, units and markers
 ## all stay on top of it.
 
-## Above TerrainMeshView's GROUND_Z_INDEX (-2) and HexGridMap's flat tile (-3),
-## below the default 0 every entity draws at. z_index is a GLOBAL sort key in
-## this project (LocalDetailManager's own doc comment), so this is an ordering
-## against those layers specifically, not just against siblings.
+## Above TerrainMeshView's GROUND_Z_INDEX (-3), HexGridMap's flat tile (-4) and
+## TerrainDetailView's props (-2), below the default 0 every entity draws at.
+## z_index is a GLOBAL sort key in this project (LocalDetailManager's own doc
+## comment), so this is an ordering against those layers specifically, not
+## just against siblings. See SeaView.gd's stack comment for the full list.
 const Z_INDEX: int = -1
 
 @export var hex_grid_map_path: NodePath
