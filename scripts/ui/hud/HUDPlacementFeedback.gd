@@ -26,6 +26,7 @@ func wire_wall_manager(wall_manager: WallManager) -> void:
 func wire_build_placement_controller(controller: BuildPlacementController) -> void:
 	controller.placement_started.connect(_on_placement_started)
 	controller.placement_ended.connect(_on_placement_ended)
+	controller.placement_blocked.connect(_on_placement_blocked)
 
 ## placement_ended is reused directly for walls too — it only ever clears
 ## _mode_label and doesn't care what was being placed.
@@ -50,6 +51,12 @@ func _on_placement_ended() -> void:
 	_mode_label.text = ""
 
 func _on_placement_rejected(_building_type: GameEnums.BuildingType, _coord: Vector2i, reason: String) -> void:
+	_toast.show(reason)
+
+## Same router as every other rejection — a click refused before
+## BuildingManager was consulted has to read identically to one refused by it,
+## since the player made the same gesture and got the same nothing.
+func _on_placement_blocked(reason: String) -> void:
 	_toast.show(reason)
 
 func _on_wall_placement_started(_tier: int) -> void:
