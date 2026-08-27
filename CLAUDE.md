@@ -1,6 +1,51 @@
 # Project Rules
 
-Godot 4.x / GDScript RTS. See `todo.md` for the full spec, feature log, and the "Technical Debt" section. These rules override default behavior and apply to all code and comments written or edited in this repo.
+Godot 4.x / GDScript RTS. These rules override default behavior and apply to all code and comments written or edited in this repo.
+
+## 0. Where things live (read order)
+
+Restructured 2026-08-27; `todo.md` is no longer the spec-and-log dumping ground.
+
+1. **`vision.md`** — what the game is for. Its section 5 has three checks every
+   backlog item must pass. Read first.
+2. **`backlog.md`** — what to build next. Items are tagged `[gated]` (a script can
+   verify it), `[visual]` (needs a render or playtest agent), or `[design]` (needs the
+   user), and split Now / Next / Deferred. **Only `[gated]` items may be taken by an
+   unattended loop.**
+3. **`decisions.md`** — settled calls and their reasons. **Read the relevant entry
+   before re-opening any design question**; it exists so decisions are not re-derived.
+4. **`design_doc.md`** — the numbers spec. Authoritative for terrain, economy,
+   buildings, units, infestation (2.1), logistics (2.2), and vision/sound/light (6).
+5. **`todo.md`** — index plus the reference sections that do not churn.
+6. **`devlog/`** — append-only history of completed work. **Not read at session start.**
+
+When work lands, update `backlog.md` (tick or remove the item) and append to
+`devlog/`. When a design question gets settled, add it to `decisions.md`. Never grow
+`todo.md` back into a log.
+
+## 0.1 The gate
+
+Three commands. All must pass before a commit lands.
+
+```
+python3 tools/ci/check_gdscript.py                     # brackets, indent, dup class_name, dead scene paths
+python3 tools/ci/run_verifications.py                  # every scripts/test/verify_*.gd, exit 0 only if all pass
+<godot> --headless scenes/main/Main.tscn --quit        # managers actually boot
+```
+
+The third is not optional and not the same as `--headless --quit`, which only checks
+script parse validity and cannot catch a broken manager `_ready()`.
+
+`run_verifications.py --list` shows what runs; pass substrings to filter. A timeout
+counts as a failure on purpose — `verify_gates.gd` once hung for three hours.
+
+**Visual work is not gated by any of these.** Run
+`<godot> res://scenes/test/smoke_screenshot.tscn` (windowed, NOT headless — a headless
+viewport has no texture to read) to confirm the game still renders at four framings.
+Every real visual defect in this project was found by looking at an image, never by
+reasoning about the code.
+
+`/next-item` is the unattended loop's entry point and enforces all of the above.
 
 ## 1. Loose coupling / OOP
 
