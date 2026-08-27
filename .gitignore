@@ -32,9 +32,10 @@ __pycache__/
 # Claude Code's session state: local permission settings and, more
 # importantly, .claude/worktrees/ — full checkouts of this repo, each with
 # its own .git. Committing that nests a repository inside itself. The agent
-# definitions are shared project tooling, so they stay tracked.
+# definitions and slash commands are shared project tooling, so they stay tracked.
 .claude/*
 !.claude/agents/
+!.claude/commands/
 
 # Diagnostic images written by the relief tooling (preview_relief.gd,
 # compare_relief_slope.py, the tile stitcher). Regenerated on demand and only

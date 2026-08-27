@@ -91,6 +91,335 @@ Each tier of road/transit infrastructure increases base movement speed while ign
 
 ---
 
+## 2.1 Strategic Hex Infestation
+
+> Settled with the user 2026-08-27 across a 30-question design review. This
+> section's first draft carried a diffusion PDE, four suppression-building rates,
+> and three mutually contradictory band definitions. All are deleted and superseded
+> by what follows. `decisions.md` records why each call was made.
+
+### Infestation is derived, never stored
+
+Each 5-mile strategic hex carries one mutable number and one static capacity.
+Everything else is computed:
+
+* `total_zombie_pop` *(int, static per hex)*: how many zombies this hex can hold,
+  baked from real 1890s human population (see "Population capacity" below). Floor of
+  1,000, so even the emptiest hex in Britain holds 750 zombies at the Hive Core
+  threshold.
+* `zombie_count` *(int, saved)*: how many are there right now. The only mutable
+  state in the model.
+* `infestation` *(derived)*: `zombie_count / total_zombie_pop * 100.0`.
+* `is_cleared` *(derived)*: `infestation < 5.0`.
+
+Neither derived value is stored or saved, so the two cannot drift — the same
+derived-never-stored pattern `UnitUpgrades.gd` uses. Killing zombies lowers
+infestation because it lowers the count; that is arithmetic, not a rule anyone has to
+implement. The lenient 5.0 clear threshold is deliberate — the user's reason,
+verbatim: "I was just trying to be a bit lenient so players could still build things
+even if theyre getting attacked by zombies/clearing out zombies etc."
+
+| State | Infestation | Build Rights | ZoC Network Impact |
+| :--- | :--- | :--- | :--- |
+| **Hive Core** | 75.0 – 100.0 | None | Total Severance |
+| **Contested** | 25.1 – 74.9 | None | Severed / Stockpile Split |
+| **Fringe / Outpost** | 5.0 – 25.0 | Defensive / Forts | Degradation (-25% Logistics Efficiency) |
+| **Cleared** | < 5.0 | Unrestricted | Full Global Link |
+
+* **Hive Core (75.0 – 100.0):** Spawns new zombies, and at 100.0 exports roaming
+  hordes. Completely blocks ZoC propagation.
+* **Contested (25.1 – 74.9):** No construction. Severs global ZoC pooling; a
+  settlement cut off this way falls back to its own local stockpile (§2.2). Existing
+  non-defensive structures decay while the hex is Contested. **Spreads nothing** —
+  see "Only Hive Core bleeds" below.
+* **Fringe / Outpost (5.0 – 25.0):** Construction restricted to Defensive Tier
+  structures (Watchtowers, Garrisons, Walls, Supply Dumps). ZoC projects through, at
+  -25% logistics efficiency.
+* **Cleared (< 5.0):** Unrestricted construction, including a Town Hall to anchor a
+  new settlement and its stockpile.
+
+### Population capacity
+
+`total_zombie_pop` is baked per hex from real 1890s population, in priority order:
+Wikidata historical population statements (CC0, good coverage for cities and towns),
+then OSM `place` node population tags scaled for the long tail (ODbL, already in the
+bake pipeline and already attributed), then the 1,000 floor.
+
+**Capacity is the difficulty curve, and that is the point.** A London hex holding
+order 1e6 and a Highland Scotland hex holding 1e3 means real history decides where
+the player can go and when, with no hand-authored region gating. The Manchester →
+London campaign arc is a difficulty ramp because the census says so. The consequence
+accepted with it: some regions are effectively closed until very late, decided by
+population data rather than by design.
+
+The Great Britain Historical Database's parish-level 1801-1951 statistics were
+evaluated and rejected: copyright Southall/Gregory/Ell/Gatley via UK Data Service,
+not downloadable from its own repository, and silent on commercial use.
+
+### Starting state
+
+At worldgen, infestation is seeded in rings out from the player's starting hex: **0%
+at the start hex, then 25%, 50%, 75%, and 100% from ring four out.** The player gets
+a real opening, and ring three sits exactly at the Hive Core threshold so the bleed
+and horde-export mechanics are visible near home from the first day rather than being
+a late-game surprise.
+
+### Spawning and export
+
+* A hex above 75.0 breeds at a **flat percentage of its own capacity per day**. One
+  constant works from Highland Scotland to Southwark; the exact figure is a balancing
+  number, not a design decision.
+* A hex at 100.0 **exports roaming hordes**, and export never drops it below 75.0.
+  The exported count is sized to respect that floor. Only player killing takes a hex
+  below 75.0.
+* The result is a self-regulating pump: breed to 100, export down to 75, breed again.
+  A city left alone ships hordes at the player indefinitely; a city ground down by
+  military force stops.
+
+### Only Hive Core bleeds, and bleeding is just walking
+
+There is no field equation. Zombies are entities that walk, so infestation moves
+because they moved. A hex below 75.0 spreads nothing however infested it is, which
+makes the Contested band a stable holding zone that never threatens its neighbours.
+
+**Zombies ignore all infrastructure speed modifiers.** The user's reason, verbatim:
+"zombies shouldn't travel faster over roads or rails or canals because they can't
+drive or take the train lol". This makes the player's road and rail network a pure
+asymmetric advantage, gives hordes a predictable cross-country travel time, and makes
+early warning meaningful. **Implementation note:** `HexPathfinder`'s infrastructure
+modifiers are read by three separate neighbour-expansion loops — `find_path()`,
+`HordeFlowField._build_field()`, and `HordeManager._replan_cheap()`. Zombie pathing
+must skip them in all three. `_replan_cheap()` goes through neither real search and
+is the caller that was missed when `is_water_crossing_blocked()` was added; do not
+miss it again.
+
+### Walls block bleed proportionally
+
+Wall coverage along a shared hex boundary reduces passive bleed across it in
+proportion: 60% of the border walled means 40% of the bleed. Fully sealed means none.
+
+* **Walls stop the seep. They do not stop hordes.** A horde still sieges the wall
+  exactly as `HordeManager._siege_wall()` already implements. Walls buy time, never
+  immunity — matching *They Are Billions*, and preventing "wall in and never fight"
+  from beating the game.
+* **A gate is a wall that friendly units can pass through**, and nothing else. It
+  blocks bleed and sieges identically; `WallManager.damage_segment()` already makes
+  no distinction.
+* **Coverage is measured at sub-hex resolution**, extending
+  `SubHexPortalGraph.has_any_crossing()`'s 30 m sampling along the shared edge rather
+  than adding a second boundary check (CLAUDE.md §3).
+* **Coverage must be cached per hex-pair.** Proportional coverage cannot early-out
+  the way the passability check does, so it walks the whole edge. Walls change only
+  on place / remove / breach / repair, and `WallManager` emits a signal for all four
+  — invalidate on those, never recompute per query.
+* Cost check, for balance: a hex edge is 512 world units (`HexCoord.HEX_SIZE` is the
+  circumradius, so edge == circumradius, ~4,992 m). A wall piece caps at 100 m (10.26
+  world units). **Sealing one border is ~50 pieces = 2,000 Wood; sealing all six is
+  ~300 pieces = 12,000 Wood.**
+* Walls stay freehand (`WallSegment.point_a`/`point_b`, not hex-edge-snapped).
+  Snapping is added as a **placement aid** when a drawn line runs near a hex border,
+  with a modifier key to refuse — sealing a border must be achievable without pixel
+  hunting, but the chain-of-pieces freehand model the user asked for is unchanged.
+
+### Killing is the only suppression
+
+There are no passive suppression rates. The Watchtower `+5.0/day`, Garrison
+`+20.0/day` and Searchlight `+10.0/day` figures from this section's first draft are
+deleted, along with its "Phase 2: Border Suppression" stage. The user's rule,
+verbatim: "Zombies create infestation. Suppressing infestion means getting rid of
+zombies."
+
+Holding ground therefore costs a standing garrison of real military units with real
+Food and Population upkeep, plus walls to stop the seep between fights. That is the
+intended price of territory, and it makes overextension self-limiting without an
+artificial rule. The late-game management load this implies across many hexes is
+acknowledged and deliberately not solved yet (see `vision.md` P3).
+
+### Re-infestation
+
+A roaming horde crossing a Cleared hex raises its count and can push it back over
+5.0. **Build rights are checked at placement only.** Standing buildings are destroyed
+by zombies attacking them, never by the ratio crossing a threshold — otherwise one
+horde wandering past would brick an industrial hex without a fight.
+
+### Attraction
+
+Zombies are drawn to noise, light, and the smell of blood, in that build order:
+
+1. **Noise** — already built. `HordeManager`'s ATTRACTED state and
+   `_pick_attraction_target()` read `NoiseManager` and path toward the loudest hex
+   within `ATTRACTION_AWARENESS_RADIUS`. The consumer is sound; what needs replacing
+   is the emission model — a flat 2-hex building-only aura, roughly 40x the reach of
+   §6's loudest listed sound.
+2. **Light** — second increment. A crude version costs almost nothing: buildings
+   already carry `lit_at_night`, so lit buildings add to their hex's attraction score
+   after dark. Full §6 line-of-sight illumination follows later and is not a
+   prerequisite.
+3. **Blood** — raised by the user, explicitly deferred, not designed.
+
+### Going dark: buildings can be switched off
+
+The player's primary counterplay to a horde too large to fight. An off building
+produces nothing, consumes no upkeep, emits no noise and no light. **Restarting costs
+a delay proportional to building tier** — free instant toggling would make going dark
+a no-brainer spammed on sight, and banking a Victorian furnace and bringing it back
+up is a real operation, not a light switch.
+
+### Simulation model: every zombie is a real entity
+
+The user's requirement, verbatim: "I want this to truly be TABs on an absolutely
+massive scale." Counts are literal — a London hex genuinely holds order 1e6 — and
+what the player sees is individual zombies, not abstractions.
+
+**Measured before it was trusted** (`scripts/test/bench_zombie_scale.gd`, headless,
+median of 10 frames, movement only — no rendering, AI, or combat):
+
+| entities | packed arrays | `Array[Dictionary]` | `Array[Resource]` |
+| ---: | ---: | ---: | ---: |
+| 50,000 | 2.90 ms | 16.40 ms | 13.11 ms |
+| 100,000 | 5.83 ms | 33.01 ms | 26.32 ms |
+| 250,000 | 14.69 ms | 82.45 ms | 66.67 ms |
+| 500,000 | 29.44 ms | — | — |
+| 2,000,000 | 118.33 ms | — | — |
+
+250,000 is the hard ceiling, and only with packed arrays spending the entire 16.6 ms
+frame on movement alone. **Realistic budget is ~60,000 live movers.** For scale,
+*They Are Billions*' endgame swarm is ~20,000.
+
+The count stays literal; **entity instantiation is bounded by observation.** A hex is
+5 mi x 5 mi, so the player can never see more than a fraction of one:
+
+* **A hex is live** if it contains the camera, is one of the camera hex's six
+  neighbours, or contains player units or buildings.
+* A live hex instantiates up to its share of the ~60,000 budget, **placed nearest the
+  observer first**. In London that is ~60,000 real zombies with ~1.84 million more
+  behind them, streaming in as the player kills — the endless-tide feel falls out of
+  the design rather than being scripted.
+* Outside live hexes the count still breeds, bleeds and exports as a number. The
+  player cannot detect the difference, because they cannot observe 60,000 zombies'
+  worth of ground at once.
+
+**Two classes, not one:**
+
+* `Horde` stays what it is — the strategic aggregate: a count with a position,
+  roaming the map, saved as a `Resource`.
+* A **new tactical layer** holds individual zombies in packed arrays. Never a
+  `Resource` per zombie: at `Array[Resource]` the ceiling is 50,000, which the
+  benchmark above rules out.
+* A horde **dissolves into live entities on entering a live hex and re-condenses on
+  exit**, conserving its count. The seam is a pure representation change, so the
+  player never sees a horde "pop" — it arrives as individuals.
+
+**Tactical positions are saved**, as packed float32 (~8 bytes per zombie, so the
+whole ~60,000 live set is under 500 KB). Not for size reasons but for correctness:
+saving mid-siege and reloading must not teleport 60,000 attackers into fresh
+positions, which would both read as broken and be trivially save-scummable.
+
+---
+
+## 2.2 Logistics, Stockpiles & Infrastructure
+
+> Settled with the user 2026-08-27. Replaces the single global stockpile and the
+> whole-edge supply-line model. The user's framing: "I think we need to relook at
+> logistics as a whole... those logistics links need to be more concrete and visible
+> to the user."
+
+### One Town Hall, one stockpile
+
+Resources are no longer a single global pool. **Each Town Hall owns one stockpile**,
+and that is the unit of ownership — not the hex, because `is_settlement` is a per-hex
+flag and cities span many hexes (Manchester 4, London 12), which would shatter one
+city into a dozen competing pools. A 12-hex London has one Town Hall and therefore
+one stockpile.
+
+This makes the existing Town Hall founding feature load-bearing rather than
+decorative: founding a second settlement is the moment the player acquires a
+logistics problem.
+
+**This is the most invasive change in the project.** It touches `ResourceManager`
+(`_stockpile` is one flat `Dictionary` today), every producer and consumer, every
+affordability check, every UI counter, and saves. It is also a prerequisite for
+§2.1's Contested band. It belongs in its own PR with nothing else in it.
+
+### Links pool stockpiles, throughput-limited
+
+Connected settlements share their stockpiles, **but transfer rate is capped by the
+weakest link on the path**. No goods entities are simulated — there are no carts or
+trains to watch — but a dirt road bottlenecks what a railway would not, so upgrading
+a line is a real decision and a bottleneck is a visible fact rather than an invisible
+one.
+
+**Throughput is aggregate tonnage per day, shared across all resource types**, not a
+per-resource allowance. One number per line, so the player reads a bottleneck at a
+glance instead of auditing fifteen counters — and a shortage forces a real choice
+about what to ship today.
+
+This is deliberately the smallest step that delivers "concrete and visible." Full
+physical transport with travelling goods and latency is a later upgrade on top of
+these numbers, not a rewrite of them.
+
+### Infrastructure gets real geometry
+
+`SupplyLineSegment` today is `hex_a`/`hex_b`/`tier`/`is_severed` with no world-space
+points at all, so there is nowhere to put a curve. It gains `point_a`/`point_b` and
+drawn runs are chopped into pieces, **reusing `WallManager.place_wall_line()`'s
+existing path** rather than writing a second implementation — walls already solved
+drawn-line-to-segments, per-piece state, and spatial indexing. `hex_a`/`hex_b`
+survive as a spatial-index convenience with the same caveat `WallSegment` carries: it
+is not a claim the piece runs along that hex pair's shared edge.
+
+This closes the "supply lines are still whole-edge, the same shape walls used to have
+before their rework" item in todo.md's architecture-debt list.
+
+### Terminals are required, one at each end
+
+Railway stations for railways, loading and unloading docks for canals, depots for
+roads. **None of these exist yet** — the `DEPOT` entries in `GameEnums.BuildingType`
+are High Command & Cavalry Depot, Steam Excavator Depot and Mechanized Maintenance
+Depot, all unit and vehicle buildings. All three terminal types are net-new.
+
+A line with no terminal at one end moves nothing. That is historically right — a
+railway with no station is track trains cannot stop at — and it gives the player a
+diagnosable failure mode: the track is built, nothing is moving, because the far end
+has no station.
+
+### Gradients, and canals need locks
+
+Placement respects real terrain. A route may not climb or descend more than one
+elevation level per step.
+
+**Hard prerequisite: a fine elevation bake, which does not exist.** The mechanical
+elevation raster is ~3,510 m/px, under one sample per hex edge — there is nothing to
+read a gradient from. `fetch_terrarium.py` already pulls the source tiles and
+`bake_fine_relief.py` already reads them at 30 m, discarding the values after
+shading. **The same bake also unblocks §6 (line-of-sight needs sub-hex elevation) and
+the vector-terrain epic's phase 4 (vertex-displaced relief)** — one job, three
+features.
+
+**Canals are dead flat and climb only through locks**, which cost resources to build
+and reduce the line's throughput. This gives the three infrastructure types genuinely
+different placement puzzles over the same terrain: rail wants gentle gradients,
+canals want locks, roads go anywhere.
+
+### Severance is infestation, not attack
+
+A line is severed while a hex it runs through is **Contested (>25.0 infestation)** —
+the same rule §2.1 already applies to ZoC pooling. No deliberate-target AI is
+required (`HordeManager`'s own header lists building-siege targeting as unbuilt), one
+rule serves two systems, and the failure is instantly legible: the supply line dies
+exactly where the map goes red. Repairing it means clearing the ground, not
+dispatching a repair cart. `is_severed` and `ReclamationManager`'s existing
+un-severing path are unchanged.
+
+**An isolated settlement stagnates; it does not die.** It keeps producing whatever its
+own hexes support and goes short only of what it cannot make itself — a cut rail line
+to an iron-poor settlement halts its foundries without killing its population. Death
+spirals from a severed line would punish the player for a horde wandering across a
+road while they were looking elsewhere, which is the same unfairness the
+placement-time build-rights check exists to avoid.
+
+---
+
 ## 3. Tiered Building Specifications
 
 ### Tier 0: Wood Base / Settlement
