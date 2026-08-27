@@ -101,6 +101,13 @@ static func get_upgrade_cost(line_type: GameEnums.SupplyLineType, tier: int) -> 
 ## this as an OVERRIDE of the terrain multiplier on a segment's edge, not a
 ## multiplicative stack with it.
 ##
+## Applies to the PLAYER only. Zombies get nothing from any of it (D6) — both
+## those functions take a `uses_infrastructure` flag and HordeManager/
+## HordeFlowField pass false, so every number below is an asymmetric player
+## advantage rather than a property of the ground. Bridges are the exception
+## that proves it: a Bridge is passability, not speed, so a horde crosses one
+## and still crosses it at walking pace.
+##
 ## Bridge tiers aren't individually given a speed number in the doc (only
 ## Cost is listed per Bridge tier) — chosen to match each Bridge's SAME-TIER
 ## Road counterpart for tiers 0-2 (the doc lists Wooden Bridge alongside

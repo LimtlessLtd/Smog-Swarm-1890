@@ -60,9 +60,20 @@ because they can't drive or take the train lol"
 — the player moves fast on rail, hordes don't — which makes rail-borne response a real
 strategy and gives hordes a predictable cross-country travel time, so early warning
 means something.
-*Implementation trap:* `HexPathfinder`'s infrastructure modifiers are read by three
-neighbour-expansion loops. `_replan_cheap()` goes through neither real search and is
-the caller missed when `is_water_crossing_blocked()` was added.
+*Implementation trap, corrected when it was actually built (2026-08-27):* the note here
+used to say the modifiers are read by three neighbour-expansion loops. They are not.
+Infrastructure reaches a mover through TWO mechanisms: `get_step_cost()` decides which
+way it goes, `get_movement_speed_multiplier()` decides how fast it moves. Only the pair
+is the rule — a horde denied the routing discount alone still sprints down any road its
+drift happens to cross, and that second site is in `HordeManager._movement_speed()`,
+which the old note did not mention. `_replan_cheap()` needed no change at all: it
+applies no cost or speed modifier, only `is_water_crossing_blocked()`.
+*Bridges are NOT covered by this.* A Bridge is passability, not speed: a zombie crosses
+one, and crosses it at walking pace. The tempting implementation — pass a null
+`LogisticsNetwork` for hordes — removes bridges too, since that is the same object
+`is_water_crossing_blocked()` consults, and would silently make every river in the game
+uncrossable for zombies. Hence an explicit `uses_infrastructure` flag rather than
+withholding the network.
 
 **D7. Worldgen seeds 0 / 25 / 50 / 75 / 100% in rings from the start hex.**
 *Why:* "zombies everywhere except the start hex" taken literally would put six Hive

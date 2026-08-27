@@ -151,7 +151,7 @@ static func is_boundary_impassable(hex_grid_map: HexGridMap, from: Vector2i, to:
 ## `gates_are_passable` routes THROUGH Gate segments instead of around them
 ## — true for the player's own units, false (the default) for a horde. See
 ## WallManager.get_blocking_segment()'s own `ignore_gates` doc comment.
-static func find_path(hex_grid_map: HexGridMap, start: Vector2i, goal: Vector2i, logistics_network: LogisticsNetwork = null, wall_manager: WallManager = null, gates_are_passable: bool = false) -> Array[Vector2i]:
+static func find_path(hex_grid_map: HexGridMap, start: Vector2i, goal: Vector2i, logistics_network: LogisticsNetwork = null, wall_manager: WallManager = null, gates_are_passable: bool = false, uses_infrastructure: bool = true) -> Array[Vector2i]:
 	if not hex_grid_map or not hex_grid_map.has_cell(start) or not hex_grid_map.has_cell(goal):
 		return []
 	var start_cell := hex_grid_map.get_cell(start)
@@ -197,7 +197,7 @@ static func find_path(hex_grid_map: HexGridMap, start: Vector2i, goal: Vector2i,
 				continue
 			if is_boundary_impassable(hex_grid_map, current, neighbor):
 				continue
-			var tentative_g: float = g_score[current] + get_step_cost(current, neighbor, cell, logistics_network)
+			var tentative_g: float = g_score[current] + get_step_cost(current, neighbor, cell, logistics_network, uses_infrastructure)
 			if tentative_g < g_score.get(neighbor, INF):
 				came_from[neighbor] = current
 				g_score[neighbor] = tentative_g
@@ -212,8 +212,19 @@ static func find_path(hex_grid_map: HexGridMap, start: Vector2i, goal: Vector2i,
 ## costs. `from` only matters for the logistics-segment lookup (a segment
 ## between two hexes isn't directional); the biome/base cost is entirely a
 ## function of `to_cell`.
-static func get_step_cost(from: Vector2i, to: Vector2i, to_cell: HexCell, logistics_network: LogisticsNetwork) -> float:
-	if logistics_network:
+##
+## `uses_infrastructure` false makes this cost the edge as if no road, rail or
+## canal were there at all — for zombies, who do not use them (D6, verbatim:
+## "zombies shouldn't travel faster over roads or rails or canals because they
+## can't drive or take the train lol").
+##
+## Passing false is NOT the same as passing a null `logistics_network`, and the
+## two must not be conflated: the network is also what
+## is_water_crossing_blocked() consults for BRIDGES, and a bridge is physical
+## ground a zombie walks over like any other. Dropping the network to remove the
+## speed bonus would silently make every river uncrossable for hordes.
+static func get_step_cost(from: Vector2i, to: Vector2i, to_cell: HexCell, logistics_network: LogisticsNetwork, uses_infrastructure: bool = true) -> float:
+	if logistics_network and uses_infrastructure:
 		var segment := logistics_network.get_segment_between(from, to)
 		if segment and not segment.is_severed:
 			# Overrides, not stacks with, the biome multiplier below — see
@@ -241,8 +252,14 @@ static func get_terrain_speed_multiplier(cell: HexCell) -> float:
 ## latter a flat 2x discount for ANY line_type/tier) both
 ## UnitOrderController and HordeManager used to apply as two separate
 ## multiplications — this is the one call that decides between them instead.
-static func get_movement_speed_multiplier(hex_grid_map: HexGridMap, logistics_network: LogisticsNetwork, from_coord: Vector2i, to_coord: Vector2i) -> float:
-	if logistics_network:
+##
+## `uses_infrastructure` false returns the terrain multiplier for this hex and
+## nothing else, however good the road on it is (D6). This is the site that
+## decides how fast something actually MOVES, as against get_step_cost() which
+## only decides which way it goes — a horde denied the routing discount but not
+## this one would still sprint down every road it happened to cross.
+static func get_movement_speed_multiplier(hex_grid_map: HexGridMap, logistics_network: LogisticsNetwork, from_coord: Vector2i, to_coord: Vector2i, uses_infrastructure: bool = true) -> float:
+	if logistics_network and uses_infrastructure:
 		var segment := logistics_network.get_segment_between(from_coord, to_coord)
 		if segment and not segment.is_severed:
 			return SupplyLineCatalog.get_speed_multiplier(segment.line_type, segment.tier)

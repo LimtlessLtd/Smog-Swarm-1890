@@ -24,14 +24,15 @@ extends RefCounted
 ## REGION_RADIUS(12) covers the real query range with margin, at a fraction
 ## of a full-map Dijkstra's cost.
 ##
-## Reuses HexPathfinder.get_step_cost() for the exact same per-edge cost
-## model (biome multiplier + logistics discount) the A* router uses — a
-## flow-field route and an A* route never disagree about what a step costs,
-## only about how the search that finds a path is shared.
+## Reuses HexPathfinder.get_step_cost() for the same per-edge cost model the
+## A* router uses, with ONE deliberate difference: it costs every edge with
+## `uses_infrastructure = false`, so a horde's route is decided on biome alone
+## and a road is worth exactly the ground it is built on (D6). A player's A*
+## route over the same hexes will legitimately differ, and should.
 ##
 ## Cache staleness, an accepted trade-off, not a bug to chase: a field built
-## before a nearby road is built (or a marsh hex is drained by
-## ReclamationManager) won't reflect that change until its cache entry is
+## before a marsh hex is drained by ReclamationManager won't reflect that change
+## until its cache entry is
 ## evicted (MAX_CACHED_FIELDS FIFO) or the requesting horde's goal moves on.
 ## SubHexPortalGraph/SubHexTerrainQuery already accept the identical
 ## trade-off for the same reason — no consumer in this codebase has ever
@@ -126,7 +127,15 @@ static func _build_field(hex_grid_map: HexGridMap, logistics_network: LogisticsN
 				continue
 			if HexPathfinder.is_boundary_impassable(hex_grid_map, current, neighbor):
 				continue
-			var step_cost := HexPathfinder.get_step_cost(neighbor, current, hex_grid_map.get_cell(current), logistics_network)
+			## uses_infrastructure = false, hardcoded rather than a parameter: this
+			## class exists only to move hordes, and hordes never use roads (D6).
+			## Making it a parameter would also make the field cache above wrong,
+			## since its key is the goal hex alone — two callers wanting different
+			## answers for one goal would silently share the first one's field.
+			##
+			## `logistics_network` is still passed to is_water_crossing_blocked()
+			## above, and must be: that is bridges, not speed.
+			var step_cost := HexPathfinder.get_step_cost(neighbor, current, hex_grid_map.get_cell(current), logistics_network, false)
 			var candidate: float = cost[current] + step_cost
 			if candidate < cost.get(neighbor, INF):
 				cost[neighbor] = candidate
