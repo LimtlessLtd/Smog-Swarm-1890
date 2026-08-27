@@ -39,11 +39,16 @@ Two reasons, the second being the decisive one:
     tile's edge is taken from real neighbouring ground and adjacent tiles
     agree exactly.
 
-Consequence, stated plainly: sub-hex elevation in METRES is still not stored
-anywhere. Nothing needs it today (the mountain-impassability rule is per macro
-hex, deliberately -- see SubHexPortalGraph._is_mountain_blocked()). If a
-gameplay consumer ever does, the z12 tiles this fetches stay in cache/terrarium
-and re-baking a metres channel from them is a small change, not a re-fetch.
+That consequence -- "sub-hex elevation in METRES is stored nowhere" -- held until
+three consumers needed it at once: design_doc.md section 6 line-of-sight, the
+vector-terrain epic's vertex-displaced relief, and section 2.2's rule that canals
+and rails may not climb more than one elevation level at a time. As predicted
+above, the z12 tiles were still in cache/terrarium and this was a second output
+from the same sampled grid rather than a re-fetch. Pass --metres.
+
+The mountain-impassability rule stays per macro hex regardless, deliberately:
+MountainPassCarver opens passes by lowering HexCell.elevation at generation, and
+that carve exists in no raster. See SubHexPortalGraph._is_mountain_blocked().
 
 ## Shading
 
@@ -58,6 +63,7 @@ Usage:
     python bake_fine_relief.py --corridor
     python bake_fine_relief.py --center-q 80 --center-r 118 --radius 2
     python bake_fine_relief.py --center-q 80 --center-r 118 --radius 1 --estimate
+    python bake_fine_relief.py --corridor --metres --no-shade   # elevation only
 """
 
 import argparse
@@ -72,10 +78,40 @@ sys.path.insert(0, os.path.dirname(__file__))
 from geo_projection import CALIBRATION_POINTS, HEX_SIZE, apply_affine, axial_to_world, fit_affine, invert_affine, world_to_lonlat  # noqa: E402
 from bake_landcover import CORRIDOR_Q, CORRIDOR_R  # noqa: E402
 from bake_fine_tiles import FINE_TILE_PIXELS, FINE_TILE_WORLD_SIZE, hex_disk  # noqa: E402
-from png_codec import encode_png_gray8  # noqa: E402
+from png_codec import encode_png_gray8, encode_png_rgb8  # noqa: E402
 import terrarium_mosaic  # noqa: E402
 
 OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "assets", "terrain_data", "relief")
+METRES_OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "assets", "terrain_data", "elevation_fine")
+
+## Metres are written in the SAME Terrarium RGB packing as the coarse
+## elevation.png (elevation = r * 256 + g + b / 256 - 32768), so
+## ReliefImageBuilder._decode_elevation_metres() and RealTerrainSampler read
+## these with no new format and no new decoder.
+##
+## The one difference is that b -- Terrarium's 1/256 m fractional channel -- is
+## written as zero. Nothing here wants sub-metre precision (the canal rule is
+## "one elevation level", line-of-sight is metres over kilometres), and that
+## channel is pure high-entropy noise that no filter or compressor can shrink.
+## Zeroing it costs 1 m of precision and roughly a third of the bake.
+_ELEVATION_OFFSET = 32768.0
+_METRES_MIN = -_ELEVATION_OFFSET
+_METRES_MAX = 32767.0
+
+
+def _metres_to_terrarium_rgb(metres: np.ndarray) -> np.ndarray:
+    """Terrarium RGB for one tile's metres grid, fractional channel zeroed.
+
+    Rounds rather than truncates: truncation biases every value half a metre
+    downhill, which over a long canal or rail gradient check accumulates into a
+    systematic error in one direction rather than noise about zero.
+    """
+    encoded = np.clip(np.round(metres), _METRES_MIN, _METRES_MAX) + _ELEVATION_OFFSET
+    encoded = encoded.astype(np.uint32)
+    rgb = np.zeros(encoded.shape + (3,), dtype=np.uint8)
+    rgb[..., 0] = (encoded >> 8) & 0xFF
+    rgb[..., 1] = encoded & 0xFF
+    return rgb
 
 ## z12 is ~22.5 m/px at GB latitude -- finer than the 30 m output grid, so the
 ## bake never upsamples the source. z11 (~45 m) would be the cheaper choice at
@@ -221,71 +257,109 @@ def _prefetch_for(coords: list[tuple[int, int]], zoom: int, inv_linear, offset, 
 
 def bake(coords: list[tuple[int, int]], zoom: int, force: bool, estimate_only: bool,
          workers: int = 16, slope_full: float = _SLOPE_METRES_AT_FULL,
-         output_dir: str = OUTPUT_DIR) -> None:
+         output_dir: str = OUTPUT_DIR, want_shade: bool = True,
+         want_metres: bool = False, metres_dir: str = METRES_OUTPUT_DIR) -> None:
     transform = fit_affine(CALIBRATION_POINTS)
     inv_linear, offset = invert_affine(transform)
-    os.makedirs(output_dir, exist_ok=True)
+    if want_shade:
+        os.makedirs(output_dir, exist_ok=True)
+    if want_metres:
+        os.makedirs(metres_dir, exist_ok=True)
 
-    pending = [c for c in coords if force or not os.path.exists(os.path.join(output_dir, f"{c[0]}_{c[1]}.png"))]
+    def outputs_missing(q: int, r: int) -> tuple[bool, bool]:
+        """(shade wanted here, metres wanted here) for one hex."""
+        name = f"{q}_{r}.png"
+        need_shade = want_shade and (force or not os.path.exists(os.path.join(output_dir, name)))
+        need_metres = want_metres and (force or not os.path.exists(os.path.join(metres_dir, name)))
+        return need_shade, need_metres
+
+    ## Pending is judged across BOTH outputs, so adding --metres to a corridor
+    ## whose shade tiles are already baked re-samples those hexes for metres
+    ## instead of skipping them wholesale on the shade file's existence.
+    pending = [c for c in coords if any(outputs_missing(*c))]
     if pending:
         _prefetch_for(pending, zoom, inv_linear, offset, workers)
-    print("=== Baking relief tiles ===")
+    kinds = (["relief"] if want_shade else []) + (["elevation"] if want_metres else [])
+    print("=== Baking %s tiles ===" % " + ".join(kinds))
 
-    written = 0
+    written_shade = 0
+    written_metres = 0
     skipped = 0
-    total_bytes = 0
+    shade_bytes = 0
+    metres_bytes = 0
     flat_tiles = 0
     started = time.time()
     last_print = started
 
     for index, (q, r) in enumerate(coords):
-        path = os.path.join(output_dir, f"{q}_{r}.png")
-        if not force and os.path.exists(path):
+        need_shade, need_metres = outputs_missing(q, r)
+        if not need_shade and not need_metres:
             skipped += 1
             continue
 
         world_x, world_y = _tile_world_grid(q, r)
         lon, lat = world_to_lonlat(inv_linear, offset, world_x, world_y)
         metres = terrarium_mosaic.sample_metres(np.asarray(lon), np.asarray(lat), zoom)
-        shade = _shade_from_metres(metres, slope_full)
 
-        # A tile whose ground is genuinely flat encodes to a single repeated
-        # value. Counted rather than skipped: a missing tile means "fall back",
-        # and silently omitting flat ground would make a bake failure and a
-        # plain like the Fens indistinguishable on the Godot side.
-        if int(shade.min()) == int(shade.max()):
-            flat_tiles += 1
+        if need_shade:
+            shade = _shade_from_metres(metres, slope_full)
 
-        png = encode_png_gray8(FINE_TILE_PIXELS, FINE_TILE_PIXELS, shade.tobytes())
-        total_bytes += len(png)
-        if not estimate_only:
-            with open(path, "wb") as handle:
-                handle.write(png)
-        written += 1
+            # A tile whose ground is genuinely flat encodes to a single repeated
+            # value. Counted rather than skipped: a missing tile means "fall back",
+            # and silently omitting flat ground would make a bake failure and a
+            # plain like the Fens indistinguishable on the Godot side.
+            if int(shade.min()) == int(shade.max()):
+                flat_tiles += 1
+
+            png = encode_png_gray8(FINE_TILE_PIXELS, FINE_TILE_PIXELS, shade.tobytes())
+            shade_bytes += len(png)
+            if not estimate_only:
+                with open(os.path.join(output_dir, f"{q}_{r}.png"), "wb") as handle:
+                    handle.write(png)
+            written_shade += 1
+
+        if need_metres:
+            # Drop the margin the gradient needed; metres are read per pixel and
+            # want no neighbours, so the tile is exactly FINE_TILE_PIXELS square.
+            core = metres[_MARGIN_PX:-_MARGIN_PX or None, _MARGIN_PX:-_MARGIN_PX or None]
+            rgb = _metres_to_terrarium_rgb(core)
+            png = encode_png_rgb8(FINE_TILE_PIXELS, FINE_TILE_PIXELS, rgb.tobytes(), filter_type=1)
+            metres_bytes += len(png)
+            if not estimate_only:
+                with open(os.path.join(metres_dir, f"{q}_{r}.png"), "wb") as handle:
+                    handle.write(png)
+            written_metres += 1
 
         now = time.time()
         if now - last_print > 15:
             done = index + 1
-            rate = written / max(now - started, 0.001)
+            worked = max(written_shade, written_metres)
+            rate = worked / max(now - started, 0.001)
             remaining = (len(coords) - done) / max(rate, 0.001)
             print(f"  {done}/{len(coords)} hexes  {rate:.1f}/s  ~{remaining / 60:.1f} min left  "
-                  f"{total_bytes / 1e6:.1f} MB so far")
+                  f"{(shade_bytes + metres_bytes) / 1e6:.1f} MB so far")
             last_print = now
 
     elapsed = time.time() - started
     fetch = terrarium_mosaic.stats()
+    worked = max(written_shade, written_metres)
+    total_bytes = shade_bytes + metres_bytes
     print()
-    print(f"tiles written:      {written}" + ("  (ESTIMATE ONLY, nothing saved)" if estimate_only else ""))
-    print(f"tiles skipped:      {skipped} (already present; pass --force to redo)")
-    print(f"flat tiles:         {flat_tiles}")
-    print(f"output size:        {total_bytes / 1e6:.1f} MB  ({total_bytes / max(written, 1) / 1024:.1f} KB/tile)")
-    print(f"elapsed:            {elapsed / 60:.1f} min ({written / max(elapsed, 0.001):.1f} hexes/s)")
+    print(f"hexes processed:    {worked}" + ("  (ESTIMATE ONLY, nothing saved)" if estimate_only else ""))
+    print(f"hexes skipped:      {skipped} (all wanted outputs already present; pass --force to redo)")
+    if want_shade:
+        print(f"relief tiles:       {written_shade}  {shade_bytes / 1e6:.1f} MB  "
+              f"({shade_bytes / max(written_shade, 1) / 1024:.1f} KB/tile), {flat_tiles} flat")
+    if want_metres:
+        print(f"elevation tiles:    {written_metres}  {metres_bytes / 1e6:.1f} MB  "
+              f"({metres_bytes / max(written_metres, 1) / 1024:.1f} KB/tile)")
+    print(f"elapsed:            {elapsed / 60:.1f} min ({worked / max(elapsed, 0.001):.1f} hexes/s)")
     print(f"terrarium z{zoom}:     {fetch['downloads']} downloaded, {fetch['failures']} unavailable")
-    if written:
-        per_hex = elapsed / written
+    if worked:
+        per_hex = elapsed / worked
         full = len(corridor_hexes())
         print(f"extrapolated to the full {full}-hex corridor: "
-              f"{per_hex * full / 60:.0f} min, {total_bytes / written * full / 1e6:.0f} MB")
+              f"{per_hex * full / 60:.0f} min, {total_bytes / worked * full / 1e6:.0f} MB")
 
 
 def main() -> None:
@@ -306,13 +380,24 @@ def main() -> None:
                         help="where to write tiles; point elsewhere to compare settings without touching the real bake")
     parser.add_argument("--workers", type=int, default=16,
                         help="concurrent tile downloads (default 16); the fetch is latency-bound, not bandwidth-bound")
+    parser.add_argument("--metres", action="store_true",
+                        help="also write elevation in metres (Terrarium RGB, fractional channel zeroed) to --metres-dir")
+    parser.add_argument("--no-shade", action="store_true",
+                        help="skip the hillshade output; with --metres, bakes elevation only")
+    parser.add_argument("--metres-dir", type=str, default=METRES_OUTPUT_DIR,
+                        help="where to write elevation tiles")
     args = parser.parse_args()
 
+    if args.no_shade and not args.metres:
+        parser.error("--no-shade leaves nothing to bake; pass --metres too")
+
     coords = corridor_hexes() if args.corridor else hex_disk(args.center_q, args.center_r, args.radius)
-    print(f"baking relief for {len(coords)} hexes at z{args.zoom} "
+    kinds = (["relief"] if not args.no_shade else []) + (["elevation"] if args.metres else [])
+    print(f"baking {' + '.join(kinds)} for {len(coords)} hexes at z{args.zoom} "
           f"({FINE_TILE_PIXELS}x{FINE_TILE_PIXELS} per hex, "
           f"{FINE_TILE_WORLD_SIZE / FINE_TILE_PIXELS:.3f} wu/px)")
-    bake(coords, args.zoom, args.force, args.estimate, args.workers, args.slope_full, args.out_dir)
+    bake(coords, args.zoom, args.force, args.estimate, args.workers, args.slope_full, args.out_dir,
+         want_shade=not args.no_shade, want_metres=args.metres, metres_dir=args.metres_dir)
 
 
 if __name__ == "__main__":
