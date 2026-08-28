@@ -19,11 +19,6 @@ problem that only exists after the core loop works) → Deferred, however well s
 Everything here traces to `design_doc.md` §2.1/§2.2 and `decisions.md` D1-D29. Rough
 dependency order.
 
-- [ ] `[gated]` **Fine elevation bake.** 30 m elevation values from the Terrarium
-  tiles `fetch_terrarium.py` already pulls and `bake_fine_relief.py` already reads and
-  discards. Current mechanical raster is ~3,510 m/px — under one sample per hex edge.
-  **Unblocks three things**: §6 line-of-sight, vector-terrain epic phase 4, and §2.2's
-  canal/rail gradient rules. Long-running bake — start it early. (D27)
 - [ ] `[gated]` **Fix `geo_projection.CALIBRATION_POINTS`.** At least one bad row.
   Promoted from polish: population capacity is baked *through* this projection, so a
   bad row misplaces a city's entire zombie population. Detail below.
@@ -66,6 +61,18 @@ dependency order.
 
 ## Next — earns its place, but not the core loop
 
+- [ ] `[design]` **Classify hex elevation off the fine bake.**
+  `RealTerrainSampler.majority_biome()` takes the MAX elevation of a 5x5 grid. Its
+  own comment records that this is only safe because the coarse raster holds 4x4
+  identical blocks, so the max means "some substantial upland part of this hex is
+  above the line" rather than a point maximum — and that it stops being true the
+  moment the elevation source gets finer. It now is finer. At 30 m one summit would
+  classify a whole 25-square-mile hex as Level 4 MOUNTAIN, feeding
+  `MountainPassCarver` and every passability decision downstream. Move to an explicit
+  percentile and point `_sample_fine()` at the elevation tiles. **This regenerates the
+  map** — needs a before/after mountain-hex count and the user's call on the change,
+  which is why the bake deliberately did not do it. (`SubHexTerrainQuery.elevation_metres()`
+  is the fine read path in the meantime.)
 - [ ] `[gated]` **Per-settlement stockpiles.** One Town Hall = one stockpile.
   **Own PR, nothing else in it** — touches `ResourceManager`, every producer and
   consumer, every affordability check, every UI counter, and saves. Prerequisite for
@@ -100,6 +107,8 @@ dependency order.
   disappear from a built game. Found 2026-08-27 by the first full run of
   `tools/ci/run_verifications.py` — the warnings were always in the log, nothing read
   the log. Verify by exporting, not by reasoning.
+  Three readers share the defect now — `ReliefTileView`, `RealTerrainSampler`
+  (`Image.load_from_file()`) and `FineElevationTiles` — so fix them together.
 
 ## Deferred — fails `vision.md` §5 check 3
 

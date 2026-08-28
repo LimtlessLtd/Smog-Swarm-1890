@@ -56,6 +56,36 @@ static func sample(hex_coord: Vector2i, sub_index: Vector2i) -> Dictionary:
 		return base  # Overwhelmingly the common case — one dictionary lookup, and the cached result is returned by reference exactly as before overrides existed.
 	return _with_urban_override(hex_coord, HexCoord.sub_hex_to_world(hex_coord, sub_index), base)
 
+## Elevation in metres at one sub-cell, at the 30 m resolution the mechanical
+## layer actually works in. This is the sanctioned sub-hex elevation read
+## (CLAUDE.md section 3); sample()'s "elevation_m" is NOT the same number.
+##
+## Falls back to that coarse value for any hex with no baked elevation tile,
+## which is every hex outside the baked corridor.
+##
+## ## Why sample()["elevation_m"] is deliberately left coarse
+##
+## It would be one line to point RealTerrainSampler._sample_fine() at the fine
+## tiles and have every existing reader get 30 m elevation for free. That line
+## would also silently regenerate the map.
+##
+## RealTerrainSampler.majority_biome() takes the MAXIMUM elevation of a 5x5 grid
+## per hex, and its own comment records why that is safe today and exactly when
+## it stops being: the coarse raster holds 4x4 blocks of identical values, so the
+## max is "some substantial upland part of this hex is above the line" rather
+## than a point maximum. At 30 m resolution it becomes a true point maximum, one
+## summit starts classifying a whole 25-square-mile hex as Level 4, and that
+## feeds MountainPassCarver and every passability decision downstream.
+##
+## Changing which hexes are mountains is a map-generation change and its own
+## piece of work — see backlog.md. It is not a side effect the bake gets to have.
+static func elevation_metres(hex_coord: Vector2i, sub_index: Vector2i) -> float:
+	var fine: Variant = FineElevationTiles.metres_at(
+		hex_coord, HexCoord.sub_hex_to_world(hex_coord, sub_index))
+	if fine != null:
+		return fine
+	return float(sample(hex_coord, sub_index).get("elevation_m", 0.0))
+
 ## Applies a founded settlement's urban disc to one raw baked sample.
 ## Returns `base` itself (not a copy) whenever the override doesn't apply, so
 ## the no-op path allocates nothing.

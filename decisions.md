@@ -224,3 +224,31 @@ remains the numbers spec. Docs split into `backlog.md` (what's next),
 defect tracker, ADR, and design rationale — so answering "what should I work on" cost
 ~50k tokens before opening a single `.gd` file, and its own roadmap section carried a
 warning not to let it drift while being nine days stale.
+
+---
+
+## 2026-08-27 — Fine elevation
+
+**D31. Fine elevation ships as Terrarium RGB with the fractional channel zeroed**,
+in per-hex 333x333 tiles beside the relief tiles, not as a new format.
+*Why:* the coarse `elevation.png` is already Terrarium-packed and already has two
+decoders in GDScript (`RealTerrainSampler.sample_at()`,
+`ReliefImageBuilder._decode_elevation_metres()`), so reusing the packing means no
+third one. Terrarium's blue channel is 1/256 m of precision that nothing here wants —
+the canal rule is "one elevation level", line-of-sight is metres over kilometres — and
+it is high-entropy noise no compressor shrinks. Zeroing it costs 1 m of precision and
+about a third of the bake. *Measured:* 106 MB (26.8 KB/tile) and 19.6 min for the 3,876-hex corridor,
+entirely from tiles already in `cache/terrarium`; round-trip error is 0.5 m worst case,
+which is rounding and nothing else.
+
+**D32. The bake does NOT change how hexes are classified as mountains.**
+`SubHexTerrainQuery.elevation_metres()` is the new fine read path;
+`sample()["elevation_m"]` stays on the coarse raster.
+*Why:* `RealTerrainSampler.majority_biome()` takes the MAX elevation of a 5x5 grid,
+and its own comment records that this is only safe because the coarse raster holds 4x4
+identical blocks — the max means "some substantial upland part of this hex is above the
+line", not a point maximum, and it says outright that this stops being true if the
+source gets finer. Pointing `_sample_fine()` at the new tiles is a one-line change that
+would silently reclassify mountains, re-carve `MountainPassCarver`'s passes and alter
+passability across the map. *Consequence, accepted:* two elevation answers coexist
+until that item is taken, and the finer one is opt-in.
