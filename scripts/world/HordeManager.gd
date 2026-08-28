@@ -656,14 +656,20 @@ func load_save_state(hordes: Array[Horde], next_id: int) -> void:
 	_next_id = next_id
 	_logic_tick_timer = 0.0
 
-## Terrain-or-infrastructure speed multiplier (whichever this edge actually
-## has — see HexPathfinder.get_movement_speed_multiplier()'s own doc
-## comment for why it's one or the other, not both stacked) onto
-## MovementStepper.BASE_MOVE_SPEED — the same table the drift route was
-## chosen against — plus the Day/Night modifier.
+## TERRAIN speed multiplier onto MovementStepper.BASE_MOVE_SPEED — the same
+## table the drift route was chosen against — plus the Day/Night modifier.
+##
+## Infrastructure is excluded (`uses_infrastructure = false`): a horde crossing
+## a hex with a trunk road on it moves at that hex's terrain speed and no
+## faster (D6). This is the site that makes the rule true in play — HordeFlowField
+## already refuses the road when CHOOSING a route, but a horde whose drift
+## happened to cross one would still have been carried along it at rail speed.
+##
+## `_logistics_network` is still passed rather than dropped: it is what
+## HexPathfinder consults for BRIDGES, which hordes do cross.
 func _movement_speed(from_coord: Vector2i, to_coord: Vector2i) -> float:
 	var speed := MovementStepper.BASE_MOVE_SPEED
-	speed *= HexPathfinder.get_movement_speed_multiplier(_hex_grid_map, _logistics_network, from_coord, to_coord)
+	speed *= HexPathfinder.get_movement_speed_multiplier(_hex_grid_map, _logistics_network, from_coord, to_coord, false)
 	speed *= NIGHT_MOVE_SPEED_MULTIPLIER if TimeCycleManager.is_night() else DAY_MOVE_SPEED_MULTIPLIER
 	return speed
 

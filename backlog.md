@@ -29,10 +29,6 @@ dependency order.
   `is_cleared` derived. Band states, >75% spawn at flat %-of-capacity/day, 100% export
   with a 75% floor, worldgen rings 0/25/50/75/100. `infestation` appears nowhere in
   the code today. (D1, D2, D4, D7, D8)
-- [ ] `[gated]` **Zombies ignore infrastructure modifiers** in all three
-  neighbour-expansion loops — `find_path()`, `HordeFlowField._build_field()`, and
-  `HordeManager._replan_cheap()`. The third goes through neither real search and is
-  the one missed last time. (D6)
 - [ ] `[gated]` **Tactical zombie layer + live-hex LOD.** New packed-array class,
   separate from `Horde`. Live hex = camera hex + 6 neighbours + any hex with player
   units/buildings, ~60,000 global budget, nearest-observer-first. Horde dissolves on
