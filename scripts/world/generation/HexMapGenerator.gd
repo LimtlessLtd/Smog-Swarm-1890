@@ -97,6 +97,9 @@ func generate() -> Dictionary:
 				_apply_feature(cells, feature)
 
 	_apply_soil_noise(cells)
+	# After the feature stamp, because a settlement stamp is what turns a hex
+	# URBAN and this pass reads biome_type to tell land from open sea.
+	_apply_zombie_population(cells)
 	# After every elevation-setting pass (real terrain + the MOUNTAIN_RANGE
 	# feature stamp's own elevation floor) and before anything reads
 	# passability: design_doc.md §5 makes Level 4 impassable, and this lowers
@@ -228,6 +231,33 @@ func _apply_feature(cells: Dictionary, feature: GeographyFeature) -> void:
 			GeographyFeature.FeatureType.INDUSTRIAL_BLIGHT:
 				cell.biome_type = GameEnums.BiomeType.INDUSTRIAL
 				cell.soil_fertility = GameEnums.SoilFertility.DESOLATE
+
+## design_doc.md §2.1's static half: how many zombies each hex holds at 100%
+## infestation, baked from real 1890s settlement population
+## (tools/geo_bake/bake_population.py). Capacity IS the difficulty curve
+## (decisions.md D3) — a London hex holding order 5e5 against a Highland hex's
+## 1,000 floor is what decides where the player can go and when, so this comes
+## from real history rather than from a rule.
+##
+## Open OCEAN gets 0, which is a different answer from the floor and has to
+## stay that way: 0 means "no zombies can be here at all", 1,000 means "the
+## emptiest inhabited hex in Britain".
+##
+## Every land hex is raised to at least the floor. The bake already does that
+## for the hexes BritishGeographyData._LAND_RLE calls land, so the max() only
+## bites where a settlement stamp painted a hex the coastline calls sea — the
+## case _apply_feature() allows for SETTLEMENT features alone.
+##
+## Falls back to the floor for the whole landmass when the bake hasn't been run
+## or committed, same "a fresh clone still boots into a playable, if data-poor,
+## map" rule _apply_real_terrain() follows.
+func _apply_zombie_population(cells: Dictionary) -> void:
+	var floor_value := ZombiePopulationData.population_floor()
+	for cell: HexCell in cells.values():
+		if cell.biome_type == GameEnums.BiomeType.OCEAN:
+			cell.total_zombie_pop = 0
+			continue
+		cell.total_zombie_pop = maxi(ZombiePopulationData.capacity_for(cell.coord), floor_value)
 
 ## Varies fertility within open countryside only — cities, water, mountains
 ## and wetlands keep the fixed soil rating their feature stamp gave them.

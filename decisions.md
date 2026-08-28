@@ -14,6 +14,83 @@ Rules for this file:
 
 ---
 
+## 2026-08-28 — Baking population capacity
+
+Settled while building `tools/geo_bake/bake_population.py`. Each entry is a
+measurement, not a preference; the numbers are reproduced in the bake's own
+docstrings so they are readable next to the code they justify.
+
+**D33. Wikidata's 1890s coverage is a few hundred items, not "cities and towns".**
+D3's source order is kept; its description of tier 1 is not.
+*Measured 2026-08-28,* items in the GB+Ireland bbox with a P1082 population dated to
+a census year: 1881 → 377, 1891 → 378, 1901 → 407 (415 distinct). The largest 1891
+rows are aggregates — United Kingdom 37,802,400, London 5,565,856, Wales 1,771,451,
+Birmingham 478,000 — and the settlement-level rows are dominated by one bulk import of
+Isle of Ely / Cambridgeshire parishes. `wd:Q18125` (Manchester) has population
+statements for 2011, 2014, 2017 and 2018 and nothing earlier; the same is true of
+Liverpool, Leeds, Sheffield, Glasgow, Edinburgh, Bristol, Newcastle and Nottingham.
+202 rows join to an OSM place node by QID, which is 0.5% of the 40,398 settlements.
+*Consequence:* tier 1 is a correction layer, not the source. Tiers 2 and 3 carry the
+map — 2,296 settlements from an OSM `population` tag, 37,900 from the median tagged
+population of their place kind.
+*Rejected:* dropping Wikidata entirely. Where it has a real 1891 figure — London,
+Birmingham, Aberdeen — that figure beats any scaled modern one, and 8x outliers like
+Bexhill-on-Sea are exactly the places a national trend gets wrong.
+
+**D34. One national factor converts modern population to 1891, derived from the census
+total rather than chosen.** `(1891 census − what tier 1 already contributes) ÷ the
+modern subtotal`.
+*Why:* tiers 2 and 3 are present-day population and the game is January 1890.
+*Measured:* the factor comes out at **0.5105**, against a median modern/1891 ratio of
+**1.94** (i.e. 0.515 inverted) over the 80 settlements where a real 1891 figure and a
+modern OSM tag are both known. Two independent derivations agreeing to 1% is the
+evidence that this is a real historical ratio and not a fudge to hit a target.
+*Accepted consequence:* a town that moved against the national trend is wrong by
+however far it diverged — Bexhill-on-Sea is 8.3x its 1891 self and is scaled as 1.9x.
+*Also settled here:* `place=suburb`/`borough`/`neighbourhood`/`quarter` are excluded
+outright, because a suburb sits inside a settlement whose own node already carries the
+whole population. Filling the 6,069 untagged suburb nodes from the tagged ones' median
+added a phantom 47 million people to a 37 million country — that error is what made the
+first cut's factor 0.2855 and crushed every real city.
+
+**D35. The three named cities are placed on their calibration-table hex, not on their
+projected position.** Everything else is placed by `geo_projection`'s affine.
+*Why:* the affine's residual at Manchester is 1,201 world units, which is 1.6 hex ROWS.
+Projecting real Manchester put 253,000 people on an empty moorland hex two rows north
+and left the game's own four Manchester hexes — the player's starting settlement — with
+84,000 between them. `CALIBRATION_POINTS`' own `q, r` column already states where this
+game puts each of those real places, so it is a better key than the fit it feeds.
+*Why not for everything:* the other 40,395 settlements have no named footprint to snap
+to, and the land-cover raster they must agree with is baked through the same affine —
+so for them the projection is the correct answer, residual and all.
+
+**D36. `geo_projection.CALIBRATION_POINTS` has no single bad row to fix; re-fitting it
+is a `[design]` call that regenerates the map.** The backlog item's premise is wrong
+and it is retagged rather than taken.
+*Measured 2026-08-28:*
+- Both sides of the "Midlands Farmland (Warwick)" row are faithful. Its lon/lat is
+  Warwick (52.2823, −1.5849) and its `q, r` is `Vector2i(80, 131)  # Warwickshire`
+  verbatim from `BritishGeographyData._build_features()`.
+- It is the worst row but not a different kind of row. Leave-one-out residuals:
+  Warwick 3,539, Pennines north 3,111, The Fens 2,541, Mersey 1,976, Oldham 1,647,
+  Southend 1,491, Sheppey 1,448. RMS over all 21 is 1,265 world units (~2.5 hex radii).
+- The residual is not a projection error. A 12-parameter quadratic reduces RMS only
+  1,265 → 1,188; equirectangular-with-cos(lat) and Mercator-y are both slightly worse.
+  There is no better model to find — the anchors themselves are noisy.
+- Dropping the row does not help and is not free: max city residual improves 1,201 →
+  1,075, while the map moves by up to **780 world units (1.5 hexes)** across GB, which
+  would need every baked product re-run against it.
+- Fitting only the 3 web-verified city anchors (an exact 6-parameter interpolation)
+  moves the map by 23 hexes, which proves those three are not mutually consistent with
+  the other 18 — 18 hand-drawn region blobs dominate the least squares.
+*Why it is `[design]`:* any re-fit shifts land-cover, relief, fine tiles, the vector
+mesh and fine elevation relative to `_LAND_RLE`'s coastline, so it regenerates the map.
+That is the user's call for the same reason D32's mountain reclassification is.
+*Mitigation shipped instead:* D35 above, which fixes the three cities that had a
+gameplay-visible consequence.
+
+---
+
 ## 2026-08-27 — Zombie population & infestation model
 
 Settled across a 30-question design review. Full spec in `design_doc.md` §2.1.
@@ -39,6 +116,11 @@ Southall/Gregory/Ell/Gatley via UK Data Service, not downloadable from its own
 repository, silent on commercial use.
 *Accepted consequence:* some regions are effectively closed until very late, decided
 by population data rather than by design.
+*Premise corrected 2026-08-28 when the bake was built — see D33.* The source ORDER
+stands; "good coverage for cities and towns" does not. Wikidata carries a dated 1891
+population for 378 items in the whole GB+Ireland bbox, and none at all before 2010 for
+Manchester, Liverpool, Leeds, Sheffield, Glasgow, Edinburgh, Bristol, Newcastle or
+Nottingham.
 
 **D4. The source term is spawning, gated at >75%.** A hex above the Hive Core
 threshold breeds at a flat percentage of its own capacity per day; at 100% it exports
