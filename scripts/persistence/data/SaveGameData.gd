@@ -56,6 +56,20 @@ extends Resource
 ## Zone of Control itself: it recomputes fresh from LogisticsNetwork on load.
 @export var discontent_by_hex: Dictionary = {}  # Vector2i -> float
 
+## InfestationManager — design_doc.md §2.1's one mutable number per hex.
+## `infestation` and `is_cleared` are absent because both are DERIVED (D1, D2)
+## and saving either would let it drift from the count; `total_zombie_pop` is
+## absent because it is static baked terrain data that rebuilds identically on
+## every boot. Zombies standing on a hex as a roaming Horde are counted through
+## `hordes` below, not duplicated here.
+##
+## An EMPTY dictionary loaded from a pre-infestation save means "this save
+## predates the model", not "the world is empty" — InfestationManager keeps its
+## worldgen rings in that case. There is no save-format-version reader to tell
+## the two apart (SAVE_FORMAT_VERSION is written and never read), so the empty
+## case has to carry that meaning itself.
+@export var resident_zombies_by_hex: Dictionary = {}  # Vector2i -> int
+
 ## WallManager — every placed WallSegment saves directly (see
 ## its own class doc comment for why no separate save-entry wrapper is
 ## needed, unlike BuildingSaveEntry).

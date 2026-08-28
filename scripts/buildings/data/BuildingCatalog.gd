@@ -206,6 +206,7 @@ static func _watchtower() -> BuildingDefinition:
 	d.zoc_roles = [GameEnums.ZoneOfControlType.MILITARY, GameEnums.ZoneOfControlType.CIVILIAN]
 	d.vision_radius = 2  # Tallest structure in town at Tier 0 — a proper watchtower lookout.
 	d.lit_at_night = true  # Watchtower searchlights hold/extend vision after dark.
+	d.is_defensive = true  ## design_doc.md §2.1 names it in the Fringe allow-list.
 	return d
 
 # --- Tier 1: Brick Base / Borough -------------------------------------------
@@ -303,6 +304,7 @@ static func _garrison() -> BuildingDefinition:
 	d.requires_settlement = true
 	d.zoc_roles = [GameEnums.ZoneOfControlType.MILITARY]
 	d.can_train_units = true  ## Trains Tier 1 units (design_doc.md §4: Navvy, Yeoman Marksman, Grenadier).
+	d.is_defensive = true  ## design_doc.md §2.1 names it in the Fringe allow-list.
 	return d
 
 ## Field gunpowder/fuel resupply node — same role FORWARD_AMMO_DUMP played
@@ -314,6 +316,7 @@ static func _supply_dump() -> BuildingDefinition:
 	d.tier = 1
 	d.construction_cost = {GameEnums.ResourceType.WOOD: 100, GameEnums.ResourceType.BRICKS: 50}
 	d.zoc_roles = [GameEnums.ZoneOfControlType.MILITARY]
+	d.is_defensive = true  ## design_doc.md §2.1 names it in the Fringe allow-list, and it is the one building meant to be put down on hostile ground.
 	return d
 
 # --- Tier 2: Iron Base / Industrial District --------------------------------
@@ -396,6 +399,7 @@ static func _search_light() -> BuildingDefinition:
 	d.zoc_roles = [GameEnums.ZoneOfControlType.MILITARY]
 	d.vision_radius = 2  # Illuminates the perimeter beyond its own hex, same role as the Watchtower.
 	d.lit_at_night = true  # Holds/extends vision after dark — see CombatCoordinator's own Garrison-order night bonus, keyed off this building type.
+	d.is_defensive = true  ## design_doc.md §2.1's Fringe allow-list reads "Watchtowers, Garrisons, Walls, Supply Dumps"; the Search Light is the same Defensive Tier role at Tier 2.
 	return d
 
 # --- Tier 3: Steel Base / Rail Network --------------------------------------

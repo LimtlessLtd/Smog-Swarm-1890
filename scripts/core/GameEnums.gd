@@ -334,3 +334,16 @@ enum EventSeverity {
 	WARNING,   ## Notable: a unit took a hit and survived, food dipped under 100%, a resource stockpile hit zero.
 	CRITICAL,  ## Severe: a unit/building destroyed, a wall breached, territory lost, a large horde spotted, the colony starving.
 }
+
+## design_doc.md §2.1's four strategic-hex states, derived from
+## `zombie_count / total_zombie_pop` and never stored — InfestationManager
+## computes one on demand. Ordered least infested first so a comparison
+## reads as "at least this bad"; the thresholds themselves live on
+## InfestationManager, not here, because they are one spec's numbers rather
+## than shared vocabulary.
+enum InfestationBand {
+	CLEARED,    ## < 5%. Unrestricted construction, including a Town Hall to anchor a new settlement.
+	FRINGE,     ## 5-25%. Defensive-tier structures only (Watchtower, Garrison, Walls, Supply Dump).
+	CONTESTED,  ## 25.1-74.9%. No construction. Spreads nothing — a stable holding zone.
+	HIVE_CORE,  ## 75-100%. No construction. Breeds daily, and exports roaming hordes at 100%.
+}
