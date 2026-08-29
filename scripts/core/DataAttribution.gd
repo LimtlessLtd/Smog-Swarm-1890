@@ -26,20 +26,25 @@ extends RefCounted
 ## itself a composite of public-domain national datasets and asks that the
 ## underlying providers be acknowledged.
 ##
+## Wikidata (`fetch_wikidata_population.py`) supplies the real 1881/1891/1901
+## census figures behind `total_zombie_pop`. It is CC0 and legally needs no
+## credit, and is listed for the same reason Natural Earth is — the population
+## of a hex is a number a player might reasonably want to trace to a source.
+##
 ## Kept as plain text with no markup so it can be dropped into a Label, a
 ## RichTextLabel, or a future Steam store page without re-authoring.
 
 ## One-line form, for a boot-screen footer where vertical space is scarce.
 ## Carries the ODbL credit in full because that is the part with a legal
-## requirement attached — the other two sources compress to their names.
-const SHORT_NOTICE: String = "Map data © OpenStreetMap contributors (ODbL 1.0) · Coastlines from Natural Earth · Elevation from Mapzen Terrain Tiles"
+## requirement attached — the other three sources compress to their names.
+const SHORT_NOTICE: String = "Map data © OpenStreetMap contributors (ODbL 1.0) · Coastlines from Natural Earth · Elevation from Mapzen Terrain Tiles · Historical population from Wikidata (CC0)"
 
 ## Full form, for a credits screen. Each entry states the dataset, what it is
 ## used for in this game, and its licence, so the notice is auditable rather
 ## than decorative.
 const FULL_NOTICE: String = """Geographic data sources
 
-OpenStreetMap — land cover, woodland, farmland, urban and industrial areas, rivers, lakes and canals.
+OpenStreetMap — land cover, woodland, farmland, urban and industrial areas, rivers, lakes and canals, and the settlement points that carry each hex's population capacity.
 Map data © OpenStreetMap contributors, available under the Open Database Licence (ODbL) 1.0.
 https://www.openstreetmap.org/copyright
 
@@ -49,4 +54,8 @@ https://www.naturalearthdata.com
 
 Mapzen Terrain Tiles (AWS Open Data) — terrain elevation and hillshade relief.
 Compiled from public-domain national elevation datasets.
-https://registry.opendata.aws/terrain-tiles/"""
+https://registry.opendata.aws/terrain-tiles/
+
+Wikidata — 1881/1891/1901 census populations, which set how many zombies each region can hold.
+Released to the public domain under CC0 1.0.
+https://www.wikidata.org"""

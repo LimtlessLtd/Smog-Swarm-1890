@@ -15,6 +15,16 @@ extends Resource
 @export var waterway_name: String = ""  ## e.g. "River Thames" — only set when terrain_feature is RIVER/CANAL.
 @export var districts: Array[District] = []
 
+## design_doc.md §2.1's `total_zombie_pop`: how many zombies this hex holds at
+## 100% infestation, baked from real 1890s settlement population
+## (ZombiePopulationData, written by tools/geo_bake/bake_population.py).
+## 0 for open OCEAN — nothing walks there. Static per hex and set once by
+## HexMapGenerator, which is why it belongs on this pure data container while
+## the mutable `zombie_count` it is a ratio of does not: the map is rebuilt from
+## fixed seeds on every boot and no HexCell is ever serialised, so an @export
+## here persists nothing and is not meant to.
+@export var total_zombie_pop: int = 0
+
 func _init(p_coord: Vector2i = Vector2i.ZERO) -> void:
 	coord = p_coord
 

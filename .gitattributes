@@ -6,3 +6,10 @@
 *.tmesh binary
 
 *.import -text
+
+# Baked per-hex 1890s population capacity, raw little-endian binary (see
+# tools/geo_bake/bake_population.py and ZombiePopulationData.gd). Same reason
+# as *.tmesh above: its reserved fields are zero so git already reads it as
+# binary, but stating it means a file that happened to contain no NUL byte
+# could never be line-ending-converted into wrong population numbers.
+*.zpop binary
