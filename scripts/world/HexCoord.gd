@@ -116,6 +116,20 @@ const SUB_HEX_CELL_SIZE_WORLD_UNITS: float = SUB_HEX_CELL_SIZE_METERS * WORLD_UN
 ## answers cells sparsely/on demand, it does not instantiate this grid).
 const SUB_HEX_GRID_N: int = 333
 
+## One strategic hex's real area in square metres: 64,749,531 m^2, i.e. the same
+## 25 sq mi WORLD_UNITS_PER_REAL_METER above is derived FROM, restated as an area
+## so a caller reasoning about population density does not re-derive it.
+## (design_doc.md §7's "5 mi flat-to-flat, ~21.65 mi^2" is a different reading of
+## the same hex, and is not the one the code is built on.)
+##
+## A function rather than a const because 3*sqrt(3)/2 cannot be evaluated in a
+## GDScript const initializer — the same constraint WORLD_UNITS_PER_REAL_METER
+## and SUB_HEX_GRID_N both record above.
+static func hex_area_square_metres() -> float:
+	var radius_metres := HEX_SIZE / WORLD_UNITS_PER_REAL_METER
+	return 3.0 * sqrt(3.0) / 2.0 * radius_metres * radius_metres
+
+
 ## Resolves `pos` to the sub-hex cell it falls within: which macro hex
 ## (world_to_axial(), unchanged) plus a local (sx, sy) index into that
 ## hex's own SUB_HEX_GRID_SPAN-sized square, 0..SUB_HEX_GRID_N-1 each axis,

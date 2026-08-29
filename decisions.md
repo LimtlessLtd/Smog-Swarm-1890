@@ -14,6 +14,122 @@ Rules for this file:
 
 ---
 
+## 2026-08-29 — Combat against a hex's residents
+
+Settled while building `ResidentDefenseController`. `design_doc.md` §2.1 is
+unchanged apart from an "as built" table; these record how the resident half of
+a hex's population became fightable, which is the gap D42 knowingly left open
+("a hex's RESIDENT population is drawn but cannot currently be fought").
+
+**D48. A hex's residents CONDENSE into a defending `Horde`; combat never learns
+a second kind of enemy.** `InfestationManager.condense_defenders()` moves a
+count out of `_resident` and into a `Horde` standing on the hex it left.
+*Why:* `Horde` is already what `CombatCoordinator` fights, `TerritoryController`
+tests for, `HordeManager` paths and `SaveLoadManager` saves. Fighting residents
+directly means teaching all four about a second enemy type — and a
+`CombatEngine` defender built from 446,729 zombies is 893,458 HP dealing 223,364
+damage a round, which annihilates anything in the roster on contact, so the
+count would have needed bounding anyway. Conservation then costs no code at all:
+the same transfer `export_from()` already performs, so `zombie_count_at()`,
+`infestation` and the band do not move when a wave rises. Only killing moves
+them, which is D8 intact rather than D8 worked around.
+*What falls out for free:* the save round-trips with no new state (a defending
+wave IS a horde), the tactical layer draws the wave without changing (D44's
+horde pass has priority over the resident pass, which is the right order — the
+zombies in the fight are the ones the player is looking at), and a wave that
+survives and wanders off is an ordinary roaming horde with no special case.
+
+**D49. The wave is a FRONTAGE — an area of the hex's own density — not a
+fraction of its population.** `ResidentDefenseController.frontage_for()` is the
+residents inside a 30 m disc (`HexCoord.SUB_HEX_CELL_SIZE_METERS`) of the hex's
+own density, against `HexCoord.hex_area_square_metres()`, floored at 1 and
+capped at the residents present.
+*Why:* how many zombies can reach a squad is bounded by geometry, not by how
+many live in 25 square miles. A flat percentage hands London a wave of thousands
+and ends the run on contact, and hands a Highland hex a wave of zero. Measured on
+the real map (`scripts/test/diagnose_resident_combat.gd`):
+
+| hex | residents | wave |
+| :--- | ---: | ---: |
+| Greater London | 446,729 | 20 |
+| Birmingham | 321,008 | 14 |
+| Manchester | 68,075 | 3 |
+| two hexes from the player's home | 31,702 | 1 |
+
+which makes §2.1's "capacity is the difficulty curve, and that is the point"
+true at the tactical layer as well as the strategic one, off one constant that
+was already in the project.
+*Why the floor of 1:* below ~11,450 residents the disc holds less than half a
+zombie, and a hex that can never field a defender can never be cleared either,
+because clearing IS killing. The floor is what makes an emptying hex finishable.
+
+**D50. The wave is topped back up between one unit's round and the next, so a
+stack of units kills in proportion to its size.** `run_wave_tick()` calls
+`reinforce()` inside its per-unit loop, and `CombatCoordinator.engage_unit()` is
+per unit rather than per hex for exactly that reason.
+*Why:* the first version topped a hex up once and then resolved every unit's
+round against what was left. On low-density ground the frontage is 1, the first
+unit wipes it, and `_engage()`'s own `horde.size <= 0` early-out means the other
+nine units engage nothing — **ten units clear a hex exactly as slowly as one**,
+and no amount of balancing the combat numbers lifts that ceiling, because it is
+a property of the wave rule and not of the damage. Interleaving fixes it without
+touching `CombatEngine`: every unit meets a full frontage, so incoming damage
+per unit is independent of stack size, while the gap each unit cuts is refilled
+before the next one swings. Measured at **10.0x for ten units** afterwards, and
+`verify_resident_defense.gd` fails below 5x so the ceiling cannot come back.
+
+**D51. A hex holding player units and hordes now fights CONTINUOUSLY, one round
+per `WAVE_INTERVAL_SECONDS`.** This replaces `CombatCoordinator`'s original
+"one-shot, not continuous: an engagement fires off a MOVEMENT signal".
+*Why:* the tide has to keep coming. Once a defending wave is at frontage
+strength nothing moves, so a movement-triggered resolver stalls the grind
+exactly when the fight is hardest, and a unit parked on a Hive Core stands in
+446,729 zombies doing nothing. 20.0 s matches `HordeManager.LOGIC_TICK_SECONDS`
+and `UnitOrderController.LOGIC_TICK_SECONDS` — the last of those matters, because
+`GARRISON_REGEN_FRACTION_PER_TICK` heals 5% of max HP on that same interval, so
+one round of incoming damage against one tick of regen is a comparison the
+player can actually reason about. That comparison is what decides whether ground
+can be held, measured on the real map:
+
+| hex | wave | Truncheoneer garrison | Holt Breaker garrison |
+| :--- | ---: | :--- | :--- |
+| two hexes from home | 1 | holds; 50 clear it in 5 days | holds; 50 clear it in 5 days |
+| Manchester | 3 | wiped in 76 rounds | holds; 50 clear it in 5 days |
+| Birmingham | 14 | wiped in 4 rounds | holds; 50 clear it in 8 days |
+| Greater London | 20 | wiped in 3 rounds, having killed 1 | holds; 50 clear it in 12 days |
+
+*Three consequences accepted knowingly:*
+1. **A Contested hex now leaks, but only in response to the player.** §2.1's "a
+   hex below 75.0 spreads nothing" becomes "spreads nothing PASSIVELY": a
+   defending wave that survives and wanders off is a roaming horde. It is at
+   most one frontage at a time, no zombie is destroyed without being killed, and
+   poking a hive to draw it out is P2's own "draw the horde away with some
+   military units". Re-absorbing strays was considered and rejected: it needs a
+   horde-shrinking API, per-hex debt bookkeeping and save state, to prevent a
+   leak of 20 zombies at a time out of 446,729.
+2. **"Under attack" alerts had to be de-duplicated.** `EventManager` raised a
+   COMBAT/WARNING per engagement, which is a tone and a toast every round for as
+   long as the player holds the line. Now once per unit per day, on the same
+   "raise on the transition INTO the bad state" shape its food-band and
+   resource-shortfall trackers already used. A CRITICAL death is never
+   suppressed.
+3. **Veterancy inflates, and the cause is a definition rather than this
+   change.** `UnitMorale.get_rank()` counts hordes destroyed, not zombies killed
+   (its own doc comment settles that), and a frontage-1 wave is a horde that
+   dies every round — so a unit on low-density ground is ELITE (10 kills) after
+   200 simulated seconds. Bounded at +25% damage rather than runaway. Filed in
+   `backlog.md` rather than fixed here, because redefining what a kill is
+   belongs with the balance pass and not inside this seam.
+
+**Residents do not attack player BUILDINGS.** Only a player unit standing on the
+hex makes a wave rise. A horde reaching an undefended building already sieges it
+(`CombatCoordinator._siege_buildings()`), and a wave that wanders off can do the
+same by the ordinary path; what is deliberately absent is a hex's own population
+spontaneously attacking a Watchtower placed on Fringe ground, which would make
+§2.1's own Fringe build rights self-defeating.
+
+---
+
 ## 2026-08-29 — Tactical zombie layer
 
 Settled while building `ZombieSwarm` / `ZombieSwarmManager` / `LiveHexTracker`.
