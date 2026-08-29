@@ -95,6 +95,26 @@ extends Resource
 ## kiln) — placeholder balancing numbers, not an architecture decision.
 @export var noise_output: int = 0
 
+## design_doc.md §2.1's "Defensive Tier": the only structures a Fringe hex
+## (5-25% infestation) allows. Its members are Watchtower, Garrison, Supply
+## Dump and Search Light, plus walls — which are not BuildingDefinitions at
+## all, so WallManager carries the rule separately.
+##
+## A new field rather than a GameEnums.BuildingCategory test, because the
+## category enum splits those four across three different categories and
+## cannot express walls: Watchtower and Garrison are HOUSING_CIVIL, Supply
+## Dump is INDUSTRY_EXTRACTION (deliberately — see its own catalog comment,
+## it exists to project ZoC into unsecured frontier hexes), and Search Light
+## is DEFENSE_WORKS's only member. `zoc_roles` containing MILITARY happens to
+## cover the same four today, but it is a ZoC-projection field and reusing it
+## as a role classifier is the exact mistake `can_train_units`' own doc
+## comment warns against.
+##
+## Follows this file's "false == no special treatment" convention: a
+## definition that never sets it is an ordinary building, blocked anywhere
+## above Cleared.
+@export var is_defensive: bool = false
+
 func _init(p_type: GameEnums.BuildingType = GameEnums.BuildingType.TOWN_HALL, p_display_name: String = "") -> void:
 	building_type = p_type
 	display_name = p_display_name

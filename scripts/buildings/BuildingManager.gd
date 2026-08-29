@@ -19,6 +19,15 @@ extends Node
 ## Agriculture/Industry building unplaceable anywhere from day one.
 ## LogisticsNetwork instead tracks ZoC *coverage* as queryable data for other
 ## systems (walls, sieges) to gate against.
+##
+## It DOES gate on design_doc.md §2.1's infestation band, which is a different
+## quantity and not a re-litigation of the paragraph above: the band is a real
+## per-hex zombie population ratio that starts at 0% on the player's own hex
+## and is lowered by killing, where District.is_contested defaults to TRUE
+## everywhere and never moves. Checked at placement only (D9) — a standing
+## building is destroyed by zombies attacking it, never by the ratio crossing
+## a threshold, or one horde wandering past would brick an industrial hex
+## without a fight.
 
 signal building_placed(instance: BuildingInstance)
 signal building_removed(instance: BuildingInstance)
@@ -48,12 +57,14 @@ const FOOD_STARVATION_RATIO := BuildingSustenanceController.FOOD_STARVATION_RATI
 @export var discontent_manager_path: NodePath  ## Optional — unset skips DiscontentManager.get_production_multiplier() entirely.
 @export var territory_controller_path: NodePath  ## Optional — unset means repair_building()/demolish_building() never check territory state.
 @export var tech_manager_path: NodePath  ## Optional — unset means get_placement_error() never checks BuildingDefinition.tier, so every building tier is placeable regardless of research.
+@export var infestation_manager_path: NodePath  ## Optional — unset means get_placement_error() never checks design_doc.md §2.1's band, so every hex is treated as Cleared.
 
 var _hex_grid_map: HexGridMap
 var _resource_manager: ResourceManager
 var _discontent_manager: DiscontentManager
 var _territory_controller: TerritoryController
 var _tech_manager: TechManager
+var _infestation_manager: InfestationManager
 
 var _construction: BuildingConstructionController
 var _health: BuildingHealthController
@@ -78,6 +89,13 @@ func _ready() -> void:
 		_territory_controller = get_node(territory_controller_path)
 	if tech_manager_path != NodePath():
 		_tech_manager = get_node(tech_manager_path)
+	# get_node_or_null, not get_node: InfestationManager is a LATER Main.tscn
+	# sibling than this one (it seeds its worldgen rings from the settlement
+	# seed_starting_buildings() puts down below), so the node exists in the
+	# tree by now but its own _ready() has not run. Resolving the reference is
+	# safe; calling into it here would not be, and nothing does.
+	if infestation_manager_path != NodePath():
+		_infestation_manager = get_node_or_null(infestation_manager_path) as InfestationManager
 
 	_capacity = CapacityAllocator.new(_resource_manager)
 
@@ -331,6 +349,9 @@ func get_placement_error(building_type: GameEnums.BuildingType, coord: Vector2i,
 	var terrain_error := get_terrain_placement_error(definition, coord, local_position)
 	if not terrain_error.is_empty():
 		return terrain_error
+	var infestation_error := get_infestation_placement_error(definition, coord)
+	if not infestation_error.is_empty():
+		return infestation_error
 	if definition.max_per_hex > 0 and _count_at(building_type, coord) >= definition.max_per_hex:
 		return "%s is limited to %d per hex." % [definition.display_name, definition.max_per_hex]
 	if _resource_manager and not _resource_manager.can_afford(definition.construction_cost):
@@ -366,6 +387,38 @@ func get_terrain_placement_error(definition: BuildingDefinition, coord: Vector2i
 	if not definition.allowed_soil_fertility.is_empty() and not definition.allowed_soil_fertility.has(SubHexSoilQuery.soil_fertility_at(coord, local_position, cell.soil_fertility)):
 		return "%s needs better soil than this hex has." % definition.display_name
 	return ""
+
+## design_doc.md §2.1's Build Rights column, split out from
+## get_placement_error() for the same reason get_terrain_placement_error() is:
+## one question, askable on its own, rather than a clause a second caller has
+## to hand-copy.
+##
+##   Cleared (< 5%)      unrestricted
+##   Fringe (5-25%)      Defensive Tier only (BuildingDefinition.is_defensive)
+##   Contested (25.1-75) nothing
+##   Hive Core (75-100)  nothing
+##
+## Returns "" when the hex allows this building, and "" unconditionally when no
+## InfestationManager is wired — a fixture or a scene without one treats every
+## hex as Cleared rather than as unbuildable.
+##
+## Unlike get_terrain_placement_error()'s clauses this is a MACRO-hex question
+## by specification (design_doc.md §2.1: "Each 5-mile strategic hex carries one
+## mutable number and one static capacity"), so the two granularities meet
+## inside get_placement_error() on purpose. It is not the CLAUDE.md §3
+## flattening anti-pattern.
+func get_infestation_placement_error(definition: BuildingDefinition, coord: Vector2i) -> String:
+	if not _infestation_manager:
+		return ""
+	var band := _infestation_manager.band_at(coord)
+	if band == GameEnums.InfestationBand.CLEARED:
+		return ""
+	var percent := _infestation_manager.infestation_at(coord)
+	if band == GameEnums.InfestationBand.FRINGE:
+		if definition.is_defensive:
+			return ""
+		return "%s cannot be built at %.0f%% infestation — only defensive structures until this hex is cleared." % [definition.display_name, percent]
+	return "%s cannot be built at %.0f%% infestation — clear the zombies out first." % [definition.display_name, percent]
 
 ## Resource-only affordability check, deliberately NOT terrain/settlement
 ## legality (get_placement_error()'s job) — BuildMenuView's card click fires

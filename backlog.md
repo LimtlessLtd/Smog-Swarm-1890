@@ -34,10 +34,26 @@ dependency order.
   1891 census; `assets/terrain_data/zombie_population.zpop`, read by
   `ZombiePopulationData`. Wikidata coverage was verified at bake time and is far thinner
   than D3 assumed — see D33-D35. (D3)
-- [ ] `[gated]` **Infestation core.** `zombie_count` per hex; `infestation` and
-  `is_cleared` derived. Band states, >75% spawn at flat %-of-capacity/day, 100% export
-  with a 75% floor, worldgen rings 0/25/50/75/100. `infestation` appears nowhere in
-  the code today. (D1, D2, D4, D7, D8)
+- [x] `[gated]` **Infestation core.** Done 2026-08-28. `InfestationManager` owns one
+  saved count per hex; `infestation`, `is_cleared` and the band are derived. Breeding,
+  rate-capped export with the 75% floor, worldgen rings 0/25/50/75/100, and §2.1's Build
+  Rights column on buildings and walls. (D1, D2, D4, D7, D8, plus D37-D41 for what the
+  spec left open.)
+- [ ] `[gated]` **§2.1's ZoC consequences of the band.** Split out of the item above
+  rather than half-built: Hive Core "Total Severance", the Contested stockpile split and
+  the Fringe -25% logistics efficiency all need a logistics throughput number that does
+  not exist yet, and the split needs per-settlement stockpiles. Do it with the §2.2 work
+  below, not before. (D40)
+- [ ] `[design]` **Contested-band decay of non-defensive structures.** §2.1 says
+  "Existing non-defensive structures decay while the hex is Contested"; the rate, and
+  whether that decay is repairable, are undesigned.
+- [ ] `[design]` **Infestation balance pass.** The model runs; its four rates are first
+  guesses with measurements behind them, not tuned numbers —
+  `SPAWN_RATE_PER_DAY` 2%/day, `MAX_EXPORT_FRACTION_PER_DAY` 2.5%/day,
+  `EXPORT_MAX_DISTANCE_FROM_PLAYER` 8, `MAX_EXPORTS_PER_DAY` 1. Measured over 60 days
+  with no player action: 61,459 zombies exported across 7 new hordes, largest single
+  export 3,758. Re-measure with `scripts/test/diagnose_infestation_pressure.gd` after
+  any change. (D38)
 - [ ] `[gated]` **Tactical zombie layer + live-hex LOD.** New packed-array class,
   separate from `Horde`. Live hex = camera hex + 6 neighbours + any hex with player
   units/buildings, ~60,000 global budget, nearest-observer-first. Horde dissolves on

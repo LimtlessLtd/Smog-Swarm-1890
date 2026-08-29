@@ -14,6 +14,84 @@ Rules for this file:
 
 ---
 
+## 2026-08-28 — Infestation core
+
+Settled while building `InfestationManager`. `design_doc.md` §2.1 is unchanged;
+these record where the implementation had to answer something the spec left
+open, and what was measured before it did.
+
+**D37. A hex's `zombie_count` is its stored resident count PLUS whatever hordes
+stand on it, read live.** Not one mirrored ledger.
+*Why:* `Horde` is already a saved `Resource` owned by `HordeManager`, so a
+second per-hex copy of the same population is the double-source-of-truth D5
+deletes the diffusion PDE to avoid — and keeping it in sync means chasing four
+separate traps: the combat kill path emits no signal at all, merge and split
+both emit `horde_size_changed` while conserving the total,
+`CombatCoordinator._knock_back()` moves a horde without emitting `horde_moved`,
+and `HordeManager.load_save_state()` replaces every horde silently. A live read
+cannot go stale.
+*What falls out for free:* killing a horde on a hex lowers that hex's
+infestation (D8's only suppression), a horde crossing a Cleared hex re-infests
+it while it is there (§2.1's re-infestation), and an export conserves exactly —
+the count leaves `_resident` and arrives as a `Horde` on the same hex.
+
+**D38. Export is rate-capped, not one-shot, and the 75% floor is the hard
+constraint under it.** `MAX_EXPORT_FRACTION_PER_DAY = 0.025`.
+*Why, measured:* §2.1's "breed to 100, export down to 75, breed again" taken
+literally ships the whole 25% in one day. On the real map
+(`scripts/test/diagnose_infestation_pressure.gd`, 60 days, no player action)
+that is **37,582 zombies on day one**, out of a Manchester suburb six hexes from
+the player's Town Hall, against a colony holding a Town Hall, a Lumber Yard and
+one farm. Capping the rate instead gives **3,758 on day one and 61,459 over 60
+days across 7 new hordes** — the same mechanism, an order of magnitude less
+lethal on the first morning, and a horde that still grows to ~37,000 if the
+player never engages it.
+*Why this is a rate and not a redesign:* §2.1 calls the spawn figure "a
+balancing number, not a design decision"; this is the same kind of number on the
+other side of the same pump. The mechanism it specifies — breed, ship, never
+below the floor, only killing goes lower — is untouched.
+
+**D39. A Hive Core farther than 8 hexes from a player building breeds but does
+not ship, and at most one hex ships per day.**
+*Why:* D7 seeds ring four outward at 100%, which is **4,666 of the map's 4,692
+land hexes** on day one — every one an export candidate. The bound is D13's
+applied to hordes instead of entities, and the same one PR #90 already applied
+to ambient spawns: a horde nobody could ever meet is not simulated. Distance is
+measured to a real player BUILDING, not to any `is_settlement` hex, because
+Birmingham and London are settlement hexes in the map data from the first frame
+and the player holds neither.
+*Accepted consequence:* the count on a distant Hive Core is real and rises, but
+nothing comes out of it until the player gets within reach — which is what makes
+expanding toward London a decision rather than a formality.
+
+**D40. Build rights are gated; ZoC severance is not, and will not be until
+§2.2.** `BuildingManager.get_infestation_placement_error()` and
+`WallManager._infestation_error()` implement §2.1's Build Rights column;
+"Total Severance", the Contested stockpile split and the Fringe -25% logistics
+efficiency are deliberately absent.
+*Why:* there is no logistics throughput number anywhere in the codebase to
+reduce — `SupplyLineCatalog.get_speed_multiplier()` is unit MOVEMENT speed, and
+`BuildingCatalog` states outright that no throughput system exists — and the
+stockpile split needs per-settlement stockpiles, which `backlog.md` insists is
+its own PR. Shipping a -25% that multiplies nothing would be a rule nobody can
+observe.
+*Also settled:* "Defensive Tier" is a new `BuildingDefinition.is_defensive`
+flag, not a `BuildingCategory` test. The category enum splits the four named
+structures across three categories (Watchtower and Garrison HOUSING_CIVIL,
+Supply Dump INDUSTRY_EXTRACTION, Search Light the sole DEFENSE_WORKS member) and
+cannot express walls at all.
+
+**D41. `TerritoryController` is not subsumed and does not derive from the band.**
+*Why:* it answers a different question with a different trigger — "did the
+player lose a building here to a horde", an event, a boolean, recaptured when no
+horde stands there — where infestation is a population ratio that starts at 0%
+on the player's hex and falls when they kill. Merging them would be a
+save-format change for no gain. *Accepted cost:* two per-hex notions of
+"trouble" coexist, and both class doc comments now say which is which so a third
+reader does not have to guess.
+
+---
+
 ## 2026-08-28 — Baking population capacity
 
 Settled while building `tools/geo_bake/bake_population.py`. Each entry is a

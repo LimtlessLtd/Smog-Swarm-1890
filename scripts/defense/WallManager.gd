@@ -30,12 +30,14 @@ signal demolish_rejected(segment: WallSegment, reason: String)
 @export var tech_manager_path: NodePath  ## Optional — gates upgrade_segment() against the Tech Tree. Unset means every wall tier reads as unlocked.
 @export var logistics_network_path: NodePath  ## Optional — feeds is_legacy_segment()'s outer/inner classification. Unset means every segment reads as "outer".
 @export var building_manager_path: NodePath  ## Optional — seed_starting_defenses() needs BuildingManager.get_starting_settlement_hexes() to know what to wall. Unset skips seeding entirely; the class stays usable without it.
+@export var infestation_manager_path: NodePath  ## Optional — gates placement on design_doc.md §2.1's band. Unset means every hex reads as Cleared.
 
 var _hex_grid_map: HexGridMap
 var _resource_manager: ResourceManager
 var _tech_manager: TechManager
 var _logistics_network: LogisticsNetwork
 var _building_manager: BuildingManager
+var _infestation_manager: InfestationManager
 var _segments: Array[WallSegment] = []
 var _next_id: int = 1
 var _pending_repair: Array[Dictionary] = []  ## Paid-for repairs not yet finished — {segment, days_remaining}.
@@ -51,6 +53,13 @@ func _ready() -> void:
 		_logistics_network = get_node(logistics_network_path)
 	if building_manager_path != NodePath():
 		_building_manager = get_node(building_manager_path)
+	# get_node_or_null: InfestationManager is a LATER Main.tscn sibling (it has
+	# to seed after BuildingManager's starting settlement), so the node exists
+	# but has not run its own _ready() yet. seed_starting_defenses() below
+	# therefore sees an unseeded manager and reads every hex as Cleared, which
+	# is the right answer anyway — D7 puts the player's own hex at 0%.
+	if infestation_manager_path != NodePath():
+		_infestation_manager = get_node_or_null(infestation_manager_path) as InfestationManager
 	TickManager.day_completed.connect(_on_day_completed)
 
 ## Mirrors BuildingManager's own construction/repair queue processing shape.
@@ -188,12 +197,34 @@ func get_placement_error_for_points(point_a: Vector2, point_b: Vector2, tier: in
 		return "Wall piece is outside the map."
 	if not cell_a.is_passable() or not cell_b.is_passable():
 		return "Cannot wall off marsh or peat bog until it is drained."
+	# design_doc.md §2.1: a wall IS the Defensive Tier, so Fringe allows it and
+	# Contested/Hive Core do not. Checked on BOTH endpoint hexes because a
+	# freehand piece straddles a border — the alternative, picking one, would
+	# let a player wall into a Hive Core by drawing from the safe side.
+	# A drawn line crossing a band boundary therefore places some pieces and
+	# rejects others, exactly as place_wall_line() already does for terrain.
+	var infestation_error := _infestation_error(cell_a, cell_b)
+	if not infestation_error.is_empty():
+		return infestation_error
 	if _resource_manager and not _resource_manager.can_afford(_cost_for_length(tier, point_a.distance_to(point_b))):
 		return "Not enough resources to build this wall piece."
 	return ""
 
 func can_place_wall_piece(point_a: Vector2, point_b: Vector2, tier: int = WallCatalog.WOODEN) -> bool:
 	return get_placement_error_for_points(point_a, point_b, tier).is_empty()
+
+## design_doc.md §2.1's Build Rights for a wall piece: "" when both of the hexes
+## it touches allow one, otherwise a rejection naming the offending hex's own
+## percentage. Empty when no InfestationManager is wired, so a fixture without
+## one reads every hex as Cleared rather than as unbuildable.
+func _infestation_error(cell_a: HexCell, cell_b: HexCell) -> String:
+	if not _infestation_manager:
+		return ""
+	for cell: HexCell in [cell_a, cell_b]:
+		var band := _infestation_manager.band_at(cell.coord)
+		if band == GameEnums.InfestationBand.CONTESTED or band == GameEnums.InfestationBand.HIVE_CORE:
+			return "Cannot build a wall at %.0f%% infestation — clear the zombies out first." % _infestation_manager.infestation_at(cell.coord)
+	return ""
 
 ## Cost scales with a piece's own real length — a "segment" is a short
 ## player-drawn chunk (<=100m) rather than a fixed whole-hex-edge span. The

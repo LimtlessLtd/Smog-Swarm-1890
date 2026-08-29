@@ -4,10 +4,19 @@ extends Node
 ## Aggregates state out of BuildingManager / ResourceManager /
 ## LogisticsNetwork / FogOfWarManager / TechManager / DiscontentManager /
 ## WallManager / ReclamationManager / HordeManager / UnitManager /
-## TerritoryController / TickManager into a single SaveGameData Resource and
-## back again. Wired as a Main.tscn sibling via exported NodePaths, same
-## pattern as LogisticsNetwork/FogOfWarManager — it owns none of that
-## state, only reads and restores it.
+## TerritoryController / SettlementFoundingController / InfestationManager /
+## TickManager into a single SaveGameData Resource and back again. Wired as a
+## Main.tscn sibling via exported NodePaths, same pattern as
+## LogisticsNetwork/FogOfWarManager — it owns none of that state, only reads
+## and restores it.
+##
+## CLAUDE.md §1 says to extract a narrower collaborator rather than widen a
+## class past roughly eight dependencies, and this one now holds thirteen
+## NodePaths. Stated rather than silently ignored: aggregating every manager
+## IS this class's single responsibility, so a "narrower collaborator" would be
+## a second aggregator with the same shape and one more indirection between a
+## manager and its own saved field. The rule's target is a class that grew a
+## second job; this class only ever had the one.
 ##
 ## Saves are grouped by a player-named Campaign, with multiple manual save
 ## slots per campaign and multiple independent campaigns coexisting on
@@ -58,6 +67,7 @@ const _UNSAFE_FILENAME_CHARS: Array[String] = [":", "/", "\\", "?", "*", "\"", "
 @export var fog_of_war_manager_path: NodePath
 @export var tech_manager_path: NodePath
 @export var discontent_manager_path: NodePath
+@export var infestation_manager_path: NodePath
 @export var wall_manager_path: NodePath
 @export var reclamation_manager_path: NodePath
 @export var horde_manager_path: NodePath
@@ -72,6 +82,7 @@ var _logistics_network: LogisticsNetwork
 var _fog_of_war_manager: FogOfWarManager
 var _tech_manager: TechManager
 var _discontent_manager: DiscontentManager
+var _infestation_manager: InfestationManager
 var _wall_manager: WallManager
 var _reclamation_manager: ReclamationManager
 var _horde_manager: HordeManager
@@ -92,6 +103,8 @@ func _ready() -> void:
 		_tech_manager = get_node(tech_manager_path)
 	if discontent_manager_path != NodePath():
 		_discontent_manager = get_node(discontent_manager_path)
+	if infestation_manager_path != NodePath():
+		_infestation_manager = get_node(infestation_manager_path)
 	if wall_manager_path != NodePath():
 		_wall_manager = get_node(wall_manager_path)
 	if reclamation_manager_path != NodePath():
@@ -285,6 +298,8 @@ func _build_save_data(campaign_name: String, slot_name: String) -> SaveGameData:
 		data.tech_days_remaining = tech_state.days_remaining
 	if _discontent_manager:
 		data.discontent_by_hex = _discontent_manager.get_save_state().discontent_by_hex
+	if _infestation_manager:
+		data.resident_zombies_by_hex = _infestation_manager.get_save_state().resident_by_hex
 	if _wall_manager:
 		var wall_state := _wall_manager.get_save_state()
 		data.wall_segments.assign(wall_state.segments)
@@ -357,6 +372,12 @@ func _apply_save_data(data: SaveGameData) -> void:
 		_logistics_network.load_save_segments(data.supply_lines)
 	if _discontent_manager:
 		_discontent_manager.load_save_state({"discontent_by_hex": data.discontent_by_hex})
+	# No ordering dependency in either direction, stated so nobody has to
+	# re-derive it: InfestationManager's stored half is a plain per-hex
+	# Dictionary that reads nothing during a restore, and the roaming half it
+	# adds on top is read live from HordeManager whenever it is asked.
+	if _infestation_manager:
+		_infestation_manager.load_save_state({"resident_by_hex": data.resident_zombies_by_hex})
 	if _wall_manager:
 		_wall_manager.load_save_state(data.wall_segments, data.next_wall_id)
 	if _unit_manager:

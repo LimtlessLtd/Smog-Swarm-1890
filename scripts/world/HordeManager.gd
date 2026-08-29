@@ -283,23 +283,57 @@ func get_hordes_at(coord: Vector2i) -> Array[Horde]:
 			result.append(horde)
 	return result
 
-## Finds the first existing horde at `coord` and grows it by `count`, or
-## spawns a fresh WANDERING one there if none exists — either way the loss
-## becomes a real, trackable threat rather than a number disappearing.
-## Public (not just a signal handler) so any future combat-casualty trigger
-## can reuse this exact accumulation logic.
-func add_casualty_zombies(coord: Vector2i, count: int) -> void:
-	if count <= 0:
+## How many zombies are standing on `coord` right now, summed across every
+## horde there. InfestationManager reads this every time it needs a hex's
+## §2.1 `zombie_count`, rather than mirroring horde sizes into a second
+## per-hex ledger that would go stale — see its own doc comment for the four
+## sync traps that ledger would have to chase.
+func get_zombie_count_at(coord: Vector2i) -> int:
+	var total := 0
+	for horde in _hordes:
+		if horde.hex_coord == coord:
+			total += horde.size
+	return total
+
+## The whole roaming population as Vector2i -> int, computed in one pass.
+## get_zombie_count_at() is a linear scan per call, so a sweep over every land
+## hex would be O(hexes * hordes); this is O(hordes) once.
+func get_zombie_counts_by_hex() -> Dictionary:
+	var by_hex: Dictionary = {}
+	for horde in _hordes:
+		by_hex[horde.hex_coord] = int(by_hex.get(horde.hex_coord, 0)) + horde.size
+	return by_hex
+
+## Adds `size` zombies to `coord` as a roaming horde: grows the first horde
+## already standing there, or spawns a fresh WANDERING one. Either way the
+## count becomes a real, trackable threat rather than a number appearing from
+## nowhere.
+##
+## Draws NO randomness, deliberately. Every roll in this class — ambient
+## spawns, starting sizes, merges, splits, drift targets — comes off one `_rng`
+## seeded HORDE_SEED, so inserting a randf() into a path called once per day
+## would shift the entire downstream sequence and move the baselines
+## scripts/test/diagnose_horde_spawn_distance.gd measures.
+func spawn_horde_at(coord: Vector2i, size: int) -> void:
+	if size <= 0:
 		return
 	var horde := _find_horde_at(coord)
 	if horde:
-		horde.size += count
-		horde_size_changed.emit(horde, count)
+		horde.size += size
+		horde_size_changed.emit(horde, size)
 		return
-	horde = Horde.new(coord, count, _next_id)
+	horde = Horde.new(coord, size, _next_id)
 	_next_id += 1
 	_hordes.append(horde)
 	horde_spawned.emit(horde)
+
+## The ruin-casualty path: a building's lost population walks back out as
+## zombies on the hex it died on. Named separately from spawn_horde_at()
+## because the two are different events that happen to share an accumulation
+## rule — `building_ruined` connects here, §2.1's Hive Core export calls the
+## other.
+func add_casualty_zombies(coord: Vector2i, count: int) -> void:
+	spawn_horde_at(coord, count)
 
 func _find_horde_at(coord: Vector2i) -> Horde:
 	for horde in _hordes:
