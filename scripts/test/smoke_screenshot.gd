@@ -1,6 +1,6 @@
 extends Node
 
-## Boots a FRESH game and asserts the screen is not visually broken at four
+## Boots a FRESH game and asserts the screen is not visually broken at five
 ## framings either side of the Tactical threshold.
 ##
 ## Run (NOT --headless -- a headless viewport has no texture to read, the same
@@ -38,11 +38,19 @@ const _FIRST_WARMUP_FRAMES: int = 320
 
 ## Zooms straddle CameraController.tactical_zoom_threshold (0.1875) deliberately:
 ## Strategic and Tactical are different renderers, not two magnifications of one.
+##
+## Shot 5 is past high_fidelity_threshold (2.0), which is the ONLY band where
+## design_doc.md §2.1's individual zombies draw at all — the other four are
+## Strategic markers, LOW blobs or MEDIUM clusters. It is offset onto a
+## neighbouring hex because the player's own starting hex is Cleared by D7's
+## ring seed: framing the settlement itself would photograph empty ground and
+## call it a pass.
 const _SHOTS: Array[Dictionary] = [
 	{"name": "01_strategic_country", "zoom": 0.010, "note": "Whole island, sea and fog"},
 	{"name": "02_strategic_colony", "zoom": 0.110, "note": "Colony below the Tactical threshold"},
 	{"name": "03_tactical_entry", "zoom": 0.230, "note": "Past the threshold: terrain mesh takes over"},
 	{"name": "04_tactical_close", "zoom": 1.300, "note": "Buildings, walls and units"},
+	{"name": "05_tactical_crowd", "zoom": 2.600, "offset": Vector2i(1, 0), "note": "HIGH fidelity: individual zombies on an infested neighbour"},
 ]
 
 ## A degenerate frame is one nothing rendered into. Thresholds are deliberately
@@ -78,7 +86,11 @@ func _ready() -> void:
 
 
 func _on_map_ready() -> void:
-	var building_manager: BuildingManager = _main.get_node("WorldRoot/BuildingManager")
+	# "BuildingManager", not "WorldRoot/BuildingManager": that path has been
+	# wrong since this file was written (commit dcdf2ddf), so get_node()
+	# returned null and the very first thing this gate did was crash. Found
+	# 2026-08-29 the first time it was run since.
+	var building_manager: BuildingManager = _main.get_node("BuildingManager")
 	var start_hexes: Array[Vector2i] = building_manager.get_starting_settlement_hexes()
 	if start_hexes.is_empty():
 		print("FAIL: no starting settlement to frame -- map generated with nothing on it.")
@@ -104,8 +116,9 @@ func _capture_all(focus: Vector2i) -> void:
 	for i in range(_SHOTS.size()):
 		var shot: Dictionary = _SHOTS[i]
 		var target_zoom: float = shot["zoom"]
+		var framed: Vector2i = focus + (shot.get("offset", Vector2i.ZERO) as Vector2i)
 
-		_camera.global_position = HexCoord.axial_to_world(focus)
+		_camera.global_position = HexCoord.axial_to_world(framed)
 		_camera.set_zoom_level(target_zoom)  ## Not `zoom =` -- that skips the tactical_mode_changed/tactical_fidelity_changed signals LocalDetailManager and TacticalEntityLayer hydrate off.
 
 		var warmup: int = _FIRST_WARMUP_FRAMES if i == 0 else _WARMUP_FRAMES
@@ -113,7 +126,7 @@ func _capture_all(focus: Vector2i) -> void:
 			await get_tree().process_frame
 
 		# Re-assert rather than trust it survived the warmup.
-		var target_position := HexCoord.axial_to_world(focus)
+		var target_position := HexCoord.axial_to_world(framed)
 		_camera.global_position = target_position
 		_camera.set_zoom_level(target_zoom)
 		await get_tree().process_frame
@@ -133,6 +146,7 @@ func _capture_all(focus: Vector2i) -> void:
 		var path := "%s/%s.png" % [_OUT_DIR, shot["name"]]
 		image.save_png(path)
 		_check(shot, image, path)
+		_report_crowd()
 
 	print()
 	if _failures.is_empty():
@@ -145,6 +159,22 @@ func _capture_all(focus: Vector2i) -> void:
 		print("Look at the PNGs in %s before assuming this is a false positive."
 			% ProjectSettings.globalize_path(_OUT_DIR))
 	get_tree().quit(1 if not _failures.is_empty() else 0)
+
+
+## How many individuals the tactical layer actually instantiated for the frame
+## just captured. Printed, never asserted: the count depends on
+## ZombieSwarmManager.ENTITY_BUDGET and on the baked population under the
+## camera, both tuning inputs rather than rules, and the degenerate-frame check
+## below is what decides pass or fail. It is here so the person looking at
+## 05_tactical_crowd.png knows whether an empty-looking frame means "the
+## renderer is broken" or "there was nothing on that hex".
+func _report_crowd() -> void:
+	var swarms: ZombieSwarmManager = _main.get_node_or_null("ZombieSwarmManager")
+	if swarms == null:
+		return
+	print("        tactical layer: %d individuals in %d crowds"
+		% [swarms.get_entity_count(), swarms.get_group_count()])
+
 
 
 ## Quantised to 5 bits per channel so gradient dithering and the streamed relief's

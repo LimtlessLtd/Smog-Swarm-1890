@@ -70,6 +70,23 @@ extends Resource
 ## case has to carry that meaning itself.
 @export var resident_zombies_by_hex: Dictionary = {}  # Vector2i -> int
 
+## ZombieSwarmManager — where the individual zombies of §2.1's tactical layer
+## were standing, as packed float32 x,y pairs per hex (D15). Saved for
+## correctness rather than size: reloading mid-siege must not re-scatter the
+## crowd the player was fighting, which reads as broken and is trivially
+## save-scummable.
+##
+## COUNTS are absent on purpose. A swarm's size is driven every frame from
+## `hordes` and `resident_zombies_by_hex` above, so saving it here would create
+## the second source of truth D1/D5 exist to avoid; a hex whose count moved
+## between save and load simply gets fewer or more zombies at the restored
+## positions.
+##
+## Empty is the normal case, not an error: the live set is empty outside
+## Tactical zoom (LiveHexTracker), so a save taken on the Strategic map has no
+## individuals to record.
+@export var tactical_zombie_positions: Dictionary = {}  # Vector2i -> PackedFloat32Array
+
 ## WallManager — every placed WallSegment saves directly (see
 ## its own class doc comment for why no separate save-entry wrapper is
 ## needed, unlike BuildingSaveEntry).

@@ -11,7 +11,7 @@ extends Node
 ## and restores it.
 ##
 ## CLAUDE.md §1 says to extract a narrower collaborator rather than widen a
-## class past roughly eight dependencies, and this one now holds thirteen
+## class past roughly eight dependencies, and this one now holds fourteen
 ## NodePaths. Stated rather than silently ignored: aggregating every manager
 ## IS this class's single responsibility, so a "narrower collaborator" would be
 ## a second aggregator with the same shape and one more indirection between a
@@ -72,6 +72,7 @@ const _UNSAFE_FILENAME_CHARS: Array[String] = [":", "/", "\\", "?", "*", "\"", "
 @export var reclamation_manager_path: NodePath
 @export var horde_manager_path: NodePath
 @export var unit_manager_path: NodePath
+@export var zombie_swarm_manager_path: NodePath  ## Optional — §2.1's tactical zombie positions. Unset means a load re-scatters every live crowd instead of restoring it.
 @export var territory_controller_path: NodePath
 @export var settlement_founding_controller_path: NodePath  ## Optional — re-derives founded settlements from the restored buildings. Unset means a loaded save's founded hexes revert to their map-gen terrain.
 
@@ -83,6 +84,7 @@ var _fog_of_war_manager: FogOfWarManager
 var _tech_manager: TechManager
 var _discontent_manager: DiscontentManager
 var _infestation_manager: InfestationManager
+var _zombie_swarm_manager: ZombieSwarmManager
 var _wall_manager: WallManager
 var _reclamation_manager: ReclamationManager
 var _horde_manager: HordeManager
@@ -105,6 +107,8 @@ func _ready() -> void:
 		_discontent_manager = get_node(discontent_manager_path)
 	if infestation_manager_path != NodePath():
 		_infestation_manager = get_node(infestation_manager_path)
+	if zombie_swarm_manager_path != NodePath():
+		_zombie_swarm_manager = get_node(zombie_swarm_manager_path)
 	if wall_manager_path != NodePath():
 		_wall_manager = get_node(wall_manager_path)
 	if reclamation_manager_path != NodePath():
@@ -300,6 +304,8 @@ func _build_save_data(campaign_name: String, slot_name: String) -> SaveGameData:
 		data.discontent_by_hex = _discontent_manager.get_save_state().discontent_by_hex
 	if _infestation_manager:
 		data.resident_zombies_by_hex = _infestation_manager.get_save_state().resident_by_hex
+	if _zombie_swarm_manager:
+		data.tactical_zombie_positions = _zombie_swarm_manager.get_save_state()
 	if _wall_manager:
 		var wall_state := _wall_manager.get_save_state()
 		data.wall_segments.assign(wall_state.segments)
@@ -393,6 +399,12 @@ func _apply_save_data(data: SaveGameData) -> void:
 		})
 	if _horde_manager:
 		_horde_manager.load_save_state(data.hordes, data.next_horde_id)
+	# Last of the world state, and it has to be: the swarm manager reallocates
+	# immediately on load, and what it allocates is read from the restored
+	# hordes and the restored resident counts. Restoring it before either
+	# would size every crowd off the pre-load world.
+	if _zombie_swarm_manager:
+		_zombie_swarm_manager.load_save_state(data.tactical_zombie_positions)
 
 	TickManager.load_save_state({
 		"current_day": data.current_day,

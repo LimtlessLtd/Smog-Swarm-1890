@@ -1,4 +1,4 @@
-[gd_scene load_steps=26 format=3]
+[gd_scene load_steps=28 format=3]
 
 [ext_resource type="PackedScene" path="res://scenes/world/HexGridMap.tscn" id="1"]
 [ext_resource type="PackedScene" path="res://scenes/camera/CameraController.tscn" id="2"]
@@ -37,6 +37,8 @@
 [ext_resource type="Script" path="res://scripts/world/ReliefTileView.gd" id="34"]
 [ext_resource type="Script" path="res://scripts/test/AgentHarness.gd" id="36"]
 [ext_resource type="PackedScene" path="res://scenes/world/InfestationManager.tscn" id="37"]
+[ext_resource type="PackedScene" path="res://scenes/world/LiveHexTracker.tscn" id="38"]
+[ext_resource type="PackedScene" path="res://scenes/world/ZombieSwarmManager.tscn" id="39"]
 
 [node name="Main" type="Node2D"]
 script = ExtResource("27")
@@ -155,6 +157,17 @@ building_manager_path = NodePath("../BuildingManager")
 resource_manager_path = NodePath("../ResourceManager")
 tech_manager_path = NodePath("../TechManager")
 
+[node name="LiveHexTracker" parent="." instance=ExtResource("38")]
+camera_path = NodePath("../CameraController")
+hex_grid_map_path = NodePath("../WorldRoot/HexGridMap")
+unit_manager_path = NodePath("../UnitManager")
+building_manager_path = NodePath("../BuildingManager")
+
+[node name="ZombieSwarmManager" parent="." instance=ExtResource("39")]
+live_hex_tracker_path = NodePath("../LiveHexTracker")
+horde_manager_path = NodePath("../HordeManager")
+infestation_manager_path = NodePath("../InfestationManager")
+
 [node name="UnitOrderController" parent="." instance=ExtResource("18")]
 hex_grid_map_path = NodePath("../WorldRoot/HexGridMap")
 unit_manager_path = NodePath("../UnitManager")
@@ -198,6 +211,7 @@ unit_manager_path = NodePath("../UnitManager")
 territory_controller_path = NodePath("../TerritoryController")
 settlement_founding_controller_path = NodePath("../SettlementFoundingController")
 infestation_manager_path = NodePath("../InfestationManager")
+zombie_swarm_manager_path = NodePath("../ZombieSwarmManager")
 
 [node name="LocalDetailManager" parent="WorldRoot" instance=ExtResource("6")]
 settlement_founding_controller_path = NodePath("../../SettlementFoundingController")
@@ -248,6 +262,7 @@ build_placement_controller_path = NodePath("../BuildPlacementController")
 wall_placement_controller_path = NodePath("../WallPlacementController")
 
 [node name="TacticalEntityLayer" parent="WorldRoot" instance=ExtResource("21")]
+zombie_swarm_manager_path = NodePath("../../ZombieSwarmManager")
 unit_manager_path = NodePath("../../UnitManager")
 horde_manager_path = NodePath("../../HordeManager")
 fog_of_war_manager_path = NodePath("../../FogOfWarManager")

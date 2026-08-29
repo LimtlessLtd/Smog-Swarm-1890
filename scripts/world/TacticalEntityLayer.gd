@@ -32,18 +32,17 @@ extends Node2D
 ## overlay (LocalDetailManager, StrategicOverlayManager, UnitCommandController):
 ## shares the coordinate space, including CameraController's isometric transform.
 ##
-## **Rendering at scale:** HIGH-fidelity zombie figures — the only path this
-## project expects to reach horde-scale counts — draw through
-## ZombieVisuals.VARIANT_COUNT * FacingUtil.COUNT (3*8=24) shared
-## MultiMeshInstance2D batch layers (_zombie_batch_layers, built once in
-## _ready(), repopulated every frame by _rebuild_zombie_batches()) instead
-## of one Polygon2D/Sprite2D scene node PER FIGURE. A MultiMesh instance is
-## a transform written into a GPU buffer, not a scene-tree node the engine
-## individually tracks/processes/draws — that per-node overhead, not the
-## per-frame position math, is what made the old approach fall over before
-## real horde-scale counts. LOW/MEDIUM zombie rendering and every unit
-## figure are unchanged, still one node each — none come near the count
-## where batching matters.
+## **Rendering at scale:** HIGH-fidelity zombies are not this class's own
+## figures at all any more — they are ZombieSwarmManager's crowds
+## (design_doc.md §2.1), and this class draws each ZombieSwarm through one
+## pooled MultiMeshInstance2D. A MultiMesh instance is a transform in a GPU
+## buffer, not a scene-tree node the engine individually tracks, processes
+## and draws; that per-node overhead, not the position math, is what made
+## one node per figure fall over before real horde-scale counts. See
+## _refresh_swarm_batches() for what changed and why it is not just a
+## refactor. LOW/MEDIUM zombie rendering and every unit figure are
+## unchanged, still one node each — none come near the count where batching
+## matters.
 ##
 ## **Multi-Tier Visual Fidelity:** this class owns all three of Tactical
 ## zoom's internal fidelity bands (GameEnums.TacticalFidelity), driven by
@@ -81,16 +80,11 @@ const FIGURE_SPREAD := 20.0  ## How far individual squad/zombie figures scatter 
 ## facing on something that isn't actually moving.
 const MIN_FACING_MOVE_DISTANCE := 1.0
 
-## Performance safety net for the batched HIGH-fidelity zombie renderer.
-## MAX_RENDERED_ZOMBIES_PER_HORDE keeps one gigantic horde from consuming
-## the whole frame's render budget; MAX_TOTAL_RENDERED_ZOMBIES caps the
-## AGGREGATE across every horde combined, the number that actually bounds
-## GPU/CPU cost regardless of how the population is split across however
-## many Horde instances exist at once (merges/splits). A per-horde-only cap
-## alone would still be an unbounded-TOTAL gap. LOW/MEDIUM's own much
-## smaller fixed counts are untouched by either cap.
-const MAX_RENDERED_ZOMBIES_PER_HORDE := 1000
-const MAX_TOTAL_RENDERED_ZOMBIES := 5000
+## The two render caps that used to live here (1,000 figures per horde,
+## 5,000 across the map) are gone: what may be drawn is now what was
+## instantiated, and ZombieSwarmManager.ENTITY_BUDGET bounds that from a
+## measurement rather than from an assumption. LOW/MEDIUM's own small fixed
+## counts never went through either cap.
 
 ## LOW fidelity: one uniform blob per unit regardless of role/tier, one per
 ## horde regardless of size. Unit blob is a circle (matches HIGH's own
@@ -114,11 +108,13 @@ const MEDIUM_ZOMBIE_CLUSTER_SIZE := 5
 @export var horde_manager_path: NodePath
 @export var fog_of_war_manager_path: NodePath  ## Optional — unset renders every horde regardless of vision.
 @export var camera_path: NodePath
+@export var zombie_swarm_manager_path: NodePath  ## Optional — §2.1's tactical layer. Unset makes HIGH fidelity render as MEDIUM (a five-figure cluster per horde) instead of real individuals.
 
 var _unit_manager: UnitManager
 var _horde_manager: HordeManager
 var _fog_of_war_manager: FogOfWarManager
 var _camera: CameraController
+var _zombie_swarm_manager: ZombieSwarmManager
 
 var _fidelity: GameEnums.TacticalFidelity = GameEnums.TacticalFidelity.HIGH
 
@@ -136,15 +132,13 @@ var _unit_facing: Dictionary = {}         # int (UnitInstance.id) -> GameEnums.F
 var _horde_last_position: Dictionary = {} # int (Horde.id) -> Vector2
 var _horde_facing: Dictionary = {}        # int (Horde.id) -> GameEnums.Facing8
 
-## HIGH-fidelity zombie batch renderer — one layer per (variant, facing)
-## pair, flat-indexed as `variant * FacingUtil.COUNT + facing` (see
-## _zombie_batch_index()). A whole Horde shares one facing (Horde has no
-## per-figure position, only per-figure scatter offsets — see
-## ZombieVisuals.zombie_texture()'s own doc comment), so every figure in a
-## batch signature list still resolves to exactly one texture per layer,
-## same as the pre-directional VARIANT_COUNT-only version this replaced.
-var _zombie_batch_layers: Array[MultiMeshInstance2D] = []
-var _last_zombie_batch_signature: Array = []  ## Dirty-check cache for _rebuild_zombie_batches().
+## HIGH-fidelity zombie renderer — one pooled MultiMeshInstance2D per live
+## ZombieSwarm, index-aligned with ZombieSwarmManager.get_swarms(). The key
+## array caches each layer's last-applied (lane, facing) so texture and quad
+## size are only rewritten when they actually change; the transform buffer is
+## rewritten every frame, straight from the simulation's own array.
+var _swarm_layers: Array[MultiMeshInstance2D] = []
+var _swarm_layer_keys: Array[Vector2i] = []
 
 func _ready() -> void:
 	if unit_manager_path != NodePath():
@@ -160,9 +154,14 @@ func _ready() -> void:
 		visible = _camera.is_tactical_zoom()
 		_fidelity = _camera.get_tactical_fidelity()
 
-	for variant in range(ZombieVisuals.VARIANT_COUNT):
-		for facing in range(FacingUtil.COUNT):
-			_zombie_batch_layers.append(_build_zombie_batch_layer(variant, facing as GameEnums.Facing8))
+	if zombie_swarm_manager_path != NodePath():
+		_zombie_swarm_manager = get_node(zombie_swarm_manager_path)
+	# A lane IS a texture variant to this renderer; the two constants live in
+	# different classes on purpose (a data class should not import a visuals
+	# one) so the agreement is asserted here rather than assumed.
+	if ZombieSwarm.LANE_COUNT != ZombieVisuals.VARIANT_COUNT:
+		push_error("ZombieSwarm.LANE_COUNT (%d) must equal ZombieVisuals.VARIANT_COUNT (%d)."
+				% [ZombieSwarm.LANE_COUNT, ZombieVisuals.VARIANT_COUNT])
 
 func _process(_delta: float) -> void:
 	if not visible:
@@ -339,9 +338,9 @@ func _refresh_hordes() -> void:
 			_horde_draw_keys.erase(id)
 			_horde_last_position.erase(id)
 			_horde_facing.erase(id)
-	# Once per frame, not once per horde — HIGH-fidelity figures don't live
-	# under each horde's own `group` node the way LOW/MEDIUM's do.
-	_rebuild_zombie_batches()
+	# Once per frame, not once per horde — HIGH-fidelity figures belong to
+	# ZombieSwarmManager's crowds, not to any one horde's `group` node.
+	_refresh_swarm_batches()
 
 ## Individual zombie figures are live-vision intel, not remembered-terrain
 ## intel — gated on VISIBLE (Fog of War), a stricter bar than
@@ -353,10 +352,10 @@ func _update_horde_group(horde: Horde) -> void:
 	group.position = HexCoord.axial_to_world(horde.hex_coord) + horde.local_position
 	group.visible = _fog_of_war_manager == null or _fog_of_war_manager.is_visible(horde.hex_coord)
 
-	# Computed here (not in _rebuild_zombie_batches()) so it runs once per
-	# horde regardless of fidelity — MEDIUM's per-figure sprites and HIGH's
-	# batch layers (via _horde_facing, read back in _rebuild_zombie_batches())
-	# both need it, and this is the one place both paths already visit.
+	# Kept even though HIGH no longer reads it: MEDIUM's per-figure sprites
+	# need a facing, and this is the one place every fidelity band visits per
+	# horde per frame. HIGH's facing belongs to the swarm and is derived from
+	# the crowd's own anchor movement (ZombieSwarmManager._update_group_shape).
 	var facing_changed := _advance_facing(horde.id, group.position, _horde_last_position, _horde_facing)
 
 	var display_count := _horde_display_count(horde.size)
@@ -392,12 +391,11 @@ func _update_horde_group(horde: Horde) -> void:
 		for i in range(display_count):
 			var variance := horde.individual_speed_variance(i)
 			group.add_child(_build_zombie_figure(horde.id, i, _scatter_offset(i, display_count, horde.id, FIGURE_SPREAD, variance), facing))
-	# else HIGH: rendered through the shared MultiMesh batch layers instead
-	# of per-horde child nodes — see _rebuild_zombie_batches() (called once
-	# per frame from _refresh_hordes()). Nothing to add here; the clear
-	# above already removed any stale LOW/MEDIUM children left from a
-	# fidelity change, and `group` still exists to carry this horde's
-	# position/fog-visibility for bookkeeping.
+	# else HIGH with a simulation wired: display_count is 0, so nothing is
+	# added here. The horde's individuals are ZombieSwarmManager's crowd,
+	# drawn by _refresh_swarm_batches(); the clear above already removed any
+	# stale LOW/MEDIUM children left by a fidelity change, and `group` still
+	# exists to carry this horde's position and fog visibility.
 
 ## How many individual zombie figures to draw for a horde of `size` — LOW
 ## collapses to a single blob, MEDIUM shows a small fixed cluster regardless
@@ -411,177 +409,133 @@ func _horde_display_count(size: int) -> int:
 		GameEnums.TacticalFidelity.MEDIUM:
 			return mini(size, MEDIUM_ZOMBIE_CLUSTER_SIZE)
 		_:  # HIGH
-			return mini(size, MAX_RENDERED_ZOMBIES_PER_HORDE)
+			# The swarm owns HIGH's individuals; a horde's group node only
+			# carries its position and fog visibility. With no simulation
+			# wired there is nothing to own them, so HIGH borrows MEDIUM's
+			# cluster rather than rendering an invisible horde.
+			return 0 if _zombie_swarm_manager else mini(size, MEDIUM_ZOMBIE_CLUSTER_SIZE)
 
 ## --- GPU-batched HIGH-fidelity zombie rendering -----------------------------
 
-## One shared MultiMeshInstance2D per (ZombieVisuals variant, Facing8) pair
-## — VARIANT_COUNT * FacingUtil.COUNT (3*8=24) layers total, each still a
-## single draw call for every figure sharing that exact variant+facing,
-## across EVERY horde on the map at once. Same MultiMesh constraint as the
-## pre-directional 3-layer version this replaced (one texture per layer) —
-## going directional just means more layers, not a per-instance texture
-## trick (e.g. an atlas + custom-data UV shader), because a whole Horde
-## shares one facing (see ZombieVisuals.zombie_texture()'s doc comment):
-## every figure a given (variant, facing) layer will ever hold really does
-## want the exact same texture, so the simple multi-layer approach already
-## established here still fits without a shader. No texture authored for a
-## (variant, facing) pair falls back to a solid `modulate` tint
-## (ZOMBIE_COLOR) — a MultiMesh has no per-instance shape choice the way a
-## lone Polygon2D circle does.
+## One MultiMeshInstance2D per live ZombieSwarm, pooled and reused. Each swarm
+## is already (one hex, one source, one art variant) with a single whole-crowd
+## facing, so it resolves to exactly one texture — which is the constraint a
+## MultiMesh imposes, and the reason the tactical layer is divided into
+## ZombieSwarm.LANE_COUNT lanes in the first place.
 ##
-## Each layer's quad is sized from ITS OWN texture's real dimensions (not a
-## shared flat constant), scaled so the longer axis lands on the same
-## ZOMBIE_RADIUS * 2.0 diameter every other rendering path uses — matches
-## the aspect-ratio preservation _build_unit_figure()/_build_role_marker()/
-## _build_zombie_figure() all apply. A QuadMesh's UVs span its own fixed
-## `size` regardless of the texture's real pixel dimensions, so a fixed
-## square size would stretch a non-square texture.
-func _build_zombie_batch_layer(variant: int, facing: GameEnums.Facing8) -> MultiMeshInstance2D:
-	var mm := MultiMesh.new()
-	mm.transform_format = MultiMesh.TRANSFORM_2D
-	mm.use_colors = false
-	mm.use_custom_data = false
+## **This replaced a per-horde scatter renderer, and the change is not
+## cosmetic.** The old path derived every figure's position from a hash of
+## (horde id, index) around the horde's own point, so a "crowd" was a
+## decoration: it could not be walked through, could not lag behind its horde,
+## and had no positions to save. It also capped at 5,000 figures globally and
+## rewrote every transform through MultiMesh.set_instance_transform_2d(), one
+## engine call per figure. This path assigns MultiMesh.buffer in a single bulk
+## copy from the array the simulation already writes into (see ZombieSwarm's
+## own doc comment), so the cap is now ZombieSwarmManager.ENTITY_BUDGET —
+## 60,000, measured, rather than 5,000 assumed.
+##
+## LOW and MEDIUM are untouched: both are coarse bands near
+## tactical_zoom_threshold where a blob or a five-figure cluster is the point,
+## and neither has ever needed the swarm.
+##
+## With no ZombieSwarmManager wired, HIGH renders as MEDIUM (see
+## _horde_display_count()) rather than as nothing. That is a real
+## configuration — a test scene instantiating this layer without the
+## simulation — not dead code.
+func _refresh_swarm_batches() -> void:
+	if _fidelity != GameEnums.TacticalFidelity.HIGH or not _zombie_swarm_manager:
+		for layer in _swarm_layers:
+			layer.visible = false
+		return
 
-	var texture := ZombieVisuals.zombie_texture(variant, facing)
-	var mesh := QuadMesh.new()
+	var swarms := _zombie_swarm_manager.get_swarms()
+	for i in swarms.size():
+		var swarm: ZombieSwarm = swarms[i]
+		var layer := _swarm_layer(i)
+		var count := swarm.size()
+		# Same live-vision gate _update_horde_group() applies for LOW/MEDIUM:
+		# individual zombies are intel, not remembered terrain.
+		var shown := count > 0 and (_fog_of_war_manager == null or _fog_of_war_manager.is_visible(swarm.hex_coord))
+		layer.visible = shown
+		if not shown:
+			continue
+		_apply_swarm_look(layer, i, swarm)
+		var mm := layer.multimesh
+		if mm.instance_count != count:
+			mm.instance_count = count  ## Reallocates and clears, so the buffer assignment below has to follow it.
+		mm.buffer = swarm.buffer()
+		# Without this the crowd is invisible, and it took a screenshot to
+		# find out: a MultiMeshInstance2D culls against its MultiMesh's AABB,
+		# and assigning MultiMesh.buffer does not recompute one. Every
+		# instance therefore still measured as the identity transform left by
+		# `instance_count =`, i.e. a 10x10 box at the world origin — while the
+		# real crowd stood 120,000 world units away, off the item's own rect,
+		# and was culled entirely. Nothing in the data was wrong; 60,000
+		# zombies simply never reached the screen.
+		var reach := swarm.spread * ZombieSwarm.SNAP_SPREAD_MULTIPLE + ZOMBIE_RADIUS
+		mm.custom_aabb = AABB(
+			Vector3(swarm.anchor.x - reach, swarm.anchor.y - reach, -1.0),
+			Vector3(reach * 2.0, reach * 2.0, 2.0))
+
+	for i in range(swarms.size(), _swarm_layers.size()):
+		_swarm_layers[i].visible = false
+
+
+## Grows the pool on demand. Layers are never freed — the count tracks the
+## live-hex set, which ZombieSwarmManager's own allocation already bounds, and
+## churning scene nodes as the player pans is exactly the per-node cost this
+## renderer exists to avoid.
+func _swarm_layer(index: int) -> MultiMeshInstance2D:
+	while _swarm_layers.size() <= index:
+		var mm := MultiMesh.new()
+		mm.transform_format = MultiMesh.TRANSFORM_2D
+		mm.use_colors = false
+		mm.use_custom_data = false
+		mm.mesh = QuadMesh.new()
+		mm.instance_count = 0
+
+		var mmi := MultiMeshInstance2D.new()
+		mmi.name = "ZombieSwarm%d" % _swarm_layers.size()
+		mmi.multimesh = mm
+		# z_index is scoped to this node's own children (every competing node —
+		# unit and horde groups included — is also a direct child of this same
+		# layer). Puts zombies ABOVE units deliberately: without it Godot draws
+		# by child index, and these nodes are created lazily from _process(),
+		# so a crowd would be buried under unit sprites at the exact moment
+		# (melee contact) that seeing the threat matters most.
+		mmi.z_index = 1
+		add_child(mmi)
+		_swarm_layers.append(mmi)
+		_swarm_layer_keys.append(Vector2i(-1, -1))
+	return _swarm_layers[index]
+
+
+## Texture and quad size for a layer, rewritten only when the swarm occupying
+## it changes lane or facing. A crowd changes facing when its anchor turns,
+## which is rare; its buffer changes every frame, which is why the two are
+## separated.
+##
+## The quad is sized from the texture's real dimensions, scaled so its longer
+## axis lands on the same ZOMBIE_RADIUS * 2.0 diameter every other rendering
+## path uses — a QuadMesh's UVs span its own `size` regardless of the
+## texture's pixel dimensions, so a fixed square would stretch non-square art.
+func _apply_swarm_look(layer: MultiMeshInstance2D, index: int, swarm: ZombieSwarm) -> void:
+	var key := Vector2i(swarm.lane, swarm.facing)
+	if _swarm_layer_keys[index] == key:
+		return
+	_swarm_layer_keys[index] = key
+
+	var texture := ZombieVisuals.zombie_texture(swarm.lane, swarm.facing)
+	var mesh: QuadMesh = layer.multimesh.mesh
 	if texture:
 		var largest_dim := maxf(texture.get_width(), texture.get_height())
 		mesh.size = Vector2(texture.get_width(), texture.get_height()) * ((ZOMBIE_RADIUS * 2.0) / largest_dim)
+		layer.texture = texture
+		layer.modulate = Color.WHITE
 	else:
 		mesh.size = Vector2.ONE * (ZOMBIE_RADIUS * 2.0)  ## No art to derive real dimensions from — same square fallback the flat-color case implies.
-	mm.mesh = mesh
-	mm.instance_count = 0
-
-	var mmi := MultiMeshInstance2D.new()
-	mmi.name = "ZombieBatch%d_%s" % [variant, FacingUtil.suffix(facing)]
-	mmi.multimesh = mm
-	if texture:
-		mmi.texture = texture
-	else:
-		mmi.modulate = ZOMBIE_COLOR
-	# z_index is scoped to this node's own children only (every competing
-	# node — unit/horde groups included — is also a direct child of this
-	# same TacticalEntityLayer, so it only arbitrates among them). Puts the
-	# horde ABOVE units deliberately: these layers are created here in
-	# _ready(), unconditionally the first children, while every unit/horde
-	# group node is only added later from _refresh_units()/_refresh_hordes()
-	# (both _process()-driven, after _ready()) — without z_index, Godot
-	# draws lower child index first, permanently burying zombie figures
-	# under unit sprites at the exact moment (melee contact) seeing the
-	# threat matters most.
-	mmi.z_index = 1
-	add_child(mmi)
-	return mmi
-
-## Flat index into _zombie_batch_layers for a given (variant, facing) pair
-## — layers are built in _ready() as an outer loop over variant, inner over
-## facing, so this must match that nesting exactly.
-func _zombie_batch_index(variant: int, facing: GameEnums.Facing8) -> int:
-	return variant * FacingUtil.COUNT + facing
-
-## Repopulates every _zombie_batch_layers entry — hordes move continuously
-## in general, so every visible figure's transform needs rewriting when
-## anything changes; MultiMesh transform writes are the cheap, GPU-side
-## operation this approach leans on instead of the engine individually
-## processing/drawing one scene node per figure.
-##
-## Zeroes every layer's instance_count outright (not just skipping the
-## rebuild) when not at HIGH fidelity or with no HordeManager wired, so a
-## fidelity drop mid-frame can't leave a stale batch rendered underneath
-## LOW/MEDIUM's own per-node figures — and invalidates the dirty-check
-## signature below so the next HIGH frame always does a real rebuild.
-##
-## A per-frame signature — (id, hex_coord, local_position, size,
-## fog-visibility) per horde, same order get_all_hordes() returns —
-## compared against last frame's via a plain Array `==` (GDScript Arrays
-## compare by value/content). O(hordes) to build and compare, not O(total
-## figures). This specifically matters for a horde frozen by
-## stun_seconds_remaining > 0 or ATTACKING an unbreached wall — both leave
-## hex_coord/local_position unchanged for extended stretches (a siege can
-## grind on for many ticks), so recomputing every figure's scatter offset
-## every frame for a horde that isn't visually moving at all would be
-## wasted trig/hash work. When the signature matches, this touches nothing
-## — MultiMesh instance buffers persist on the GPU side across frames on
-## their own.
-##
-## Same `horde_id + index` variant-assignment formula _build_zombie_figure()
-## uses (wrapped mod VARIANT_COUNT here since this function needs the
-## variant INDEX up front to know which layer's transform list to append to).
-##
-## Two render caps applied together: MAX_RENDERED_ZOMBIES_PER_HORDE first
-## (per horde), then whatever room remains under MAX_TOTAL_RENDERED_ZOMBIES
-## (the aggregate ceiling). Hordes are iterated in HordeManager.get_all_hordes()
-## order — deterministic within a frame, not priority-sorted by e.g.
-## proximity to the camera; once the aggregate cap is hit, remaining hordes
-## render nothing this frame. This allocation can also shift across frames
-## (a merge/split/casualty-spawn changing array order can change how much
-## budget an unrelated, unmoved horde gets frame to frame) — only reachable
-## once total zombie population exceeds MAX_TOTAL_RENDERED_ZOMBIES, unlikely
-## at today's starting economy (STARTING_HORDE_COUNT=3 at 10-25 each, no
-## ramp-up curve). A stable sort by priority or proportional scaling instead
-## of greedy cutoff would be the real fix if this ever matters.
-func _rebuild_zombie_batches() -> void:
-	if _fidelity != GameEnums.TacticalFidelity.HIGH or not _horde_manager:
-		for layer in _zombie_batch_layers:
-			layer.multimesh.instance_count = 0
-		_last_zombie_batch_signature = []
-		return
-
-	var hordes := _horde_manager.get_all_hordes()
-
-	var signature: Array = []
-	for horde in hordes:
-		var visible := _fog_of_war_manager == null or _fog_of_war_manager.is_visible(horde.hex_coord)
-		signature.append([horde.id, horde.hex_coord, horde.local_position, horde.size, visible, _horde_facing.get(horde.id, GameEnums.Facing8.S)])
-	if signature == _last_zombie_batch_signature:
-		return
-	_last_zombie_batch_signature = signature
-
-	var per_layer: Array = []  # Array[Array[Transform2D]], index == _zombie_batch_index(variant, facing)
-	for _i in range(_zombie_batch_layers.size()):
-		per_layer.append([])
-
-	var total_rendered := 0
-	for horde in hordes:
-		if total_rendered >= MAX_TOTAL_RENDERED_ZOMBIES:
-			break
-		if _fog_of_war_manager and not _fog_of_war_manager.is_visible(horde.hex_coord):
-			continue  # Same live-vision gate _update_horde_group()'s own group.visible applies for LOW/MEDIUM.
-		var display_count := mini(horde.size, MAX_RENDERED_ZOMBIES_PER_HORDE)
-		display_count = mini(display_count, MAX_TOTAL_RENDERED_ZOMBIES - total_rendered)
-		if display_count <= 0:
-			continue
-		var horde_facing: GameEnums.Facing8 = _horde_facing.get(horde.id, GameEnums.Facing8.S)  ## Whole horde shares one facing — see ZombieVisuals.zombie_texture()'s doc comment.
-		var base_pos := HexCoord.axial_to_world(horde.hex_coord) + horde.local_position
-		var spread := _crowd_spread_radius(display_count)
-		for i in range(display_count):
-			var variant := ((horde.id + i) % ZombieVisuals.VARIANT_COUNT + ZombieVisuals.VARIANT_COUNT) % ZombieVisuals.VARIANT_COUNT
-			var variance := horde.individual_speed_variance(i)
-			var offset := _scatter_offset(i, display_count, horde.id, spread, variance)
-			# Transform2D(rotation, position) — rotation stays 0.0: which way
-			# a figure faces is which of the 24 batch layers its transform
-			# lands in (art baked into the texture), not a runtime rotation
-			# of a single upright texture.
-			per_layer[_zombie_batch_index(variant, horde_facing)].append(Transform2D(0.0, base_pos + offset))
-		total_rendered += display_count
-
-	for layer_index in range(_zombie_batch_layers.size()):
-		var mm: MultiMesh = _zombie_batch_layers[layer_index].multimesh
-		var transforms: Array = per_layer[layer_index]
-		mm.instance_count = transforms.size()
-		for i in range(transforms.size()):
-			mm.set_instance_transform_2d(i, transforms[i])
-
-## How far a HIGH-fidelity batched zombie crowd visually fans out — grows
-## with sqrt(display_count) (area grows linearly with figure count) rather
-## than staying pinned to FIGURE_SPREAD regardless of size, so a horde of
-## hundreds reads as a bigger crowd instead of the same figures packed
-## tighter into an unchanged circle. Anchored so a cluster around
-## MEDIUM_ZOMBIE_CLUSTER_SIZE's own count matches FIGURE_SPREAD exactly — no
-## visible jump right at the MEDIUM<->HIGH fidelity boundary.
-func _crowd_spread_radius(display_count: int) -> float:
-	return FIGURE_SPREAD * sqrt(maxf(1.0, float(display_count) / float(MEDIUM_ZOMBIE_CLUSTER_SIZE)))
+		layer.texture = null
+		layer.modulate = ZOMBIE_COLOR  ## A MultiMesh has no per-instance shape the way a lone Polygon2D circle does.
 
 ## --- Facing (shared by units and hordes) ------------------------------------
 
@@ -620,10 +574,10 @@ func _advance_facing(id: int, new_pos: Vector2, last_position: Dictionary, facin
 ## deterministic hash (_hash01()) rather than a clean division of the
 ## circle, and `group_seed` (caller passes the owning Horde/UnitInstance's
 ## own .id) means different groups scatter differently from each other too.
-## `spread_radius` (default FIGURE_SPREAD) — _rebuild_zombie_batches() is
-## the one caller that overrides it via _crowd_spread_radius(), so a large
-## batched horde fans out over a bigger area instead of packing hundreds of
-## figures into the same small circle a 5-figure MEDIUM cluster uses.
+## `spread_radius` defaults to FIGURE_SPREAD and no caller overrides it any
+## more — the HIGH-fidelity path that did now gets its fan-out from
+## ZombieSwarmManager._horde_spread(), which applies the same sqrt growth to
+## a real crowd instead of to a scatter pattern.
 ## `individual_variance` (default 1.0), read from
 ## Horde.individual_speed_variance(index) at the zombie call sites — a
 ## faster zombie (variance > 1.0) drifts further from the group's center, a
