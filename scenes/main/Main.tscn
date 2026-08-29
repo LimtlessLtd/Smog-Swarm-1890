@@ -39,6 +39,7 @@
 [ext_resource type="PackedScene" path="res://scenes/world/InfestationManager.tscn" id="37"]
 [ext_resource type="PackedScene" path="res://scenes/world/LiveHexTracker.tscn" id="38"]
 [ext_resource type="PackedScene" path="res://scenes/world/ZombieSwarmManager.tscn" id="39"]
+[ext_resource type="PackedScene" path="res://scenes/world/ResidentDefenseController.tscn" id="40"]
 
 [node name="Main" type="Node2D"]
 script = ExtResource("27")
@@ -185,6 +186,12 @@ resource_manager_path = NodePath("../ResourceManager")
 building_manager_path = NodePath("../BuildingManager")
 tech_manager_path = NodePath("../TechManager")
 hex_grid_map_path = NodePath("../WorldRoot/HexGridMap")
+
+[node name="ResidentDefenseController" parent="." instance=ExtResource("40")]
+unit_manager_path = NodePath("../UnitManager")
+combat_coordinator_path = NodePath("../CombatCoordinator")
+infestation_manager_path = NodePath("../InfestationManager")
+horde_manager_path = NodePath("../HordeManager")
 
 [node name="EventManager" parent="." instance=ExtResource("23")]
 building_manager_path = NodePath("../BuildingManager")

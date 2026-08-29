@@ -47,13 +47,23 @@ dependency order.
 - [ ] `[design]` **Contested-band decay of non-defensive structures.** §2.1 says
   "Existing non-defensive structures decay while the hex is Contested"; the rate, and
   whether that decay is repairable, are undesigned.
-- [ ] `[design]` **Infestation balance pass.** The model runs; its four rates are first
+- [ ] `[design]` **Infestation balance pass.** The model runs; its rates are first
   guesses with measurements behind them, not tuned numbers —
   `SPAWN_RATE_PER_DAY` 2%/day, `MAX_EXPORT_FRACTION_PER_DAY` 2.5%/day,
   `EXPORT_MAX_DISTANCE_FROM_PLAYER` 8, `MAX_EXPORTS_PER_DAY` 1. Measured over 60 days
   with no player action: 61,459 zombies exported across 7 new hordes, largest single
   export 3,758. Re-measure with `scripts/test/diagnose_infestation_pressure.gd` after
   any change. (D38)
+  Two more knobs joined them 2026-08-29 on the combat side —
+  `ResidentDefenseController.ENGAGEMENT_RADIUS_METRES` 30 m and
+  `WAVE_INTERVAL_SECONDS` 20 — and the thing to look at first is that the roster's
+  heaviest unit kills 6 zombies a round against cities holding 1e5-1e6. Measured
+  (`scripts/test/diagnose_resident_combat.gd`): 50 Holt Breakers on secured ground
+  clear Greater London in 12 days, Birmingham in 8, Manchester in 5; a Tier 0
+  Truncheoneer garrison is wiped in 3 rounds at London and holds only where the
+  wave is 1. That curve is defensible, but `Horde.HP_PER_ZOMBIE` 2.0 /
+  `DAMAGE_PER_ZOMBIE` 0.5 and `UnitCatalog`'s `3.0 + tier * 2.0` damage were set
+  when a horde was 10-25 strong, four orders of magnitude ago.
 - [x] `[gated]` **Tactical zombie layer + live-hex LOD.** Done 2026-08-29.
   `LiveHexTracker` owns §2.1's live-hex rule, `ZombieSwarm` holds one crowd in
   packed arrays, `ZombieSwarmManager` splits the 60,000 budget hordes-first then
@@ -61,13 +71,14 @@ dependency order.
   crowd from the simulation's own buffer. Positions saved (468.8 KB full set).
   Measured with `bench_zombie_swarm.gd` and `diagnose_tactical_zombies.gd`.
   (D12-D15, plus D42-D47 for what the spec left open.)
-- [ ] `[gated]` **Combat against a hex's resident population.** Split out of the
-  item above (D42): the tactical layer draws a Hive Core's residents as
-  individuals, but `CombatCoordinator` engages `Horde`s and residents are not
-  one, so a player standing on 400,000 zombies can shoot none of them. D8 says
-  killing is the only suppression, and right now it only reaches the roaming
-  half. Needs a decision on whether units fight residents directly or residents
-  condense into a defending horde when engaged.
+- [x] `[gated]` **Combat against a hex's resident population.** Done 2026-08-29.
+  Residents condense into a defending `Horde` rather than becoming a second kind
+  of enemy (D48); the wave is a frontage — the residents inside a 30 m disc of
+  the hex's own density — so Greater London fields 20 a round and a moorland hex
+  fields 1 (D49); it is topped back up between one unit's round and the next, so
+  a stack kills in proportion to its size (D50); and a hex holding units and
+  hordes now fights continuously (D51). `ResidentDefenseController`, measured
+  with `diagnose_resident_combat.gd`. (D48-D51)
 - [ ] `[design]` **Crowd density at the full budget.** 60,000 individuals on one
   hex renders as an unbroken carpet with no ground showing
   (`smoke_screenshot.gd`'s `05_tactical_crowd.png`) — faithful to "1.8 million
@@ -113,6 +124,14 @@ dependency order.
   map** — needs a before/after mountain-hex count and the user's call on the change,
   which is why the bake deliberately did not do it. (`SubHexTerrainQuery.elevation_metres()`
   is the fine read path in the meantime.)
+- [ ] `[design]` **Veterancy counts hordes destroyed, not zombies killed.**
+  `UnitMorale.get_rank()`'s own doc comment settles that "destroys a Horde" is
+  the definition of a kill, which was fine when combat was movement-triggered and
+  a horde was 10-25 strong. Since 2026-08-29 a frontage-1 defending wave is a
+  horde that dies every round, so a unit grinding low-density ground is ELITE
+  (`ELITE_KILLS` 10) after 200 simulated seconds. Bounded — ELITE is +25% damage
+  and there is no rank above it — so this is a meaning problem rather than a
+  balance runaway. Needs a decision on what a kill is before any code. (D51)
 - [ ] `[gated]` **Per-settlement stockpiles.** One Town Hall = one stockpile.
   **Own PR, nothing else in it** — touches `ResourceManager`, every producer and
   consumer, every affordability check, every UI counter, and saves. Prerequisite for

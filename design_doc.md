@@ -235,6 +235,33 @@ intended price of territory, and it makes overextension self-limiting without an
 artificial rule. The late-game management load this implies across many hexes is
 acknowledged and deliberately not solved yet (see `vision.md` P3).
 
+**As built (2026-08-29).** Killing reaches a hex's RESIDENT population, not only
+the roaming hordes: residents condense into a defending `Horde` under any player
+unit standing on the hex, one round every 20 simulated seconds
+(`ResidentDefenseController`, `decisions.md` D48-D51). The wave is a frontage —
+the residents inside a 30 m disc of the hex's own density — so what a hex fields
+is decided by the 1891 census, measured with
+`scripts/test/diagnose_resident_combat.gd`:
+
+| hex | residents | wave | Truncheoneer garrison | Holt Breaker garrison |
+| :--- | ---: | ---: | :--- | :--- |
+| two hexes from home | 31,702 | 1 | holds; 50 clear it in 5 days | holds; 50 clear it in 5 days |
+| Manchester | 68,075 | 3 | wiped in 76 rounds | holds; 50 clear it in 5 days |
+| Birmingham | 321,008 | 14 | wiped in 4 rounds | holds; 50 clear it in 8 days |
+| **Greater London** | **446,729** | **20** | **wiped in 3 rounds, having killed 1** | **holds; 50 clear it in 12 days** |
+
+The garrison columns apply `UnitOrderController`'s existing 5%-of-max-HP-per-tick
+regen on ZoC-covered ground, which is D8's "standing garrison" made literal: the
+price of London is fifty of the heaviest units in the roster, holding for twelve
+days, and Victorian infantry cannot stand there at all.
+
+Two things this deliberately does NOT do. A hex's residents never attack a
+player BUILDING — only a unit standing on the hex makes a wave rise, so §2.1's
+own Fringe build rights are not self-defeating. And a defending wave that
+survives and wanders off is an ordinary roaming horde, which makes the sentence
+above precise: a hex below 75.0 spreads nothing PASSIVELY, and spreads at most
+one frontage at a time in response to the player standing on it.
+
 ### Re-infestation
 
 A roaming horde crossing a Cleared hex raises its count and can push it back over

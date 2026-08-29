@@ -15,7 +15,15 @@ extends Node
 ## Wired sources:
 ##   - WallManager.wall_segment_breached -> COMBAT/CRITICAL.
 ##   - CombatCoordinator.engagement_resolved -> COMBAT/CRITICAL if the unit
-##     was destroyed, COMBAT/WARNING otherwise.
+##     was destroyed, COMBAT/WARNING otherwise — but the WARNING is raised
+##     once per unit per day, not once per round. Combat became CONTINUOUS
+##     when ResidentDefenseController started resolving a round every
+##     WAVE_INTERVAL_SECONDS for a unit standing on infested ground
+##     (design_doc.md §2.1), so "under attack" now fires for as long as the
+##     player holds the line; the same "raise on the transition INTO the bad
+##     state, not every day it persists" shape the food-band and
+##     resource-shortfall trackers below already use. A CRITICAL death is
+##     never suppressed.
 ##   - BuildingManager.building_ruined -> COMBAT/CRITICAL.
 ##   - TerritoryController.territory_lost -> TERRITORY/CRITICAL;
 ##     territory_recaptured -> TERRITORY/INFO (good news doesn't need to
@@ -59,6 +67,10 @@ const FOOD_BAND_STARVING: float = 0.5
 var _history: Array[GameEvent] = []
 var _food_band: int = 0                              # 0 fine, 1 hungry (<100%), 2 severe (<75%), 3 starving (<50%)
 var _resource_shortfall_active: Dictionary = {}       # GameEnums.ResourceType -> bool
+## UnitInstance.id -> true, for units already warned about since the last day
+## rolled over. Keyed by id rather than by the instance so a destroyed unit's
+## entry can be dropped without holding a reference to it.
+var _unit_under_attack: Dictionary = {}
 
 func _ready() -> void:
 	if building_manager_path != NodePath():
@@ -82,6 +94,8 @@ func _ready() -> void:
 	if strategic_overlay_manager_path != NodePath():
 		var strategic_overlay_manager: StrategicOverlayManager = get_node(strategic_overlay_manager_path)
 		strategic_overlay_manager.horde_spotted.connect(_on_horde_spotted)
+	# Clears the per-unit "already warned" set — see _unit_under_attack.
+	TickManager.day_completed.connect(_on_day_completed)
 
 ## The one entry point every handler below (and any future alert source)
 ## funnels through — builds the record, trims history to MAX_HISTORY,
@@ -102,12 +116,26 @@ func get_recent_events(count: int = 10) -> Array[GameEvent]:
 func _on_wall_segment_breached(segment: WallSegment) -> void:
 	raise_event(GameEnums.EventCategory.COMBAT, GameEnums.EventSeverity.CRITICAL, segment.hex_a, "Wall breached near %s — zombies are pouring through!" % _coord_string(segment.hex_a))
 
+## A unit under sustained attack warns ONCE, not every round — see this class's
+## own doc comment. Death is always raised: it happens once by definition, and
+## it is the event the player most needs interrupted for.
 func _on_engagement_resolved(instance: UnitInstance, _horde: Horde, _result: Dictionary) -> void:
 	var name := instance.definition.display_name if instance.definition else "A unit"
 	if instance.is_destroyed():
+		_unit_under_attack.erase(instance.id)
 		raise_event(GameEnums.EventCategory.COMBAT, GameEnums.EventSeverity.CRITICAL, instance.hex_coord, "%s was wiped out at %s!" % [name, _coord_string(instance.hex_coord)])
-	else:
-		raise_event(GameEnums.EventCategory.COMBAT, GameEnums.EventSeverity.WARNING, instance.hex_coord, "%s is under attack at %s." % [name, _coord_string(instance.hex_coord)])
+		return
+	if _unit_under_attack.has(instance.id):
+		return
+	_unit_under_attack[instance.id] = true
+	raise_event(GameEnums.EventCategory.COMBAT, GameEnums.EventSeverity.WARNING, instance.hex_coord, "%s is under attack at %s." % [name, _coord_string(instance.hex_coord)])
+
+## A day is the coarsest interval that still lets a renewed attack on the same
+## unit reach the player. Anything finer re-introduces the spam; anything
+## coarser (never re-arming) means a unit that survives one skirmish is silent
+## for the rest of the campaign.
+func _on_day_completed(_day_number: int) -> void:
+	_unit_under_attack.clear()
 
 func _on_building_ruined(instance: BuildingInstance, lost_population: int) -> void:
 	var name := instance.definition.display_name if instance.definition else "A building"

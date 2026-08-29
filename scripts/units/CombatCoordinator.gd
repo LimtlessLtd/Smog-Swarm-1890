@@ -27,14 +27,16 @@ extends Node
 ## triggers contact resolves its OWN independent engagement rather than the
 ## whole stack piling into one shared defender_hp pool.
 ##
-## One-shot, not continuous: an engagement fires off a MOVEMENT signal, not
-## a per-frame "are these two still on the same hex" check — two survivors
-## left sharing a hex after a round don't grind each other down tick after
-## tick just for standing still together; only a fresh move by either side
-## (or the next horde/unit that wanders in) triggers another round. A real
-## continuous siege is HordeManager's own ATTACKING state against walls,
-## still unbuilt against buildings/units — this is deliberately a lighter
-## "you bumped into each other" skirmish resolver.
+## Movement is not the only way contact happens. The two signals above are
+## the only ones this class subscribes to, but engage_units_at() below is
+## public so a caller that produces contact WITHOUT movement can resolve a
+## round: ResidentDefenseController condenses a hex's own resident zombies
+## into a defending horde underneath a unit that never moved, on a timer, so
+## a unit holding infested ground now grinds tick after tick instead of
+## trading one round per crossing. That is a deliberate change from this
+## class's original "one-shot skirmish resolver" framing — without it,
+## design_doc.md §2.1's endless tide stalls the moment the defending horde
+## reaches its frontage size and neither side moves again.
 ##
 ## Contact matters however it happens: engagement triggers regardless of
 ## the unit's current order — MOVE, PATROL, ATTACK_MOVE, even a HOLD/
@@ -165,6 +167,35 @@ func _on_unit_moved(instance: UnitInstance, from_coord: Vector2i, to_coord: Vect
 		return
 	for horde in _horde_manager.get_hordes_at(to_coord):
 		_engage(instance, horde, from_coord, to_coord)
+
+
+## Resolves ONE round between `instance` and every horde standing on its own
+## hex. The contact-without-movement entry point — see this class's own doc
+## comment for who calls it and why the "one-shot" framing no longer holds.
+##
+## Per UNIT rather than per hex on purpose, so the caller can interleave: a
+## defending wave is topped back up between one unit's round and the next, which
+## is what keeps a stack of units killing at a rate proportional to its size
+## while each individual unit still faces only one frontage's worth of incoming
+## damage (see ResidentDefenseController.run_wave_tick()).
+##
+## Both from/to are the unit's own hex, so _apply_special_ability_effects()'s
+## knockback fizzles on its own `movement_from == movement_to` guard: there is no
+## line of travel to shove a defender back along when nobody advanced. A
+## CHARGE_KNOCKBACK stun still lands, exactly as it does when the knockback
+## destination is impassable.
+##
+## Iteration safety: get_hordes_at() builds a fresh array, so _engage() removing
+## a horde mid-loop cannot skip an entry, and _engage() early-outs on an
+## already-dead unit or an emptied horde. A horde CREATED mid-loop by the
+## casualty path (_engage() -> HordeManager.add_casualty_zombies()) is
+## deliberately not engaged this round — the snapshot predates it, and a unit's
+## own dead rising should not get a free swing in the same instant they fell.
+func engage_unit(instance: UnitInstance) -> void:
+	if not _horde_manager or instance.is_destroyed():
+		return
+	for horde in _horde_manager.get_hordes_at(instance.hex_coord):
+		_engage(instance, horde, instance.hex_coord, instance.hex_coord)
 
 ## `movement_from`/`movement_to` are whichever side's own move triggered
 ## this contact event (the horde's for _on_horde_moved, the unit's for

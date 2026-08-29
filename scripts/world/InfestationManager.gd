@@ -43,8 +43,6 @@ extends Node
 ##     the Contested band's stockpile split needs per-settlement stockpiles,
 ##     which `backlog.md` insists is its own PR. Both wait for §2.2.
 ##   * Contested-band decay of non-defensive structures.
-##   * Individual zombie entities. Counts here are literal but abstract; D13's
-##     live-hex tactical layer is the next backlog item.
 ##
 ## **Not the same thing as `TerritoryController`,** which answers a different
 ## question with a different trigger: "did the player lose a building here to a
@@ -233,12 +231,45 @@ func add_zombies(coord: Vector2i, count: int) -> void:
 
 
 ## Removes from a hex's resident count, floored at zero. D8's "killing is the
-## only suppression" reaches roaming hordes through `HordeManager` instead —
-## this is for residents, which only the tactical layer can currently kill.
+## only suppression" reaches roaming hordes through `HordeManager` instead; the
+## player's own units reach residents through `condense_defenders()` below,
+## which turns them into a horde first rather than teaching combat a second kind
+## of enemy.
 func remove_zombies(coord: Vector2i, count: int) -> void:
 	if count <= 0:
 		return
 	_set_resident(coord, resident_count_at(coord) - count)
+
+
+## Moves up to `count` of a hex's residents into a `Horde` standing on the SAME
+## hex, so the player's units can fight them. `CombatCoordinator` engages
+## `Horde`s and a resident is not one (D42), which is why a player standing on
+## 400,000 zombies could shoot none of them. Returns how many actually moved.
+##
+## **Conserves exactly, and for the same reason `export_from()` does:** the
+## count leaves `_resident` and arrives as a `Horde` on the hex it left, so
+## `zombie_count_at()` — and therefore `infestation` and the band — are
+## unchanged by the move itself. Only killing lowers them, which is D8 intact
+## rather than D8 worked around.
+##
+## Writes through `_write_resident()` rather than `_set_resident()`: a
+## conserving move provably cannot change the band (`zombie_count_at()` sums
+## both halves), and the comparison `_set_resident()` does costs two linear
+## scans over every horde — the same argument the daily sweep makes for using
+## this path.
+##
+## `ResidentDefenseController` owns WHEN and HOW MANY. This owns only the
+## transfer, so a test can exercise the conservation law without going through
+## the wave rule.
+func condense_defenders(coord: Vector2i, count: int) -> int:
+	if not _horde_manager or count <= 0:
+		return 0
+	var moved := mini(count, resident_count_at(coord))
+	if moved <= 0:
+		return 0
+	_write_resident(coord, resident_count_at(coord) - moved)
+	_horde_manager.spawn_horde_at(coord, moved)
+	return moved
 
 
 ## D7's opening state, measured from `start`. Public so a test can seed a
