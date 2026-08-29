@@ -315,6 +315,24 @@ whole ~60,000 live set is under 500 KB). Not for size reasons but for correctnes
 saving mid-siege and reloading must not teleport 60,000 attackers into fresh
 positions, which would both read as broken and be trivially save-scummable.
 
+**As built (2026-08-29).** `ZombieSwarm` / `ZombieSwarmManager` / `LiveHexTracker`,
+measured on the real map with `scripts/test/diagnose_tactical_zombies.gd`:
+
+| camera hex | zombies on it | wanted across the live set | instantiated |
+| :--- | ---: | ---: | ---: |
+| starting settlement | 0 | 113,674 | 60,000 |
+| Manchester | 68,075 | 153,033 | 60,000 |
+| Birmingham | 321,008 | 671,937 | 60,000 |
+| Greater London | 446,729 | **2,123,376** | 60,000 |
+
+The London row is this section's own claim, measured rather than estimated:
+60,000 real zombies with **2,063,376 behind them**. The save is **468.8 KB** for a
+full live set, against the estimate above. The step costs **2.79 ms** at the full
+budget (`bench_zombie_swarm.gd`), and one decision the estimate did not anticipate
+is worth carrying: how finely that step is sliced must be decided from the whole
+live population rather than per crowd, or the same 60,000 split across 30 crowds
+costs 11.11 ms instead of 2.79 (`decisions.md` D45).
+
 ---
 
 ## 2.2 Logistics, Stockpiles & Infrastructure

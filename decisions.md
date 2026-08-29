@@ -14,6 +14,86 @@ Rules for this file:
 
 ---
 
+## 2026-08-29 — Tactical zombie layer
+
+Settled while building `ZombieSwarm` / `ZombieSwarmManager` / `LiveHexTracker`.
+`design_doc.md` §2.1 is unchanged; these record where the implementation had to
+answer something D12-D15 left open, and what was measured before it did.
+
+**D42. The tactical layer is a VIEW of counts the strategic layer owns, not a
+transfer of ownership.** D14 says a horde "dissolves into entities on entering a
+live hex and re-condenses on exit, conserving its count". Read literally that
+means the `Horde` stops existing while its zombies are individuals. It does not:
+the `Horde` stays the authority, and each frame a crowd's size is driven toward
+`Horde.size` plus `InfestationManager.resident_count_at()`.
+*Why:* `Horde` is what `CombatCoordinator` fights, `TerritoryController` tests
+for, `HordeManager` paths and `SaveLoadManager` saves. Moving ownership into a
+packed array means teaching all four about a second kind of enemy, for no
+gameplay difference — the player sees individuals either way, kills them through
+the same combat, and watches the same count fall. Conservation then costs no
+code at all: nothing is ever transferred in, so nothing can be lost or
+double-counted.
+*Accepted cost:* a hex's RESIDENT population is drawn but cannot currently be
+fought. Combat engages `Horde`s, and residents are not one. Filed as its own
+backlog item rather than bolted on here.
+
+**D43. The live set is empty outside Tactical zoom.** §2.1's rule is "camera hex
++ six neighbours + player units/buildings" with no zoom clause; `LiveHexTracker`
+adds one.
+*Why:* §2.1 bounds instantiation by observation — "the player cannot detect the
+difference, because they cannot observe 60,000 zombies' worth of ground at
+once" — and at Strategic zoom the player observes no individuals at all, because
+`TacticalEntityLayer` hides itself entirely below
+`CameraController.tactical_zoom_threshold`. Instantiating a crowd nothing can
+draw is pure cost; measured at 0 individuals on the real map from Strategic zoom.
+*Accepted cost:* zooming out and back in re-scatters a crowd's internal
+arrangement. Its POSITION does not move — that belongs to the `Horde` or the
+hex — and no player can remember where 60,000 dots were.
+
+**D44. The budget is spent hordes first, then residents, both nearest the
+observer.** `HORDE_BUDGET_FRACTION` reserves half of `ENTITY_BUDGET` for hordes
+before a hex's own population gets any.
+*Why:* measured on the real map (`diagnose_tactical_zombies.gd`). Standing on
+the busiest Greater London hex, **2,123,376 zombies want instantiating and 60,000
+can be** — a purely nearest-first walk hands the entire budget to the hex under
+the camera and a horde attacking the player from the next hex renders as nothing.
+The one thing the player is certainly looking at has to be served first. §2.1's
+own London claim falls out of the second pass: ~60,000 real zombies with ~2.06
+million behind them.
+
+**D45. How finely a step is sliced is decided from the whole live population,
+not from one crowd's size.** Every `ZombieSwarm` in a frame shares one division.
+*Why:* measured, and the per-swarm version was wrong by 4x
+(`bench_zombie_swarm.gd`, 60,000 zombies): as one crowd it sliced and cost
+**2.75 ms**; split across 30 crowds of 2,000 each nothing reached the slice
+threshold, so everything moved every frame and it cost **11.11 ms** — two thirds
+of the frame. Deciding globally puts the split case back at **2.79 ms**. The
+frame does not care how the budget is divided between crowds; it cares how many
+zombies moved.
+
+**D46. A crowd chases its anchor faster than it mills, and re-forms rather than
+chases when the anchor teleports.** `CHASE_SPEED` is 2x `BASE_MOVE_SPEED`;
+past `SNAP_SPREAD_MULTIPLE` a zombie is re-placed around the anchor instead.
+*Why:* milling speed is a quarter of `BASE_MOVE_SPEED` and a horde travels at up
+to 1.5x it (`HordeManager.NIGHT_MOVE_SPEED_MULTIPLIER`), so a crowd steered home
+at milling speed can never catch its own horde — every advancing horde would have
+strewn its individuals behind it across the map. Caught by
+`verify_tactical_zombies.gd` while it was still failing. The snap covers the
+three cases that are teleports rather than movement: a game speed high enough
+that one `MAX_STEP_SECONDS`-clamped step covers less ground than the horde
+crossed, a load, and a reallocation.
+
+**D47. Positions are saved; identity is not.** D15's packed float32 positions are
+pooled per hex and consumed in group order on load, not keyed by horde id.
+*Why:* a horde that merged, split or was killed between save and load would
+strand its slice. The point of saving positions is that a crowd does not visibly
+teleport, not that any individual zombie is the same one. Measured at **468.8 KB**
+for a full 60,000-zombie live set, against §2.1's "under 500 KB" estimate. A save
+whose counts have since moved still lands: each crowd takes as many saved
+positions as it can use and scatters the rest.
+
+---
+
 ## 2026-08-28 — Infestation core
 
 Settled while building `InfestationManager`. `design_doc.md` §2.1 is unchanged;

@@ -54,15 +54,34 @@ dependency order.
   with no player action: 61,459 zombies exported across 7 new hordes, largest single
   export 3,758. Re-measure with `scripts/test/diagnose_infestation_pressure.gd` after
   any change. (D38)
-- [ ] `[gated]` **Tactical zombie layer + live-hex LOD.** New packed-array class,
-  separate from `Horde`. Live hex = camera hex + 6 neighbours + any hex with player
-  units/buildings, ~60,000 global budget, nearest-observer-first. Horde dissolves on
-  entry, re-condenses on exit. Positions saved as packed float32. Benchmark:
-  `scripts/test/bench_zombie_scale.gd`. (D12-D15)
+- [x] `[gated]` **Tactical zombie layer + live-hex LOD.** Done 2026-08-29.
+  `LiveHexTracker` owns §2.1's live-hex rule, `ZombieSwarm` holds one crowd in
+  packed arrays, `ZombieSwarmManager` splits the 60,000 budget hordes-first then
+  residents, both nearest-observer-first, and `TacticalEntityLayer` draws each
+  crowd from the simulation's own buffer. Positions saved (468.8 KB full set).
+  Measured with `bench_zombie_swarm.gd` and `diagnose_tactical_zombies.gd`.
+  (D12-D15, plus D42-D47 for what the spec left open.)
+- [ ] `[gated]` **Combat against a hex's resident population.** Split out of the
+  item above (D42): the tactical layer draws a Hive Core's residents as
+  individuals, but `CombatCoordinator` engages `Horde`s and residents are not
+  one, so a player standing on 400,000 zombies can shoot none of them. D8 says
+  killing is the only suppression, and right now it only reaches the roaming
+  half. Needs a decision on whether units fight residents directly or residents
+  condense into a defending horde when engaged.
+- [ ] `[design]` **Crowd density at the full budget.** 60,000 individuals on one
+  hex renders as an unbroken carpet with no ground showing
+  (`smoke_screenshot.gd`'s `05_tactical_crowd.png`) — faithful to "1.8 million
+  behind them", but it leaves no visual room for the buildings and units the
+  player is supposed to be reading at the same zoom. The knobs are
+  `ZombieSwarmManager.ENTITY_BUDGET` and `RESIDENT_SPREAD`; which way to turn
+  them is a look question, not a correctness one.
 - [ ] `[gated]` **Evict `SubHexTerrainQuery._cache`.** Unbounded, static,
-  String-keyed, never evicted. Detail below — but it moves from "no urgency" to Now,
-  because the live-hex system fans out sub-hex queries far harder than anything that
-  has run against it so far. Benchmark before and after
+  String-keyed, never evicted. Detail below. **The justification for moving this to
+  Now was wrong and is corrected here:** the live-hex system was expected to fan
+  out sub-hex queries hard, and as built it makes none at all — crowds mill in
+  open world space and never ask what terrain is under them. That is itself a gap
+  (zombies walk through walls and rivers at the tactical layer) but it is not
+  cache pressure. Benchmark before and after
   (`scripts/test/bench_portal_blocking.gd` is the template).
 - [ ] `[gated]` **Buildings can be switched off.** No production, no upkeep, no noise,
   no light; restart delay proportional to tier. The most direct expression of P2 and
