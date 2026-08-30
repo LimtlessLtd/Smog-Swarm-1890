@@ -32,7 +32,22 @@ extends Resource
 @export var is_under_construction: bool = false
 @export var construction_days_remaining: int = 0
 
-func _init(p_building_type: GameEnums.BuildingType = GameEnums.BuildingType.TOWN_HALL, p_hex_coord: Vector2i = Vector2i.ZERO, p_id: int = 0, p_local_position: Vector2 = Vector2.ZERO, p_current_population: int = 0, p_current_hp: float = 0.0, p_is_ruined: bool = false, p_is_under_construction: bool = false, p_construction_days_remaining: int = 0) -> void:
+## design_doc.md §2.1's "Going dark" (BuildingPowerController), saved as the
+## same flag-plus-countdown pair construction uses directly above, for the
+## same reason: without them a switched-off foundry comes back running on
+## load, and a restart already half paid for silently completes for free.
+## restart_days_remaining is 0 both when the building is running and when it
+## is off and staying off — off-and-restarting is the only state that carries
+## a nonzero value (BuildingPowerController.is_restarting()).
+##
+## Both default to false/0, so a save written before this field existed loads
+## as a running building — Godot's Resource deserialization leaves an absent
+## @export at its declared default, which is exactly the pre-existing
+## behaviour. Same free migration construction_days_remaining got.
+@export var is_powered_down: bool = false
+@export var restart_days_remaining: int = 0
+
+func _init(p_building_type: GameEnums.BuildingType = GameEnums.BuildingType.TOWN_HALL, p_hex_coord: Vector2i = Vector2i.ZERO, p_id: int = 0, p_local_position: Vector2 = Vector2.ZERO, p_current_population: int = 0, p_current_hp: float = 0.0, p_is_ruined: bool = false, p_is_under_construction: bool = false, p_construction_days_remaining: int = 0, p_is_powered_down: bool = false, p_restart_days_remaining: int = 0) -> void:
 	building_type = p_building_type
 	hex_coord = p_hex_coord
 	id = p_id
@@ -42,3 +57,5 @@ func _init(p_building_type: GameEnums.BuildingType = GameEnums.BuildingType.TOWN
 	is_ruined = p_is_ruined
 	is_under_construction = p_is_under_construction
 	construction_days_remaining = p_construction_days_remaining
+	is_powered_down = p_is_powered_down
+	restart_days_remaining = p_restart_days_remaining

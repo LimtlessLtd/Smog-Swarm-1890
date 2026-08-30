@@ -44,6 +44,34 @@ dependency order.
   the Fringe -25% logistics efficiency all need a logistics throughput number that does
   not exist yet, and the split needs per-settlement stockpiles. Do it with the §2.2 work
   below, not before. (D40)
+- [ ] `[design]` **Should the Town Hall be switchable off?** Raised by the going-dark
+  work 2026-08-30 and decided provisionally as NO (`BuildingDefinition.always_powered`,
+  D54): it grants +100 Population and +20 Energy into a pool that starts at 0.0, and it
+  emits no noise and no light, so blacking it out costs the player their whole capacity
+  ledger and buys nothing toward P2. The argument the other way is that the mechanic is
+  more interesting if the capital CAN go dark and the player pays for it. One line in
+  `BuildingCatalog._town_hall()` either way. It interacts with the ZoC question below,
+  so answer both together.
+- [ ] `[design]` **Should Zone of Control go dark too?** §2.1 enumerates four things an
+  off building stops and ZoC is not one of them, so as built a switched-off Watchtower
+  or Supply Dump still projects (D55). If it should, it is one clause in
+  `LogisticsNetwork.recompute()` plus two signal connections. The cost of saying yes:
+  going dark would start losing the player territory and vision coverage, not just
+  production — a much heavier trade than the spec describes.
+- [ ] `[gated]` **`FogOfWarManager` grants full vision to ruins and construction sites.**
+  Found 2026-08-30 while adding the going-dark light gate.
+  `_compute_visible_set()`'s building loop checks neither `is_ruined` nor
+  `is_under_construction` — a burnt-out shell lights the map exactly as the intact
+  building did, including the `lit_at_night` night bonus. The `is_powered_down` clause
+  added there is the first instance-state gate in that loop; the other two were left
+  alone deliberately, since fixing them changes what the player can see and wants its
+  own before/after.
+- [ ] `[gated]` **A repaired building stays silent until the next day-phase flip.**
+  Found 2026-08-30. `NoiseManager` connects `building_ruined` but neither
+  `building_repaired` nor `building_construction_completed`, so a rebuilt foundry
+  contributes no noise until `TimeCycleManager.phase_changed` happens to fire. One
+  connection each, but it changes when hordes are drawn to a rebuilt district, so it
+  wants a measurement rather than a blind two-line fix.
 - [ ] `[design]` **Contested-band decay of non-defensive structures.** §2.1 says
   "Existing non-defensive structures decay while the hex is Contested"; the rate, and
   whether that decay is repairable, are undesigned.
@@ -64,6 +92,11 @@ dependency order.
   wave is 1. That curve is defensible, but `Horde.HP_PER_ZOMBIE` 2.0 /
   `DAMAGE_PER_ZOMBIE` 0.5 and `UnitCatalog`'s `3.0 + tier * 2.0` damage were set
   when a horde was 10-25 strong, four orders of magnitude ago.
+  Going dark added two more 2026-08-30, both placeholders:
+  `BuildingPowerController.RESTART_DAYS_BASE` 1 and `RESTART_DAYS_PER_TIER` 1, so a
+  Tier 0 building restarts in 1 day and a Tier 5 in 6. Nothing has been played against
+  an actual horde yet — the question is whether 6 days is enough to make banking a
+  furnace a real decision, or so much that nobody ever switches one off. (D56)
 - [x] `[gated]` **Tactical zombie layer + live-hex LOD.** Done 2026-08-29.
   `LiveHexTracker` owns §2.1's live-hex rule, `ZombieSwarm` holds one crowd in
   packed arrays, `ZombieSwarmManager` splits the 60,000 budget hordes-first then
@@ -94,9 +127,14 @@ dependency order.
   (zombies walk through walls and rivers at the tactical layer) but it is not
   cache pressure. Benchmark before and after
   (`scripts/test/bench_portal_blocking.gd` is the template).
-- [ ] `[gated]` **Buildings can be switched off.** No production, no upkeep, no noise,
-  no light; restart delay proportional to tier. The most direct expression of P2 and
-  probably the smallest piece of work in it. (D11)
+- [x] `[gated]` **Buildings can be switched off.** Done 2026-08-30.
+  `BuildingPowerController` owns the flag and the restart countdown, mirroring
+  `BuildingConstructionController`'s shape so it saves through the same seam;
+  production, upkeep, noise, light, Searchlight accuracy, training and the Tactical
+  smoke/fire/lamp all stop, the Energy/Population allocation is released and retaken,
+  and the restart costs `1 + tier` days. Gated by
+  `scripts/test/verify_building_power.gd`. (D11, plus D52-D56 for what the spec left
+  open.)
 - [ ] `[gated]` **Noise emission rewrite.** The consumer already works — `HordeManager`
   ATTRACTED + `_pick_attraction_target()` + `NoiseManager`. Emission is a flat 2-hex
   building-only aura, ~40x the reach of §6's loudest listed sound. Replace with §6's
@@ -132,6 +170,15 @@ dependency order.
   (`ELITE_KILLS` 10) after 200 simulated seconds. Bounded — ELITE is +25% damage
   and there is no rank above it — so this is a meaning problem rather than a
   balance runaway. Needs a decision on what a kill is before any code. (D51)
+- [ ] `[gated]` **Demolishing a building mid-repair leaks its Energy/Population
+  allocation.** Found 2026-08-30 while deciding D53.
+  `BuildingHealthController.repair()` applies capacity when the repair job is QUEUED,
+  but `is_ruined` stays true until the job completes — and `demolish()` skips its
+  capacity top-up for any ruin, on the assumption the allocation was already refunded.
+  For a mid-repair instance it was not: it was re-applied one line earlier. The
+  going-dark path deliberately settles capacity on the flag instead
+  (`BuildingPowerController.restart()`) so it does not inherit this; the repair path
+  still has it.
 - [ ] `[gated]` **Per-settlement stockpiles.** One Town Hall = one stockpile.
   **Own PR, nothing else in it** — touches `ResourceManager`, every producer and
   consumer, every affordability check, every UI counter, and saves. Prerequisite for
@@ -152,6 +199,17 @@ dependency order.
 - [ ] `[gated]` **`HordeManager` stuck-detection/bypass.** Shares `MovementStepper`
   clearance math with `UnitOrderController` but has no bypass at all. Detail below.
 - [ ] `[gated]` **`portal_offset_for_step()` is still the expensive path.** Detail below.
+- [ ] `[gated]` **Extract the screenshot camera-framing discipline.** Five scripts now
+  carry the same "disable edge pan, disable _process/_input/_unhandled_input,
+  make_current(), set_zoom_level() rather than assigning `zoom`, wait real frames, then
+  re-assert position and zoom and check for drift" block:
+  `capture_project_review_shots.gd`, `smoke_screenshot.gd`, `preview_relief_ingame.gd`,
+  `verify_save_screenshot.gd` and (2026-08-30) `preview_going_dark.gd`.
+  `smoke_screenshot.gd`'s own doc comment said "if a fifth appears, extract it rather
+  than copying it again" — a fifth has appeared. Every copy carries the same two
+  hard-won details (a stray desktop mouse wheel rezooming mid-run; relief streaming 2
+  tiles/frame so a shot taken too early photographs half-loaded terrain), and a fix to
+  one of them today reaches one script in five.
 - [ ] `[visual]` **6 of 15 resource counters have no icon, name or tooltip.** Detail below.
 - [ ] `[gated]` **Placement status line is never cleared**, so no-op clicks read as
   successes. Detail below.

@@ -387,20 +387,20 @@ func _get_training_building(coord: Vector2i) -> BuildingInstance:
 	if not _building_manager:
 		return null
 	for instance in _building_manager.get_buildings_at(coord):
-		if instance.definition.can_train_units and not instance.is_under_construction and not instance.is_ruined:
+		if instance.definition.can_train_units and instance.is_running():
 			return instance
 	return null
 
-## A construction site (or a ruined shell) that WOULD train units once
-## complete/repaired shouldn't be indistinguishable from "no training
-## building here at all" — used by get_training_error() to give the real
-## reason rather than the generic "can only be trained at a building that
-## trains units" message.
+## A construction site, a ruined shell, or a switched-off Garrison that WOULD
+## train units once complete/repaired/restarted shouldn't be
+## indistinguishable from "no training building here at all" — used by
+## get_training_error() to give the real reason rather than the generic "can
+## only be trained at a building that trains units" message.
 func _has_incomplete_training_building(coord: Vector2i) -> bool:
 	if not _building_manager:
 		return false
 	for instance in _building_manager.get_buildings_at(coord):
-		if instance.definition.can_train_units and (instance.is_under_construction or instance.is_ruined):
+		if instance.definition.can_train_units and not instance.is_running():
 			return true
 	return false
 

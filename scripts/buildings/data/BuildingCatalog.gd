@@ -127,6 +127,7 @@ static func _town_hall() -> BuildingDefinition:
 		GameEnums.BiomeType.WOODLAND, GameEnums.BiomeType.HEATHLAND,
 	]
 	d.max_per_hex = 1  ## design_doc.md §3: "Only 1 can be built per hex tile."
+	d.always_powered = true  ## Cannot be switched off — see BuildingDefinition.always_powered.
 	d.zoc_roles = [GameEnums.ZoneOfControlType.CIVILIAN]
 	# Without this, a brand-new colony's ONLY vision source is radius 0 (its
 	# own single hex) — Town Hall is BuildingManager.seed_starting_buildings()'s

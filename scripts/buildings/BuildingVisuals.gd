@@ -45,6 +45,26 @@ static func ruin_color() -> Color:
 static func construction_color() -> Color:
 	return Color(0.32, 0.32, 0.32)
 
+## design_doc.md §2.1's "Going dark" — a switched-off building. A cold blue-
+## grey, readable against both of the greys above at a glance:
+## construction_color() is neutral-dark and ruin_color() is warm, so "off"
+## reads as neither half-built nor destroyed. Shared between TacticalHexView
+## (multiplied into modulate over the real sprite) and BuildingMarkerRenderer
+## (assigned to the flat icon color), the same split ruin_color() and
+## construction_color() already have.
+##
+## Value picked by rendering the candidates over a real building sprite
+## (tools note: scripts/test/preview_going_dark.gd captures the pair), not by
+## choosing numbers. The first try, 0.38/0.44/0.52, multiplied a warm wooden
+## roof down to near-black and read as charred rather than idle — modulate
+## MULTIPLIES, so a tint that looks mid-grey as a swatch lands much darker on
+## a mid-tone sprite, and the game's own night ambient multiplies again on top
+## of that. This is bright enough that the building stays identifiable (the
+## player has to know WHICH thing they switched off) and blue enough that it
+## cannot be mistaken for construction_color()'s neutral dark.
+static func powered_down_color() -> Color:
+	return Color(0.50, 0.56, 0.68)
+
 ## Lazily-loaded, cached (same "build once, cache" convention TerrainVisuals'
 ## own terrain_texture() and BuildingCatalog/UnitCatalog's _ensure_built()
 ## use) — the real sprite for a building type, or null if no SVG has been

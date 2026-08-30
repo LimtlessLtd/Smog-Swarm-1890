@@ -113,6 +113,14 @@ func _ready() -> void:
 		_building_manager = get_node(building_manager_path)
 		_building_manager.building_placed.connect(_on_buildings_changed)
 		_building_manager.building_removed.connect(_on_buildings_changed)
+		# _compute_visible_set() reads is_powered_down, so without these the
+		# lit_at_night night bonus survives the switch being pulled until some
+		# unrelated event (a phase change, a unit moving) happens to trigger a
+		# recompute. Synchronous, matching the building triggers above rather
+		# than the unit ones — see this class's own doc comment for why only
+		# unit-triggered recomputes go through the per-frame coalescer.
+		_building_manager.building_powered_down.connect(_on_buildings_changed)
+		_building_manager.building_powered_up.connect(_on_buildings_changed)
 	if logistics_network_path != NodePath():
 		_logistics_network = get_node(logistics_network_path)
 		_logistics_network.network_recomputed.connect(_on_network_recomputed)
@@ -199,7 +207,15 @@ func _compute_visible_set() -> Dictionary:
 		for instance in _building_manager.get_all_buildings():
 			var radius := instance.definition.vision_radius
 			if is_night:
-				if instance.definition.lit_at_night:
+				# A switched-off building is not a lit source (design_doc.md
+				# §2.1's "Going dark": an off building "emits... no light"),
+				# so it takes the ordinary unlit contraction instead of the
+				# lit bonus. It keeps its base vision_radius: the lamp is out,
+				# but a Church Steeple Watchtower still has someone up the
+				# tower. Deliberately not written as is_running() — an
+				# under-construction lit source keeps its existing behaviour
+				# here, which is a separate question this change does not open.
+				if instance.definition.lit_at_night and not instance.is_powered_down:
 					radius += NIGHT_LIT_BONUS
 				else:
 					radius = maxi(0, radius - NIGHT_VISION_PENALTY)

@@ -285,12 +285,22 @@ const BUILDING_SELECTION_RING_RADIUS: float = BUILDING_HALF_SIZE * 1.6
 const _SELECTED_TINT := Color(0.55, 0.75, 1.55)
 
 ## White for a normal finished building, BuildingVisuals.construction_color()
-## while it's still a construction site. set_building_selected() multiplies
-## _SELECTED_TINT on top of this rather than always overwriting to White, so
-## a mid-construction building that gets selected still reads as "under
-## construction" instead of losing that tint when clicked.
+## while it's still a construction site, BuildingVisuals.powered_down_color()
+## while it's switched off. set_building_selected() multiplies _SELECTED_TINT
+## on top of this rather than always overwriting to White, so a
+## mid-construction or switched-off building that gets selected still reads
+## as such instead of losing that tint when clicked.
+##
+## Construction wins over powered-down when both somehow apply: a
+## construction site cannot be switched off
+## (BuildingPowerController.get_power_down_error()), so the ordering only
+## matters for a hand-edited save.
 func _building_base_modulate(building: BuildingInstance) -> Color:
-	return BuildingVisuals.construction_color() if building.is_under_construction else Color.WHITE
+	if building.is_under_construction:
+		return BuildingVisuals.construction_color()
+	if building.is_powered_down:
+		return BuildingVisuals.powered_down_color()
+	return Color.WHITE
 
 func _build_building_node(building: BuildingInstance, index: int) -> Node2D:
 	var container := Node2D.new()
@@ -325,7 +335,11 @@ func _build_building_node(building: BuildingInstance, index: int) -> Node2D:
 
 	container.position = _resolved_building_position(building, index)
 
-	if not building.is_ruined and not building.is_under_construction:
+	# is_running(), not just the ruin/construction pair: a switched-off
+	# building has no smoke, no furnace glow and no lamp — design_doc.md
+	# §2.1's "emits no noise and no light" is the same statement in the
+	# visuals that NoiseManager makes in the simulation.
+	if building.is_running():
 		_attach_effects(container, building.definition)
 
 	return container

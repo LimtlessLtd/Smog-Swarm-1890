@@ -102,6 +102,8 @@ func _ready() -> void:
 		building_manager.building_removed.connect(func(_i: BuildingInstance) -> void: _frontier_renderer.refresh())
 		building_manager.building_ruined.connect(_building_renderer.on_ruined)
 		building_manager.building_construction_completed.connect(_building_renderer.on_construction_completed)
+		building_manager.building_powered_down.connect(_building_renderer.on_power_changed)
+		building_manager.building_powered_up.connect(_building_renderer.on_power_changed)
 		_building_renderer.seed(building_manager.get_all_buildings())
 
 	if unit_manager_path != NodePath():

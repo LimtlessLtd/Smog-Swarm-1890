@@ -25,6 +25,13 @@ extends Node
 ## a dense industrial district a genuine reason to draw more attention
 ## than any single loud building would on its own.
 ##
+## design_doc.md §2.1's "Going dark" reaches this class through
+## BuildingManager.building_powered_down/building_powered_up, connected
+## alongside the placed/removed/ruined trio below: a switched-off building
+## contributes neither noise nor light, so the field has to be rebuilt the
+## instant the player pulls the switch, not on whatever unrelated change
+## happens next.
+##
 ## Lit_at_night sources ALSO contribute, night only — a fixed
 ## NIGHT_LIGHT_ATTRACTION add-on, stacking with (not replacing) whatever
 ## noise_output that same building already has, so a lit-but-otherwise-quiet
@@ -66,6 +73,8 @@ func _ready() -> void:
 		_building_manager.building_placed.connect(_on_buildings_changed)
 		_building_manager.building_removed.connect(_on_buildings_changed)
 		_building_manager.building_ruined.connect(_on_building_ruined)
+		_building_manager.building_powered_down.connect(_on_buildings_changed)
+		_building_manager.building_powered_up.connect(_on_buildings_changed)
 	TimeCycleManager.phase_changed.connect(_on_phase_changed)
 	recompute()
 
@@ -102,7 +111,15 @@ func recompute() -> void:
 	if _building_manager:
 		var is_night := TimeCycleManager.is_night()
 		for instance in _building_manager.get_all_buildings():
-			if instance.is_ruined:
+			# A switched-off building emits neither the noise_output term nor
+			# the lit_at_night night add-on below — design_doc.md §2.1's
+			# "Going dark", and the whole reason the mechanic exists: this is
+			# the line a player pulls to stop a horde walking toward their
+			# foundry district. A building still UNDER CONSTRUCTION is
+			# deliberately left loud (§6 rates Building Construction at 8
+			# tiles) and cannot be switched off anyway
+			# (BuildingPowerController.get_power_down_error()).
+			if instance.is_ruined or instance.is_powered_down:
 				continue
 			var contribution := float(instance.definition.noise_output)
 			if is_night:

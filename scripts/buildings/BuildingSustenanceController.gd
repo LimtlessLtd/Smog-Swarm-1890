@@ -56,6 +56,17 @@ func compute_daily_totals(instances: Array[BuildingInstance]) -> Dictionary:
 		var definition := instance.definition
 		total_population += instance.current_population
 
+		# design_doc.md §2.1's "Going dark": "An off building produces
+		# nothing, consumes no upkeep." Deliberately AFTER the
+		# total_population line above and not folded into the skip at the top
+		# of the loop — the occupants of a mothballed tenement still live
+		# there and still eat, so their Food demand stands (see
+		# BuildingInstance.is_powered_down). Folding it in would let a player
+		# switch off every housing block during a famine and erase the
+		# colony's entire Food demand at no cost.
+		if instance.is_powered_down:
+			continue
+
 		for resource_type in definition.daily_upkeep:
 			if CapacityAllocator.CAPACITY_RESOURCE_TYPES.has(resource_type):
 				continue

@@ -39,7 +39,23 @@ extends Resource
 ## production purposes, not a gate on whether the instance exists at all.
 @export var is_under_construction: bool = false
 
-func _init(p_definition: BuildingDefinition = null, p_hex_coord: Vector2i = Vector2i.ZERO, p_id: int = 0, p_local_position: Vector2 = Vector2.ZERO, p_current_population: int = -1, p_current_hp: float = -1.0, p_is_ruined: bool = false, p_is_under_construction: bool = false) -> void:
+## design_doc.md §2.1's "Going dark": the player switched this building off.
+## Stays true across the whole restart delay too — the countdown lives in
+## BuildingPowerController, exactly as is_under_construction's lives in
+## BuildingConstructionController, so "off" and "coming back up" are one flag
+## plus a pending job rather than two states on the instance.
+##
+## Unlike ruin, this does NOT zero current_population: the occupants of a
+## mothballed tenement still live there, so they keep eating
+## (BuildingSustenanceController counts them regardless), keep counting
+## toward Discontent (DiscontentManager._region_population()) and keep
+## counting toward settlement size (SettlementFoundingController). Switching
+## off suspends what the BUILDING draws and produces, not the people inside
+## it. Without that, mothballing every tenement during a famine would erase
+## the colony's whole Food demand.
+@export var is_powered_down: bool = false
+
+func _init(p_definition: BuildingDefinition = null, p_hex_coord: Vector2i = Vector2i.ZERO, p_id: int = 0, p_local_position: Vector2 = Vector2.ZERO, p_current_population: int = -1, p_current_hp: float = -1.0, p_is_ruined: bool = false, p_is_under_construction: bool = false, p_is_powered_down: bool = false) -> void:
 	definition = p_definition
 	hex_coord = p_hex_coord
 	id = p_id
@@ -52,9 +68,26 @@ func _init(p_definition: BuildingDefinition = null, p_hex_coord: Vector2i = Vect
 	current_hp = p_current_hp if p_current_hp >= 0.0 else (p_definition.get_max_hp() if p_definition else 0.0)
 	is_ruined = p_is_ruined
 	is_under_construction = p_is_under_construction
+	is_powered_down = p_is_powered_down
 
 func is_destroyed() -> bool:
 	return current_hp <= 0.0
+
+## Intact, finished, and switched on — the single "this building is
+## operating" test, for the sites that gate a building's own production,
+## upkeep, effects or services on it (BuildingSustenanceController,
+## UnitManager's training lookup, TacticalHexView's smoke/fire/light).
+##
+## Deliberately NOT used at every is_ruined site. Three of them want a
+## narrower question and say so at the call site instead: NoiseManager
+## leaves a construction site loud (design_doc.md §6 rates Building
+## Construction at 8 tiles), FogOfWarManager's lit_at_night branch and
+## CombatCoordinator's Searchlight check both already have their own
+## is_ruined handling whose meaning would change if construction were
+## folded in. BuildingManager.find_nearest_building() is a fourth: a
+## switched-off Garrison is still somewhere to retreat to.
+func is_running() -> bool:
+	return not is_ruined and not is_under_construction and not is_powered_down
 
 ## `daily_output` scaled by the soil fertility under this building's REAL
 ## sub-hex footprint (hex_coord + local_position — Sub-Hex Mechanical Layer
