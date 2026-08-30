@@ -45,6 +45,17 @@ signal building_repaired(instance: BuildingInstance)
 signal repair_rejected(instance: BuildingInstance, reason: String)
 signal building_ruined(instance: BuildingInstance, lost_population: int)
 signal building_demolished(instance: BuildingInstance)
+## design_doc.md §2.1's "Going dark" (BuildingPowerController). Every listener
+## that already recomputes a derived field off building_placed/removed/ruined
+## — NoiseManager's aura, FogOfWarManager's vision — must listen to these two
+## as well, or a switched-off building keeps emitting whatever it was emitting
+## until something unrelated happens to touch the same field.
+signal building_powered_down(instance: BuildingInstance)
+signal building_powered_up(instance: BuildingInstance)
+signal building_restart_started(instance: BuildingInstance, days: int)
+signal building_restart_cancelled(instance: BuildingInstance)
+signal building_restart_rejected(instance: BuildingInstance, reason: String)
+signal power_down_rejected(instance: BuildingInstance, reason: String)
 signal food_satisfaction_changed(ratio: float)
 
 ## Re-exported for external callers (DiscontentManager, UnitPanelView) —
@@ -68,6 +79,7 @@ var _infestation_manager: InfestationManager
 
 var _construction: BuildingConstructionController
 var _health: BuildingHealthController
+var _power: BuildingPowerController
 var _sustenance: BuildingSustenanceController
 var _capacity: CapacityAllocator
 
@@ -105,11 +117,26 @@ func _ready() -> void:
 
 	_health = BuildingHealthController.new(_resource_manager, _territory_controller, _capacity, Callable(_construction, "days_for"))
 	_health.damaged.connect(func(instance: BuildingInstance, amount: float) -> void: building_damaged.emit(instance, amount))
-	_health.ruined.connect(func(instance: BuildingInstance, lost_population: int) -> void: building_ruined.emit(instance, lost_population))
+	# Not a bare relay, unlike its siblings: BuildingPowerController.on_ruined()
+	# reconciles the going-dark state BEFORE the ruin is announced, so no
+	# listener ever observes a ruin that is also flagged switched-off. _power is
+	# constructed below, and this lambda only runs at ruin time, so the
+	# ordering is safe.
+	_health.ruined.connect(func(instance: BuildingInstance, lost_population: int) -> void:
+		_power.on_ruined(instance)
+		building_ruined.emit(instance, lost_population))
 	_health.repair_started.connect(func(instance: BuildingInstance, days: int) -> void: repair_started.emit(instance, days))
 	_health.repair_rejected.connect(func(instance: BuildingInstance, reason: String) -> void: repair_rejected.emit(instance, reason))
 	_health.repaired.connect(func(instance: BuildingInstance) -> void: building_repaired.emit(instance))
 	_health.demolished.connect(func(instance: BuildingInstance) -> void: building_demolished.emit(instance))
+
+	_power = BuildingPowerController.new(_capacity)
+	_power.powered_down.connect(func(instance: BuildingInstance) -> void: building_powered_down.emit(instance))
+	_power.power_down_rejected.connect(func(instance: BuildingInstance, reason: String) -> void: power_down_rejected.emit(instance, reason))
+	_power.restart_started.connect(func(instance: BuildingInstance, days: int) -> void: building_restart_started.emit(instance, days))
+	_power.restart_rejected.connect(func(instance: BuildingInstance, reason: String) -> void: building_restart_rejected.emit(instance, reason))
+	_power.restart_cancelled.connect(func(instance: BuildingInstance) -> void: building_restart_cancelled.emit(instance))
+	_power.powered_up.connect(func(instance: BuildingInstance) -> void: building_powered_up.emit(instance))
 
 	_sustenance = BuildingSustenanceController.new(_resource_manager, _discontent_manager, _hex_grid_map)
 	_sustenance.food_satisfaction_changed.connect(func(ratio: float) -> void: food_satisfaction_changed.emit(ratio))
@@ -279,8 +306,12 @@ func get_buildings_at(coord: Vector2i) -> Array[BuildingInstance]:
 func get_all_buildings() -> Array[BuildingInstance]:
 	return _instances.duplicate()
 
-## Nearest OPERATIONAL (not under construction, not ruined) building whose
-## type is in `types`, by plain hex distance from `from`. Linear scan rather
+## Nearest STANDING (not under construction, not ruined) building whose type
+## is in `types`, by plain hex distance from `from`. A switched-off building
+## still counts: its only caller is UnitOrderController's retreat target, and
+## a dark Garrison is still somewhere to fall back to — going dark is about
+## what a building emits and produces, not about whether it is there.
+## Linear scan rather
 ## than HexCoord.hex_disk()'s outward-ring search — this project's building
 ## count (dozens, not thousands) makes "check them all, keep the closest"
 ## simpler and equally fast. Null if none exist.
@@ -502,8 +533,8 @@ func place_building(building_type: GameEnums.BuildingType, coord: Vector2i, loca
 ## load_save_entries() passes the actual saved value since population is
 ## zeroed on ruin (BuildingHealthController.damage()) and can't otherwise be
 ## re-derived from the definition's fixed population_provided baseline.
-func _register_instance(definition: BuildingDefinition, coord: Vector2i, id: int, local_position: Vector2, advance_next_id: bool, current_population: int = -1, current_hp: float = -1.0, is_ruined: bool = false, is_under_construction: bool = false) -> BuildingInstance:
-	var instance := BuildingInstance.new(definition, coord, id, local_position, current_population, current_hp, is_ruined, is_under_construction)
+func _register_instance(definition: BuildingDefinition, coord: Vector2i, id: int, local_position: Vector2, advance_next_id: bool, current_population: int = -1, current_hp: float = -1.0, is_ruined: bool = false, is_under_construction: bool = false, is_powered_down: bool = false) -> BuildingInstance:
+	var instance := BuildingInstance.new(definition, coord, id, local_position, current_population, current_hp, is_ruined, is_under_construction, is_powered_down)
 	if is_under_construction:
 		instance.current_population = 0  ## No free population/housing capacity until construction finishes.
 	if advance_next_id:
@@ -531,6 +562,7 @@ func remove_building(instance: BuildingInstance) -> void:
 		_instances_by_hex[instance.hex_coord].erase(instance)
 	_health.remove_pending(instance)
 	_construction.remove(instance)
+	_power.remove_pending(instance)
 	building_removed.emit(instance)
 
 func damage_building(instance: BuildingInstance, amount: float) -> void:
@@ -557,6 +589,37 @@ func demolish_building(instance: BuildingInstance) -> bool:
 	remove_building(instance)
 	return true
 
+func get_power_down_error(instance: BuildingInstance) -> String:
+	return _power.get_power_down_error(instance)
+
+func can_power_down_building(instance: BuildingInstance) -> bool:
+	return _power.can_power_down(instance)
+
+func power_down_building(instance: BuildingInstance) -> bool:
+	return _power.power_down(instance)
+
+func get_restart_error(instance: BuildingInstance) -> String:
+	return _power.get_restart_error(instance)
+
+func can_restart_building(instance: BuildingInstance) -> bool:
+	return _power.can_restart(instance)
+
+func restart_building(instance: BuildingInstance) -> bool:
+	return _power.restart(instance)
+
+## 0 when `instance` is not restarting — either running, or switched off and
+## staying off. See BuildingPowerController.days_remaining_for().
+func get_restart_days_remaining(instance: BuildingInstance) -> int:
+	return _power.days_remaining_for(instance)
+
+## Off AND already coming back up, as opposed to off and staying off — the
+## two states BuildingInstance.is_powered_down alone cannot tell apart.
+func is_building_restarting(instance: BuildingInstance) -> bool:
+	return _power.is_restarting(instance)
+
+func get_restart_days_for(definition: BuildingDefinition) -> int:
+	return _power.restart_days_for(definition)
+
 ## Read-only preview of today's projected upkeep/output at current
 ## building/population state, for the resource-bar tooltip.
 func get_projected_daily_flow() -> Dictionary:
@@ -572,7 +635,7 @@ func get_save_entries() -> Array[BuildingSaveEntry]:
 		var days_remaining := 0
 		if instance.is_under_construction:
 			days_remaining = _construction.days_remaining_for(instance)
-		result.append(BuildingSaveEntry.new(instance.definition.building_type, instance.hex_coord, instance.id, instance.local_position, instance.current_population, instance.current_hp, instance.is_ruined, instance.is_under_construction, days_remaining))
+		result.append(BuildingSaveEntry.new(instance.definition.building_type, instance.hex_coord, instance.id, instance.local_position, instance.current_population, instance.current_hp, instance.is_ruined, instance.is_under_construction, days_remaining, instance.is_powered_down, _power.days_remaining_for(instance)))
 	return result
 
 ## Restores placed instances from a save: clears whatever is currently
@@ -590,14 +653,28 @@ func load_save_entries(entries: Array[BuildingSaveEntry], next_id: int) -> void:
 		if not definition:
 			push_warning("BuildingManager: unknown building type %s in save data, skipping." % entry.building_type)
 			continue
-		var instance := _register_instance(definition, entry.hex_coord, entry.id, entry.local_position, false, entry.current_population, entry.current_hp, entry.is_ruined, entry.is_under_construction)
+		var instance := _register_instance(definition, entry.hex_coord, entry.id, entry.local_position, false, entry.current_population, entry.current_hp, entry.is_ruined, entry.is_under_construction, entry.is_powered_down)
 		if entry.is_under_construction:
 			_construction.queue(instance, maxi(1, entry.construction_days_remaining))
+		if entry.is_powered_down and entry.restart_days_remaining > 0:
+			_power.load_pending_restart(instance, entry.restart_days_remaining)
 	_next_id = next_id
 
-## Runs before this day's Food/population tally so a construction/repair job
-## finishing TODAY already counts toward it.
 func _on_day_completed(_day_number: int) -> void:
+	run_daily_tick()
+
+## Every per-day building job, in the order they have to run: construction,
+## repair and restart countdowns all tick BEFORE this day's Food/production
+## tally, so a job finishing TODAY already counts toward it.
+##
+## Public so a verification can advance the simulation deterministically
+## instead of waiting on real time, the same reason (and the same wording)
+## InfestationManager.run_daily_tick() gives. TickManager.day_completed can
+## fire several times in one frame during a large-delta catch-up, so nothing
+## here may accumulate across calls — each collaborator's process_day() is
+## already pure per-call arithmetic over its own queue.
+func run_daily_tick() -> void:
 	_construction.process_day()
 	_health.process_day()
+	_power.process_day()
 	_sustenance.apply_day(_instances)

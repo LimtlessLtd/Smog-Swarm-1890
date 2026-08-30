@@ -14,6 +14,148 @@ Rules for this file:
 
 ---
 
+## 2026-08-30 — Going dark: buildings can be switched off
+
+Settled while building `BuildingPowerController`. `design_doc.md` §2.1's "Going
+dark" paragraph and D11 name four things an off building stops — production,
+upkeep, noise, light — a restart delay proportional to tier, and nothing else.
+These record what the spec left open, and one place the existing code had to
+move to make the flag safe.
+
+**D52. Going dark suspends what the BUILDING draws and produces. Its residents
+are untouched.** A switched-off building is skipped for `daily_upkeep` and
+`daily_output` (including the Energy/Population capacity entries), but its
+`current_population` still counts toward the colony Food bill, toward
+`DiscontentManager`'s overcrowding, and toward `SettlementFoundingController`'s
+urban extent.
+*Why:* the people in a mothballed tenement have not gone anywhere. The
+implementation trap this exists to name is real and one line wide — the natural
+change is to fold the power check into `BuildingSustenanceController`'s
+existing ruin/construction skip at the top of its loop, which also deletes the
+population accumulation underneath it. That would let a player switch off every
+house during a famine and erase the colony's entire Food demand at no cost, and
+it would put the Food bill and Discontent's headcount into permanent
+disagreement. `verify_building_power.gd` distinguishes the two outcomes by the
+exact size of the delta.
+*Accepted consequence:* switching off a pure-housing building is close to a
+no-op — it stops the building's own upkeep line and withdraws its Population
+capacity grant, and does nothing else. That is correct rather than useless: a
+house has no noise and no light to stop.
+
+**D53. The restart takes its Energy/Population capacity at COMPLETION, not when
+ordered — deliberately unlike repair.** `BuildingPowerController.restart()`
+queues the countdown and moves no capacity; `process_day()` re-checks
+affordability and applies it at the moment `is_powered_down` clears.
+*Why:* it buys one invariant the whole feature leans on — **an instance holds
+its capacity allocation exactly when `not is_ruined and not is_powered_down`**.
+`BuildingHealthController.demolish()` tops that allocation back up on the way
+out and has to know whether the building still holds it; with this ordering it
+reads the answer off the instance's own two flags and needs no reference to the
+power controller's pending list.
+*What the alternative costs, measured against the existing code:*
+`BuildingHealthController.repair()` applies capacity when the job is queued
+while `is_ruined` stays true until completion, so demolishing a building
+mid-repair silently leaks the allocation. That is a real pre-existing defect,
+found while deciding this and **not fixed here** — it needs its own test and its
+own change, and copying its ordering would have reproduced the same bug in a
+second place.
+*Accepted consequence:* a restart can be cancelled on the day it was due, if the
+grid can no longer carry the draw. It is reported through
+`building_restart_rejected` and toasted, because by then the player may have a
+different building selected and nothing else would tell them. Silently
+completing it is the one outcome that is not allowed: `CapacityAllocator.apply()`
+discards `spend()`'s bool, so an unaffordable apply takes the grant without the
+draw.
+
+**D54. The Town Hall cannot be switched off** (`BuildingDefinition.always_powered`,
+true on Town Hall alone).
+*Why:* it grants +100 Population and +20 Energy capacity, and
+`ResourceManager`'s POPULATION pool starts at 0.0 — that grant seeds the entire
+ledger every other building and unit draws from. It also emits no noise and no
+light, so blacking it out buys the player nothing at all toward P2 while
+zeroing their capacity. A switch whose only effect is self-harm is a trap, not
+a decision.
+*Open to reversal, and cheap:* one line in `BuildingCatalog._town_hall()`. The
+argument for allowing it is that the mechanic is more interesting if the capital
+CAN go dark and the player pays for it. Raised for the user rather than settled
+silently — see `backlog.md`.
+
+**D55. Zone of Control, storage capacity and retreat targeting are NOT affected
+by going dark.** `LogisticsNetwork`'s Civilian/Military ZoC still projects from
+a switched-off Watchtower or Supply Dump, `storage_bonus` stays on
+`ResourceManager`'s caps, and `BuildingManager.find_nearest_building()` still
+returns a dark Garrison.
+*Why:* the spec enumerates four things and these are none of them. A dark
+watchtower is still the tallest thing in the parish, a dark Garrison is still
+somewhere to fall back to, and switching off a Grain Silo should not spill the
+grain. Going dark is about what a building EMITS and PRODUCES, not about whether
+it is there — the same distinction `find_nearest_building()`'s own doc comment
+now records.
+*Deliberately reversible:* if ZoC should go dark too, it is one clause in
+`LogisticsNetwork.recompute()` plus two signal connections.
+
+**D56. Switching off is instant and free; the whole cost is the restart, at
+`1 + tier` days.** Tier 0 costs 1 day, Tier 5 costs 6. Read off
+`BuildingDefinition.tier` rather than through
+`BuildingConstructionController.days_for()`'s cost proxy.
+*Why instant:* it is the emergency move against a horde that is already walking
+toward the noise. A delay on the way down would make it useless for the one job
+it exists to do.
+*Why tier and not cost:* D11 names tier, and the two are not the same ordering —
+a Tier 5 Ordnance Complex and a Tier 1 Brickworks can land on the same clamped
+1-4 construction days, and "banking a Victorian furnace and bringing it back up
+is a real operation" has to bite hardest at the top of the tree.
+*Placeholder balancing numbers, not an architecture decision.* Nothing has been
+playtested against a horde yet; the shape (monotonic in tier, never zero) is
+what `verify_building_power.gd` locks down, not the constants.
+
+**D57. Ruin subsumes going dark: a destroyed building stops being "switched
+off".** `BuildingPowerController.on_ruined()` drops any queued restart and
+clears `is_powered_down`, called from `BuildingManager`'s `ruined` relay before
+the ruin is announced. `BuildingHealthController.damage()` skips its capacity
+refund for an instance that was already dark.
+*Why:* found by adversarially reviewing the first cut, and it is the ORDINARY
+sequence rather than an edge case — going dark is the emergency move against an
+approaching horde, so "switched off, then wrecked by that horde" is the expected
+path. Three defects fell out of the overlap, all of them capacity leaks:
+ruin refunded an allocation `power_down()` had already released (measured:
+**+20 Energy and +25 Population minted from nothing** on a Coal Mine); a restart
+queued before the building was destroyed completed days later on the rubble,
+drawing the full allocation for a building that no longer stood; and a repair
+completed while the flag was still set, leaving an instance that was not ruined,
+still flagged off, and holding capacity — at which point the Restart the UI
+offered would have applied it a second time.
+*The rule that resolves all three in one line each:* rubble is not "switched
+off", it is rubble. `is_ruined` already takes precedence everywhere, so letting
+the two flags overlap bought nothing and cost three leaks.
+*Consequence, taken deliberately:* a building switched off, destroyed, then
+repaired comes back RUNNING, not dark. A repair is a full rebuild paid at full
+capacity cost; coming out of it still mothballed would be a silent second cost.
+
+**D58. An in-flight restart can be cancelled.** "Switch off" on a building that
+is already dark and counting down drops the job and leaves it dark
+(`BuildingPowerController.power_down()`'s early branch); the panel button reads
+"Cancel restart" in that state.
+*Why:* the first cut refused it ("already switched off"), which meant an ordered
+restart could not be stopped. A horde turning toward the district on day 2 of a
+5-day restart would be met by a foundry lighting up on schedule — the exact
+situation the mechanic exists for, failing at the one moment it matters.
+*Free to implement, because of D53:* `restart()` takes no capacity, so
+cancelling has nothing to release and nothing to reverse. Dropping the queued
+job is the whole operation.
+
+**Two pre-existing gaps found while wiring this, recorded rather than fixed.**
+Both are out of scope and neither is made worse here.
+`FogOfWarManager._compute_visible_set()` checks neither `is_ruined` nor
+`is_under_construction`, so a ruined building still lights the map and a
+construction site sees at full radius — the `is_powered_down` clause added there
+is the first instance-state gate in that loop. And `NoiseManager` listens to
+`building_ruined` but not to `building_repaired` or
+`building_construction_completed`, so a repaired building stays silent until the
+next day-phase flip. Filed in `backlog.md`.
+
+---
+
 ## 2026-08-29 — Combat against a hex's residents
 
 Settled while building `ResidentDefenseController`. `design_doc.md` §2.1 is

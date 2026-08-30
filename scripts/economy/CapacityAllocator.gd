@@ -42,6 +42,17 @@ func cost(definition: Resource) -> Dictionary:
 			result[resource_type] = amount
 	return result
 
+## Whether the pool can currently cover this definition's capacity draw —
+## the question every "start drawing capacity again" path has to ask before
+## committing (BuildingHealthController.get_repair_error(),
+## BuildingPowerController.get_restart_error()). True when no
+## ResourceManager is wired, matching those callers' existing "unwired means
+## unchecked" behaviour.
+func can_afford_cost(definition: Resource) -> bool:
+	if not _resource_manager:
+		return true
+	return _resource_manager.can_afford(cost(definition))
+
 func apply(definition: Resource) -> void:
 	if not _resource_manager:
 		return

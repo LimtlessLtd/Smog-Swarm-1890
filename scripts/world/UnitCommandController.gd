@@ -337,6 +337,31 @@ func repair_selected_wall() -> bool:
 		return _wall_manager.repair_segment(_selected_wall)
 	return false
 
+## design_doc.md §2.1's "Going dark". Same thin-wrapper shape as the repair
+## pair above — the two directions are separate calls rather than one
+## toggle() so UnitPanelView can label and gate the button with the real
+## rejection reason before the player presses it, which a single toggle
+## could not report.
+func get_selected_building_power_down_error() -> String:
+	if _selected_building and _building_manager:
+		return _building_manager.get_power_down_error(_selected_building)
+	return "Nothing selected."
+
+func power_down_selected_building() -> bool:
+	if _selected_building and _building_manager:
+		return _building_manager.power_down_building(_selected_building)
+	return false
+
+func get_selected_building_restart_error() -> String:
+	if _selected_building and _building_manager:
+		return _building_manager.get_restart_error(_selected_building)
+	return "Nothing selected."
+
+func restart_selected_building() -> bool:
+	if _selected_building and _building_manager:
+		return _building_manager.restart_building(_selected_building)
+	return false
+
 func get_selected_building_demolish_error() -> String:
 	if _selected_building and _building_manager:
 		return _building_manager.get_demolish_error(_selected_building)

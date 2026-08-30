@@ -40,7 +40,17 @@ func damage(instance: BuildingInstance, amount: float) -> void:
 		var lost_population := instance.current_population
 		instance.current_population = 0
 		instance.is_ruined = true
-		_capacity.refund(instance.definition)
+		# Only release the Energy/Population allocation if this instance was
+		# still HOLDING it — a switched-off building already had it refunded by
+		# BuildingPowerController.power_down(), and refunding again mints
+		# capacity from nothing. Same guard, same reason, as demolish() below.
+		# Going dark is the emergency move against an approaching horde, so
+		# "switched off, then wrecked" is the ordinary sequence, not an edge
+		# case. BuildingManager relays `ruined` through
+		# BuildingPowerController.on_ruined(), which clears the flag once this
+		# decision has been made.
+		if not instance.is_powered_down:
+			_capacity.refund(instance.definition)
 		ruined.emit(instance, lost_population)
 
 func repair_cost(definition: BuildingDefinition) -> Dictionary:
@@ -59,7 +69,7 @@ func get_repair_error(instance: BuildingInstance) -> String:
 	# Full amount, not REPAIR_COST_FRACTION — repairing reconnects the same
 	# operational power draw a fresh construction would; the 50% discount
 	# only applies to physical rebuild material.
-	if _resource_manager and not _resource_manager.can_afford(_capacity.cost(instance.definition)):
+	if not _capacity.can_afford_cost(instance.definition):
 		return "Not enough Energy/Population capacity to repair %s." % instance.definition.display_name
 	return ""
 
@@ -91,10 +101,16 @@ func can_demolish(instance: BuildingInstance) -> bool:
 
 ## Refund: construction_cost * REPAIR_COST_FRACTION, or 100% if the instance
 ## is still under construction (nothing built yet to have used up material
-## on). Energy/Population capacity is a separate 100% top-up, only for a
-## still-intact building — a ruin already had its capacity refunded once by
-## damage()'s ruin branch, so a second refund here would create capacity from
-## nothing.
+## on). Energy/Population capacity is a separate 100% top-up, only for an
+## instance that is still HOLDING that allocation — a ruin already had its
+## capacity refunded once by damage()'s ruin branch, and a switched-off
+## building by BuildingPowerController.power_down(), so a second refund for
+## either would create capacity from nothing.
+##
+## The two flags are the whole test because BuildingPowerController.restart()
+## deliberately does not take capacity until the restart COMPLETES and the
+## flag clears — see its own doc comment for why the invariant is worth that
+## divergence from repair().
 func demolish(instance: BuildingInstance) -> bool:
 	if not get_demolish_error(instance).is_empty():
 		return false
@@ -103,7 +119,7 @@ func demolish(instance: BuildingInstance) -> bool:
 		var refund_fraction := 1.0 if instance.is_under_construction else REPAIR_COST_FRACTION
 		for resource_type in instance.definition.construction_cost:
 			refund[resource_type] = float(instance.definition.construction_cost[resource_type]) * refund_fraction
-		if not instance.is_ruined:
+		if not instance.is_ruined and not instance.is_powered_down:
 			var capacity_refund := _capacity.cost(instance.definition)
 			for resource_type in capacity_refund:
 				refund[resource_type] = refund.get(resource_type, 0.0) + capacity_refund[resource_type]

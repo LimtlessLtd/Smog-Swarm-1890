@@ -76,6 +76,14 @@ func setup(unit_command_controller: UnitCommandController, unit_manager: UnitMan
 		# already covered above (or by _on_day_completed()'s daily refresh
 		# for the construction-completion case).
 		_building_manager.building_damaged.connect(_on_building_stats_changed)
+		# design_doc.md §2.1's "Going dark" — the header tag, the button's
+		# own label and the economy stats all flip on these, and the restart
+		# countdown in the tag ticks down through _on_day_completed()'s
+		# daily refresh, same as construction's does.
+		_building_manager.building_powered_down.connect(_on_building_stats_changed)
+		_building_manager.building_powered_up.connect(_on_building_stats_changed)
+		_building_manager.building_restart_started.connect(_on_building_stats_changed)
+		_building_manager.building_restart_cancelled.connect(_on_building_stats_changed)
 	if _wall_manager:
 		_wall_manager.repair_started.connect(_on_wall_repair_changed)
 		_wall_manager.wall_segment_repaired.connect(_on_wall_repair_changed)
@@ -163,8 +171,7 @@ func _render_building_panel(instance: BuildingInstance) -> void:
 	_clear_list()
 	var definition := instance.definition
 	var header := Label.new()
-	var tag := " (RUINED)" if instance.is_ruined else (" (UNDER CONSTRUCTION)" if instance.is_under_construction else "")
-	header.text = "%s%s" % [definition.display_name, tag]
+	header.text = "%s%s" % [definition.display_name, _building_state_tag(instance)]
 	HUDStyles.style_label(header, true)
 	_list.add_child(header)
 
@@ -174,9 +181,12 @@ func _render_building_panel(instance: BuildingInstance) -> void:
 		HUDStyles.style_label(stats)
 		_list.add_child(stats)
 		# Economy stats (daily output/upkeep) would misleadingly suggest a
-		# construction site is already producing — it isn't, see
-		# BuildingManager._on_day_completed()'s own is_under_construction skip.
-		if not instance.is_under_construction:
+		# construction site or a switched-off building is producing — neither
+		# is, see BuildingSustenanceController.compute_daily_totals()'s own
+		# is_under_construction and is_powered_down skips. Without the second
+		# one the panel prints "100 Coal/day" directly under its own
+		# "(SWITCHED OFF)" header.
+		if instance.is_running():
 			_add_building_economy_stats(instance)
 
 	_add_repair_button(
@@ -184,17 +194,18 @@ func _render_building_panel(instance: BuildingInstance) -> void:
 		func() -> String: return _unit_command_controller.get_selected_building_repair_error(),
 		_unit_command_controller.repair_selected_building
 	)
+	_add_power_button(instance)
 	_add_demolish_button(
 		func() -> String: return _unit_command_controller.get_selected_building_demolish_error(),
 		_unit_command_controller.demolish_selected_building,
 		instance.is_under_construction
 	)
 
-	# A building under construction can't train — same is_under_construction/
-	# is_ruined gate _add_building_economy_stats() above applies, extended
-	# here too rather than showing a Train section that would reject every
-	# card with "must finish construction" anyway.
-	if definition.can_train_units and not instance.is_under_construction and not instance.is_ruined:
+	# A building under construction, ruined or switched off can't train —
+	# same is_running() gate UnitManager._get_training_building() applies,
+	# extended here too rather than showing a Train section that would reject
+	# every card with "must finish construction" anyway.
+	if definition.can_train_units and instance.is_running():
 		var coord := instance.hex_coord
 		var train_header := Label.new()
 		train_header.text = "Train at %s" % coord
@@ -398,6 +409,82 @@ func _render_wall_panel(segment: WallSegment) -> void:
 		func() -> String: return _unit_command_controller.get_selected_wall_demolish_error(),
 		_unit_command_controller.demolish_selected_wall
 	)
+
+## design_doc.md §2.1's "Going dark" state, appended to the panel header.
+## Ruin beats construction beats power, matching
+## TacticalHexView._building_base_modulate()'s precedence so the header and
+## the sprite never disagree. The restart countdown is read through
+## UnitCommandController's manager rather than stored on the instance — see
+## BuildingPowerController.days_remaining_for().
+func _building_state_tag(instance: BuildingInstance) -> String:
+	if instance.is_ruined:
+		return " (RUINED)"
+	if instance.is_under_construction:
+		return " (UNDER CONSTRUCTION)"
+	if not instance.is_powered_down:
+		return ""
+	var days := _building_manager.get_restart_days_remaining(instance) if _building_manager else 0
+	if days > 0:
+		return " (RESTARTING — %d day%s)" % [days, "" if days == 1 else "s"]
+	return " (SWITCHED OFF)"
+
+## One button, three states — "Switch off" while the building is running,
+## "Restart" once it is off, "Cancel restart" while a restart is counting
+## down. Unlike Repair (hidden until something is damaged) it is always shown
+## for a building, because "you cannot switch this one off" is itself
+## information the player wants: the disabled tooltip carries the real reason,
+## the same idiom _add_demolish_button() uses.
+##
+## The cancel state is not cosmetic. A restart cannot otherwise be stopped, so
+## without it a horde arriving on day 2 of a 5-day restart is met by a foundry
+## that lights up on schedule — the exact situation going dark exists for.
+## Cancel routes through power_down_selected_building(), which is what
+## BuildingPowerController reads "switch off an already-dark building" as.
+func _add_power_button(instance: BuildingInstance) -> void:
+	if not _unit_command_controller:
+		return
+	var is_off := instance.is_powered_down
+	var restarting := is_off and _building_manager and _building_manager.is_building_restarting(instance)
+	var days := _restart_days(instance)
+	var plural := "" if days == 1 else "s"
+	var button := Button.new()
+	var error: String
+	if restarting:
+		button.text = "Cancel restart"
+		error = _unit_command_controller.get_selected_building_power_down_error()
+	elif is_off:
+		button.text = "Restart"
+		error = _unit_command_controller.get_selected_building_restart_error()
+	else:
+		button.text = "Switch off"
+		error = _unit_command_controller.get_selected_building_power_down_error()
+	button.disabled = not error.is_empty()
+	if not error.is_empty():
+		button.tooltip_text = error
+	elif restarting:
+		button.tooltip_text = "Stop the restart and leave %s dark." % instance.definition.display_name
+	elif is_off:
+		button.tooltip_text = "Bring %s back online over %d day%s." % [instance.definition.display_name, days, plural]
+	else:
+		# Names what going dark actually buys, because none of it is visible on
+		# this panel: the noise and light terms live in NoiseManager's field,
+		# which has no UI of its own.
+		button.tooltip_text = "Stop production, upkeep, noise and light. Restarting takes %d day%s." % [days, plural]
+	button.pressed.connect(func() -> void:
+		if is_off and not restarting:
+			_unit_command_controller.restart_selected_building()
+		else:
+			_unit_command_controller.power_down_selected_building()
+	)
+	HUDStyles.style_button(button)
+	_list.add_child(button)
+
+## 0 with no BuildingManager wired, matching this class's existing "optional
+## manager, degrade quietly" contract (see setup()'s own default arguments).
+func _restart_days(instance: BuildingInstance) -> int:
+	if not _building_manager:
+		return 0
+	return _building_manager.get_restart_days_for(instance.definition)
 
 ## Shared by both panels above — a Repair button only appears once the
 ## thing is actually damaged enough to repair (is_ruined/is_breached(),

@@ -115,6 +115,20 @@ extends Resource
 ## above Cleared.
 @export var is_defensive: bool = false
 
+## design_doc.md §2.1's "Going dark" exempts nothing by name, so this marks
+## the one building the mechanic cannot apply to: Town Hall. Its
+## daily_output grants +100 Population and +20 Energy capacity — the pool
+## every other building and unit draws from (ResourceManager's POPULATION
+## starts at 0.0 and is seeded entirely by this grant) — so switching it off
+## would zero the colony's whole capacity ledger rather than trade anything.
+## It also anchors the settlement footprint SettlementFoundingController
+## rebuilds from, and it emits no noise and no light, so it has nothing to
+## go dark WITH.
+##
+## Follows this file's "false == no special treatment" convention: an
+## ordinary building never sets it and is switchable off.
+@export var always_powered: bool = false
+
 func _init(p_type: GameEnums.BuildingType = GameEnums.BuildingType.TOWN_HALL, p_display_name: String = "") -> void:
 	building_type = p_type
 	display_name = p_display_name

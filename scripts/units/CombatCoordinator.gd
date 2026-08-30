@@ -260,7 +260,10 @@ func _garrison_incoming_multiplier(instance: UnitInstance) -> float:
 
 func _is_near_searchlight_tower(coord: Vector2i) -> bool:
 	for instance in _building_manager.get_all_buildings():
-		if instance.is_ruined or instance.definition.building_type != GameEnums.BuildingType.SEARCH_LIGHT:
+		# is_powered_down for the same reason is_ruined is here: the night
+		# accuracy bonus is the tower's beam, and a switched-off tower has no
+		# beam (design_doc.md §2.1's "Going dark").
+		if instance.is_ruined or instance.is_powered_down or instance.definition.building_type != GameEnums.BuildingType.SEARCH_LIGHT:
 			continue
 		if HexCoord.distance(instance.hex_coord, coord) <= instance.definition.vision_radius:
 			return true

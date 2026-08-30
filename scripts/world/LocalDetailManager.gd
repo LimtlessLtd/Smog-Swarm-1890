@@ -95,6 +95,13 @@ func _ready() -> void:
 		# off without a second building_placed emission (which would
 		# double-fire every other building_placed listener too).
 		_building_manager.building_construction_completed.connect(_on_buildings_changed)
+		# Same "the set of buildings didn't change, one of them just looks
+		# different" case as _on_building_ruined() below — a switched-off
+		# building loses its tint, its smoke and its lamp
+		# (TacticalHexView._build_building_node()), so the hex has to
+		# re-hydrate to pick that up.
+		_building_manager.building_powered_down.connect(_on_buildings_changed)
+		_building_manager.building_powered_up.connect(_on_buildings_changed)
 	if settlement_founding_controller_path != NodePath():
 		var founding: SettlementFoundingController = get_node(settlement_founding_controller_path)
 		founding.urban_extent_changed.connect(_on_urban_extent_changed)

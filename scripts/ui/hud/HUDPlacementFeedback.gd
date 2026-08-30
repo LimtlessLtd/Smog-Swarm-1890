@@ -18,6 +18,18 @@ func wire_building_manager(building_manager: BuildingManager) -> void:
 	building_manager.placement_rejected.connect(_on_placement_rejected)
 	building_manager.construction_started.connect(_on_construction_started)
 	building_manager.repair_started.connect(_on_building_repair_started)
+	# design_doc.md §2.1's "Going dark". building_restart_rejected is the
+	# reason this cluster is wired at all rather than left to the building
+	# panel: BuildingPowerController cancels a restart at COMPLETION if the
+	# grid can no longer carry it, days after the player ordered it and quite
+	# possibly with a different building selected, so it has nowhere else to
+	# be seen.
+	building_manager.building_powered_down.connect(_on_building_powered_down)
+	building_manager.building_powered_up.connect(_on_building_powered_up)
+	building_manager.building_restart_started.connect(_on_building_restart_started)
+	building_manager.building_restart_cancelled.connect(_on_building_restart_cancelled)
+	building_manager.building_restart_rejected.connect(_on_building_action_rejected)
+	building_manager.power_down_rejected.connect(_on_building_action_rejected)
 
 func wire_wall_manager(wall_manager: WallManager) -> void:
 	wall_manager.repair_started.connect(_on_wall_repair_started)
@@ -82,3 +94,28 @@ func _on_building_repair_started(instance: BuildingInstance, days: int) -> void:
 
 func _on_wall_repair_started(_segment: WallSegment, days: int) -> void:
 	_toast.show("Repairing wall segment — ready in %d day%s." % [days, "" if days == 1 else "s"])
+
+## Names all four things going dark actually stops, because none of them are
+## visible anywhere on screen — noise and light are a NoiseManager field the
+## player never sees directly, and it is the whole reason for pulling the
+## switch (design_doc.md §2.1, vision.md P2).
+func _on_building_powered_down(instance: BuildingInstance) -> void:
+	_toast.show("%s switched off — no production, no upkeep, no noise, no light." % _building_name(instance))
+
+func _on_building_powered_up(instance: BuildingInstance) -> void:
+	_toast.show("%s is back online." % _building_name(instance))
+
+func _on_building_restart_started(instance: BuildingInstance, days: int) -> void:
+	_toast.show("Restarting %s — online in %d day%s." % [_building_name(instance), days, "" if days == 1 else "s"])
+
+## Distinct from _on_building_powered_down(): nothing changed about what the
+## building emits (it was already dark), only that it is no longer coming back.
+func _on_building_restart_cancelled(instance: BuildingInstance) -> void:
+	_toast.show("%s's restart cancelled — it stays dark." % _building_name(instance))
+
+## Same router every other rejection uses — see _on_placement_blocked().
+func _on_building_action_rejected(_instance: BuildingInstance, reason: String) -> void:
+	_toast.show(reason)
+
+func _building_name(instance: BuildingInstance) -> String:
+	return instance.definition.display_name if instance and instance.definition else "Building"
