@@ -17,6 +17,21 @@ extends Node
 ## EXPLORED instantly — it lingers VISIBLE for LOST_VISION_GRACE_SECONDS
 ## first, so losing sight of a threat isn't instant/twitchy.
 ##
+## A building's own instance state gates what it contributes, three ways: a
+## RUIN contributes nothing at all, not even its own hex; a CONSTRUCTION SITE
+## sees its own hex only, at either phase; a SWITCHED-OFF building keeps its
+## base radius but is not a lit source. Each clause carries its reasoning at
+## the line itself (the loop in _compute_visible_set() and
+## _building_vision_radius() under it). Scoped to the BUILDING loop, same way
+## the night-vision paragraph below is: the ZoC coverage this class also
+## folds in is gated on ruin but NOT on construction, so a half-built
+## Watchtower still reveals its Military aura through that path (decisions.md
+## D62, filed rather than fixed). The three signals that make the first two
+## land at the moment they happen — building_ruined, building_repaired,
+## building_construction_completed — are connected in _ready(): the gate and
+## its trigger are one change, since a gate nothing recomputes against is
+## only visible when some unrelated event next rebuilds the set.
+##
 ## Night vision contraction: shrinks vision_radius at night for every
 ## building EXCEPT lit sources (BuildingDefinition.lit_at_night — Gas
 ## Streetlamp, Church Steeple Watchtower, Searchlight Tower), which hold or
@@ -121,6 +136,18 @@ func _ready() -> void:
 		# unit-triggered recomputes go through the per-frame coalescer.
 		_building_manager.building_powered_down.connect(_on_buildings_changed)
 		_building_manager.building_powered_up.connect(_on_buildings_changed)
+		# The other three transitions that change what a building can see
+		# without emitting building_placed/building_removed. Without them the
+		# ruin and construction clauses in _compute_visible_set() only bite
+		# the next time something unrelated (a phase flip, a unit crossing a
+		# hex boundary, a ZoC recompute) happens to force a rebuild — the
+		# same "keeps emitting whatever it was emitting until something
+		# unrelated touches the same field" failure BuildingManager's own
+		# building_powered_down doc comment names, which already lists this
+		# class as a listener that has to keep up.
+		_building_manager.building_ruined.connect(_on_building_ruined)
+		_building_manager.building_repaired.connect(_on_buildings_changed)
+		_building_manager.building_construction_completed.connect(_on_buildings_changed)
 	if logistics_network_path != NodePath():
 		_logistics_network = get_node(logistics_network_path)
 		_logistics_network.network_recomputed.connect(_on_network_recomputed)
@@ -205,24 +232,20 @@ func _compute_visible_set() -> Dictionary:
 	var is_night := TimeCycleManager.is_night()
 	if _building_manager:
 		for instance in _building_manager.get_all_buildings():
-			var radius := instance.definition.vision_radius
-			if is_night:
-				# A switched-off building is not a lit source (design_doc.md
-				# §2.1's "Going dark": an off building "emits... no light"),
-				# so it takes the ordinary unlit contraction instead of the
-				# lit bonus. It keeps its base vision_radius: the lamp is out,
-				# but a Church Steeple Watchtower still has someone up the
-				# tower. Deliberately not written as is_running() — an
-				# under-construction lit source keeps its existing behaviour
-				# here, which is a separate question this change does not open.
-				if instance.definition.lit_at_night and not instance.is_powered_down:
-					radius += NIGHT_LIT_BONUS
-				else:
-					radius = maxi(0, radius - NIGHT_VISION_PENALTY)
-			# Dense local terrain right around the vision source itself
-			# shrinks its effective radius — reduces, never blocks (no
-			# stealth mechanic).
-			radius = _apply_terrain_penalty(radius, instance.hex_coord)
+			# Rubble is not a vision source at all — not even of its own hex.
+			# is_ruined already means the instance "stops producing/consuming/
+			# housing anything" (BuildingInstance.current_hp's doc comment),
+			# and LogisticsNetwork ("rubble, not a functioning civic seat —
+			# projects nothing"), NoiseManager and CombatCoordinator's
+			# Searchlight check all skip a ruin for that reason; this loop was
+			# the one that did not. The hex falls back to EXPLORED once
+			# LOST_VISION_GRACE_SECONDS runs out, so terrain memory and the
+			# minimap's building icon (gated at-least-EXPLORED) both survive —
+			# what the player loses is live sight of the ground the building
+			# was watching, at the moment a horde takes it.
+			if instance.is_ruined:
+				continue
+			var radius := _apply_terrain_penalty(_building_vision_radius(instance, is_night), instance.hex_coord)
 			_mark_visible_from_source(instance.hex_coord, instance.local_position, radius, result)
 	if _unit_manager:
 		# Same radius/night/terrain contract as buildings above — see this
@@ -237,6 +260,35 @@ func _compute_visible_set() -> Dictionary:
 		for coord in _logistics_network.get_covered_hexes():
 			result[coord] = true
 	return result
+
+## A building's vision ring before the terrain penalty, for a building that
+## is not a ruin (the loop above drops those first). Split out of
+## _compute_visible_set() once construction and going dark each needed a
+## clause of their own in here.
+func _building_vision_radius(instance: BuildingInstance, is_night: bool) -> int:
+	# A construction site is a work party standing on open ground, not the
+	# building it is putting up: it sees its own hex — radius 0 still means
+	# that (BuildingDefinition.vision_radius' own doc comment) — and nothing
+	# beyond it, at either phase. vision_radius is a property of the finished
+	# structure: scaffolding is not a lookout, and an unbuilt Gas Streetlamp
+	# is not lit, so no night term applies here either. The site is staffed
+	# and audible the whole time (§6 rates Building Construction at 8 tiles
+	# of noise, which is why NoiseManager deliberately leaves it loud); it is
+	# just not yet tall.
+	if instance.is_under_construction:
+		return 0
+	var radius := instance.definition.vision_radius
+	if is_night:
+		# A switched-off building is not a lit source (design_doc.md §2.1's
+		# "Going dark": an off building "emits... no light"), so it takes the
+		# ordinary unlit contraction instead of the lit bonus. It keeps its
+		# base vision_radius: the lamp is out, but a Church Steeple Watchtower
+		# still has someone up the tower.
+		if instance.definition.lit_at_night and not instance.is_powered_down:
+			radius += NIGHT_LIT_BONUS
+		else:
+			radius = maxi(0, radius - NIGHT_VISION_PENALTY)
+	return radius
 
 ## Fills `result` with every hex within `radius` of a vision source sitting
 ## at `source_local_position` inside `source_hex` — shared by the building
@@ -276,6 +328,11 @@ func _push_view_state(coord: Vector2i, state: GameEnums.FogState) -> void:
 		view.set_fog_state(state)
 
 func _on_buildings_changed(_instance: BuildingInstance) -> void:
+	recompute()
+
+## Separate from _on_buildings_changed() only because building_ruined carries
+## a second argument, same as NoiseManager's handler for it.
+func _on_building_ruined(_instance: BuildingInstance, _lost_population: int) -> void:
 	recompute()
 
 func _on_units_changed(_instance: UnitInstance) -> void:

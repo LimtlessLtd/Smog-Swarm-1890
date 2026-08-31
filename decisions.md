@@ -14,6 +14,121 @@ Rules for this file:
 
 ---
 
+## 2026-08-30 — What a ruin and a building site emit
+
+Settled while closing the two gaps the going-dark work filed (see the section
+below). Three systems read `vision_radius` and `lit_at_night` off the same
+`BuildingInstance` and disagreed about what an unfinished or destroyed one
+means; `design_doc.md` says nothing about either state (`grep -i ruin` on it
+returns nothing), so these are gap-fills argued from the repo's own precedent
+rather than spec compliance.
+
+**D59. A ruin emits nothing at all — not even vision of its own hex.**
+`FogOfWarManager._compute_visible_set()` skips a ruined instance outright
+rather than zeroing its radius.
+*Why:* four systems already answered this question the same way —
+`LogisticsNetwork` ("rubble, not a functioning civic seat — projects
+nothing"), `NoiseManager`, `CombatCoordinator`'s Searchlight beam, and
+`BuildingManager.find_nearest_building()`'s "STANDING" test. Fog was the only
+dissenter, and it was dissenting in the player's favour: a burnt-out Search
+Light kept the `lit_at_night` bonus for a lamp that had stopped attracting
+anything one skip earlier in `NoiseManager`. The repo's own test for which
+side of the line something falls on is
+`find_nearest_building()`'s: going dark is "about what a building emits and
+produces, not about whether it is there". Vision is emitted.
+*Accepted consequence, and it is not small:* the player loses live sight of
+the ground at the moment they most want to watch it. Measured on the gate's
+fixture at night, a destroyed Watchtower takes its hex count from **37 to 0**.
+`HUDReconTracker`'s "horde approaching — ETA" warning is gated on fog VISIBLE,
+so it goes silent exactly when the watchtower watching for that horde falls;
+tactical figures in those hexes stop drawing, and horde markers freeze into
+last-known-position ghosts. What survives is everything gated on
+at-least-EXPLORED: terrain memory (permanent — `recompute()` never revokes
+it), the minimap's own building dot, and therefore the ability to select the
+ruin and order the repair.
+*Reversal is small but not one word:* move the `is_ruined` test out of the
+loop and into `_building_vision_radius()` as `return 0`, which keeps the
+rubble's own hex VISIBLE and drops only the ring. Two lines, one behaviour
+change, if it plays too abruptly.
+*The consequence that is NOT symmetric with D60, stated so it is not
+mistaken for an oversight:* a building being repaired stays `is_ruined` for
+the whole 1-4 day job (`BuildingHealthController.process_day()` clears it
+only at completion, and nothing sets `is_under_construction`), so a repair
+site emits nothing while a construction site sees its own hex — even though
+both are work parties standing on the same ground. That is `is_ruined`'s
+existing meaning everywhere in the codebase, not a new rule here, and it was
+already true of ZoC and noise before this change; only fog is newly affected.
+Giving a repair site its own hex would need a "being repaired" state on the
+instance, which does not exist, so it is left as-is rather than invented.
+
+**D60. A construction site sees its own hex, casts no lamp, and stays loud.**
+`vision_radius` and `lit_at_night` are properties of the FINISHED structure:
+scaffolding is not a lookout and an uninstalled gas lamp is not lit. So a site
+takes radius 0 (which still marks its own hex — `BuildingDefinition.vision_radius`'s
+own doc comment), takes no night term at all, is not a Searchlight for
+`CombatCoordinator`'s garrison beam, and does not contribute
+`NoiseManager.NIGHT_LIGHT_ATTRACTION`. Its `noise_output` term is deliberately
+left running, which is `NoiseManager`'s existing call (§6 rates Building
+Construction at 8 tiles).
+*Why not "a site sees nothing":* the work party is really there — that is the
+same fact that keeps the site loud. It sees the ground it stands on and not
+the county.
+*Accepted consequence:* a Search Light under construction is now SILENT,
+because its `noise_output` is 0 and the lamp was the only term it had. That is
+wrong in the same direction §6 already is: the flat per-building model has no
+term for construction noise at all and uses the finished building's machinery
+as a stand-in. `backlog.md`'s noise emission rewrite is where that gets fixed;
+this change does not make it worse for any building that has a `noise_output`.
+*Not covered by the gate:* the `CombatCoordinator` clause. The beam is only
+reachable through a full combat round, so it is argued from parity with the
+other two rather than measured.
+
+**D61. A gate and its trigger are one change, never two.** The same commit
+connects `building_ruined`/`building_repaired`/`building_construction_completed`
+to `FogOfWarManager`, `building_repaired`/`building_construction_completed` to
+`NoiseManager`, and `building_ruined`/`building_repaired` to
+`LogisticsNetwork`.
+*Why:* a state gate that nothing recomputes against is invisible until some
+unrelated event rebuilds the field — the next day-phase flip (up to half an
+in-game day, and never while paused) or a unit crossing a hex boundary. Two of
+the three gates here were already correct and only stale: `NoiseManager` had
+gated ruin since it was written, and `LogisticsNetwork`'s ZoC ruin gate came
+with its own explanatory comment. Neither was ever told when a building became
+one. Measured before the fix: a destroyed Watchtower still lit **37 hexes 10
+seconds later** and still projected ZoC over **7**.
+*Accepted consequences, both real:* Military/Civilian ZoC — and therefore
+`DiscontentManager`'s region membership, which reads
+`get_civilian_covered_hexes()` — now collapses at the instant of ruin instead
+of whenever the next recompute happened to land. And a ruin now costs two full
+fog rebuilds where both managers are wired (fog's own trigger, then
+`network_recomputed`). Neither manager may lean on the other's trigger to keep
+its own state true, so the redundancy stays; `recompute()` is documented cheap
+at this scale and a ruin is a rare event.
+
+**D62. Zone of Control is still NOT gated on construction, and that is left
+open rather than decided here.** A Watchtower or Search Light under
+construction keeps projecting its Military aura, and fog reads ZoC coverage
+verbatim as vision — so in the real game a building site still reveals a
+one-hex ring, and D60's "its own hex and no more" describes fog's own building
+loop, not the union.
+*Why not just fix it:* the ruin trigger above restores an intent
+`LogisticsNetwork` had already written down. Gating ZoC on construction is a
+NEW rule about territory, supply and Discontent regions, with no precedent in
+that file to lean on, and it would mean a placed Watchtower projects no
+military control for its first 1-4 days. That is a design call, not a stale
+trigger. Filed in `backlog.md`; stated in the gate's own header so no check
+quietly depends on the wrong thing.
+*What D60 costs while this stays open, and it is the sharpest argument for
+closing it:* the lamp gate removed the only price an unfinished Watchtower or
+Search Light paid. A site still projects its Military aura — 7 hexes of
+ZoC-derived vision through fog — still holds its `storage_bonus`, and still
+refunds 100% of its cost on demolish; what it no longer does is attract
+anything at night. A permanently-unfinished tower is now a free, silent
+watchpost. Nothing else in the game rewards not finishing a building, and
+this is the one place that now does.
+
+---
+
 ## 2026-08-30 — Going dark: buildings can be switched off
 
 Settled while building `BuildingPowerController`. `design_doc.md` §2.1's "Going
@@ -145,7 +260,8 @@ cancelling has nothing to release and nothing to reverse. Dropping the queued
 job is the whole operation.
 
 **Two pre-existing gaps found while wiring this, recorded rather than fixed.**
-Both are out of scope and neither is made worse here.
+Both are out of scope and neither is made worse here. **Both closed 2026-08-30
+— see the section above (D59-D62).**
 `FogOfWarManager._compute_visible_set()` checks neither `is_ruined` nor
 `is_under_construction`, so a ruined building still lights the map and a
 construction site sees at full radius — the `is_powered_down` clause added there

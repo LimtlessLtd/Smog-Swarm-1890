@@ -52,26 +52,39 @@ dependency order.
   more interesting if the capital CAN go dark and the player pays for it. One line in
   `BuildingCatalog._town_hall()` either way. It interacts with the ZoC question below,
   so answer both together.
+- [ ] `[design]` **Should a building site project Zone of Control?** Raised
+  2026-08-30 by the item below it and deliberately not settled there (D62).
+  `LogisticsNetwork.recompute()` gates ZoC on `is_ruined` but not on
+  `is_under_construction`, so a Watchtower projects Military control — and, since
+  `FogOfWarManager` reads ZoC coverage verbatim as vision, reveals a one-hex ring —
+  from the frame it is placed, days before it exists. Saying no is one clause in each
+  of the two ZoC loops; the cost is that a placed Watchtower or Supply Dump projects
+  nothing for its first 1-4 days, which is a territory/supply/Discontent-region change,
+  not a vision one. **The argument for saying no got sharper the same day:** with the
+  lamp gate landed (D60), an unfinished tower no longer attracts anything at night but
+  still projects that aura, so a permanently-unfinished Watchtower is a free, silent
+  watchpost — the one place in the game that rewards not finishing a building.
+  Answer it with the two ZoC questions below.
 - [ ] `[design]` **Should Zone of Control go dark too?** §2.1 enumerates four things an
   off building stops and ZoC is not one of them, so as built a switched-off Watchtower
   or Supply Dump still projects (D55). If it should, it is one clause in
   `LogisticsNetwork.recompute()` plus two signal connections. The cost of saying yes:
   going dark would start losing the player territory and vision coverage, not just
   production — a much heavier trade than the spec describes.
-- [ ] `[gated]` **`FogOfWarManager` grants full vision to ruins and construction sites.**
-  Found 2026-08-30 while adding the going-dark light gate.
-  `_compute_visible_set()`'s building loop checks neither `is_ruined` nor
-  `is_under_construction` — a burnt-out shell lights the map exactly as the intact
-  building did, including the `lit_at_night` night bonus. The `is_powered_down` clause
-  added there is the first instance-state gate in that loop; the other two were left
-  alone deliberately, since fixing them changes what the player can see and wants its
-  own before/after.
-- [ ] `[gated]` **A repaired building stays silent until the next day-phase flip.**
-  Found 2026-08-30. `NoiseManager` connects `building_ruined` but neither
-  `building_repaired` nor `building_construction_completed`, so a rebuilt foundry
-  contributes no noise until `TimeCycleManager.phase_changed` happens to fire. One
-  connection each, but it changes when hordes are drawn to a rebuilt district, so it
-  wants a measurement rather than a blind two-line fix.
+- [x] `[gated]` **`FogOfWarManager` grants full vision to ruins and construction
+  sites.** Done 2026-08-30. A ruin emits nothing at all, a construction site sees its
+  own hex and casts no lamp, and the three signals that make those land at the moment
+  they happen are connected in the same change. Before/after on the gate's own fixture
+  at night: a destroyed Watchtower **37 hexes → 0**, a site **37 → 1**. Gated by
+  `scripts/test/verify_building_state_emissions.gd`. (D59-D62)
+- [x] `[gated]` **A repaired building stays silent until the next day-phase flip.**
+  Done 2026-08-30, with the fog item above — same defect, and the same fixture
+  measures both. `NoiseManager` now connects `building_repaired` and
+  `building_construction_completed`, and its `lit_at_night` term is gated on
+  construction (an uninstalled lamp is not lit) while `noise_output` stays
+  deliberately loud. Measured: a repaired Watchtower's own hex went **0.0 → 1.0
+  attraction at the moment of repair**, where before it stayed 0.0 until the next
+  phase flip. (D60, D61)
 - [ ] `[design]` **Contested-band decay of non-defensive structures.** §2.1 says
   "Existing non-defensive structures decay while the hex is Contested"; the rate, and
   whether that decay is repairable, are undesigned.
@@ -170,6 +183,24 @@ dependency order.
   (`ELITE_KILLS` 10) after 200 simulated seconds. Bounded — ELITE is +25% damage
   and there is no rank above it — so this is a meaning problem rather than a
   balance runaway. Needs a decision on what a kill is before any code. (D51)
+- [ ] `[gated]` **Repair can be ordered again while it is already running, and
+  charges again each time.** Found 2026-08-30 while reviewing the emissions change.
+  `is_ruined` stays true for the whole 1-4 day repair job, `get_repair_error()` never
+  asks whether one is already queued, and `UnitPanelView._add_repair_button()` shows
+  the button for any ruin — so pressing Repair twice spends the material cost twice
+  AND calls `CapacityAllocator.apply()` twice, minting a second Energy/Population draw
+  for one building. Same family as the mid-repair leak below, opposite direction, and
+  probably the same fix: a public "is this instance already being repaired" question
+  on `BuildingManager`, which `get_repair_error()`, `demolish()` and the panel can all
+  ask.
+- [ ] `[gated]` **A repaired building keeps its rubble silhouette at Tactical zoom.**
+  Found 2026-08-30. `LocalDetailManager` connects `building_placed`/`_removed`/
+  `_ruined`/`_construction_completed`/`_powered_down`/`_powered_up` but not
+  `building_repaired`, and only those handlers dehydrate a hex before rebuilding —
+  `TacticalHexView` draws a ruin as a code-drawn rubble polygon, so a rebuilt building
+  stays visibly wrecked until something else forces the hex to rehydrate. The same
+  missing-trigger defect the 2026-08-30 emissions work fixed in fog, noise and ZoC;
+  this one is a render, so it wants a before/after screenshot rather than a count.
 - [ ] `[gated]` **Demolishing a building mid-repair leaks its Energy/Population
   allocation.** Found 2026-08-30 while deciding D53.
   `BuildingHealthController.repair()` applies capacity when the repair job is QUEUED,

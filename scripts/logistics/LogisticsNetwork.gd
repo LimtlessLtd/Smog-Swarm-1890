@@ -109,6 +109,14 @@ func _ready() -> void:
 		_building_manager = get_node(building_manager_path)
 		_building_manager.building_placed.connect(_on_buildings_changed)
 		_building_manager.building_removed.connect(_on_buildings_changed)
+		# recompute() has always skipped a ruined building ("rubble, not a
+		# functioning civic seat"), but nothing told it one had become rubble:
+		# a destroyed Watchtower kept projecting its Military aura — and, via
+		# FogOfWarManager reading ZoC coverage as vision, kept lighting the
+		# map — until a placement, a territory flip or a unit moving happened
+		# to force a rebuild. The gate was right; only the trigger was missing.
+		_building_manager.building_ruined.connect(_on_building_ruined)
+		_building_manager.building_repaired.connect(_on_buildings_changed)
 	if territory_controller_path != NodePath():
 		_territory_controller = get_node(territory_controller_path)
 		_territory_controller.district_state_changed.connect(_on_territory_changed)
@@ -377,6 +385,11 @@ func _set_severed_between(hex_a: Vector2i, hex_b: Vector2i, severed: bool) -> vo
 	recompute()
 
 func _on_buildings_changed(_instance: BuildingInstance) -> void:
+	recompute()
+
+## Separate from _on_buildings_changed() only because building_ruined carries
+## a second argument.
+func _on_building_ruined(_instance: BuildingInstance, _lost_population: int) -> void:
 	recompute()
 
 func _on_territory_changed(_coord: Vector2i, _is_contested: bool) -> void:
