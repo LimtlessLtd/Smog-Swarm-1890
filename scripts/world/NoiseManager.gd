@@ -75,6 +75,14 @@ func _ready() -> void:
 		_building_manager.building_ruined.connect(_on_building_ruined)
 		_building_manager.building_powered_down.connect(_on_buildings_changed)
 		_building_manager.building_powered_up.connect(_on_buildings_changed)
+		# The two transitions back. Without them a rebuilt foundry stayed
+		# silent, and a building that finished construction kept whatever the
+		# site was emitting, until the next TimeCycleManager phase flip
+		# happened to rebuild the field — up to half an in-game day (1200
+		# scaled seconds), and forever while the game is paused. Ruin already
+		# had its trigger; only the return paths were missing.
+		_building_manager.building_repaired.connect(_on_buildings_changed)
+		_building_manager.building_construction_completed.connect(_on_buildings_changed)
 	TimeCycleManager.phase_changed.connect(_on_phase_changed)
 	recompute()
 
@@ -124,7 +132,15 @@ func recompute() -> void:
 			var contribution := float(instance.definition.noise_output)
 			if is_night:
 				contribution *= NIGHT_NOISE_MULTIPLIER
-			if is_night and instance.definition.lit_at_night:
+			# The lamp, not the building: an unbuilt Gas Streetlamp is not
+			# lit, so a construction site draws nothing through this term
+			# even though the line above deliberately leaves it loud. Same
+			# claim FogOfWarManager._building_vision_radius() makes about the
+			# same lamp, and CombatCoordinator about the same Search Light
+			# beam. What the site should emit INSTEAD is §6's Building
+			# Construction at 8 tiles, which this flat per-building model has
+			# no term for at all — see backlog.md's noise emission rewrite.
+			if is_night and instance.definition.lit_at_night and not instance.is_under_construction:
 				contribution += NIGHT_LIGHT_ATTRACTION
 			if contribution <= 0.0:
 				continue

@@ -76,16 +76,19 @@ func is_destroyed() -> bool:
 ## Intact, finished, and switched on — the single "this building is
 ## operating" test, for the sites that gate a building's own production,
 ## upkeep, effects or services on it (BuildingSustenanceController,
-## UnitManager's training lookup, TacticalHexView's smoke/fire/light).
+## UnitManager's training lookup, TacticalHexView's smoke/fire/light,
+## CombatCoordinator's Searchlight beam).
 ##
 ## Deliberately NOT used at every is_ruined site. Three of them want a
-## narrower question and say so at the call site instead: NoiseManager
-## leaves a construction site loud (design_doc.md §6 rates Building
-## Construction at 8 tiles), FogOfWarManager's lit_at_night branch and
-## CombatCoordinator's Searchlight check both already have their own
-## is_ruined handling whose meaning would change if construction were
-## folded in. BuildingManager.find_nearest_building() is a fourth: a
-## switched-off Garrison is still somewhere to retreat to.
+## narrower answer than one bool and say so at the call site instead:
+## NoiseManager leaves a construction site loud (design_doc.md §6 rates
+## Building Construction at 8 tiles) while gating only its lamp term on
+## construction; FogOfWarManager reads all three flags and gives a different
+## answer to each — a ruin sees nothing, a site sees its own hex, a
+## switched-off building keeps its base radius and loses only the
+## lit_at_night bonus; and BuildingManager.find_nearest_building() wants
+## "standing" rather than "operating", because a switched-off Garrison is
+## still somewhere to retreat to.
 func is_running() -> bool:
 	return not is_ruined and not is_under_construction and not is_powered_down
 

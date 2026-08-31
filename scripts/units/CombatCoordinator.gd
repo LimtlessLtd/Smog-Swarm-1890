@@ -247,9 +247,10 @@ func _engage(instance: UnitInstance, horde: Horde, movement_from: Vector2i, move
 		_unit_manager.remove_unit(instance)
 
 ## A GARRISON-ordered unit takes less incoming damage, stacking further at
-## night if a non-ruined Search Light's own vision_radius reaches this
-## hex. HOLD deliberately does NOT qualify — this is Garrison's own payoff
-## over plain Hold, same distinction UnitOrderController's healing mechanic makes.
+## night if a FINISHED, intact, switched-on Search Light's own vision_radius
+## reaches this hex. HOLD deliberately does NOT qualify — this is Garrison's
+## own payoff over plain Hold, same distinction UnitOrderController's healing
+## mechanic makes.
 func _garrison_incoming_multiplier(instance: UnitInstance) -> float:
 	if instance.order != GameEnums.UnitOrderType.GARRISON:
 		return 1.0
@@ -260,10 +261,17 @@ func _garrison_incoming_multiplier(instance: UnitInstance) -> float:
 
 func _is_near_searchlight_tower(coord: Vector2i) -> bool:
 	for instance in _building_manager.get_all_buildings():
-		# is_powered_down for the same reason is_ruined is here: the night
-		# accuracy bonus is the tower's beam, and a switched-off tower has no
-		# beam (design_doc.md §2.1's "Going dark").
-		if instance.is_ruined or instance.is_powered_down or instance.definition.building_type != GameEnums.BuildingType.SEARCH_LIGHT:
+		# The beam, and nothing about the beam survives any of the three
+		# not-operating states: rubble has none, a switched-off tower has
+		# none (design_doc.md §2.1's "Going dark"), and an unbuilt one does
+		# not have one yet — which is exactly is_running(). The two other
+		# systems reading the same lamp off the same definition fields need
+		# a finer answer than this and say so at their own call sites
+		# (FogOfWarManager._building_vision_radius() keeps a dark tower's
+		# base radius; NoiseManager leaves a building site loud). This one is
+		# reached only through a full combat round, so unlike those two it is
+		# not covered by verify_building_state_emissions.gd.
+		if not instance.is_running() or instance.definition.building_type != GameEnums.BuildingType.SEARCH_LIGHT:
 			continue
 		if HexCoord.distance(instance.hex_coord, coord) <= instance.definition.vision_radius:
 			return true
