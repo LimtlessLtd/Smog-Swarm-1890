@@ -13,10 +13,17 @@ extends RefCounted
 
 ## Display-only normalization ceiling — deliberately NOT the same value as
 ## `HordeManager.ATTRACTION_THRESHOLD` (that's the gameplay threshold a
-## horde actually reacts to; this is just "what noise level reads as
-## visually maxed-out"), though roughly in the same ballpark by design (a
-## couple of stacked industrial buildings, or one doubled by night).
-const VISUALIZATION_MAX_NOISE: float = 12.0
+## horde actually reacts to; this is just "what attraction level reads as
+## visually maxed-out").
+##
+## Re-derived 2026-09-01 when the field stopped being a flat 0-12 sum and
+## became decibels above `NoisePropagation.HEARING_THRESHOLD_DB`. The field's
+## own range decides this: the loudest building in the catalogue puts 103 on
+## its OWN hex, 27 one hex out and 3.7 two hexes out. Normalising against 103
+## would paint every hex but the source amber; 30 is the neighbouring-hex
+## value of a heavy works, so the marker saturates where an industrial
+## district's near ring is, which is the thing the Threat Meter is for.
+const VISUALIZATION_MAX_NOISE: float = 30.0
 
 const COLOR_LOW: Color = Color(0.95, 0.75, 0.1, 0.5)   ## Amber, translucent — a faint threat.
 const COLOR_HIGH: Color = Color(0.85, 0.15, 0.1, 0.8)  ## Red, more opaque — a serious one.

@@ -110,6 +110,15 @@ dependency order.
   Tier 0 building restarts in 1 day and a Tier 5 in 6. Nothing has been played against
   an actual horde yet — the question is whether 6 days is enough to make banking a
   furnace a real decision, or so much that nobody ever switches one off. (D56)
+  The noise rewrite added one that matters more than the rest, 2026-09-01:
+  `NoisePropagation.HEARING_THRESHOLD_DB` 5.0. It is the single number deciding how far
+  every building in the game reaches, and it was fitted to reproduce the flat 2-hex disc
+  it replaced rather than derived from anything. Two consequences to weigh together:
+  terrain now takes real ground back (measured around the starting corridor, the mean
+  path costs 8.0 dB, so the loudest building pulls 1.67 hexes there against 2.03 on
+  clear ground — 82%), and a quiet building is now genuinely local (a Brickworks lights
+  its own hex and nothing else over that terrain). Re-measure with
+  `scripts/test/diagnose_noise_emission.gd`. (D66)
 - [x] `[gated]` **Tactical zombie layer + live-hex LOD.** Done 2026-08-29.
   `LiveHexTracker` owns §2.1's live-hex rule, `ZombieSwarm` holds one crowd in
   packed arrays, `ZombieSwarmManager` splits the 60,000 budget hordes-first then
@@ -148,10 +157,22 @@ dependency order.
   and the restart costs `1 + tier` days. Gated by
   `scripts/test/verify_building_power.gd`. (D11, plus D52-D56 for what the spec left
   open.)
-- [ ] `[gated]` **Noise emission rewrite.** The consumer already works — `HordeManager`
-  ATTRACTED + `_pick_attraction_target()` + `NoiseManager`. Emission is a flat 2-hex
-  building-only aura, ~40x the reach of §6's loudest listed sound. Replace with §6's
-  per-source dB and attenuation model. (D10, and the §6 item below)
+- [x] `[gated]` **Noise emission rewrite.** Done 2026-09-01. `NoisePropagation` owns
+  §6's model — a source level in dB at 10 m, geometric spreading, air absorption, and
+  §6's woodland/high-ground/mountain rules — and `NoiseManager` keeps the field and the
+  signals. `BuildingDefinition.noise_output` (a 0-6 rank) became `noise_source_db` (a
+  real level, 80-108 across 17 buildings). Measured: reach now spans **0.85 hexes for a
+  Brickworks to 2.03 for a Bessemer complex** where every building used to project the
+  identical 2-hex disc; the loudest is calibrated to land where that disc did, so it is
+  a change of shape and not of balance. Sources now combine as intensities (four equal
+  buildings are +6 dB, not 4x). `scripts/test/verify_noise_emission.gd`,
+  `scripts/test/diagnose_noise_emission.gd`. (D10, plus D66-D69)
+  **What this item asked for and did NOT get, stated because the wording invites it:**
+  §6's radius table is not implemented at this layer and must not be. Every entry in it
+  fits inside a twentieth of one hex (artillery, its loudest, is 400 m against a
+  8,647 m hex), so implementing it literally deletes the ATTRACTED mechanic. That table
+  belongs to a tactical consumer that does not exist yet — see the §6 item under
+  Deferred, and `NoisePropagation`'s own header.
 - [ ] `[gated]` **Walls block bleed proportionally.** Sub-hex coverage extending
   `SubHexPortalGraph.has_any_crossing()`, cached per hex-pair, invalidated on
   `WallManager`'s place/remove/breach/repair signals. Hordes still siege. (D16-D19)
@@ -269,7 +290,11 @@ Not forgotten. Not worked on until the core loop works. Do not justify work by t
 
 - [ ] `[design]` **§6 line-of-sight and light propagation, full version.** The crude
   `lit_at_night` attraction increment is in Now; full LoS/illumination waits. Needs the
-  fine elevation bake. Detail below.
+  fine elevation bake. Detail below. **Two things the 2026-09-01 noise work leaves
+  here:** §6's tactical sound-radius table (melee 20 m through artillery 400 m) has no
+  consumer and belongs to whatever reads sound at the tactical layer, not to
+  `NoisePropagation`; and light is still a flat night-only +1.0 added in the attraction
+  domain, because there is nothing to derive a distance curve from until this lands.
 - [ ] `[design]` **Blood/smell attraction.** Raised by the user, explicitly undesigned.
 - [ ] `[design]` **Late-game settlement-count management + automation/governors.** The
   acknowledged consequence of "killing is the only suppression" (D8).
