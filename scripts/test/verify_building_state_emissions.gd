@@ -181,7 +181,7 @@ func _check_a_standing_watchtower_lights_its_ring() -> void:
 	if visible.size() != _expected_disk_size() or _furthest_visible(visible) != radius:
 		_failures.append("an intact Watchtower lit %d hexes out to distance %d, not the %d of its radius-%d disk" % [visible.size(), _furthest_visible(visible), _expected_disk_size(), radius])
 	if absf(_noise.get_noise_at(_TOWER_HEX) - _expected_tower_noise()) > _EPSILON:
-		_failures.append("an intact Watchtower put %.1f attraction on its own hex, not the %.1f its noise_output and lamp come to" % [_noise.get_noise_at(_TOWER_HEX), _expected_tower_noise()])
+		_failures.append("an intact Watchtower put %.1f attraction on its own hex, not the %.1f its noise_source_db and lamp come to" % [_noise.get_noise_at(_TOWER_HEX), _expected_tower_noise()])
 
 
 ## Rubble is not a source of anything. LogisticsNetwork ("rubble, not a
@@ -203,16 +203,16 @@ func _check_a_ruin_emits_nothing() -> void:
 ## A construction site is a work party standing on open ground: present and
 ## loud, but not yet the lookout it is building and not yet the lamp. It sees
 ## its own hex — radius 0 still means that — and no further, and it draws
-## nothing through the lit_at_night term. Its noise_output term is
+## nothing through the lit_at_night term. Its noise_source_db term is
 ## deliberately left alone (NoiseManager's own comment, §6's Building
-## Construction at 8 tiles); the Watchtower's is 0, so what this measures is
-## the lamp on its own.
+## Construction at 8 tiles); the Watchtower's is 0.0, the catalogue's "not
+## machinery" sentinel, so what this measures is the lamp on its own.
 func _check_a_construction_site_sees_its_own_hex_and_lights_no_lamp() -> void:
 	if not await _arrange(false, true):
 		return
 	var visible := _visible_hexes()
 	var expected_noise := _construction_noise()
-	print("Watchtower under construction: %d hexes visible (want 1, its own), %.1f attraction (want %.1f — noise_output only, no lamp)" % [
+	print("Watchtower under construction: %d hexes visible (want 1, its own), %.1f attraction (want %.1f — machinery only, no lamp)" % [
 		visible.size(), _noise.get_noise_at(_TOWER_HEX), expected_noise])
 	if visible.size() != 1 or not _fog.is_visible(_TOWER_HEX):
 		_failures.append("a Watchtower under construction lit %d hexes out to distance %d — a building site sees its own hex and no more" % [visible.size(), _furthest_visible(visible)])
@@ -423,10 +423,18 @@ func _expected_tower_noise() -> float:
 
 
 ## What the same building emits while it is still a construction site: the
-## machinery term only, which NoiseManager deliberately leaves running.
+## machinery term only, which NoiseManager deliberately leaves running. Read
+## through NoisePropagation rather than restated, so a change to the model or
+## to the catalogue moves this with it instead of turning it into a false
+## failure. 0.0 is the catalogue's "not machinery" sentinel, and a Watchtower
+## carries it — which is exactly why this fixture can measure the lamp alone.
 func _construction_noise() -> float:
-	var output := float(BuildingCatalog.get_definition(_TOWER).noise_output)
-	return output * (NoiseManager.NIGHT_NOISE_MULTIPLIER if TimeCycleManager.is_night() else 1.0)
+	var source_db := BuildingCatalog.get_definition(_TOWER).noise_source_db
+	if source_db <= 0.0:
+		return 0.0
+	if TimeCycleManager.is_night():
+		source_db += NoisePropagation.NIGHT_PROPAGATION_BONUS_DB
+	return maxf(0.0, NoisePropagation.level_at(source_db, 0.0) - NoisePropagation.HEARING_THRESHOLD_DB)
 
 
 ## True once the pinned clock has actually put TimeCycleManager in NIGHT.

@@ -14,6 +14,75 @@ Rules for this file:
 
 ---
 
+## 2026-09-01 — What a building's noise actually reaches
+
+`backlog.md` asked for "§6's per-source dB and attenuation model" in place of a flat
+2-hex aura it measured at ~43x the reach of §6's loudest listed sound. Taking that
+literally turned out to be the wrong move, and the measurement that says so is the
+first entry below.
+
+**D66. §6's radius table is TACTICAL and is not implemented at the strategic layer.**
+What is implemented is §6's *model* — source level, spreading, absorption, terrain —
+with buildings on their own scale.
+*Why, measured:* a tactical tile is 10 m (§7) and a macro hex is 8,647 m centre to
+centre, so **every row of §6's table fits inside a twentieth of one hex** — melee 20 m,
+rifle 150 m, Maxim 250 m, construction 80 m, artillery 400 m. Emission at those radii
+never crosses a hex boundary, `HordeManager`'s ATTRACTED state scans whole hexes, and
+the counterplay `vision.md` P2 calls the core tension engine of the game would stop
+working entirely. §6 has no strategic entry to use instead: its only building row is
+"Building Construction, 8 tiles".
+*Consequence, accepted:* the reach of a building is a game-scale number and says so.
+`NoisePropagation.HEARING_THRESHOLD_DB` is the one knob it hangs off, fitted so the
+catalogue's loudest building pulls a horde from 2.03 hexes — where the flat disc it
+replaces already reached — so this lands as a change of shape and not of balance.
+Filed as a balance knob in `backlog.md`, and gated so it cannot drift silently.
+
+**D67. `noise_output` (a 0-6 rank) becomes `noise_source_db` (dB at 10 m).**
+*Why:* the old field's own comment already wanted what a rank could not express —
+"a Foundry's hammering is louder than a Brickworks' kiln" — while every building above 0
+projected the identical 2-hex disc and differed only in magnitude, uniformly, at every
+hex inside it. With a real source level, reach is derived: **0.85 hexes for a Brickworks
+against 2.03 for a Bessemer Smelting Complex**. 0.0 stays the "not machinery" sentinel;
+it is not a 0 dB source.
+
+**D68. Sources combine as intensities, not as sums.** Four equal buildings on one hex
+are +6 dB.
+*Why:* the old code summed contributions and its comment claimed that was "closer to how
+real industrial noise stacks". It is the opposite — levels are logarithmic and it is
+intensities that add — so a ten-building district read as ten times as attractive rather
+than 10 dB louder. *Consequence, accepted:* stacking industry is a much smaller penalty
+than it was, which the per-source reach spread more than replaces as a decision.
+
+**D69. Terrain attenuation is computed per HEX and cached there, not per
+source/listener path — and the elevation half of it reads the COARSE raster.**
+*Why, measured, twice:*
+- The first implementation ray-marched each source/listener path at 250 m through
+  `SubHexTerrainQuery`. At 200 buildings a recompute took **55 s** and never got faster,
+  because 7,400 pairs at ~70 samples each overran and thrashed the path cache.
+  Sampling each hex's own terrain once instead and walking the hex line between
+  endpoints costs one dictionary lookup per hex crossed: **0.23 s cold, 39 ms warm**.
+- Within that per-hex sampling, `elevation_metres()` (the fine 30 m read `CLAUDE.md` §3
+  names as sanctioned) loads one ~27 KB PNG per hex, which took a cold recompute from
+  **0.23 s to 11.5 s** with only that line changed. The coarse raster's high-ground
+  FRACTION differs from the fine one by 0.057 on average and 0.33 at worst over 140
+  corridor hexes — **0.34 dB mean, 2.0 dB worst** once multiplied into the 6 dB rule.
+*Why that is defensible and not merely cheap:* the quantity is a SHARE of a 65 km² hex
+used as a share of a kilometres-long path integral, which is what an area fraction
+is for. `RealTerrainSampler` makes the same call for the same reason — the fine bake
+deliberately covers biome and terrain_feature and not elevation, because "elevation
+varies smoothly enough at this scale". Biome, where sub-hex detail is real and cheap,
+still reads the fine tile.
+*What would reverse it:* a consumer that needs to know WHERE in a hex the high ground
+is rather than how much of it there is. §6's line-of-sight work is that consumer, and
+it is deferred.
+*Also settled here:* §6's "Level 2/3 Highlands reduce propagation by 50%" is applied in
+proportion to how much of the path is high ground, not whole the moment a path touches
+any. The first version applied it whole, and the measurement caught it — HILL starts at
+100 m and most of northern England clears that, so it fired on essentially every path
+and became a global -6 dB rather than a property of a barrier.
+
+---
+
 ## 2026-08-30 — What a ruin and a building site emit
 
 Settled while closing the two gaps the going-dark work filed (see the section
