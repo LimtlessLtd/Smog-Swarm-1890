@@ -220,7 +220,7 @@ static func _coal_mine() -> BuildingDefinition:
 	d.daily_upkeep = {GameEnums.ResourceType.POPULATION: 25.0, GameEnums.ResourceType.ENERGY: 20.0, GameEnums.ResourceType.FOOD: 20.0}
 	d.daily_output = {GameEnums.ResourceType.COAL: 100.0}
 	d.allowed_biomes = _COAL_BIOMES
-	d.noise_output = 5  # Winding gear/heavy machinery.
+	d.noise_source_db = 95.0  # Winding gear/heavy machinery.
 	return d
 
 static func _limestone_quarry() -> BuildingDefinition:
@@ -231,7 +231,7 @@ static func _limestone_quarry() -> BuildingDefinition:
 	d.daily_upkeep = {GameEnums.ResourceType.POPULATION: 20.0, GameEnums.ResourceType.ENERGY: 15.0, GameEnums.ResourceType.FOOD: 15.0}
 	d.daily_output = {GameEnums.ResourceType.LIMESTONE: 150.0}
 	d.allowed_biomes = _LIMESTONE_BIOMES
-	d.noise_output = 4
+	d.noise_source_db = 92.0  # Crushers run continuously; the blasting is intermittent.
 	return d
 
 static func _brickworks() -> BuildingDefinition:
@@ -242,7 +242,7 @@ static func _brickworks() -> BuildingDefinition:
 	d.daily_upkeep = {GameEnums.ResourceType.POPULATION: 10.0, GameEnums.ResourceType.ENERGY: 30.0, GameEnums.ResourceType.CLAY: 100.0}
 	d.daily_output = {GameEnums.ResourceType.BRICKS: 100.0}
 	d.allowed_biomes = _INDUSTRIAL_BIOMES
-	d.noise_output = 3  # Kilns firing.
+	d.noise_source_db = 80.0  # Kiln draught and firing; no impact noise.
 	return d
 
 static func _estate_farm() -> BuildingDefinition:
@@ -265,7 +265,7 @@ static func _coal_powerplant() -> BuildingDefinition:
 	d.daily_upkeep = {GameEnums.ResourceType.POPULATION: 15.0, GameEnums.ResourceType.COAL: 40.0}
 	d.daily_output = {GameEnums.ResourceType.ENERGY: 500.0}
 	d.allowed_biomes = _INDUSTRIAL_BIOMES
-	d.noise_output = 4
+	d.noise_source_db = 90.0  # Boiler house and steam plant.
 	return d
 
 ## Reuses the orphaned Steam Printing Press art (see BuildingVisuals) — the
@@ -330,7 +330,7 @@ static func _iron_ore_mine() -> BuildingDefinition:
 	d.daily_upkeep = {GameEnums.ResourceType.POPULATION: 30.0, GameEnums.ResourceType.ENERGY: 40.0, GameEnums.ResourceType.FOOD: 25.0}
 	d.daily_output = {GameEnums.ResourceType.IRON_ORE: 100.0}
 	d.allowed_biomes = _IRON_ORE_BIOMES
-	d.noise_output = 5
+	d.noise_source_db = 95.0
 	return d
 
 static func _iron_foundry() -> BuildingDefinition:
@@ -341,7 +341,7 @@ static func _iron_foundry() -> BuildingDefinition:
 	d.daily_upkeep = {GameEnums.ResourceType.POPULATION: 40.0, GameEnums.ResourceType.ENERGY: 150.0, GameEnums.ResourceType.IRON_ORE: 100.0, GameEnums.ResourceType.COAL: 25.0, GameEnums.ResourceType.FOOD: 30.0}
 	d.daily_output = {GameEnums.ResourceType.IRON: 100.0}
 	d.allowed_biomes = _INDUSTRIAL_BIOMES
-	d.noise_output = 6  # Hammering/casting.
+	d.noise_source_db = 105.0  # Hammering/casting.
 	return d
 
 static func _concrete_plant() -> BuildingDefinition:
@@ -352,7 +352,7 @@ static func _concrete_plant() -> BuildingDefinition:
 	d.daily_upkeep = {GameEnums.ResourceType.POPULATION: 30.0, GameEnums.ResourceType.ENERGY: 80.0, GameEnums.ResourceType.LIMESTONE: 100.0, GameEnums.ResourceType.CLAY: 50.0, GameEnums.ResourceType.COAL: 20.0, GameEnums.ResourceType.FOOD: 30.0}
 	d.daily_output = {GameEnums.ResourceType.CONCRETE: 150.0}
 	d.allowed_biomes = _INDUSTRIAL_BIOMES
-	d.noise_output = 4
+	d.noise_source_db = 90.0  # Mixers and aggregate handling.
 	return d
 
 static func _industrial_farm() -> BuildingDefinition:
@@ -413,7 +413,7 @@ static func _sulfur_mine() -> BuildingDefinition:
 	d.daily_upkeep = {GameEnums.ResourceType.POPULATION: 35.0, GameEnums.ResourceType.ENERGY: 60.0, GameEnums.ResourceType.FOOD: 30.0}
 	d.daily_output = {GameEnums.ResourceType.SULFUR: 60.0}  ## design_doc.md output raised 50->60/day this pass — see design_doc.md §3 Tier 3.
 	d.allowed_biomes = _SULFUR_BIOMES
-	d.noise_output = 5
+	d.noise_source_db = 93.0
 	return d
 
 ## High-output Coal consolidator, added this pass so a late-game colony
@@ -428,7 +428,7 @@ static func _deep_coal_shafts() -> BuildingDefinition:
 	d.daily_upkeep = {GameEnums.ResourceType.POPULATION: 40.0, GameEnums.ResourceType.ENERGY: 100.0, GameEnums.ResourceType.FOOD: 40.0}
 	d.daily_output = {GameEnums.ResourceType.COAL: 500.0}
 	d.allowed_biomes = _COAL_BIOMES
-	d.noise_output = 6
+	d.noise_source_db = 100.0  # Larger winding engines plus ventilation fans.
 	return d
 
 ## Same consolidator role as Deep Coal Shafts, for Wood — roughly 5 Lumber
@@ -441,7 +441,7 @@ static func _sawmills() -> BuildingDefinition:
 	d.daily_upkeep = {GameEnums.ResourceType.POPULATION: 35.0, GameEnums.ResourceType.ENERGY: 80.0, GameEnums.ResourceType.FOOD: 30.0}
 	d.daily_output = {GameEnums.ResourceType.WOOD: 1000.0}
 	d.allowed_biomes = _WOOD_BIOMES
-	d.noise_output = 4
+	d.noise_source_db = 95.0  # Circular saws — louder than their size suggests.
 	return d
 
 ## Reuses the pre-rework Saltpetre Powder Mill art/identifier role.
@@ -453,7 +453,7 @@ static func _gunpowder_mill() -> BuildingDefinition:
 	d.daily_upkeep = {GameEnums.ResourceType.POPULATION: 15.0, GameEnums.ResourceType.ENERGY: 40.0, GameEnums.ResourceType.SULFUR: 60.0, GameEnums.ResourceType.COAL: 40.0, GameEnums.ResourceType.FOOD: 20.0}
 	d.daily_output = {GameEnums.ResourceType.GUNPOWDER: 120.0}
 	d.allowed_biomes = _INDUSTRIAL_BIOMES
-	d.noise_output = 4
+	d.noise_source_db = 88.0  # Edge-runner incorporating mills, deliberately run slow.
 	return d
 
 static func _steelworks() -> BuildingDefinition:
@@ -464,7 +464,7 @@ static func _steelworks() -> BuildingDefinition:
 	d.daily_upkeep = {GameEnums.ResourceType.POPULATION: 40.0, GameEnums.ResourceType.ENERGY: 300.0, GameEnums.ResourceType.IRON: 100.0, GameEnums.ResourceType.COAL: 50.0, GameEnums.ResourceType.FOOD: 40.0}
 	d.daily_output = {GameEnums.ResourceType.STEEL: 75.0}
 	d.allowed_biomes = _INDUSTRIAL_BIOMES
-	d.noise_output = 6
+	d.noise_source_db = 105.0
 	return d
 
 static func _mechanised_farm() -> BuildingDefinition:
@@ -487,7 +487,7 @@ static func _advanced_coal_powerplant() -> BuildingDefinition:
 	d.daily_upkeep = {GameEnums.ResourceType.POPULATION: 20.0, GameEnums.ResourceType.COAL: 150.0}
 	d.daily_output = {GameEnums.ResourceType.ENERGY: 3000.0}
 	d.allowed_biomes = _INDUSTRIAL_BIOMES
-	d.noise_output = 5
+	d.noise_source_db = 95.0
 	return d
 
 static func _high_command_and_cavalry_depot() -> BuildingDefinition:
@@ -558,7 +558,7 @@ static func _steam_turbine_power_plant() -> BuildingDefinition:
 	d.daily_upkeep = {GameEnums.ResourceType.POPULATION: 30.0, GameEnums.ResourceType.COAL: 300.0}
 	d.daily_output = {GameEnums.ResourceType.ENERGY: 7500.0}
 	d.allowed_biomes = _INDUSTRIAL_BIOMES
-	d.noise_output = 6
+	d.noise_source_db = 100.0
 	return d
 
 static func _traction_works_and_workshop() -> BuildingDefinition:
@@ -583,7 +583,7 @@ static func _bessemer_smelting_complex() -> BuildingDefinition:
 	d.daily_upkeep = {GameEnums.ResourceType.POPULATION: 50.0, GameEnums.ResourceType.ENERGY: 600.0, GameEnums.ResourceType.IRON_ORE: 150.0, GameEnums.ResourceType.COAL: 50.0}
 	d.daily_output = {GameEnums.ResourceType.STEEL: 250.0}
 	d.allowed_biomes = _INDUSTRIAL_BIOMES
-	d.noise_output = 6
+	d.noise_source_db = 108.0  # The loudest thing in a Victorian town, and audible across two hexes.
 	return d
 
 ## Global rail speed +500%, zero transfer delay — no rail-speed-bonus system
@@ -605,7 +605,7 @@ static func _synthetic_chemical_refinery() -> BuildingDefinition:
 	d.daily_upkeep = {GameEnums.ResourceType.POPULATION: 40.0, GameEnums.ResourceType.ENERGY: 400.0, GameEnums.ResourceType.COAL: 150.0, GameEnums.ResourceType.SULFUR: 100.0}
 	d.daily_output = {GameEnums.ResourceType.GUNPOWDER: 350.0}
 	d.allowed_biomes = _INDUSTRIAL_BIOMES
-	d.noise_output = 5
+	d.noise_source_db = 93.0  # Compressors and flare stacks.
 	return d
 
 static func _central_high_voltage_grid_station() -> BuildingDefinition:
@@ -616,7 +616,7 @@ static func _central_high_voltage_grid_station() -> BuildingDefinition:
 	d.daily_upkeep = {GameEnums.ResourceType.POPULATION: 40.0, GameEnums.ResourceType.COAL: 500.0}
 	d.daily_output = {GameEnums.ResourceType.ENERGY: 18000.0}
 	d.allowed_biomes = _INDUSTRIAL_BIOMES
-	d.noise_output = 5
+	d.noise_source_db = 90.0  # Transformer hum — quieter than a mill, and never stops.
 	return d
 
 static func _ordnance_and_armament_complex() -> BuildingDefinition:

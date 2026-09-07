@@ -11,7 +11,7 @@ extends Node
 ##   MILITARY_AURA_COVERAGE (66%) of every hex within MILITARY_AURA_RADIUS —
 ##   extends across hex borders, not limited to the projecting hex's own
 ##   coord. Same flat-radius-aura shape (no distance falloff)
-##   FogOfWarManager.vision_radius/NoiseManager.NOISE_RADIUS already use —
+##   FogOfWarManager.vision_radius already uses —
 ##   MILITARY_AURA_RADIUS is a placeholder balancing number. Deactivates if
 ##   every supply line connected to the PROJECTING hex specifically is
 ##   severed — a projector with no supply lines at all is treated as

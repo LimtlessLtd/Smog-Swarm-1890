@@ -260,8 +260,8 @@ func _check_capacity_is_released_and_retaken() -> void:
 
 
 ## "Emits no noise and no light." The Coal Mine half is phase-independent
-## (noise_output is doubled at night, never zeroed), so it is a real
-## assertion whenever this runs. The Watchtower half IS the light half and
+## (night adds NoisePropagation.NIGHT_PROPAGATION_BONUS_DB to the source and
+## never zeroes it), so it is a real assertion whenever this runs. The Watchtower half IS the light half and
 ## only bites at night — NoiseManager's lit_at_night term is night-only and
 ## no public API can force the phase — so it is written as an exact expected
 ## delta computed from the phase this run actually observed, rather than as
@@ -270,8 +270,15 @@ func _check_capacity_is_released_and_retaken() -> void:
 func _check_noise_and_light_stop() -> void:
 	_reset_fixture()
 	var is_night := TimeCycleManager.is_night()
+	# What the mine puts on its OWN hex, derived through the same model
+	# NoiseManager uses rather than restated: its catalogue source level plus
+	# the night bonus, taken to the hex centre it stands on (local_position is
+	# Vector2.ZERO here, so the distance floors at the reference distance) and
+	# expressed above the hearing threshold. The mine is the only sound source
+	# on that hex, so its contribution IS the hex's whole sound term.
 	var mine_definition := BuildingCatalog.get_definition(_MINE)
-	var expected_mine := float(mine_definition.noise_output) * (NoiseManager.NIGHT_NOISE_MULTIPLIER if is_night else 1.0)
+	var mine_db := mine_definition.noise_source_db + (NoisePropagation.NIGHT_PROPAGATION_BONUS_DB if is_night else 0.0)
+	var expected_mine := NoisePropagation.level_at(mine_db, 0.0) - NoisePropagation.HEARING_THRESHOLD_DB
 	var noise_before := _noise.get_noise_at(_MINE_HEX)
 	if noise_before <= 0.0:
 		_failures.append("the Coal Mine's own hex was silent before it was switched off — NoiseManager never saw the fixture")

@@ -48,7 +48,10 @@ extends Node
 ##   - Zombie move-speed — HordeManager.DAY_MOVE_SPEED_MULTIPLIER/
 ##     NIGHT_MOVE_SPEED_MULTIPLIER. Aggression +100% — HordeManager.
 ##     NIGHT_AGGRESSION_MULTIPLIER. Double noise-attraction — NoiseManager.
-##     NIGHT_NOISE_MULTIPLIER. Military unit move-speed/damage —
+##     NoisePropagation.NIGHT_PROPAGATION_BONUS_DB, which adds 6 dB to a
+##     source rather than doubling the field: one doubling of audible
+##     DISTANCE, which is what "night carries further" should mean.
+##     Military unit move-speed/damage —
 ##     UnitOrderController.DAY_MOVE_SPEED_MULTIPLIER / CombatCoordinator.
 ##     DAY_DAMAGE_MULTIPLIER.
 

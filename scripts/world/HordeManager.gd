@@ -158,11 +158,18 @@ const ATTRACTION_AWARENESS_RADIUS: int = 6  ## Hex radius a horde scans for a no
 ## movement signature at the boundary, not worth a stateful debounce.
 const FAR_SIMULATION_RADIUS: int = 10
 
-## Noise level (NoiseManager.get_noise_at()) a hex must clear before a horde
+## Attraction (NoiseManager.get_noise_at()) a hex must clear before a horde
 ## within range walks toward it instead of continuing WANDERING drift.
 ## This is the BASELINE — Horde.mean_susceptibility() modulates it per-horde
 ## (see _pick_attraction_target()): a horde with average susceptibility
 ## (mean ~1.0) reacts right at this value.
+##
+## The UNITS under this changed on 2026-09-01 and the value deliberately did
+## not. It used to be a flat per-building sum; it is now decibels above
+## NoisePropagation.HEARING_THRESHOLD_DB. 3.0 was kept because at 3.0 the
+## catalogue's loudest building pulls a horde from 2.03 hexes — where the flat
+## NOISE_RADIUS = 2 disc it replaced already reached. What moved is everything
+## quieter: a Brickworks now pulls from 0.85 hexes rather than the same 2.
 const ATTRACTION_THRESHOLD: float = 3.0
 
 const ENTITY_RADIUS: float = 20.0  ## Clearance radius presented to MovementStepper.steer_around_obstacles() — matches UnitOrderController.ENTITY_RADIUS.

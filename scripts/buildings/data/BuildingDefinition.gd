@@ -88,12 +88,21 @@ extends Resource
 ## vision_radius is already >0 for a non-light reason.
 @export var lit_at_night: bool = false
 
-## A flat per-building noise level (NoiseManager), 0 (the default) for
-## anything that isn't running loud machinery. Only INDUSTRY_EXTRACTION
-## category buildings set this today, per-building rather than a flat
-## category-wide value (a Foundry's hammering is louder than a Brickworks'
-## kiln) — placeholder balancing numbers, not an architecture decision.
-@export var noise_output: int = 0
+## The A-weighted sound level this building's machinery produces at
+## NoisePropagation.REFERENCE_DISTANCE_METRES (10 m, one tactical tile) — the
+## way industrial noise is conventionally quoted. `NoisePropagation` takes it
+## from there through spreading, air absorption and design_doc.md §6's terrain
+## rules, so how far a building actually reaches is derived, never stated.
+##
+## **0.0, the default, means "not machinery" and emits nothing** — it is a
+## sentinel, not a 0 dB source, which would be a real (if inaudible) level.
+##
+## Replaced a flat `noise_output: int` of 0-6 on 2026-09-01. That field's own
+## comment already wanted this ("a Foundry's hammering is louder than a
+## Brickworks' kiln") and a 0-6 rank could not express it: every building
+## above 0 projected the identical 2-hex disc and differed only in magnitude,
+## uniformly, at every hex inside it.
+@export var noise_source_db: float = 0.0
 
 ## design_doc.md §2.1's "Defensive Tier": the only structures a Fringe hex
 ## (5-25% infestation) allows. Its members are Watchtower, Garrison, Supply

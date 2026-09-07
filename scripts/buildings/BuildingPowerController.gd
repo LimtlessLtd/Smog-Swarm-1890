@@ -21,7 +21,7 @@ extends RefCounted
 ##   * produces/consumes nothing — BuildingSustenanceController skips its
 ##     daily_upkeep and daily_output, and CapacityAllocator.refund() below
 ##     releases the one-time Energy/Population entries at the same moment.
-##   * no noise, no light — NoiseManager skips it (both the noise_output term
+##   * no noise, no light — NoiseManager skips it (both the noise_source_db term
 ##     and the night lit_at_night attraction add-on), FogOfWarManager stops
 ##     treating it as lit, CombatCoordinator stops counting it as a
 ##     Searchlight, TacticalHexView drops its smoke/fire/light effects.
