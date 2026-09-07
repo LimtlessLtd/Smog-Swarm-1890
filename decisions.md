@@ -14,6 +14,56 @@ Rules for this file:
 
 ---
 
+## 2026-09-07 — Why Tactical view ran at 20 fps
+
+User report: "when in tactical view the game is very very slow and laggy." Profiled
+before anything was changed (`scripts/test/profile_tactical_bisect.gd`), which is the
+only reason the answer was found — every hypothesis reached by reading the code first
+was wrong, including chunk builds, the 18,769 `HexCellView` nodes, and the tactical
+zombie layer.
+
+**D70. A manager that owns a sparse field exposes an ITERATOR over it, not just a
+point query.** `FogOfWarManager.get_explored_hexes()` and
+`NoiseManager.get_attracting_hexes()`.
+*Why, measured:* `MinimapView._draw()` walked all 27,566 generated cells twice per frame
+— once per manager — to find answers the size of the explored set and the noise field.
+That was **31.8 ms of a 48 ms frame**, against **2.2 ms for the entire simulated world**:
+terrain, streaming, 60,000 individual zombies and all. The minimap's own comment called
+it "cheap at this scale ... get_noise_at() is already a plain Dictionary lookup". Each
+lookup is cheap; 27,566 of them, 20 times a second, into a 200x237 pixel panel, is not.
+*Result:* 48.03 ms -> 6.51 ms, **20.8 fps -> 153.6 fps**. The HUD went 41.80 ms -> 0.32 ms.
+*Consequence, accepted:* two managers now maintain a second index. `FogOfWarManager`'s
+is genuinely incremental (`_explored`, updated in `_set_state()` and `load_save_state()`)
+because `_fog_state` is DENSE — `_ready()` seeds an UNSEEN entry per cell to push each
+`HexCellView`'s initial darkness. The first version of the accessor returned
+`_fog_state.keys()` on the argument that an absent hex reads UNSEEN and so was never
+drawn: true, and useless, because the dictionary holds every hex.
+`scripts/test/verify_sparse_field_iteration.gd` caught that, and its third check exists
+to catch it again — an equivalence that holds because both sides visit the whole map
+would pass the first two checks and have optimised nothing.
+
+**D71. A view that redraws on every content signal coalesces onto its own refresh
+timer instead.** `MinimapView` signals set a dirty flag; `VIEWPORT_REFRESH_SECONDS`
+(0.1 s) is the only thing that calls `queue_redraw()`.
+*Why:* `VIEWPORT_REFRESH_SECONDS` already existed and already intended this. Every
+content signal called `queue_redraw()` directly anyway, and `fog_state_changed` alone
+fires often enough during play that the panel redrew on **every single frame** —
+measured at 200 draws across 200 frames, where the timer asks for 10 per second. Godot
+retains a CanvasItem's draw commands between redraws, so frames that do not redraw cost
+nothing at all.
+*Consequence, accepted:* the minimap can be up to 0.1 s stale. That is what the timer
+always specified, and the viewport frame it drives was already on it.
+
+**D72. Two profiling traps, recorded because both produced confidently wrong answers.**
+- `CanvasLayer` is **not** a `CanvasItem`. An ablation guarded on `node is CanvasItem`
+  never hid `MainHUD`, only stopped its `_process`, and reported the most expensive node
+  in the game at **-0.17 ms**. Test for the property, not the class.
+- `BackgroundExecutionManager` sets `Engine.max_fps = 15` on `focus_exited`. A profiler
+  window run unfocused is pinned at 66.66 ms and every row of a sweep reads identical.
+  Re-assert `Engine.max_fps = 0` inside the sample loop, not once at startup.
+
+---
+
 ## 2026-09-01 — What a building's noise actually reaches
 
 `backlog.md` asked for "§6's per-source dB and attenuation model" in place of a flat

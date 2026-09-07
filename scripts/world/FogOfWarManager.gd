@@ -116,7 +116,14 @@ var _tech_manager: TechManager
 var _unit_manager: UnitManager
 var _unit_order_controller: UnitOrderController
 
-var _fog_state: Dictionary = {}        # Vector2i -> GameEnums.FogState
+var _fog_state: Dictionary = {}        # Vector2i -> GameEnums.FogState; DENSE — _ready() seeds every generated cell UNSEEN, so its key set is the whole map
+## Vector2i -> true for every hex at least EXPLORED. Maintained incrementally
+## beside _fog_state rather than derived from it on demand, because _fog_state
+## is dense: _ready() seeds an UNSEEN entry per generated cell to push each
+## HexCellView's initial darkness, so filtering it would be a 27,566-entry scan
+## to produce an answer the size of what the player has actually seen.
+## get_explored_hexes() is the reader.
+var _explored: Dictionary = {}
 var _grace_remaining: Dictionary = {}  # Vector2i -> float; hexes counting down VISIBLE -> EXPLORED
 
 var _unit_recompute_pending: bool = false  ## Coalesces same-frame unit-triggered recompute() calls (see class doc comment) — set by _on_units_changed()/_on_unit_moved() instead of calling recompute() directly, drained by _process() at most once per frame.
@@ -192,6 +199,24 @@ func is_at_least_explored(coord: Vector2i) -> bool:
 func is_visible(coord: Vector2i) -> bool:
 	return get_fog_state(coord) == GameEnums.FogState.VISIBLE
 
+## Every hex the player has at least EXPLORED, for a caller that needs to
+## ITERATE what has been seen rather than ask about hexes it already holds.
+##
+## NOT derived from _fog_state, which is dense — see that field. The first
+## version of this returned _fog_state.keys() on the reasoning that an absent
+## hex reads UNSEEN and so could never have been drawn. True, and useless:
+## _ready() seeds every generated cell, so it returned the entire map and
+## optimised nothing. scripts/test/verify_sparse_field_iteration.gd caught
+## that, and its third check exists to catch it again.
+##
+## MinimapView used to walk all 27,566 generated cells calling get_fog_state()
+## on each, every frame, to find an answer this size (measured at 14.0 ms of a
+## 48 ms frame — scripts/test/profile_tactical_bisect.gd).
+func get_explored_hexes() -> Array[Vector2i]:
+	var result: Array[Vector2i] = []
+	result.assign(_explored.keys())
+	return result
+
 ## Explored/visible memory is genuinely earned by play and can't be
 ## re-derived like ZoC can (recompute() only ever re-derives the
 ## currently-VISIBLE set, never EXPLORED), so unlike most of this game's
@@ -209,8 +234,10 @@ func get_save_state() -> Dictionary:
 ## there's no reason to race it.
 func load_save_state(state: Dictionary) -> void:
 	_grace_remaining.clear()
+	_explored.clear()
 	for coord in state:
 		_fog_state[coord] = state[coord]
+		_track_explored(coord, state[coord])
 		_push_view_state(coord, state[coord])
 
 ## Recomputes the current vision-source set from scratch and reconciles fog
@@ -317,8 +344,18 @@ func _set_state(coord: Vector2i, state: GameEnums.FogState) -> void:
 	if _fog_state.get(coord, GameEnums.FogState.UNSEEN) == state:
 		return
 	_fog_state[coord] = state
+	_track_explored(coord, state)
 	_push_view_state(coord, state)
 	fog_state_changed.emit(coord, state)
+
+## Keeps _explored in step with _fog_state. Called from both write paths —
+## _set_state() and load_save_state() — because a save restores states
+## directly rather than through the guard above.
+func _track_explored(coord: Vector2i, state: GameEnums.FogState) -> void:
+	if state == GameEnums.FogState.UNSEEN:
+		_explored.erase(coord)
+	else:
+		_explored[coord] = true
 
 func _push_view_state(coord: Vector2i, state: GameEnums.FogState) -> void:
 	if not _hex_grid_map:
