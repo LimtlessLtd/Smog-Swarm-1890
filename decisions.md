@@ -14,6 +14,48 @@ Rules for this file:
 
 ---
 
+## 2026-09-01 — Bounding the sub-hex terrain cache
+
+`SubHexTerrainQuery`'s cache was unbounded, static and String-keyed. The backlog
+named all three and proposed one fix (a FIFO cap). Measuring first changed which
+of the three mattered and which fix to use — 400,000 distinct sub-cells, under
+four hexes' worth, cost **324.7 MB at 851 bytes per entry**.
+
+**D63. The cached VALUE is interned, not just the key shortened.** One shared
+Dictionary per distinct terrain value, keyed on an Array of its four fields.
+*Why:* the String key was the obvious defect and the minority of the cost. Each
+entry was its own four-field Dictionary, and the bake has almost no palette to
+speak of — **985 distinct terrain values across all 2,661,336 sub-cells of 24
+corridor hexes** (`scripts/test/bench_subhex_cache.gd`). Interning took an entry
+from 851 bytes to 84; the packed integer key on its own took a warm lookup from
+2.06 us to 0.91 us. *Safe because* nothing downstream mutates a returned sample —
+`sample()` already handed the cached Dictionary back by reference, and the urban
+override has always been applied to a duplicate. *Cost, accepted:* that
+duplicate is now load-bearing across hexes rather than within one, so an
+in-place override would repaint terrain in hexes nobody founded anything in.
+`scripts/test/verify_subhex_cache.gd` fails on exactly that mutation.
+
+**D64. A two-generation rollover, not the FIFO cap the item proposed.** At
+`MAX_ADDRESSES_PER_GENERATION` the hot map becomes the cold one, a fresh hot map
+starts, and the old cold map is dropped whole; a cold hit moves back into hot.
+*Why:* `HordeFlowField.MAX_CACHED_FIELDS` keeps a parallel Array of keys in FIFO
+order, which is right at 64 entries and wrong at 131,072 — the order list would
+itself be a six-figure Array of keys, sized to the problem it is meant to bound.
+A rollover is O(1) with no per-entry bookkeeping. *Cost, accepted:* eviction is
+coarse, so between 1x and 2x a generation is held rather than exactly the last N.
+
+**D65. The cap is 131,072 addresses per generation, floored by one hex's address
+space.** *Why:* a hex is addressed by `SUB_HEX_GRID_N^2` = 110,889 sub-cells, so
+anything below that would make a full-hex sweep roll the generation over on
+itself and re-sample ground it had just read. 131,072 clears that and puts the
+hard memory ceiling at 2 x 131,072 x 84 B = **21.0 MB**.
+*Consequence, recorded where it lands:* `backlog.md`'s vector-terrain phase 2
+argues its point-in-polygon cost away with "runs once per cell ever touched,"
+which eviction makes false — a working set larger than one generation re-runs the
+test each cycle, so that item's per-hex polygon bucket index stops being optional.
+
+---
+
 ## 2026-08-30 — What a ruin and a building site emit
 
 Settled while closing the two gaps the going-dark work filed (see the section

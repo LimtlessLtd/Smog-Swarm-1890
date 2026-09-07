@@ -10,9 +10,16 @@ extends Node
 ## SubHexPortalGraph.find_portals() walks a whole shared hex edge at 30 m
 ## (HexCoord.SUB_HEX_CELL_SIZE_WORLD_UNITS), which is ~167 positions, each
 ## asking SubHexTerrainQuery twice. find_portals() caches per hex PAIR, but
-## SubHexTerrainQuery caches per SUB-CELL under a string key — so the question
-## is not just wall-clock, it is how many cache entries a real routing session
-## strands in a static Dictionary that is never evicted.
+## SubHexTerrainQuery caches per SUB-CELL — so the question is not just
+## wall-clock, it is how many cache entries a real routing session strands
+## there.
+##
+## That cache is now bounded (SubHexTerrainQuery.MAX_ADDRESSES_PER_GENERATION,
+## 2026-09-01), which changes what the per-edge number below means rather than
+## retiring it. It is no longer "how much memory a session leaks"; it is how
+## fast a routing pass churns through a generation, and therefore how often it
+## pays a cold miss for ground it has already walked. The extrapolation at the
+## bottom is capped against that ceiling for exactly that reason.
 ##
 ## Builds only the hexes it measures, from real corridor coordinates sampled
 ## straight out of RealTerrainSampler, rather than running HexMapGenerator over
@@ -86,12 +93,19 @@ func _run() -> int:
 
 	# The number that decides whether this is safe to leave switched on: the
 	# whole playable corridor is ~3,876 hexes, so extrapolating both the time
-	# and the stranded sub-cell cache entries from this patch is what says
-	# whether a full session pays this once or drowns in it.
+	# and the sub-cell cache entries from this patch is what says whether a full
+	# session pays this once or drowns in it. The entry count is reported
+	# against the cache's own ceiling rather than as a raw total — past that
+	# ceiling the cache evicts, so the corridor figure stops being a memory
+	# number and becomes a churn one.
 	var per_edge_subcells := float(SubHexTerrainQuery.cache_size()) / maxf(float(edges.size()), 1.0)
+	var corridor_entries := per_edge_subcells * 11600.0
+	var ceiling := float(SubHexTerrainQuery.MAX_ADDRESSES_PER_GENERATION * 2)
 	print("sub-cell cache entries:    %d  (%.0f per edge)" % [SubHexTerrainQuery.cache_size(), per_edge_subcells])
-	print("extrapolated to ~11,600 corridor edges: %.1f s cold, %.0f cache entries" % [
+	print("extrapolated to ~11,600 corridor edges: %.1f s cold, %.0f sub-cells touched (%.0f%% of the %.0f-entry cache ceiling)" % [
 		float(cold_ms) / maxf(float(edges.size()), 1.0) * 11600.0 / 1000.0,
-		per_edge_subcells * 11600.0,
+		corridor_entries,
+		100.0 * corridor_entries / ceiling,
+		ceiling,
 	])
 	return 0

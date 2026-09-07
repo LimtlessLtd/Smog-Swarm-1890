@@ -132,14 +132,22 @@ dependency order.
   player is supposed to be reading at the same zoom. The knobs are
   `ZombieSwarmManager.ENTITY_BUDGET` and `RESIDENT_SPREAD`; which way to turn
   them is a look question, not a correctness one.
-- [ ] `[gated]` **Evict `SubHexTerrainQuery._cache`.** Unbounded, static,
-  String-keyed, never evicted. Detail below. **The justification for moving this to
-  Now was wrong and is corrected here:** the live-hex system was expected to fan
-  out sub-hex queries hard, and as built it makes none at all — crowds mill in
-  open world space and never ask what terrain is under them. That is itself a gap
-  (zombies walk through walls and rivers at the tactical layer) but it is not
-  cache pressure. Benchmark before and after
-  (`scripts/test/bench_portal_blocking.gd` is the template).
+- [x] `[gated]` **Evict `SubHexTerrainQuery._cache`.** Done 2026-09-01. All three
+  properties the item named — unbounded, String-keyed, never evicted — replaced
+  together, because the measurement said the key was not the expensive part: 400,000
+  distinct sub-cells (under four hexes' worth) cost **324.7 MB at 851 bytes per
+  entry**. Now **11.0 MB at 84 bytes per live entry**, capped at 2 x 131,072
+  addresses (21.0 MB), with a warm lookup at **2.06 us -> 0.91 us**. A packed
+  60-bit address key, interned sample Dictionaries (985 distinct terrain values
+  across all 2,661,336 sub-cells of 24 corridor hexes), and a two-generation
+  rollover rather than the FIFO cap this item suggested. Measured with
+  `scripts/test/bench_subhex_cache.gd`, gated by
+  `scripts/test/verify_subhex_cache.gd`. (D63-D65)
+  **The justification for moving this to Now was wrong and is left recorded:** the
+  live-hex system was expected to fan out sub-hex queries hard, and as built it
+  makes none at all — crowds mill in open world space and never ask what terrain is
+  under them. That is still a gap (zombies walk through walls and rivers at the
+  tactical layer) and still not cache pressure.
 - [x] `[gated]` **Buildings can be switched off.** Done 2026-08-30.
   `BuildingPowerController` owns the flag and the restart countdown, mirroring
   `BuildingConstructionController`'s shape so it saves through the same seam;
@@ -315,7 +323,7 @@ Verbatim, for the items above that reference it.
   the measurements. Original observation kept below.)* Found while validating 1b (2026-08-20): "Midlands Farmland (Warwick)" fits at 6.50 hex radii of residual, far outside every other row (0.44–2.34 for the 3 web-verified city anchors, mostly 1-3 for the rest per the file's own doc comment). Likely a transcription error in that row's lon/lat or q/r, not a property of the affine itself. Not fixed alongside 1b because re-fitting the affine means re-verifying every bake product that already depends on it (fine relief, fine tiles, raster landcover, vector landcover, and now the coastline) — a focused re-check of that one row's source, then one shared re-verification pass, not a coastline change.
 
 
-- [ ] **2: mechanics read the vector layer.** `SubHexTerrainQuery`'s cache-miss body (`SubHexTerrainQuery.gd:53`) swaps from `RealTerrainSampler.sample_at_hex()` to point-in-polygon against the vector set. **The seam is exactly one call site** — the class already memoizes per 30m sub-cell address and caches misses (`{}`) too, so point-in-polygon runs once per cell ever touched and every hot-path caller (`HexPathfinder`, `HordeFlowField`, `SubHexPortalGraph`, `BuildingManager` placement) still hits a dictionary lookup. Same signature, same return shape, so all four existing readers are untouched. The real risk is not steady state but **cold-cache spikes** — a fresh `HordeFlowField` build or a long path over never-visited ground triggers many first-touch misses at once; mitigation is a per-hex polygon bucket index so a test only considers polygons overlapping that hex rather than all of GB+Ireland. Gate the merge on a measured before/after, not on the argument above. Two invariants must survive: overrides are applied to a DUPLICATE never in place, and the urban disc must keep not overwriting OCEAN/WATERWAY (load-bearing) or `terrain_feature` (`ReclamationManager` owns draining as a costed action).
+- [ ] **2: mechanics read the vector layer.** `SubHexTerrainQuery`'s cache-miss body (`SubHexTerrainQuery.gd:53`) swaps from `RealTerrainSampler.sample_at_hex()` to point-in-polygon against the vector set. **The seam is exactly one call site** — the class already memoizes per 30m sub-cell address and caches misses (`{}`) too, so point-in-polygon runs once per cached cell and every hot-path caller (`HexPathfinder`, `HordeFlowField`, `SubHexPortalGraph`, `BuildingManager` placement) still hits a dictionary lookup. **Not "once per cell ever touched" any more (2026-09-01):** the cache now evicts at `MAX_ADDRESSES_PER_GENERATION`, so a working set larger than one generation re-runs the polygon test each time it cycles. That makes the per-hex polygon bucket index below a requirement rather than a mitigation. Same signature, same return shape, so all four existing readers are untouched. The real risk is not steady state but **cold-cache spikes** — a fresh `HordeFlowField` build or a long path over never-visited ground triggers many first-touch misses at once; mitigation is a per-hex polygon bucket index so a test only considers polygons overlapping that hex rather than all of GB+Ireland. Gate the merge on a measured before/after, not on the argument above. Two invariants must survive: overrides are applied to a DUPLICATE never in place, and the urban disc must keep not overwriting OCEAN/WATERWAY (load-bearing) or `terrain_feature` (`ReclamationManager` owns draining as a costed action).
 
 
 - [ ] **3b: blending across biome boundaries.** Today a boundary is a hard edge — correct in shape, abrupt in appearance. Needs an N-texture weighted blend shader on real-geography vertices (~3 per vertex). `assets/shaders/terrain_blend.gdshader` was the 2-texture directional blend the square ground used and was **deleted with it on 2026-08-18** — it had no other consumer, and it blended one sprite against one neighbour, which is not the shape this needs. Recover it from git history for reference if useful (it records a real gotcha: Godot rejects a plain `return` inside `fragment()`), but expect to write this one fresh.
@@ -426,7 +434,7 @@ Verbatim, for the items above that reference it.
 - [ ] **`SubHexPortalGraph.portal_offset_for_step()` is still the expensive path.** `has_any_crossing()` (added for the boundary rule) early-outs at the first passable sample and measured 0.02 ms/edge, but `portal_offset_for_step()` — called per hex-to-hex leg by `UnitOrderController` and `HordeManager` — still goes through `find_portals()`, which sweeps the whole edge at 30 m (~167 positions, measured 2.18 ms cold per edge and ~178 stranded `SubHexTerrainQuery` cache entries). Cached per hex pair so it is paid once per edge per session, but it is the remaining unbounded-cache contributor. Pre-existing, not introduced by the boundary rule.
 
 
-- [ ] **`SubHexTerrainQuery._cache` is unbounded and never evicted.** One entry per queried 30 m sub-cell under a String key, static for the process lifetime. Fine at today's query volume; `cache_size()` exists to measure it. A FIFO/LRU cap like `HordeFlowField.MAX_CACHED_FIELDS` is the obvious fix if a long session ever shows it growing.
+- [x] **`SubHexTerrainQuery._cache` is unbounded and never evicted.** *(Closed 2026-09-01 — the original observation is kept below because its proposed fix was measured and rejected.)* One entry per queried 30 m sub-cell under a String key, static for the process lifetime. Fine at today's query volume; `cache_size()` exists to measure it. A FIFO/LRU cap like `HordeFlowField.MAX_CACHED_FIELDS` is the obvious fix if a long session ever shows it growing. **What shipped instead:** a two-generation rollover, because a FIFO order list at six-figure cardinality is itself a six-figure Array (D64); and interned sample Dictionaries, because the String key turned out to be a minority of the 851 bytes an entry cost (D63).
 
 
 - [ ] **Line of sight, sound propagation & light — `design_doc.md` §6, the largest wholly unimplemented section of the spec** (user request, 2026-08-19: "trees and elevation etc. blocking line of sight plus other line of sight and noise reduction mechanics we need to implement"). Scoped, not built.
