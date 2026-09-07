@@ -19,6 +19,108 @@ problem that only exists after the core loop works) → Deferred, however well s
 Everything here traces to `design_doc.md` §2.1/§2.2 and `decisions.md` D1-D29. Rough
 dependency order.
 
+### Battle scale (D76-D80) — settled 2026-09-07, the user's call
+
+The tactical view gets close enough to see a person, and what is drawn is culled to
+the view rather than to the hex. Rough dependency order; each item is independently
+shippable and independently visible.
+
+- [x] `[gated]` **Crop unit/zombie/prop sprites to their own content.** Done 2026-09-07.
+  `UnitVisuals`/`ZombieVisuals`/`PropVisuals` return
+  `TextureCropUtil.tight_crop_copy()`, so every consumer is fixed at once rather than
+  each renderer separately. Measured fills: `zombie_0_s.png` **22.3% x 40.3%**,
+  `redcoat_s.png` **30.8% x 49.9%**, `rock.png` 57.1% x 48.8%, `tree.png` 85.0% x
+  80.4%. A **copy**, not `tight_crop()`'s AtlasTexture view: a MultiMesh takes a
+  texture RID and `AtlasTexture.get_rid()` is its atlas's, so the region is dropped —
+  probed, see D88.
+- [ ] `[gated]` **Texture import is uncompressed.** `compress/mode=0` on every 2048^2
+  PNG means RGBA8 in VRAM: **16.8 MB per texture**, in `static var` caches that are
+  never evicted (`UnitVisuals._texture_cache`, `ZombieVisuals._texture_cache`). 264 MB
+  on disk across `assets/units|zombies|buildings|props`. **Smaller than it was since
+  the crop landed** — a cropped `redcoat` facing is 631x1022 = 2.5 MB, so 18 unit types
+  x 8 facings is ~350 MB rather than 2.4 GB (extrapolated from one measured asset).
+  Still worth VRAM compression, and the real on-screen size is now known: a figure is
+  17-46 px, so a 2048^2 source is ~40x the resolution anything samples. **Set
+  `mipmaps/generate` with it** — it is `false` on every asset, which was harmless while
+  figures were a sub-pixel smear and is not now: a 457x825 cropped zombie minified to
+  17 px without mipmaps shimmers across a moving crowd, which is the worst case the
+  battle-scale band exists to show.
+- [x] `[gated]` **Recalibrate horde spread — it was ~77x too wide.** (D80) Done
+  2026-09-07. `ZombieSwarmManager.HORDE_BASE_SPREAD` 20.0 -> 0.2588, so
+  `_horde_spread(3758)` returns 7.09 wu = 69 m instead of 548 wu = 5.35 km. Measured
+  before changing it, because the mill step was tuned against the old value: nothing
+  snaps at any size, and only hordes under ~50 sit looser than their own spread — see
+  D90 for the table.
+- [x] `[visual]` **Raise `max_zoom` 12 -> 128 and add the metric figure band.**
+  (D76, D86) Done 2026-09-07. The closest zoom showed **1,040 m** of ground and now
+  shows 97.5 m, where a 3.5 m figure reads at 46 px. Figure size is metric exactly
+  where HIGH fidelity is active and the world-space icon radii apply everywhere below,
+  so LOW/MEDIUM behave as they did. `smoke_screenshot.gd` gained `06_battle_scale` at
+  zoom 60. Squad scatter had to come with it (D89) — 20 wu is 195 m, which reads as a
+  formation only while a figure is itself ~117 m.
+- [ ] `[gated]` **Allocate the entity budget to the camera rect, not the hex.** (D78)
+  At zoom 128 the screen is **0.012%** of `RESIDENT_SPREAD`'s disc, so 60,000
+  simulated zombies put **7 on screen**. Frees ~2.7 ms/frame at battle zoom
+  (`bench_zombie_swarm.gd`: 2.79 ms at 60,000, so ~0.09 ms at 2,000) — which is what
+  pays for animation and per-entity combat. The 60,000 budget still serves the
+  whole-hex framings; it is redistributed by zoom, not reduced.
+- [ ] `[gated]` **Cluster resident zombies on URBAN/INDUSTRIAL sub-cells.** (D79)
+  Forced by battle scale and the uncomfortable half of it: spread evenly, a hex at the
+  1,000 floor is one zombie per 64,700 m^2 — **0.08 on a battle screen**, one every
+  twelve screens, at the exact zoom the player is meant to fight at. Confined to ~2%
+  urban area the same hex shows **4 in the town and none in the fields**; London at
+  ~5e5 and ~60% urban shows **69**. Reads through `SubHexTerrainQuery.biome_at()` per
+  30 m sub-cell as `CLAUDE.md` §3 requires — do not flatten to one value per hex.
+- [x] `[gated]` **Bench the crowd render cost.** Done 2026-09-07,
+  `scripts/test/bench_zombie_render.gd` (windowed). Settled D81-D84: fill rate is a
+  non-issue (120,000 sprites at 75x coverage = **2.93 ms**), the simulation is the
+  whole constraint, and the threshold is a legibility choice rather than a budget one.
+- [x] `[visual]` **Move `high_fidelity_threshold` 2.0 -> 48.0.** Landed 2026-09-07 with
+  the `max_zoom` item. Decided 2026-09-07 by
+  looking (`scripts/test/preview_crowd_threshold.gd`), settled in D85-D87. **32 was the
+  wrong answer and the images said so**: a packed horde at 11.5 px collapses back into
+  grain, and `engulfed_032.png` holds the most zombies of any candidate (28,877) while
+  being the worst picture. At 48 the view is 260 x 146 m, figures are 17.2 px, an
+  engulfing horde is 12,834 individuals at ~0.63 ms. Code change is one exported
+  default on `CameraController`; it lands with the `max_zoom` item above.
+- [ ] `[visual]` **Handle the MEDIUM -> HIGH pop at the threshold.** (D87) MEDIUM draws
+  `MEDIUM_ZOMBIE_CLUSTER_SIZE` = 5 figures per horde and HIGH draws all 12,834, so zoom
+  48 is a jump between them in one scroll click. The old 2.0 threshold hid this because
+  neither side was legible. Crossfade, or scale MEDIUM's cluster count with zoom.
+  **Photographed 2026-09-07, and it is worse than D87 states.** MEDIUM draws
+  `MEDIUM_ZOMBIE_CLUSTER_SIZE` figures *per horde* and nothing at all for a hex's
+  RESIDENTS, which have no `Horde` to hang a cluster on. `05_tactical_crowd.png` at
+  zoom 2.6 stands on a hex holding 60,000 instantiated residents and shows **none of
+  them** — clean brick terrain. So the gap is not 5 figures vs 12,834, it is zero vs
+  everything, and it now spans 0.1875 to 48 instead of 0.1875 to 2.0: **85% of the
+  tactical range by log measure, up from 57%.** Pre-existing, widened by D85.
+- [x] `[gated]` **Fold D77's pixel-clamped band into the threshold.** (D86) Done
+  2026-09-07 with the `max_zoom` item — `TacticalEntityLayer.METRIC_FIGURE_RADIUS`/
+  `METRIC_VEHICLE_RADIUS` apply at HIGH only, `FIGURE_RADIUS`/`VEHICLE_RADIUS`/
+  `ZOMBIE_RADIUS` still size LOW/MEDIUM. No separate crossover at 67 was ever built.
+- [ ] `[design]` **Unit click tolerance is world-space and battle scale breaks it.**
+  `UnitCommandController._UNIT_CLICK_TOLERANCE` is 40.0 wu = 390 m, chosen to cover a
+  squad's `FIGURE_SPREAD` scatter. At `max_zoom` 128 the whole screen is 10 wu across,
+  so every click anywhere selects the nearest unit within four screens of it; at
+  Strategic zoom the same constant is sub-pixel. It wants to be screen-space, or
+  band-dependent the way figure size now is (D86). Surfaced by the battle-scale work,
+  not caused by it — the constant has always been world-space.
+- [ ] `[gated]` **Clean A/B on `ZombieSwarm` stride 8 vs 12 before animation lands.**
+  (D84) The stride-12 path measured 25-40% more sim time, but the bench's `_WideCrowd`
+  is a faithful-but-not-identical mirror of `ZombieSwarm.step()`, so some of that delta
+  may be the loop rather than the stride. Re-measure with the real class at both
+  strides and nothing else changed — the animation work has to commit to a buffer
+  layout and this is the number that decides it.
+- [x] `[design]` **Does per-entity combat buy more than crowd size?** Answered
+  2026-09-07 by D81-D84: it was a false trade. Rendering costs roughly a tenth of what
+  was feared, so the budget freed by D78 does not have to be spent choosing between
+  crowd size and combat detail. Per-entity combat is still unbuilt — combat is one
+  abstract mutual-damage exchange (`CombatEngine.resolve_engagement()`) with no
+  projectile, no range, no death — but it is now a scope question, not a budget one.
+  Scope it to entities within engagement range of a player entity (dozens to low
+  hundreds), never the whole crowd.
+
+
 - [ ] `[design]` **Re-fit `geo_projection.CALIBRATION_POINTS`, or accept it.** Retagged
   from `[gated]` 2026-08-28: there is no single bad row to fix. Both sides of the Warwick
   row are faithful, its 3,539-unit leave-one-out residual is the worst of a spread that
