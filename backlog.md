@@ -181,6 +181,71 @@ dependency order.
   8,647 m hex), so implementing it literally deletes the ATTRACTED mechanic. That table
   belongs to a tactical consumer that does not exist yet — see the §6 item under
   Deferred, and `NoisePropagation`'s own header.
+- [x] `[gated]` **The campaign can be lost.** Done 2026-09-07. `vision.md` P4
+  ("Losing is real") had no implementation — the only loss concept in the game was
+  `TerritoryController.is_lost(coord)`, one hex flipping contested. `DefeatConditionMonitor`
+  implements 7.6's already-settled condition verbatim: all three of nothing affordable,
+  nothing produced and no standing trainer, simultaneously. Emits signals;
+  `EventManager` raises the event and `AlertManager`'s existing auto-pause stops the
+  clock, so no new pause logic exists anywhere. Gated by
+  `scripts/test/verify_defeat_condition.gd` (7 checks, 3 mutations confirmed caught).
+  (D73)
+- [x] `[gated]` **Hordes stop multiplying into confetti.** Done 2026-09-07, found by
+  measurement while investigating something else. `MERGE_CHANCE_PER_TICK`/
+  `SPLIT_CHANCE_PER_TICK` were per-day probabilities rolled once per 20-second logic
+  tick against a 2400-second day — a factor of 120, so a "5% chance" was **99.8% per
+  day**. Measured on the real map with no player action: **3 starting hordes became
+  1,092 by day 15**, while the zombies inside them only went 33 to 25,658 — mean horde
+  size parked at 23.5, just above `SPLIT_MIN_SIZE`. After: **33 hordes at the same day
+  on the same seed**, holding 25,894. Gated by
+  `scripts/test/verify_horde_fragmentation.gd`; measured by
+  `scripts/test/diagnose_horde_contact.gd` (both new). (D74, D75)
+- [ ] `[design]` **The undefended colony is destroyed on day 13, and nothing warns
+  first.** Measured 2026-09-07 (`scripts/test/diagnose_horde_contact.gd`), real map, no
+  player action: hordes reach a player building on **day 4**, and every player building
+  is ruined by **day 13**. After the fragmentation fix above the same run leaves
+  buildings standing past day 15, so this is no longer a runaway — but it is still a
+  colony with no walls, no units and no warning being taken apart inside a fortnight.
+  **This is the "how hard is the opening" question and it needs the user, not a
+  default.** *They Are Billions* gives the player roughly ten quiet days before the
+  first swarm; the knobs here are `HordeManager.STARTING_HORDE_COUNT`/`_SIZE_*`,
+  `MIN_SPAWN_DISTANCE_FROM_SETTLEMENT` (4), `AMBIENT_SPAWN_CHANCE_PER_DAY` (0.35), and
+  `InfestationManager.EXPORT_MAX_DISTANCE_FROM_PLAYER` (8) — the last being why
+  exported hordes land near the player at all. Note this is the same question the
+  escalation item under Deferred asks from the other end, and they should be answered
+  together.
+- [ ] `[design]` **The ATTRACTED mechanic never fires in the opening, because the
+  starting colony is silent.** Measured 2026-09-07
+  (`scripts/test/diagnose_horde_contact.gd`), real map, 30 days, no player action:
+  **0 of 73 hordes ever entered ATTRACTED.** Not a bug in `NoiseManager` or
+  `NoisePropagation` — both work, and `verify_noise_emission.gd` proves it. The cause is
+  the catalogue: **17 of 42 buildings carry a `noise_source_db` at all, every one of
+  them industrial**, and the three the player starts with (Town Hall, Lumber Yard,
+  Smallholding Farm) carry none. So there is nothing to be attracted to until the first
+  mine or sawmill goes up, and every horde that reached the colony in that run reached
+  it by undirected WANDERING drift.
+  **The consequence is the part worth deciding.** Going dark is the player's primary
+  counterplay (§2.1) and P2's central trade, and for the whole opening — the phase where
+  they are weakest — it buys exactly nothing, because they are already silent and the
+  hordes are coming anyway. Options, none of them obviously right: give civil buildings
+  a low but nonzero level so a colony is quietly audible in proportion to its size; let
+  something other than buildings emit (the unit-and-combat-noise item under Deferred is
+  the same gap from the other side, and §6 makes gunfire the loudest routine event in
+  the game); or accept it and say the opening is deliberately a drift-pressure phase.
+  Re-measure with the diagnostic either way.
+- [ ] `[design]` **A horde crosses Britain in a day and a half.** Measured 2026-09-07
+  (`scripts/test/diagnose_horde_contact.gd`): **85.1 hexes/horde/day = 735 km/day**,
+  which is 8.5 m/s sustained, day and night, across 30 days. `MovementStepper`'s own
+  comment already flags why: `BASE_MOVE_SPEED` is "a placeholder balancing number"
+  derived to preserve the pre-continuous-movement pace of one hex per 20 seconds, and a
+  hex is **8,647 m** of real Britain. §2.1 says the point of denying zombies
+  infrastructure is that it "gives hordes a predictable cross-country travel time" and
+  "makes early warning meaningful"; at this speed there is no travel time to predict and
+  no warning to give. It also makes `MIN_SPAWN_DISTANCE_FROM_SETTLEMENT` (4 hexes)
+  worth about seven minutes. **A balance decision, not a defect** — the same constant
+  sets unit speed, so slowing hordes without slowing units means splitting it in two,
+  and that changes how the whole game feels to play. Belongs with the opening-difficulty
+  item above.
 - [ ] `[gated]` **Streamed chunk builds land whole inside one frame.**
   `TerrainMeshView` and `TerrainDetailView` each build `CHUNKS_BUILT_PER_FRAME = 1`
   synchronously in `_process()`, so panning across new ground spends a whole frame on
@@ -198,9 +263,25 @@ dependency order.
   chunks (46%)**, measured. Small in absolute terms (0.5 ms of a 61.7 ms chunk build);
   filed rather than done because it belongs with the chunk-build item above, and because
   the same eager-default pattern appears in `_build_hex_index()` a few lines down.
-- [ ] `[gated]` **Walls block bleed proportionally.** Sub-hex coverage extending
-  `SubHexPortalGraph.has_any_crossing()`, cached per hex-pair, invalidated on
-  `WallManager`'s place/remove/breach/repair signals. Hordes still siege. (D16-D19)
+- [ ] `[design]` **Walls block bleed proportionally — blocked: there is no passive
+  bleed to block.** Retagged from `[gated]` 2026-09-07. The wall half is still exactly
+  as specified (sub-hex coverage extending `SubHexPortalGraph.has_any_crossing()`,
+  cached per hex-pair, invalidated on `WallManager`'s place/remove/breach/repair
+  signals; hordes still siege — D16-D19). What is missing is the quantity it
+  attenuates. **`InfestationManager` implements no hex-to-hex spread at all.**
+  `run_daily_tick()` does two things: it breeds in place, and it calls `export_from()`,
+  which spawns a roaming `Horde` **on the source hex itself**
+  (`_horde_manager.spawn_horde_at(coord, available)`) and lets it walk. Walls
+  deliberately do not stop hordes (D17), so there is nothing left for a wall to reduce
+  by 40%.
+  §2.1 is readable both ways and that is the decision needed. "Only Hive Core bleeds,
+  and bleeding is just walking" says spread IS the horde, in which case D16 is already
+  satisfied by D17 saying walls never stop one, and this item should close as
+  superseded. "Wall coverage along a shared hex boundary reduces passive bleed across
+  it in proportion" says there is a separate per-day count transfer from a Hive Core
+  hex into its neighbours — a mechanic nobody has built, which would change how fast
+  infestation creeps across the whole map and is therefore a balance decision, not a
+  wiring one. **The user has to pick which; do not infer it from the wording.**
 - [ ] `[visual]` **Hex-border snapping as a wall placement aid.** Freehand model
   unchanged; snap when a drawn line runs near a border, modifier key to refuse.
   Sealing a border is ~50 pieces over ~4,992 m and is pixel-hunting without it. (D20)

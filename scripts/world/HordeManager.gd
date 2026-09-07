@@ -20,8 +20,9 @@ extends Node
 ## - _on_ambient_spawn_day() rolls a flat daily chance to seed one tiny (1-3)
 ##   horde on ambient wilderness, independent of the starting seed/casualty
 ##   conversion/noise system.
-## - _check_merges()/_check_splits(): rolled once per movement tick — co-located
-##   hordes can combine, a large enough horde can fragment in two.
+## - _check_merges()/_check_splits(): rolled once per LOGIC_TICK_SECONDS at a
+##   per-DAY probability (per_tick_chance()) — co-located hordes can combine,
+##   a large enough horde can fragment in two.
 ## - ATTACKING: _advance_horde() checks whether the next step in a horde's
 ##   drift path crosses an unbreached WallSegment — if so, it sieges that
 ##   segment (_siege_wall(), with a siege-damage bonus and Ditch/Oil Pit
@@ -189,9 +190,43 @@ const AMBIENT_SPAWN_CHANCE_PER_DAY: float = 0.35
 const AMBIENT_HORDE_SIZE_MIN: int = 1
 const AMBIENT_HORDE_SIZE_MAX: int = 3
 
-const MERGE_CHANCE_PER_TICK: float = 0.1   ## Rolled once per co-located pair, per tick.
-const SPLIT_CHANCE_PER_TICK: float = 0.05  ## Rolled once per eligible horde, per tick.
-const SPLIT_MIN_SIZE: int = 20             ## A horde must be at least this big to be eligible to fragment.
+## Merge/split probabilities are **per in-game day**, converted to this
+## class's own LOGIC_TICK_SECONDS cadence by per_tick_chance(). The values
+## are unchanged; what changed on 2026-09-07 is the unit they are read in.
+##
+## They were previously rolled as written, once per 20-second logic tick.
+## A day is TickManager.DAY_LENGTH_SECONDS (2400 s) = 120 ticks, so every
+## horde at or above SPLIT_MIN_SIZE fragmented an expected **six times a
+## day**, and merging could not keep up: a merge needs two hordes on the
+## same hex out of ~4,692 land hexes, and _check_merges() combines at most
+## one pair per hex per tick.
+##
+## Measured on the real map with no player action
+## (scripts/test/diagnose_horde_contact.gd): **3 starting hordes became
+## 1,092 by day 15**, while the zombies inside them only went 33 -> 25,658.
+## Mean horde size settled at 23.5 — just above SPLIT_MIN_SIZE, which is
+## exactly the equilibrium unbounded splitting predicts. That is the
+## opposite of vision.md P5's "TABs on an absolutely massive scale": the
+## threat arrives as an ever-growing confetti of 20-strong fragments rather
+## than as a horde. It is also why the same run's frame cost collapsed —
+## every one of those hordes replans against HordeFlowField.
+const MERGE_CHANCE_PER_DAY: float = 0.1   ## Rolled once per co-located pair, per tick, at the per-day rate below.
+const SPLIT_CHANCE_PER_DAY: float = 0.05  ## Rolled once per eligible horde, per tick, at the per-day rate below.
+const SPLIT_MIN_SIZE: int = 20            ## A horde must be at least this big to be eligible to fragment.
+
+## Converts a per-day probability to this class's per-LOGIC_TICK_SECONDS roll.
+## Public so scripts/test/verify_horde_fragmentation.gd can assert the
+## conversion round-trips without reaching into a private (CLAUDE.md §1);
+## nothing outside this class calls it in the game itself.
+##
+## Converts a per-day probability to this class's per-LOGIC_TICK_SECONDS roll
+## so the two compound to the same daily odds: 1 - (1-p)^(1/ticks_per_day).
+## Not p/ticks_per_day — that is only equal for small p and drifts as p rises.
+static func per_tick_chance(per_day: float) -> float:
+	var ticks_per_day := TickManager.DAY_LENGTH_SECONDS / LOGIC_TICK_SECONDS
+	if ticks_per_day <= 1.0:
+		return per_day
+	return 1.0 - pow(1.0 - clampf(per_day, 0.0, 1.0), 1.0 / ticks_per_day)
 
 const WALL_SIEGE_DAMAGE_MULTIPLIER: float = 2.0  ## A horde hits a wall harder than it'd hit a unit.
 
@@ -381,7 +416,7 @@ func _check_merges() -> void:
 		by_hex[horde.hex_coord].append(horde)
 	for coord in by_hex:
 		var group: Array = by_hex[coord]
-		if group.size() < 2 or _rng.randf() >= MERGE_CHANCE_PER_TICK:
+		if group.size() < 2 or _rng.randf() >= per_tick_chance(MERGE_CHANCE_PER_DAY):
 			continue
 		var survivor: Horde = group[0]
 		var absorbed: Horde = group[1]
@@ -394,7 +429,7 @@ func _check_merges() -> void:
 ## duplicate() snapshot since this appends fresh hordes to _hordes mid-loop.
 func _check_splits() -> void:
 	for horde: Horde in _hordes.duplicate():
-		if horde.size < SPLIT_MIN_SIZE or _rng.randf() >= SPLIT_CHANCE_PER_TICK:
+		if horde.size < SPLIT_MIN_SIZE or _rng.randf() >= per_tick_chance(SPLIT_CHANCE_PER_DAY):
 			continue
 		var fragment_size := horde.size / 2
 		if fragment_size <= 0:
