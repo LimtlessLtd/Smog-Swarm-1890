@@ -1,4 +1,4 @@
-[gd_scene load_steps=28 format=3]
+[gd_scene load_steps=29 format=3]
 
 [ext_resource type="PackedScene" path="res://scenes/world/HexGridMap.tscn" id="1"]
 [ext_resource type="PackedScene" path="res://scenes/camera/CameraController.tscn" id="2"]
@@ -40,6 +40,7 @@
 [ext_resource type="PackedScene" path="res://scenes/world/LiveHexTracker.tscn" id="38"]
 [ext_resource type="PackedScene" path="res://scenes/world/ZombieSwarmManager.tscn" id="39"]
 [ext_resource type="PackedScene" path="res://scenes/world/ResidentDefenseController.tscn" id="40"]
+[ext_resource type="PackedScene" path="res://scenes/campaign/DefeatConditionMonitor.tscn" id="41"]
 
 [node name="Main" type="Node2D"]
 script = ExtResource("27")
@@ -148,6 +149,10 @@ hex_grid_map_path = NodePath("../WorldRoot/HexGridMap")
 horde_manager_path = NodePath("../HordeManager")
 building_manager_path = NodePath("../BuildingManager")
 
+[node name="DefeatConditionMonitor" parent="." instance=ExtResource("41")]
+building_manager_path = NodePath("../BuildingManager")
+resource_manager_path = NodePath("../ResourceManager")
+
 [node name="SettlementFoundingController" parent="." instance=ExtResource("30")]
 hex_grid_map_path = NodePath("../WorldRoot/HexGridMap")
 building_manager_path = NodePath("../BuildingManager")
@@ -200,6 +205,7 @@ combat_coordinator_path = NodePath("../CombatCoordinator")
 territory_controller_path = NodePath("../TerritoryController")
 resource_manager_path = NodePath("../ResourceManager")
 strategic_overlay_manager_path = NodePath("../WorldRoot/StrategicOverlayManager")
+defeat_condition_monitor_path = NodePath("../DefeatConditionMonitor")
 
 [node name="AlertManager" parent="." instance=ExtResource("24")]
 event_manager_path = NodePath("../EventManager")

@@ -63,6 +63,7 @@ const FOOD_BAND_STARVING: float = 0.5
 @export var territory_controller_path: NodePath
 @export var resource_manager_path: NodePath
 @export var strategic_overlay_manager_path: NodePath  ## Optional — without it, a spotted large horde simply raises no event (StrategicOverlayManager itself is unaffected either way).
+@export var defeat_condition_monitor_path: NodePath   ## Optional — without it, the campaign can still end (the monitor latches regardless), the player just never hears about it.
 
 var _history: Array[GameEvent] = []
 var _food_band: int = 0                              # 0 fine, 1 hungry (<100%), 2 severe (<75%), 3 starving (<50%)
@@ -94,6 +95,10 @@ func _ready() -> void:
 	if strategic_overlay_manager_path != NodePath():
 		var strategic_overlay_manager: StrategicOverlayManager = get_node(strategic_overlay_manager_path)
 		strategic_overlay_manager.horde_spotted.connect(_on_horde_spotted)
+	if defeat_condition_monitor_path != NodePath():
+		var defeat_monitor: DefeatConditionMonitor = get_node(defeat_condition_monitor_path)
+		defeat_monitor.campaign_lost.connect(_on_campaign_lost)
+		defeat_monitor.defeat_risk_changed.connect(_on_defeat_risk_changed)
 	# Clears the per-unit "already warned" set — see _unit_under_attack.
 	TickManager.day_completed.connect(_on_day_completed)
 
@@ -177,6 +182,30 @@ func _on_resources_changed(stockpile: Dictionary) -> void:
 	for resource_type in _resource_shortfall_active.keys():
 		if _resource_shortfall_active[resource_type] and float(stockpile.get(resource_type, 0.0)) > 0.01:
 			_resource_shortfall_active[resource_type] = false
+
+## vision.md P4. CRITICAL rather than a bespoke severity because AlertManager
+## already stops the clock on anything above INFO — the campaign ending is
+## exactly the case that rule exists for, and routing it through the same path
+## as every other alert means no new pause logic anywhere.
+##
+## Vector2i.ZERO: the campaign ending has no single hex to point at, the same
+## convention the colony-wide economy events here already use.
+func _on_campaign_lost(reasons: Array[String]) -> void:
+	raise_event(GameEnums.EventCategory.TERRITORY, GameEnums.EventSeverity.CRITICAL, Vector2i.ZERO,
+		"The colony has fallen. %s." % "; ".join(reasons).capitalize())
+
+## P4's "clear warning before the point of no return". WARNING, not CRITICAL:
+## the player is one condition away from losing and stopping the clock on every
+## crossing would be the wrong trade while the situation is still recoverable.
+## Recovery re-raises at INFO so the toast confirms it rather than passing in
+## silence.
+func _on_defeat_risk_changed(is_at_risk: bool, reasons: Array[String]) -> void:
+	if is_at_risk:
+		raise_event(GameEnums.EventCategory.TERRITORY, GameEnums.EventSeverity.WARNING, Vector2i.ZERO,
+			"The colony is close to collapse: %s." % "; ".join(reasons))
+	else:
+		raise_event(GameEnums.EventCategory.TERRITORY, GameEnums.EventSeverity.INFO, Vector2i.ZERO,
+			"The colony has pulled back from collapse.")
 
 func _coord_string(coord: Vector2i) -> String:
 	return "(%d, %d)" % [coord.x, coord.y]

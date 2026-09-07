@@ -14,6 +14,82 @@ Rules for this file:
 
 ---
 
+## 2026-09-07 — The campaign can end, and hordes stop multiplying
+
+Started as "make hordes seek the colony", which `HordeManager`'s own header has listed
+as unbuilt since it was written. **The premise was wrong and the measurement is what
+said so.** `scripts/test/diagnose_horde_contact.gd` (new) runs the real map with no
+player action: hordes reach the colony on **day 4**, damage a building on day 4, and
+have **destroyed every player building by day 13**. Nothing needed to be made more
+aggressive. Building deliberate seeking would have made an already-lethal opening
+lethal sooner.
+
+**D73. Defeat is checked once per day, latched, and reuses the alert path.**
+`DefeatConditionMonitor` (new, `scripts/campaign/`), gated by
+`scripts/test/verify_defeat_condition.gd`.
+*Why now:* `vision.md` P4 says "it must be able to happen or nothing is at stake", and
+until this landed the only loss concept in the game was
+`TerritoryController.is_lost(coord)` — one hex flipping contested. A run could not end.
+*What was NOT decided here:* the condition itself. `backlog.md` 7.6 already settled it
+as economic/capability elimination rather than territorial, and this implements that
+verbatim — all three of (a) nothing affordable, (b) nothing produced, (c) no trainer
+standing, simultaneously.
+*Three readings it had to settle, recorded so they are not re-derived:*
+- 7.6's clause (c) says "recruiting a unit **or expanding onto a new hex**". Nothing in
+  the game gates expansion on owning a building — `get_placement_error()` checks
+  resources, build rights and terrain — so that half of (c) IS (a)'s "cannot afford any
+  building", and is not counted twice.
+- (a) is read against the FULL catalogues, not what tech has unlocked. A player who
+  cannot afford the cheapest thing they have researched but could afford something
+  cheaper they have not is not eliminated.
+- Going dark reads as "produces nothing" and that is correct, not a trap: the player
+  keeps their stockpile and their trainers, so (a) and (c) both fail.
+*Consequence, accepted:* the monitor keeps an arming latch. Between its `_ready()` and
+`BuildingManager.seed_starting_buildings()` the player owns nothing, so all three
+conditions hold and every campaign would end on day one. "Has the colony ever existed"
+is the precondition for "has the colony been eliminated".
+*The alert path is reused, not rebuilt:* the monitor emits signals, `EventManager`
+raises the event, and `AlertManager`'s existing auto-pause-above-INFO rule stops the
+clock. Nothing here touches `TickManager`, and no new pause logic exists anywhere.
+
+**D74. `HordeManager`'s merge/split chances are per DAY, converted to the tick
+cadence.** `MERGE_CHANCE_PER_DAY` 0.1 and `SPLIT_CHANCE_PER_DAY` 0.05 — the same two
+numbers, read in a different unit — with `per_tick_chance()` doing
+`1 - (1-p)^(1/ticks_per_day)`. Gated by
+`scripts/test/verify_horde_fragmentation.gd`.
+*Why:* they were rolled as written, once per `LOGIC_TICK_SECONDS` (20 s), against a
+`DAY_LENGTH_SECONDS` of 2400 — a factor of **120**. A "5% chance" was actually
+**99.8% per day**. Merging could not counterbalance it: a merge needs two hordes on the
+same hex out of ~4,692, and `_check_merges()` combines at most one pair per hex per
+tick.
+*Measured on the real map, no player action:* **3 starting hordes became 1,092 by day
+15**, while the zombies inside them only went 33 to 25,658. Mean horde size settled at
+**23.5** — just above `SPLIT_MIN_SIZE`, which is exactly the equilibrium unbounded
+splitting predicts. On the gate's own fixture, one 4,000-strong horde became **293 in
+20 days before, 6 after**.
+*Why this matters beyond tidiness:* `vision.md` P5 wants "TABs on an absolutely massive
+scale" and the mechanic guaranteed the opposite — the threat arrived as an
+ever-growing confetti of 20-strong fragments rather than as a horde. It was also a
+compounding performance cost, since every one of those hordes replans against
+`HordeFlowField`.
+*Not p/ticks:* the naive division is close for small p and wrong as p rises — a
+certainty must convert to a certainty per tick, not to 1/120. The gate asserts the
+difference so it is not "simplified" back.
+
+**D75. Two harness traps, both of which produced a wrong answer before being found.**
+- `--headless` never focuses its root window, so `BackgroundExecutionManager`'s
+  `focus_exited` handler pins `Engine.max_fps` to 15 and **any awaited-frame loop is
+  bound to real time**. The first version of `diagnose_horde_contact.gd` awaited
+  `process_frame` and spent over 20 real minutes on 15 simulated days at 6% CPU. Drive
+  `_process()` at a fixed delta instead — it is also deterministic, which an awaited
+  frame is not. This is D72's `max_fps` trap arriving by a second route.
+- **GDScript lambdas capture locals BY VALUE.** A signal handler counting into a local
+  reports zero forever. `verify_horde_fragmentation.gd`'s vacuity check did exactly
+  that and claimed splitting was dead while the check above it was watching it work.
+  Count into a member.
+
+---
+
 ## 2026-09-07 — Why Tactical view ran at 20 fps
 
 User report: "when in tactical view the game is very very slow and laggy." Profiled
