@@ -108,6 +108,21 @@ func _ready() -> void:
 func get_noise_at(coord: Vector2i) -> float:
 	return _noise_by_hex.get(coord, 0.0)
 
+## Every hex carrying nonzero attraction. The field is sparse by construction
+## — recompute() only records a hex a source can actually be heard on, which
+## is tens of hexes against a 27,566-hex map — so a caller that needs to draw
+## or scan "everywhere there is noise" should iterate this rather than test
+## every hex.
+##
+## MinimapView's Threat Meter did the latter, and its own comment called it
+## "cheap at this scale ... get_noise_at() is already a plain Dictionary
+## lookup". Each lookup is cheap; 27,566 of them per frame measured 17.7 ms
+## of a 48 ms frame (scripts/test/profile_tactical_bisect.gd).
+func get_attracting_hexes() -> Array[Vector2i]:
+	var result: Array[Vector2i] = []
+	result.assign(_noise_by_hex.keys())
+	return result
+
 ## The loudest hex within `radius` of a listener sitting at
 ## `listener_local_position` inside `coord` (INCLUSIVE of `coord` itself) —
 ## HordeManager's own "attraction is local, not global" check reads this

@@ -181,6 +181,23 @@ dependency order.
   8,647 m hex), so implementing it literally deletes the ATTRACTED mechanic. That table
   belongs to a tactical consumer that does not exist yet — see the §6 item under
   Deferred, and `NoisePropagation`'s own header.
+- [ ] `[gated]` **Streamed chunk builds land whole inside one frame.**
+  `TerrainMeshView` and `TerrainDetailView` each build `CHUNKS_BUILT_PER_FRAME = 1`
+  synchronously in `_process()`, so panning across new ground spends a whole frame on
+  each. Measured 2026-09-07 over 12 real baked chunks
+  (`scripts/test/bench_chunk_build.gd`): **mean 61.7 ms per chunk, 3.7 frames of budget**,
+  worst 359 ms on a cold file read. Split by part: load 40.5 ms mean, scatter 20.7 ms,
+  the prop-bucketing loop 0.5 ms. Not the steady-state cost — that was the minimap, fixed
+  2026-09-07 — but it is what remains of "laggy while moving". Options are amortising a
+  build across frames, moving the file read off the main thread, or building at a coarser
+  prop density and refining. Re-measure with the bench before and after.
+- [ ] `[gated]` **`TerrainDetailView._build_chunk()` allocates a throwaway Array per
+  prop.** `indices_by_type.get(types[i], [])` builds the `[]` default on every
+  iteration — GDScript evaluates call arguments eagerly — and the untyped `Array` boxes
+  each index. Removing both takes the bucketing loop **6.10 ms -> 3.27 ms across 12
+  chunks (46%)**, measured. Small in absolute terms (0.5 ms of a 61.7 ms chunk build);
+  filed rather than done because it belongs with the chunk-build item above, and because
+  the same eager-default pattern appears in `_build_hex_index()` a few lines down.
 - [ ] `[gated]` **Walls block bleed proportionally.** Sub-hex coverage extending
   `SubHexPortalGraph.has_any_crossing()`, cached per hex-pair, invalidated on
   `WallManager`'s place/remove/breach/repair signals. Hordes still siege. (D16-D19)

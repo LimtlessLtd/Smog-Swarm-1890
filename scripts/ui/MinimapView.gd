@@ -89,6 +89,12 @@ var _world_bounds_min: Vector2 = Vector2.ZERO
 var _world_bounds_size: Vector2 = Vector2.ONE
 var _coastline_segments: PackedVector2Array = PackedVector2Array()  ## World-space, from HexCoord.coastline_segments() — same shape CoastlineOutlineView draws on the main map, computed once at setup().
 
+## Set by every content signal, cleared by the refresh timer. Only read to
+## keep _mark_dirty() honest about its name — the timer redraws regardless,
+## since the viewport frame follows the camera — but it is what makes the
+## coalescing legible rather than the signals simply being dropped.
+var _needs_redraw: bool = false
+
 var _zoom_level: float = MIN_ZOOM
 ## Set fresh at the top of every _draw() call (see _effective_bounds()) —
 ## _world_to_minimap() reads these rather than the raw _world_bounds_*
@@ -147,11 +153,24 @@ func setup(hex_grid_map: HexGridMap, building_manager: BuildingManager, fog_of_w
 func _on_tactical_mode_changed(is_tactical: bool) -> void:
 	visible = is_tactical
 	if is_tactical:
-		queue_redraw()  ## Content may be stale from while hidden (buildings placed, fog changed, elsewhere on the map).
+		_mark_dirty()  ## Content may be stale from while hidden (buildings placed, fog changed, elsewhere on the map).
 
 func _on_fog_state_changed(_coord: Vector2i, _state: GameEnums.FogState) -> void:
-	if visible:
-		queue_redraw()
+	_mark_dirty()
+
+## Records that the drawn content is stale WITHOUT redrawing now. The refresh
+## timer below is the only thing that calls queue_redraw() for content
+## changes, so a burst of signals in one frame costs one redraw at the next
+## tick instead of one per frame indefinitely.
+##
+## This is what VIEWPORT_REFRESH_SECONDS always intended and did not achieve.
+## Every content signal called queue_redraw() directly, and fog_state_changed
+## alone fires often enough during play that the panel was redrawing on
+## **every single frame** — measured at 200 draws across 200 frames, where the
+## timer asks for 10 per second. Godot retains a CanvasItem's draw commands
+## between redraws, so the frames that do not redraw now cost nothing at all.
+func _mark_dirty() -> void:
+	_needs_redraw = true
 
 ## DisplaySettings.show_threat_meter_minimap is the only flag this class
 ## itself consults (terrain/buildings/viewport frame aren't "overlays" in
@@ -160,20 +179,22 @@ func _on_fog_state_changed(_coord: Vector2i, _state: GameEnums.FogState) -> void
 ## enough at this scale — same "just redraw, don't bother diffing which
 ## flag changed" reasoning fog_state_changed/building_changed lean on.
 func _on_display_settings_changed() -> void:
-	if visible:
-		queue_redraw()
+	_mark_dirty()
 
 func _on_building_changed(_instance: BuildingInstance) -> void:
-	if visible:
-		queue_redraw()
+	_mark_dirty()
 
 func _on_noise_recomputed() -> void:
-	if visible:
-		queue_redraw()
+	_mark_dirty()
 
+## The one place a content change becomes an actual redraw. Fires whether or
+## not anything is dirty, because the viewport frame tracks the main camera
+## and has to follow a pan that changed nothing else.
 func _on_viewport_refresh() -> void:
-	if visible:
-		queue_redraw()
+	if not visible:
+		return
+	_needs_redraw = false
+	queue_redraw()
 
 func _compute_world_bounds() -> void:
 	if not _hex_grid_map:
@@ -267,12 +288,20 @@ func _draw() -> void:
 	_draw_coastline()
 
 	if _fog_of_war_manager:
-		for cell in _hex_grid_map.get_all_cells():
-			var fog_state := _fog_of_war_manager.get_fog_state(cell.coord)
+		# The EXPLORED set, not every generated cell — identical output, at the
+		# cost of what the player has seen rather than the cost of the map.
+		# The UNSEEN skip below is kept even though get_explored_hexes()
+		# already excludes them: it costs one comparison and it is what makes
+		# this loop correct on its own terms rather than on another class's.
+		for coord in _fog_of_war_manager.get_explored_hexes():
+			var fog_state := _fog_of_war_manager.get_fog_state(coord)
 			if fog_state == GameEnums.FogState.UNSEEN:
 				continue  ## Never scouted — the minimap shouldn't leak information the main view wouldn't either.
+			var cell := _hex_grid_map.get_cell(coord)
+			if cell == null:
+				continue  ## Fog can hold a coord the grid does not (a save restored against a different map).
 			var color := TerrainVisuals.biome_color(cell.biome_type, cell.soil_fertility) * FogVisuals.tint_color(fog_state)
-			draw_colored_polygon(_hex_polygon_minimap(cell.coord), color)
+			draw_colored_polygon(_hex_polygon_minimap(coord), color)
 
 	if _building_manager:
 		for instance in _building_manager.get_all_buildings():
@@ -297,21 +326,27 @@ func _draw_coastline() -> void:
 	for i in range(0, _coastline_segments.size(), 2):
 		draw_line(_world_to_minimap(_coastline_segments[i]), _world_to_minimap(_coastline_segments[i + 1]), COASTLINE_COLOR, 1.0)
 
-## Iterates every generated cell same as the terrain pass above (cheap at
-## this scale) rather than trying to enumerate only "interesting" hexes —
-## NoiseManager.get_noise_at() is already a plain Dictionary lookup.
+## Iterates the noise field itself, which is tens of hexes, rather than every
+## generated cell.
+##
+## The version this replaces walked all 27,566 cells and justified it as
+## "cheap at this scale ... get_noise_at() is already a plain Dictionary
+## lookup". Each lookup IS cheap. 27,566 of them, every frame, measured
+## **17.7 ms of a 48 ms frame** — the single most expensive thing in the game,
+## ahead of the entire simulated world at 2.2 ms
+## (scripts/test/profile_tactical_bisect.gd).
 func _draw_threat_markers() -> void:
 	if not _noise_manager or not _hex_grid_map:
 		return
 	if not DisplaySettings.show_threat_meter_minimap:
 		return
-	for cell in _hex_grid_map.get_all_cells():
-		var noise := _noise_manager.get_noise_at(cell.coord)
+	for coord in _noise_manager.get_attracting_hexes():
+		var noise := _noise_manager.get_noise_at(coord)
 		if noise <= 0.0:
 			continue
-		if _fog_of_war_manager and not _fog_of_war_manager.is_at_least_explored(cell.coord):
+		if _fog_of_war_manager and not _fog_of_war_manager.is_at_least_explored(coord):
 			continue
-		var pos := _world_to_minimap(HexCoord.axial_to_world(cell.coord))
+		var pos := _world_to_minimap(HexCoord.axial_to_world(coord))
 		var radius := NoiseVisuals.radius(noise, THREAT_MARKER_RADIUS_MIN, THREAT_MARKER_RADIUS_MAX)
 		var color := NoiseVisuals.color(noise)
 		# A diamond, not a circle/square — shape-distinct from building
