@@ -37,15 +37,16 @@ extends Node
 
 const _WINDOW_SIZE := Vector2i(1280, 720)
 
-## Straddles the bands smoke_screenshot.gd already establishes. 05 is the one a
-## player reaching for "very very slow" is most likely in — past
-## high_fidelity_threshold, where individual zombies draw at all — but the two
-## below it are measured because a regression at 0.23 and a regression at 2.6
-## have nothing to do with each other.
+## Straddles the bands smoke_screenshot.gd already establishes. `battle_scale`
+## is the only one past high_fidelity_threshold (48.0 since D85), so it is the
+## only one where individual zombies draw at all; the three below it are still
+## measured because a regression at 0.23 and a regression at 2.6 have nothing to
+## do with each other, and 2.6 is where the "very very slow" report came from.
 const _BANDS: Array[Dictionary] = [
 	{"name": "tactical_entry", "zoom": 0.230, "offset": Vector2i.ZERO},
 	{"name": "tactical_close", "zoom": 1.300, "offset": Vector2i.ZERO},
 	{"name": "tactical_crowd", "zoom": 2.600, "offset": Vector2i(1, 0)},
+	{"name": "battle_scale", "zoom": 60.000, "offset": Vector2i(1, 0)},  ## Past high_fidelity_threshold — added with D76's max_zoom raise, which left HIGH unmeasured by this profiler.
 ]
 
 ## Long enough for relief streaming and mesh chunk building to settle, so the

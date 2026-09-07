@@ -13,6 +13,14 @@ extends RefCounted
 ## count always scatters into the same shape" determinism
 ## `TacticalEntityLayer._scatter_offset()` already uses) rather than randomly
 ## — a horde's own rendered look shouldn't flicker between redraws.
+##
+## **What is returned is cropped to the figure's own ink, not to its render
+## frame** — `zombie_0_s.png` fills 22.3% x 40.3% of its 2048^2 PNG, so an
+## uncropped frame draws a zombie at 40% of its asked-for height and floats it
+## above its own simulated position. See UnitVisuals' own doc comment for the
+## full reasoning; TextureCropUtil.tight_crop_copy() for why this is a pixel
+## copy rather than an AtlasTexture view (the swarm renderer is a MultiMesh,
+## which drops the region).
 
 const VARIANT_COUNT: int = 3
 
@@ -33,8 +41,8 @@ static func zombie_texture(variant_seed: int, facing: GameEnums.Facing8 = GameEn
 static func _load_texture(variant: int, facing: GameEnums.Facing8) -> Texture2D:
 	var directional_path := "res://assets/zombies/zombie_%d_%s.png" % [variant, FacingUtil.suffix(facing)]
 	if ResourceLoader.exists(directional_path):
-		return load(directional_path) as Texture2D
+		return TextureCropUtil.tight_crop_copy(load(directional_path) as Texture2D)
 	var flat_path := "res://assets/zombies/zombie_%d.png" % variant  # Pre-directional single-facing art, if that's all that's been authored.
 	if ResourceLoader.exists(flat_path):
-		return load(flat_path) as Texture2D
+		return TextureCropUtil.tight_crop_copy(load(flat_path) as Texture2D)
 	return null

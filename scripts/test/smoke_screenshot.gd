@@ -1,6 +1,6 @@
 extends Node
 
-## Boots a FRESH game and asserts the screen is not visually broken at five
+## Boots a FRESH game and asserts the screen is not visually broken at six
 ## framings either side of the Tactical threshold.
 ##
 ## Run (NOT --headless -- a headless viewport has no texture to read, the same
@@ -39,18 +39,31 @@ const _FIRST_WARMUP_FRAMES: int = 320
 ## Zooms straddle CameraController.tactical_zoom_threshold (0.1875) deliberately:
 ## Strategic and Tactical are different renderers, not two magnifications of one.
 ##
-## Shot 5 is past high_fidelity_threshold (2.0), which is the ONLY band where
-## design_doc.md §2.1's individual zombies draw at all — the other four are
-## Strategic markers, LOW blobs or MEDIUM clusters. It is offset onto a
-## neighbouring hex because the player's own starting hex is Cleared by D7's
-## ring seed: framing the settlement itself would photograph empty ground and
-## call it a pass.
+## Shot 6 is past high_fidelity_threshold (48.0), the ONLY band where
+## design_doc.md §2.1's individual zombies draw at all and the only one drawn at
+## honest metric scale (D86) — the five below it are Strategic markers, LOW
+## blobs or MEDIUM clusters. It and shot 5 are both offset onto a neighbouring
+## hex because the player's own starting hex is Cleared by D7's ring seed:
+## framing the settlement itself would photograph empty ground and call it a pass.
+##
+## Shot 5 kept its 2.6 zoom when the threshold moved 2.0 -> 48.0, so it is a
+## MEDIUM shot now rather than the HIGH one it was written as. Deliberate:
+## 05_tactical_crowd.png is the recorded "before" image for the battle-scale
+## work, and holding the framing is worth more than holding the band.
+##
+## Shot 6 photographs what the entity layer currently puts on a battle-scale
+## screen, which is not much: residents are still spread over RESIDENT_SPREAD's
+## 384 wu disc rather than allocated to the camera rect (D78) or clustered on
+## urban sub-cells (D79), both unbuilt. A thin frame there is those two gaps,
+## not a renderer fault — _report_crowd() prints the count so they can be told
+## apart.
 const _SHOTS: Array[Dictionary] = [
 	{"name": "01_strategic_country", "zoom": 0.010, "note": "Whole island, sea and fog"},
 	{"name": "02_strategic_colony", "zoom": 0.110, "note": "Colony below the Tactical threshold"},
 	{"name": "03_tactical_entry", "zoom": 0.230, "note": "Past the threshold: terrain mesh takes over"},
 	{"name": "04_tactical_close", "zoom": 1.300, "note": "Buildings, walls and units"},
-	{"name": "05_tactical_crowd", "zoom": 2.600, "offset": Vector2i(1, 0), "note": "HIGH fidelity: individual zombies on an infested neighbour"},
+	{"name": "05_tactical_crowd", "zoom": 2.600, "offset": Vector2i(1, 0), "note": "MEDIUM clusters on an infested neighbour"},
+	{"name": "06_battle_scale", "zoom": 60.000, "offset": Vector2i(1, 0), "note": "Past high_fidelity_threshold 48: individuals at metric scale"},
 ]
 
 ## A degenerate frame is one nothing rendered into. Thresholds are deliberately
