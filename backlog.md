@@ -19,6 +19,45 @@ problem that only exists after the core loop works) → Deferred, however well s
 Everything here traces to `design_doc.md` §2.1/§2.2 and `decisions.md` D1-D29. Rough
 dependency order.
 
+### Top-down art (D91-D99) — the world side landed 2026-09-15, figures did not
+
+The map is drawn straight down now and every world category is authored for it. What
+remains is the figure half, which the user reviewed and rejected.
+
+- [x] `[visual]` **Re-do the units and the zombies.** Done 2026-09-15 (D100-D105).
+  All 18 units re-authored on the jointed soldier rig, all 3 zombies rebuilt simple on
+  the same limb chains, 8 facings rendered for each. The rejected first pass failed on
+  anatomy, not on the colour scheme — `role_coat_color()`'s role-hue-on-the-coat is
+  unchanged and still does the work at 17 px (D94).
+- [ ] `[visual]` **Check the roster against real terrain in-game, not on a card.**
+  Every judgement in the figure work was made on a flat contact sheet or a mock terrain
+  composite. The units have never been looked at in `smoke_screenshot.tscn` at the
+  battle-scale framing (`06_battle_scale`, zoom 60) where they are actually fought with,
+  and the horde-vs-unit colour separation in particular is untested against live
+  terrain rather than a stand-in.
+- [ ] `[design]` **Tier is no longer drawn on the figures.** The first pass had
+  `rank_pips()` (N shoulder pips = tier); the rebuild dropped it, so tier now reads only
+  as `role_coat_color()`'s brightness ramp plus headgear/weapon silhouette. That is
+  probably right — pips were sub-pixel at every zoom below max — but it is a real
+  reduction against what the user asked for ("perhaps you can add something to denote
+  tier"), so it should be a decision rather than an omission.
+- [x] `[visual]` **Re-render walls, gates and infrastructure under D95.** Done
+  2026-09-15. Not through `render_category.py`, which would have reframed them: walls
+  are `--span-x 1.0 --span-y 0.5` and gates `--span-x 3.0 --span-y 0.5` (`strip.py`'s
+  `TILE_PERIOD` / `GATE_SPAN_X` / `STRIP_HEIGHT` — the frame ASPECT is a contract with
+  `WallVisuals.STRIP_ASPECT_RATIO`), and infrastructure is the plain no-fit path at
+  `CATEGORY_ORTHO_SCALE` 1.3. Output dimensions verified unchanged (2048x1024,
+  6144x1024, 2048x2048) so only colour moved. Terrain needed nothing — those assets are
+  hand-drawn SVGs, not Blender renders, so D95 does not reach them.
+- [ ] `[gated]` **Check the `coal` icon against the real HUD.** D95 made it genuinely
+  black rather than mid grey, which is correct for coal and a legibility risk against a
+  dark HUD panel it is drawn on with a black outline. Look at it in
+  `ResourceBarView` before deciding whether to lift it.
+- [ ] `[design]` **Facings could be one texture instead of eight.** At elevation 90 the
+  8 facings of a figure are the same image rotated in-plane (D98), so the engine could
+  store one and rotate the sprite, cutting unit/zombie VRAM ~8x. Interacts directly with
+  the uncompressed-texture item below. Not done: it is an engine change, not an art one.
+
 - [ ] `[design]` **Re-fit `geo_projection.CALIBRATION_POINTS`, or accept it.** Retagged
   from `[gated]` 2026-08-28: there is no single bad row to fix. Both sides of the Warwick
   row are faithful, its 3,539-unit leave-one-out residual is the worst of a spread that

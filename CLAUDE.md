@@ -25,16 +25,24 @@ When work lands, update `backlog.md` (tick or remove the item) and append to
 
 ## 0.1 The gate
 
-Three commands. All must pass before a commit lands.
+Four commands. All must pass before a commit lands.
 
 ```
 python3 tools/ci/check_gdscript.py                     # brackets, indent, dup class_name, dead scene paths
+python3 tools/ci/check_unit_facings.py                 # 8-facing art matches its own compass names
 python3 tools/ci/run_verifications.py                  # every scripts/test/verify_*.gd, exit 0 only if all pass
 <godot> --headless scenes/main/Main.tscn --quit        # managers actually boot
 ```
 
-The third is not optional and not the same as `--headless --quit`, which only checks
+The LAST is not optional and not the same as `--headless --quit`, which only checks
 script parse validity and cannot catch a broken manager `_ready()`.
+
+`check_unit_facings.py` exists because the yaw sign that bakes the 8 facings cannot
+be eyeballed: `n` is identical under either sign, `n`/`s` are symmetric under the
+wrong one, and a thumbnail sheet reads as plausible both ways. On 2026-09-15 that
+combination produced a false alarm, then a real mirror applied as its "fix", then
+partial corruption from a stopped render — none of it visible, all of it caught by
+this check. Needs Pillow; skips cleanly if it is missing.
 
 `run_verifications.py --list` shows what runs; pass substrings to filter. A timeout
 counts as a failure on purpose — `verify_gates.gd` once hung for three hours.

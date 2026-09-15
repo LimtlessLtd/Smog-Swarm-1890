@@ -14,6 +14,218 @@ Rules for this file:
 
 ---
 
+## 2026-09-15 — Everything on the map is drawn straight down
+
+The user's call, opening the session: make the models "look better and be clearer to
+the user", and "transition to an entirely top down view, no more isometric buildings on
+top down view". On whether figures could be excepted, given a render showing a
+straight-down soldier is a hat: **"everything should be straight-down and if the models
+dont look good or distinctive anymore then create new models that look distinctive from
+a top down perspective. keep iterating until units and buildings and zombies are easily
+distinguishable from each other. ensure that the colour codings for the different units
+remains, and perhaps you can add something to denote tier"**.
+
+**D91. `CATEGORY_ELEVATION_DEG` is 90 for every category drawn on the map.**
+buildings 60 -> 90, units 58 -> 90, zombies 58 -> 90, props 75 -> 90; walls, terrain and
+infrastructure were already 90. Icons stay at 55.
+*Why:* buildings were rendered at 60 degrees elevation with a 45 degree yaw, which is an
+isometric render by construction, composited onto a top-down map. Icons are exempt
+because they are HUD glyphs in a fixed 20x20 box and the map's projection does not apply
+to them. *Consequence, accepted:* the camera no longer defines the mismatch, so the
+isometric camera mode had nothing left to be consistent with — see D96.
+
+**D92. A model authored for an angled camera cannot be re-aimed; it has to be
+re-authored.** All 42 buildings and both broken props were rewritten.
+*Why, measured:* rendered straight down without changes, `town_hall` came out as two
+brown rectangles and a circle (its clock face is vertical, so it projected to nothing),
+`terraced_tenement` as four plain brown rectangles, and the `rock` prop as two flat grey
+quadrilaterals. Identity now lives in the roof plan and footprint — `hip_roof()` over
+`gable_roof()`, because a gable's two planes share one horizontal normal and project to a
+plain split rectangle, where a hip's four planes give both tonal separation and Freestyle
+creases.
+
+**D93. Buildings are separated by FAMILY palette plus an exclusive signature shape, not
+by per-building colour choices.** `render_common.BUILDING_FAMILY` owns eight palettes;
+each family owns one shape nothing else draws (civic a pyramid-capped tower and gold
+finial, power a cooling-tower annulus, extraction a headframe wheel over a black shaft,
+agriculture furrows and a domed silo, housing a row of hip roofs, logistics running
+track, military a parade ground, heavy a glowing tap hole).
+*Why:* 42 independently chosen brown roofs is how the previous roster ended up with six
+buildings that read as the same box. Within a family, separation is layout only —
+`iron_foundry` and `steelworks` deliberately share every colour and differ as
+round-and-scattered against square-and-ranked. *Consequence:* tier inside a family is
+drawn as COUNT (one cooling tower, then two; two converters, then four; two barrack
+ranges, then four), so a higher tier reads as the same place grown rather than as an
+unrelated building.
+
+**D94. The role accent moved from the weapon onto the coat, and tier drives its value and
+saturation.** `role_coat_color(role, tier)`; melee red, ranged blue, special purple,
+unchanged hues from the per-unit scripts they were spread across.
+*Why, measured at the size the game actually draws a figure* (17 px at the MEDIUM/HIGH
+threshold, 46 px at `max_zoom`): every coat was near-black and the accent sat on a weapon
+worth under 5% of the sprite, so all 18 units rendered as one grey smudge. The colour
+coding is not changed, only applied where it can be seen. Tier is redundantly coded as
+value+saturation AND `rank_pips()`, because the ramp survives minification and the pips
+are exact when the player zooms in.
+
+**D95. `flat_material()` colour tuples are sRGB, converted to linear on the way in.**
+*Why, measured by sampling rendered pixels:* Blender's shader graph is linear and the PNG
+is written sRGB-encoded, so a tuple typed `0.145` left the renderer at `0.416` — exactly
+`sRGB(0.145)`, confirmed on `truncheoneer`'s helmet (0.145 -> 106/255) and `rifleman`'s
+shako (0.105 -> 91/255). Everything below about 0.5 landed more than 0.2 too light, so the
+bottom half of the tonal range was unreachable: "near-black" coats rendered mid grey, and
+darkening the heavy-industry ground to 0.17 in an earlier pass visibly did nothing.
+`setup_render()`'s own comment claimed Standard view transform made output equal input;
+Standard is necessary for that and not sufficient — it drops AgX's tone curve, not the
+encode. *Consequence, accepted and taken deliberately:* this is global, so terrain, walls
+and icons all render darker and more saturated once re-rendered. The user chose to apply
+it everywhere rather than leave two colour conventions in one pipeline. Constants written
+before this date were tuned against the lighter output and need re-checking.
+
+**D96. The isometric camera mode is deleted, not just unused.** `CameraPerspective`,
+`toggle_perspective()`/`set_perspective()`, the Tab binding, the `world_root_path`
+export and the tween are gone.
+*Why:* it rotated `world_root` 45 degrees and squashed Y. The art now contains its own
+projection, so applying a world transform on top would shear sprites that are already
+drawn straight down. *Consequence:* `FacingUtil`'s bucket-to-screen mapping stops being
+the documented guess it was — with no world transform, world "+X" IS screen-right.
+
+**D97. Ground is irregular translucent patches joined by paths, never a full-quad
+plate.** `ground_patch()`, `path()`, `ground_stripe()`; `yard_plate()` demoted to
+genuinely paved rectangles well inside the frame.
+*Why:* the user on the first top-down slice — the buildings "are all exact squares with
+no transparency anywhere, i think they should look more natural and blend better with the
+terrain e.g. using transparency and paths between the various different buildings within
+1 building image asset". Two things had to be fixed before that was even possible:
+`flat_material()`'s `alpha` parameter was a **no-op** (written into the 4th component of a
+colour socket, which an Emission chain never reads), and Freestyle stroked every silhouette
+including ground, so any ground at all came with a hard black border. Hence
+`NO_OUTLINE_COLLECTION` and the real transparency mix. *Consequence:* thin ground markings
+must go through `ground_stripe()` — a strip narrower than the Freestyle stroke renders as a
+solid black bar whatever colour it was given, which is what turned `estate_farm`'s ploughing
+into heavy black lines.
+
+**D98. Straight-down categories bake their 8 facings from base yaw 0, not 45.**
+*Why:* at elevation 90 `add_camera()` maps model +X/+Y straight to image X/Y, so yaw is a
+pure in-plane rotation and the facing mapping becomes exact rather than the guess
+`render_directional_to()` documented. A model built facing +Y renders pointing up the
+screen at yaw 0, which is "n"; keeping the historical 45 offset would have rotated every
+facing one notch off its own name. Angled categories keep 45.
+
+**D99. `TOON_TERMINATOR` 0.42 -> 0.62 and `OUTLINE_THICKNESS_FRACTION` 0.018 -> 0.011.**
+*Why:* 0.42 corresponds to a dot product of -0.16 — a surface stayed "lit" until it pointed
+more than 99 degrees away from the light. Survivable at an angled camera, fatal at a
+straight-down one where nearly every visible surface points broadly up: all four planes of
+a hip roof cleared the threshold, and the first top-down slice rendered every building as a
+flat rectangle with a black X on it. The outline was set against angled renders made of
+many small parts; at 0.018 on large flat shapes it closed over real detail (it swallowed
+`town_hall`'s plinth course entirely). Both picked by rendering candidates side by side —
+0.007 was cleaner at native resolution but the line is what survives minification.
+
+---
+
+## 2026-09-15 — The figures get anatomy, and one fit across eight facings
+
+The first top-down figure pass was rejected. The user's reason was specific and
+was a defect, not a preference: **"They are not very distinctive and dont have
+much character and also are not anatomically correct, like theres arms and hands
+that arent properly joined up. basically i think they should look decent up close
+with decent attention to details etc. but far away they should still be
+distinctive and easy to distinguish from the other units."** On the zombies,
+separately: **"keep them simple and readable"**.
+
+**D100. Limbs are joint chains, not placed cylinders.** `bone()` takes two
+ENDPOINTS and derives position and rotation; `limb()` walks a joint list and puts
+a sphere at every articulation; `hand()` ends a limb in a palm with optional
+fingers. `soldier_arm()` derives the elbow from shoulder and hand, so a caller
+can only say where the hand goes.
+*Why:* the first rig placed each arm segment at a guessed midpoint with a guessed
+euler, so arms floated clear of both shoulder and hand, and two segments meeting
+at an angle left a wedge gap on the outside of the bend. That is exactly the
+"arms and hands that arent properly joined up" the user saw. With endpoints as
+the input a limb cannot drift from its joint however the pose changes.
+
+**D101. Z is draw order, and the rig declares the layering explicitly.**
+`FIGURE_Z` < `FIGURE_TORSO_TOP` < `FIGURE_TRIM_Z` < `FIGURE_ARM_Z` <
+`FIGURE_WEAPON_Z`.
+*Why, measured:* height is invisible from straight down, so the only thing Z does
+is decide what occludes what. The first jointed rig put the arms on the torso's
+own centre plane, where the shoulder mass (half-depth 0.11) hid them completely —
+every joint rendered correctly and **none of it was visible**. Arms therefore ride
+above the coat.
+
+**D102. Interior detail is confined to `FIGURE_TRIM_Z`, which is why it cannot
+change the silhouette.** Buttons, cross-belt plate, waist belt, pouch, shoulder
+straps, cuff buttons, shako badge and chin strap, rifle furniture.
+*Why:* the brief was "a bit more detail but leaving the distinctive outline". A
+trim plane above the coat and below the arms makes that structural rather than a
+matter of care. *Verified rather than asserted:* comparing the alpha masks of the
+before and after renders, **0.66% of silhouette pixels differ**, which is
+antialiasing.
+
+**D103. A unit is distinguished at range by headgear size and weapon carry, not
+by detail.** Custodian helmet 0.108 / shako 0.090 / slouch hat 0.135 / mitre 0.070
+tall / feather bonnet 0.125 / sharpshooter's cap 0.070; and bow-arc vs pickaxe-T
+vs bayonet-low vs port-arms vs targe-and-sword vs scoped-long vs grenade-raised.
+*Why:* at 17 px only colour and gross outline survive, so per-unit identity has to
+live in the two things that change the outline. Detail is for the 28-46 px band.
+Cavalry are separated from infantry by footprint alone — a horse is ~3:1 where a
+man is round — and from each other by mount colour and what projects forward.
+
+**D104. Vehicle panels use `role_panel_color()`, not `role_coat_color()`.** The
+role hue mixed 34% toward the hull grey.
+*Why:* tiers 4-5 sit at the top of the tier ramp, so the coat ramp applied
+straight to a machine came out near-pure hue — rendered, the Tier 5 vehicles were
+neon red and magenta against a building roster that is all soot, brick and olive.
+A painted steel panel is a knocked-back version of a dress-uniform colour.
+
+**D106. A unit is sized by its across-all-facings extent, not by the current
+facing's texture. The facing yaw sign is POSITIVE and is settled by a test, not
+by an argument.**
+
+*The facing sign, and a mistake worth keeping.* D98's positive step was correct.
+It was nevertheless "fixed" to a negative step on the strength of a plausible
+argument — rotating the camera by +yaw makes the scene appear to rotate by -yaw,
+so the compass must run backwards — backed by eyeballing a contact sheet. Both
+were wrong: the negative step mirrored every facing except n and s, which are
+symmetric and hide it. Reverted.
+*What settles it, and what any future change to this must run:* all eight facings
+are one model under an in-plane rotation, so facing i must equal the "n" image
+rotated CLOCKWISE by 45*i on screen. Compare alpha masks, take the best-scoring
+rotation, and check it is the facing the filename claims. Measured both ways —
+positive step: 0 of 8 wrong; negative step: 6 of 8 wrong (ne<->nw, e<->w,
+se<->sw). A colour-marker version of this check is NOT reliable: a tolerance wide
+enough to catch a hat also catches skin and gunstock, and it produced both a
+false alarm and a correct-but-inverted reading before being abandoned.
+
+*The pulse.* `TacticalEntityLayer` sized each sprite by `maxf(texture width,
+height)` of the tight-cropped texture (D88). A tight crop is an AXIS-ALIGNED box,
+so an elongated model's box shrinks when it turns off-axis even though the model
+has not changed size — measured, `chasseur` crops to 1848 px at the cardinals and
+1366 at the diagonals, so dividing by it drew the same horse **35% larger** on a
+diagonal and cavalry pulsed once per rotation. `UnitVisuals.unit_facing_extent()`
+and `ZombieVisuals.variant_facing_extent()` return the max across all eight
+facings, cached per unit/variant, and that constant is the divisor now. Zombies
+were milder (9.6-11.2%) but a horde is thousands of figures all turning at once,
+which is the most visible place a 10% pulse could land. D105's shared fit is
+necessary but NOT sufficient for this: it fixes the source framing, and the
+engine's own per-facing crop would otherwise undo it.
+
+**D105. The 8 facings share ONE fit, aimed at the origin.**
+`render_directional_to()` measures every facing's reach from the origin, takes the
+max, and renders all 8 at that one ortho_scale without re-centring.
+*Why:* this is the open question `tools/blender_pipeline/README.md` raised against
+ever fitting units — "re-centring per facing would make a unit visibly wobble as
+it turns. They need one fit computed across all 8 facings, not eight independent
+ones." Aiming at the origin rather than at content matters too: the camera yaws
+around the origin, so re-centring would trade a scale wobble for a translation
+wobble. It matters more now than it did, because weapons are carried DIAGONALLY
+and the projected bounding box genuinely changes shape as the camera turns.
+*Measured:* cropped `largest_dim` across a rifleman's 8 facings now varies **2.9%**,
+which is what the in-engine per-facing `tight_crop_copy()` (D88) will scale against.
+
+---
+
 ## 2026-09-07 — The campaign can end, and hordes stop multiplying
 
 Started as "make hordes seek the colony", which `HordeManager`'s own header has listed

@@ -43,6 +43,32 @@ static func unit_texture(unit_type: GameEnums.UnitType, facing: GameEnums.Facing
 		_texture_cache[cache_key] = _load_texture(unit_type, facing)
 	return _texture_cache[cache_key]
 
+static var _facing_extent_cache: Dictionary = {}  # GameEnums.UnitType -> float
+
+## The largest cropped dimension across ALL EIGHT facings of a unit — the divisor
+## a caller should scale a sprite by, instead of the current facing's own size.
+##
+## Sizing each facing by its own texture is wrong, and the more elongated the unit
+## the more wrong it gets. A tight crop (D88) returns an AXIS-ALIGNED box, so a
+## long model's box shrinks as it turns off-axis even though the model itself has
+## not changed size: measured on the rebuilt roster, `chasseur` crops to 1848 px
+## at the cardinal facings and 1366 at the diagonals. Dividing by that made the
+## same horse render 35% larger on a diagonal, so cavalry visibly pulsed once per
+## rotation. Dividing by one constant per unit keeps a turn rigid.
+##
+## Costs one load of all eight facings per unit type, once — they are cached by
+## unit_texture() anyway, and every one of them gets drawn as the unit turns.
+static func unit_facing_extent(unit_type: GameEnums.UnitType) -> float:
+	if _facing_extent_cache.has(unit_type):
+		return _facing_extent_cache[unit_type]
+	var extent := 0.0
+	for facing in GameEnums.Facing8.values():
+		var texture := unit_texture(unit_type, facing)
+		if texture:
+			extent = maxf(extent, maxf(texture.get_width(), texture.get_height()))
+	_facing_extent_cache[unit_type] = extent
+	return extent
+
 ## Matches assets/units/<key>.png exactly — see that folder's own README
 ## for the generation prompt keyed to each of these.
 static func _texture_key(unit_type: GameEnums.UnitType) -> String:

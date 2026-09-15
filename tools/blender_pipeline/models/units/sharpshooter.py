@@ -1,7 +1,16 @@
-"""assets/units/sharpshooter_<facing>.png — Tier 3 Ranged. A draped
-hooded cloak and a scoped rifle replace the earlier Ranged units' visible
-tunic+cap silhouette — a concealment specialist reads differently in
-outline from an infantry-line rifleman even before color.
+"""assets/units/sharpshooter_<facing>.png — GameEnums.UnitType.SHARPSHOOTER (Tier 3 Ranged).
+
+Tier 3 ranged.
+
+Silhouette: the LONGEST weapon and the SMALLEST head on the foot roster — a
+scoped long rifle held out almost straight ahead, and a low peaked cap at radius
+0.070. Narrow build, no pack, hunched forward. Against yeoman_marksman.py (wide
+hat, short musket) the two ranged units read as opposites at a glance, which is
+the point: they are the same role three tiers apart.
+
+Built on render_common's soldier rig (soldier_torso/soldier_arm/soldier_head),
+so every joint is a real articulation and the interior trim sits on FIGURE_TRIM_Z
+where it cannot widen the silhouette. See that block for why Z is draw order.
 """
 
 import bpy
@@ -9,56 +18,68 @@ import sys
 import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-from render_common import flat_material, part, sash  # noqa: E402
+from render_common import (  # noqa: E402
+    flat_material, part, bone, limb, hand, along, role_coat_color, ROLE_RANGED,
+    soldier_boots, soldier_torso, soldier_arm, soldier_head, soldier_trim,
+    soldier_pack, FIGURE_ARM_Z, FIGURE_TRIM_Z, FIGURE_TORSO_TOP, FIGURE_WEAPON_Z,
+)
 
-CLOAK_COLOR = (0.24, 0.26, 0.22)  # Muted drab green-grey — reads as camouflage/concealment, distinct from every earlier coat hue.
-BOOT_COLOR = (0.12, 0.11, 0.1)
-SKIN_COLOR = (0.72, 0.56, 0.46)
-RIFLE_COLOR = (0.05, 0.1, 0.45)  # Ranged role accent: deep blue.
-SCOPE_COLOR = (0.15, 0.14, 0.13)
+TIER = 3
+COAT = role_coat_color(ROLE_RANGED, TIER)
+COAT_DARK = tuple(c * 0.70 for c in COAT)
+COAT_LIGHT = tuple(min(1.0, c * 1.26 + 0.02) for c in COAT)
+SLEEVE = tuple(c * 0.80 for c in COAT)
+SKIN = (0.769, 0.600, 0.486)
+BELT = (0.878, 0.851, 0.780)
+STEEL = (0.310, 0.322, 0.353)
+WOOD = (0.416, 0.278, 0.157)
+BOOT = (0.157, 0.141, 0.129)
+BRASS = (0.796, 0.635, 0.259)
+CAP = (0.208, 0.220, 0.212)
+SCOPE = (0.180, 0.192, 0.204)
+
+BUTT = (0.150, -0.180, FIGURE_WEAPON_Z)
+MUZZLE = (-0.055, 0.530, FIGURE_WEAPON_Z)
 
 
 def build():
-    cloak_mat = flat_material("Cloak", CLOAK_COLOR)
-    boot_mat = flat_material("Boot", BOOT_COLOR)
-    skin_mat = flat_material("Skin", SKIN_COLOR)
-    rifle_mat = flat_material("Rifle", RIFLE_COLOR)
-    scope_mat = flat_material("Scope", SCOPE_COLOR)
+    coat = flat_material("Coat", COAT)
+    coat_dark = flat_material("CoatDark", COAT_DARK)
+    coat_light = flat_material("CoatLight", COAT_LIGHT)
+    sleeve = flat_material("Sleeve", SLEEVE)
+    skin = flat_material("Skin", SKIN)
+    belt = flat_material("Belt", BELT)
+    steel = flat_material("Steel", STEEL)
+    wood = flat_material("Wood", WOOD)
+    boot = flat_material("Boot", BOOT)
+    brass = flat_material("Brass", BRASS)
+    cap = flat_material("Cap", CAP)
+    scope = flat_material("Scope", SCOPE)
 
-    for side, forward in ((-0.14, 0.0), (0.14, -0.08)):
-        part(bpy.ops.mesh.primitive_cylinder_add, cloak_mat,
-             (side, forward, 0.35), scale=(0.6, 0.6, 1.0), radius=0.14, depth=0.7)
-        part(bpy.ops.mesh.primitive_cube_add, boot_mat,
-             (side, forward + 0.05, 0.06), scale=(0.16, 0.22, 0.08), size=1.0)
+    soldier_boots(boot, spread=0.095, back=-0.150)
+    left_shoulder, right_shoulder = soldier_torso(coat, bulk=0.90)
+    soldier_trim(coat_light, coat_dark, belt, brass, buttons=2, cross_belts=False)
+    # Single bandolier rather than crossed webbing.
+    part(bpy.ops.mesh.primitive_cube_add, belt, (0.0, 0.010, FIGURE_TORSO_TOP + 0.004),
+         rotation=(0.0, 0.0, -0.62), scale=(0.030, 0.245, 0.012), size=1.0)
 
-    # Cloaked torso: a wide, straight-sided cylinder (not tapered like a
-    # fitted tunic) — a draped, bulkier silhouette than any earlier unit's torso.
-    part(bpy.ops.mesh.primitive_cylinder_add, cloak_mat,
-         (0, 0, 1.05), radius=0.36, depth=0.65)
-    sash(rifle_mat, (0, 0, 1.05), 0.36)
+    right_hand = along(BUTT, MUZZLE, 0.26)[:2] + (FIGURE_ARM_Z,)
+    left_hand = along(BUTT, MUZZLE, 0.56)[:2] + (FIGURE_ARM_Z,)
+    soldier_arm(sleeve, coat_dark, skin, right_shoulder, right_hand, elbow_out=0.060,
+                brass_material=brass)
+    soldier_arm(sleeve, coat_dark, skin, left_shoulder, left_hand, elbow_out=0.070,
+                brass_material=brass)
 
-    part(bpy.ops.mesh.primitive_cylinder_add, cloak_mat,
-         (-0.28, 0.25, 1.1), rotation=(1.2, 0, -0.1), radius=0.09, depth=0.45)
-    part(bpy.ops.mesh.primitive_cylinder_add, cloak_mat,
-         (0.28, 0.02, 1.05), rotation=(0.5, 0, 0.4), radius=0.09, depth=0.4)
-    part(bpy.ops.mesh.primitive_uv_sphere_add, skin_mat,
-         (-0.4, 0.38, 1.15), segments=8, ring_count=5, radius=0.07)
-    part(bpy.ops.mesh.primitive_uv_sphere_add, skin_mat,
-         (0.38, -0.08, 1.02), segments=8, ring_count=5, radius=0.07)
+    bone(steel, along(BUTT, MUZZLE, 0.40), MUZZLE, 0.015)
+    bone(wood, BUTT, along(BUTT, MUZZLE, 0.44), 0.028)
+    part(bpy.ops.mesh.primitive_cube_add, wood, BUTT,
+         rotation=(0.0, 0.0, -0.28), scale=(0.050, 0.105, 0.038), size=1.0)
+    # Telescopic sight sitting proud of the barrel — this unit's own mark.
+    part(bpy.ops.mesh.primitive_cylinder_add, scope, along(BUTT, MUZZLE, 0.46),
+         rotation=(1.5708, 0.0, -0.28), vertices=10, radius=0.026, depth=0.165)
+    for t in (0.36, 0.56):
+        part(bpy.ops.mesh.primitive_cylinder_add, steel, along(BUTT, MUZZLE, t),
+             rotation=(1.5708, 0.0, -0.28), vertices=8, radius=0.030, depth=0.012)
 
-    part(bpy.ops.mesh.primitive_uv_sphere_add, skin_mat,
-         (0, 0, 1.55), segments=10, ring_count=6, radius=0.19)
-
-    # Hood: a cone draped over the head, wider at the base than
-    # Toxophilite's hood — cloaks the shoulders too, not just the head, a
-    # bulkier concealment-focused silhouette.
-    part(bpy.ops.mesh.primitive_cone_add, cloak_mat,
-         (0, -0.02, 1.72), radius1=0.28, radius2=0.06, depth=0.34)
-
-    # Scoped rifle: a long barrel with a small cylindrical scope mounted on
-    # top — the scope silhouette is unique on the roster, immediately
-    # readable as "sniper" rather than "infantry rifle."
-    part(bpy.ops.mesh.primitive_cylinder_add, rifle_mat,
-         (0.05, 0.5, 1.15), rotation=(1.3, 0, -0.2), radius=0.035, depth=0.9)
-    part(bpy.ops.mesh.primitive_cylinder_add, scope_mat,
-         (0.05, 0.35, 1.28), rotation=(1.3, 0, -0.2), radius=0.025, depth=0.22)
+    soldier_head(cap, radius=0.070, height=0.062, peak=0.052,
+                 collar_material=coat_dark)

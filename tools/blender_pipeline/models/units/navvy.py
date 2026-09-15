@@ -1,8 +1,15 @@
-"""assets/units/navvy_<facing>.png — Tier 1 Melee. "Navvy": Victorian
-railway/canal construction laborer, not a soldier — silhouette leans
-working-class (flat cap, pickaxe) rather than military, distinct from
-Tier 0's Truncheoneer (custodian helmet, truncheon) even though both are
-Melee/red.
+"""assets/units/navvy_<facing>.png — GameEnums.UnitType.NAVVY (Tier 1 Melee).
+
+Tier 1 melee — a labourer, not a soldier, and drawn as one.
+
+Silhouette: SHIRTSLEEVES. No coat skirt, no cross-belts, no pack, a small flat
+cap, and a pickaxe carried over the shoulder as a long diagonal with a hard T
+head on the end. The T is the mark: every other melee unit ends its weapon in a
+point, a blade or a ball.
+
+Built on render_common's soldier rig (soldier_torso/soldier_arm/soldier_head),
+so every joint is a real articulation and the interior trim sits on FIGURE_TRIM_Z
+where it cannot widen the silhouette. See that block for why Z is draw order.
 """
 
 import bpy
@@ -10,62 +17,59 @@ import sys
 import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-from render_common import flat_material, part, sash  # noqa: E402
+from render_common import (  # noqa: E402
+    flat_material, part, bone, limb, hand, along, role_coat_color, ROLE_MELEE,
+    soldier_boots, soldier_torso, soldier_arm, soldier_head, soldier_trim,
+    soldier_pack, FIGURE_ARM_Z, FIGURE_TRIM_Z, FIGURE_TORSO_TOP, FIGURE_WEAPON_Z,
+)
 
-COAT_COLOR = (0.4, 0.34, 0.22)   # Khaki work jacket — distinct hue from every Tier 0 coat color.
-BOOT_COLOR = (0.16, 0.13, 0.1)
-BELT_COLOR = (0.3, 0.2, 0.13)
-SKIN_COLOR = (0.72, 0.56, 0.46)
-CAP_COLOR = (0.2, 0.18, 0.14)
-PICKAXE_COLOR = (0.5, 0.03, 0.05)  # Melee role accent: deep red.
+TIER = 1
+COAT = role_coat_color(ROLE_MELEE, TIER)
+COAT_DARK = tuple(c * 0.70 for c in COAT)
+COAT_LIGHT = tuple(min(1.0, c * 1.26 + 0.02) for c in COAT)
+SLEEVE = tuple(c * 0.80 for c in COAT)
+SKIN = (0.769, 0.600, 0.486)
+BELT = (0.878, 0.851, 0.780)
+STEEL = (0.310, 0.322, 0.353)
+WOOD = (0.416, 0.278, 0.157)
+BOOT = (0.157, 0.141, 0.129)
+BRASS = (0.796, 0.635, 0.259)
+HAFT = (0.435, 0.318, 0.184)
+IRON = (0.353, 0.365, 0.384)
+
+GRIP_LOW = (0.185, -0.055, FIGURE_ARM_Z)
+GRIP_HIGH = (0.105, 0.185, FIGURE_ARM_Z)
+HEAD_AT = (-0.055, 0.430, FIGURE_WEAPON_Z)
 
 
 def build():
-    coat_mat = flat_material("Coat", COAT_COLOR)
-    boot_mat = flat_material("Boot", BOOT_COLOR)
-    belt_mat = flat_material("Belt", BELT_COLOR)
-    skin_mat = flat_material("Skin", SKIN_COLOR)
-    cap_mat = flat_material("Cap", CAP_COLOR)
-    pickaxe_mat = flat_material("Pickaxe", PICKAXE_COLOR)
-    wood_mat = flat_material("Handle", (0.35, 0.24, 0.14))
+    coat = flat_material("Shirt", COAT)
+    coat_dark = flat_material("ShirtDark", COAT_DARK)
+    coat_light = flat_material("ShirtLight", COAT_LIGHT)
+    sleeve = flat_material("Sleeve", SLEEVE)
+    skin = flat_material("Skin", SKIN)
+    belt = flat_material("Belt", BELT)
+    boot = flat_material("Boot", BOOT)
+    brass = flat_material("Brass", BRASS)
+    haft = flat_material("Haft", HAFT)
+    iron = flat_material("Iron", IRON)
 
-    for side, forward in ((-0.14, 0.0), (0.14, -0.08)):
-        part(bpy.ops.mesh.primitive_cylinder_add, coat_mat,
-             (side, forward, 0.35), scale=(0.6, 0.6, 1.0), radius=0.14, depth=0.7)
-        part(bpy.ops.mesh.primitive_cube_add, boot_mat,
-             (side, forward + 0.05, 0.06), scale=(0.16, 0.22, 0.08), size=1.0)
+    soldier_boots(boot, spread=0.115, length=0.090)
+    left_shoulder, right_shoulder = soldier_torso(coat, bulk=1.02)
+    # Braces instead of webbing, and no pouch: working dress, not uniform.
+    soldier_trim(coat_light, coat_dark, belt, brass, buttons=2, pouch=False,
+                 cross_belts=False)
+    for side in (-1.0, 1.0):
+        part(bpy.ops.mesh.primitive_cube_add, coat_dark, (side * 0.055, 0.020, FIGURE_TRIM_Z + 0.004),
+             scale=(0.024, 0.230, 0.010), size=1.0)
 
-    part(bpy.ops.mesh.primitive_cylinder_add, coat_mat,
-         (0, 0, 1.05), radius=0.3, depth=0.6)  # Straight cylinder, not tapered — a work jacket, not a tailored military coat.
-    sash(pickaxe_mat, (0, 0, 1.05), 0.3)
+    soldier_arm(sleeve, coat_dark, skin, right_shoulder, GRIP_LOW, elbow_out=0.085)
+    soldier_arm(sleeve, coat_dark, skin, left_shoulder, GRIP_HIGH, elbow_out=0.070)
 
-    part(bpy.ops.mesh.primitive_cylinder_add, belt_mat,
-         (0, 0, 0.78), scale=(1.0, 1.0, 0.12), radius=0.32, depth=1.0)
+    bone(haft, GRIP_LOW, HEAD_AT, 0.023)
+    # Pick head: a hard crossbar, the family's one T-shaped weapon.
+    part(bpy.ops.mesh.primitive_cube_add, iron, HEAD_AT,
+         rotation=(0.0, 0.0, -0.62), scale=(0.235, 0.038, 0.030), size=1.0)
 
-    # Arms: both lower, one gripping the pickaxe haft mid-shaft.
-    part(bpy.ops.mesh.primitive_cylinder_add, coat_mat,
-         (-0.3, 0.05, 1.0), rotation=(0.2, 0, 0.15), radius=0.08, depth=0.5)
-    part(bpy.ops.mesh.primitive_cylinder_add, coat_mat,
-         (0.3, 0.15, 1.02), rotation=(0.6, 0, -0.3), radius=0.08, depth=0.5)
-    part(bpy.ops.mesh.primitive_uv_sphere_add, skin_mat,
-         (-0.32, 0.02, 0.76), segments=8, ring_count=5, radius=0.08)
-    part(bpy.ops.mesh.primitive_uv_sphere_add, skin_mat,
-         (0.4, 0.28, 0.82), segments=8, ring_count=5, radius=0.08)
-
-    part(bpy.ops.mesh.primitive_uv_sphere_add, skin_mat,
-         (0, 0, 1.5), segments=10, ring_count=6, radius=0.2)
-
-    # Flat cap — a squashed disc, a completely different headwear silhouette
-    # from any Tier 0 unit's helmet/hood.
-    part(bpy.ops.mesh.primitive_cylinder_add, cap_mat,
-         (0, 0.02, 1.62), scale=(1.0, 1.0, 0.3), radius=0.23, depth=0.12)
-
-    # Pickaxe: a long diagonal haft with a crossed double-pointed head — the
-    # single most distinct silhouette element on the roster so far (no
-    # other unit has a diagonal cross shape at its business end), and the
-    # role's deep-red accent.
-    part(bpy.ops.mesh.primitive_cylinder_add, wood_mat,
-         (0.4, 0.35, 0.85), rotation=(1.1, 0, 0.35), radius=0.04, depth=0.7)
-    for ang in (0.5, -0.5):
-        part(bpy.ops.mesh.primitive_cone_add, pickaxe_mat,
-             (0.55, 0.55, 1.1), rotation=(1.1, ang, 0.35), radius1=0.05, radius2=0.005, depth=0.3)
+    soldier_head(flat_material("Cap", (0.255, 0.243, 0.216)), radius=0.078,
+                 height=0.070, peak=0.048, collar_material=coat_dark)

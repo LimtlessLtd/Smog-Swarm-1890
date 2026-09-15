@@ -77,7 +77,6 @@ camera_path = NodePath("../../CameraController")
 [node name="CameraController" parent="." instance=ExtResource("2")]
 position = Vector2(124572, 92352)
 zoom = Vector2(0.05, 0.05)
-world_root_path = NodePath("../WorldRoot")
 
 [node name="ResourceManager" parent="." instance=ExtResource("3")]
 

@@ -30,6 +30,29 @@ static func zombie_texture(variant_seed: int, facing: GameEnums.Facing8 = GameEn
 		_texture_cache[cache_key] = _load_texture(variant, facing)
 	return _texture_cache[cache_key]
 
+static var _facing_extent_cache: Dictionary = {}  # variant -> float
+
+## Largest cropped dimension across all eight facings of a variant — the divisor
+## to scale a zombie sprite by, rather than the current facing's own texture.
+##
+## Same reasoning as UnitVisuals.unit_facing_extent(): a tight crop (D88) is an
+## AXIS-ALIGNED box, so it shrinks when an elongated model turns off-axis even
+## though the model has not changed size. Milder here than on cavalry because no
+## zombie is as long as a horse — measured 9.6-11.2% across the three variants
+## against the Chasseur's 26% — but a horde is thousands of figures all turning,
+## so a 10% per-figure pulse is the most visible place it could possibly land.
+static func variant_facing_extent(variant_seed: int) -> float:
+	var variant := ((variant_seed % VARIANT_COUNT) + VARIANT_COUNT) % VARIANT_COUNT
+	if _facing_extent_cache.has(variant):
+		return _facing_extent_cache[variant]
+	var extent := 0.0
+	for facing in GameEnums.Facing8.values():
+		var texture := zombie_texture(variant, facing)
+		if texture:
+			extent = maxf(extent, maxf(texture.get_width(), texture.get_height()))
+	_facing_extent_cache[variant] = extent
+	return extent
+
 static func _load_texture(variant: int, facing: GameEnums.Facing8) -> Texture2D:
 	var directional_path := "res://assets/zombies/zombie_%d_%s.png" % [variant, FacingUtil.suffix(facing)]
 	if ResourceLoader.exists(directional_path):

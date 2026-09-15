@@ -1,7 +1,13 @@
-"""assets/buildings/sulfur_mine.png — GameEnums.BuildingType.SULFUR_MINE,
-Tier 3 Industry & Extraction. Same headframe family as coal_pithead.py/
-iron_ore_mine.py but with vivid yellow sulfur chunks — the only bright
-yellow material anywhere in the building roster, unmistakable at a glance.
+"""assets/buildings/sulfur_mine.png — GameEnums.BuildingType.SULFUR_MINE.
+
+Tier 3. Headframe plus a retort bank — a row of squat cylinders with bright
+yellow mouths where the ore is cooked. Sulfur yellow is the most saturated ore
+colour in the family and the retorts repeat it five times, so this site reads
+yellow at any zoom that resolves it at all.
+
+Re-authored 2026-09-15 for the straight-down camera, on the extraction family's
+ground/path system (see coal_pithead.py for the reference model, and
+render_common's organic-ground block for why the old full-quad plate went).
 """
 
 import bpy
@@ -9,25 +15,40 @@ import sys
 import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-from render_common import flat_material, part  # noqa: E402
+from render_common import (  # noqa: E402
+    flat_material, part, headframe, spoil_heaps, ground_patch, path,
+    family_materials,
+)
 
-STEEL_COLOR = (0.42, 0.4, 0.42)
-SULFUR_COLOR = (0.952, 0.857, 0.0)
-SHAFT_COLOR = (0.448, 0.379, 0.274)
+ORE_COLOR = (0.859, 0.749, 0.161)  # brimstone yellow
+
+SHAFT_XY = (-0.24, 0.14)
+RETORT_Y = -0.26
 
 
 def build():
-    steel_mat = flat_material("Steel", STEEL_COLOR)
-    sulfur_mat = flat_material("Sulfur", SULFUR_COLOR)
-    shaft_mat = flat_material("Shaft", SHAFT_COLOR)
+    spoil_mat, timber_mat, shaft_mat = family_materials("extraction")
+    ore_mat = flat_material("Ore", ORE_COLOR)
+    dirt_mat = flat_material("Dirt", (0.463, 0.408, 0.267), alpha=0.82)
+    track_mat = flat_material("Track", (0.553, 0.494, 0.349), alpha=0.92)
+    iron_mat = flat_material("Iron", (0.365, 0.353, 0.325))
 
-    part(bpy.ops.mesh.primitive_cylinder_add, shaft_mat, (0, 0, 0.02), scale=(1.0, 1.0, 0.06), radius=0.32, depth=0.1)
+    ground_patch(dirt_mat, (SHAFT_XY[0], SHAFT_XY[1], 0.002), radius_x=0.40,
+                 radius_y=0.36, seed=701, name="PitYard")
+    ground_patch(dirt_mat, (0.10, RETORT_Y, 0.002), radius_x=0.52, radius_y=0.22,
+                 sides=13, jitter=0.24, seed=709, name="RetortGround")
 
-    for x in (-0.17, 0.17):
-        part(bpy.ops.mesh.primitive_cylinder_add, steel_mat, (x * 0.5, 0, 0.46),
-             rotation=(0, x * -1.3, 0), radius=0.045, depth=0.95)
-    part(bpy.ops.mesh.primitive_torus_add, steel_mat, (0, 0.08, 0.88),
-         rotation=(1.5708, 0, 0), major_radius=0.11, minor_radius=0.025)
+    path(track_mat, [SHAFT_XY, (-0.10, -0.06), (0.02, RETORT_Y + 0.12)],
+         width=0.11, seed=719)
 
-    for x, y in ((-0.42, 0.3), (0.38, -0.25), (0.44, 0.18), (-0.3, -0.35), (0.15, 0.42)):
-        part(bpy.ops.mesh.primitive_uv_sphere_add, sulfur_mat, (x, y, 0.07), segments=7, ring_count=4, radius=0.1)
+    headframe(timber_mat, shaft_mat, SHAFT_XY)
+
+    # Retort bank: five squat cylinders in a line, each with a yellow mouth.
+    for i in range(5):
+        x = -0.30 + i * 0.20
+        part(bpy.ops.mesh.primitive_cylinder_add, iron_mat, (x, RETORT_Y, 0.11),
+             radius=0.085, depth=0.22)
+        part(bpy.ops.mesh.primitive_cylinder_add, ore_mat, (x, RETORT_Y, 0.225),
+             radius=0.048, depth=0.025)
+
+    spoil_heaps(ore_mat, ((-0.46, 0.38), (-0.12, 0.44)), base_radius=0.14)

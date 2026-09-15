@@ -1,13 +1,15 @@
 class_name CameraController
 extends Camera2D
 
-## Dual-perspective camera: WASD/arrow pan, mouse-wheel zoom, and a smooth
-## tween between TOP_DOWN and a faked 2D ISOMETRIC view. The camera itself
-## never moves the world's actual content — it tweens `world_root`'s
-## scale/rotation (a classic 2D fake-isometric technique: rotate 45° and
-## squash Y) while the camera keeps panning/zooming normally on top of it.
-## Swap this projection trick for true isometric art direction later
-## without touching pan/zoom or any other system.
+## Top-down camera: WASD/arrow pan, mouse-wheel zoom, middle-drag, edge pan.
+##
+## Had a second perspective until 2026-09-15: a Tab-toggled fake isometric
+## view that rotated `world_root` 45° and squashed Y. Removed on the user's
+## decision to go "entirely top down" — the art is now authored for a
+## straight-down camera (render_common.CATEGORY_ELEVATION_DEG is 90 for every
+## category drawn on the map), so rotating the world under it would shear
+## sprites that already contain their own projection. There is no world_root
+## NodePath any more for the same reason: nothing transforms the world.
 ##
 ## Also owns the Strategic <-> Tactical zoom threshold: a hard cut, at
 ## `tactical_zoom_threshold` — no separate "battle map" scene, just this
@@ -45,7 +47,6 @@ extends Camera2D
 ## strategy games zoom multiplicatively) — the full min_zoom..max_zoom span
 ## takes ~65 clicks, tactical_zoom_threshold..max_zoom takes ~31.
 
-@export var world_root_path: NodePath
 ## This is the world-units/sec pan rate AT zoom.x == 1.0, not a raw
 ## multiplier — picked so panning at the default starting Strategic zoom
 ## (Main.tscn's zoom = 0.05) feels identical to before the pan-speed
@@ -74,23 +75,13 @@ extends Camera2D
 @export var edge_pan_enabled: bool = true
 @export var edge_pan_margin_px: float = 10.0  ## Screen pixels from the viewport edge before edge-pan kicks in.
 
-@export var perspective_tween_duration: float = 0.6
-@export var isometric_y_scale: float = 0.577
-@export var isometric_rotation_degrees: float = 45.0
-
 signal tactical_mode_changed(is_tactical: bool)
 signal tactical_fidelity_changed(fidelity: GameEnums.TacticalFidelity)  ## Fires on every LOW<->MEDIUM<->HIGH band crossing, independent of tactical_mode_changed (which only fires on the Strategic/Tactical cut itself).
 
-var perspective: GameEnums.CameraPerspective = GameEnums.CameraPerspective.TOP_DOWN
-
-var _world_root: Node2D
-var _perspective_tween: Tween
 var _middle_dragging: bool = false
 
 func _ready() -> void:
 	InputBindings.register_defaults()
-	if world_root_path != NodePath():
-		_world_root = get_node(world_root_path)
 	make_current()
 	tactical_mode_changed.emit(is_tactical_zoom())  ## Sync any listener already wired up to our starting zoom.
 	tactical_fidelity_changed.emit(get_tactical_fidelity())  ## Same "sync on ready" reasoning.
@@ -124,33 +115,6 @@ func _input(event: InputEvent) -> void:
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventMouseButton:
 		_handle_zoom_input(event)
-	elif event.is_action_pressed(InputBindings.TOGGLE_PERSPECTIVE):
-		toggle_perspective()
-
-func toggle_perspective() -> void:
-	var next := GameEnums.CameraPerspective.ISOMETRIC if perspective == GameEnums.CameraPerspective.TOP_DOWN else GameEnums.CameraPerspective.TOP_DOWN
-	set_perspective(next)
-
-func set_perspective(p_perspective: GameEnums.CameraPerspective) -> void:
-	if perspective == p_perspective:
-		return
-	perspective = p_perspective
-
-	if not _world_root:
-		push_warning("CameraController: world_root_path is not set; perspective toggle has no visual effect.")
-		return
-
-	var target_scale := Vector2.ONE
-	var target_rotation := 0.0
-	if perspective == GameEnums.CameraPerspective.ISOMETRIC:
-		target_scale = Vector2(1.0, isometric_y_scale)
-		target_rotation = deg_to_rad(isometric_rotation_degrees)
-
-	if _perspective_tween and _perspective_tween.is_valid():
-		_perspective_tween.kill()
-	_perspective_tween = create_tween().set_parallel(true).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
-	_perspective_tween.tween_property(_world_root, "scale", target_scale, perspective_tween_duration)
-	_perspective_tween.tween_property(_world_root, "rotation", target_rotation, perspective_tween_duration)
 
 func _handle_pan_input(delta: float) -> void:
 	var direction := Vector2.ZERO

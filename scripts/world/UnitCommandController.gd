@@ -28,9 +28,9 @@ extends Node2D
 ## split BuildPlacementController/MainHUD keep.
 ##
 ## Parented as a HexGridMap/StrategicOverlayManager/BuildPlacementController
-## sibling under WorldRoot: shares the same coordinate space (including
-## CameraController's isometric transform), so hex-from-click math doesn't
-## need to special-case either view mode.
+## sibling under WorldRoot: shares the same coordinate space, so hex-from-click
+## math is plain pan/zoom arithmetic. There is only one view mode since the
+## isometric perspective was removed 2026-09-15.
 
 signal unit_selected(instance: UnitInstance)
 signal building_instance_selected(instance: BuildingInstance)

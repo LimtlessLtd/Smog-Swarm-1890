@@ -1,7 +1,14 @@
-"""assets/buildings/tenant_farm.png — GameEnums.BuildingType.
-SMALLHOLDING_FARM, Tier 0 Agriculture. A small farmhouse with a fenced
-field — the field patch (a wide flat green plane) is unique to farm
-buildings, distinguishing this whole category from Industry/Housing at a glance.
+"""assets/buildings/tenant_farm.png — GameEnums.BuildingType.SMALLHOLDING_FARM.
+
+Tier 0 smallholding, and the SMALLEST agriculture site: one cottage, one small
+ploughed strip, a single pig sty. Scale is the differentiator across this family —
+tenant_farm reads as one family's plot, estate_farm as a working farm with a silo,
+industrial_farm and mechanised_farm as field systems. Nothing here is mechanised,
+so there is no silo and no machinery: an empty-handed version of the same idea.
+
+Re-authored 2026-09-15 for the straight-down camera. See render_common's
+BUILDING_FAMILY block for the shared palette and signature shapes, and its
+organic-ground block for why the old full-quad plate went.
 """
 
 import bpy
@@ -9,30 +16,34 @@ import sys
 import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-from render_common import flat_material, part, gable_roof, fence_perimeter  # noqa: E402
-
-FIELD_COLOR = (0.431, 0.56, 0.109)
-WALL_COLOR = (0.762, 0.625, 0.421)
-ROOF_COLOR = (0.56, 0.114, 0.018)
-FENCE_COLOR = (0.392, 0.215, 0.055)
+from render_common import (  # noqa: E402
+    flat_material, part, hip_roof, roof_vent, furrows, ground_patch, path,
+    family_materials,
+)
 
 
 def build():
-    field_mat = flat_material("Field", FIELD_COLOR)
-    wall_mat = flat_material("Wall", WALL_COLOR)
-    roof_mat = flat_material("Roof", ROOF_COLOR)
-    fence_mat = flat_material("Fence", FENCE_COLOR)
+    field_mat, barn_mat, cream_mat = family_materials("agriculture")
+    crop_mat = flat_material("Crop", (0.475, 0.537, 0.239), alpha=0.78)
+    soil_mat = flat_material("Soil", (0.361, 0.286, 0.192), alpha=0.95)
+    yard_mat = flat_material("Yard", (0.451, 0.412, 0.333), alpha=0.86)
+    track_mat = flat_material("Track", (0.639, 0.576, 0.463), alpha=0.92)
 
-    part(bpy.ops.mesh.primitive_cylinder_add, field_mat, (0, 0, -0.02),
-         scale=(1.0, 1.0, 0.04), radius=0.6, depth=0.1)
+    ground_patch(crop_mat, (-0.22, 0.06, 0.002), radius_x=0.32, radius_y=0.34,
+                 sides=13, jitter=0.22, seed=901, name="Strip")
+    ground_patch(yard_mat, (0.20, -0.08, 0.003), radius_x=0.26, radius_y=0.28,
+                 sides=11, jitter=0.24, seed=907, name="Yard")
 
-    part(bpy.ops.mesh.primitive_cube_add, wall_mat, (-0.15, -0.05, 0.18), scale=(0.28, 0.24, 0.18), size=1.0)
-    gable_roof(roof_mat, (-0.15, -0.05, 0.36), width=0.32, depth=0.28, height=0.16, ridge_along_y=False)
+    furrows(soil_mat, count=5, width=0.38, z=0.006, spacing=0.090, x=-0.22)
+    path(track_mat, [(-0.02, -0.34), (0.10, -0.20), (0.18, -0.02)], width=0.08, seed=911)
 
-    fence_perimeter(fence_mat, count=12, distance=0.55, post_height=0.1, post_radius=0.015)
+    # Cottage: one hipped roof and one chimney. The whole building.
+    part(bpy.ops.mesh.primitive_cube_add, cream_mat, (0.22, 0.10, 0.07),
+         scale=(0.26, 0.24, 0.12), size=1.0)
+    hip_roof(barn_mat, (0.22, 0.10, 0.13), width=0.24, depth=0.22,
+             height=0.13, ridge_fraction=0.40)
+    roof_vent(cream_mat, (0.22, 0.16, 0.24), radius=0.028, height=0.08)
 
-    # Crop rows: a few thin parallel strips across the field.
-    for i in range(4):
-        t = (i / 3.0) - 0.5
-        part(bpy.ops.mesh.primitive_cube_add, wall_mat, (0.15, t * 0.5, 0.005),
-             scale=(0.35, 0.02, 0.01), size=1.0)
+    # Pig sty: a lean-to against the yard edge, no roof ridge — too small for one.
+    part(bpy.ops.mesh.primitive_cube_add, barn_mat, (0.28, -0.26, 0.05),
+         scale=(0.16, 0.13, 0.09), size=1.0)

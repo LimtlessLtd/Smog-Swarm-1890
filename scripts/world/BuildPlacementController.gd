@@ -10,9 +10,10 @@ extends Node2D
 ##
 ## Parented as a HexGridMap/StrategicOverlayManager sibling under WorldRoot
 ## (same reasoning as StrategicOverlayManager: shares the same coordinate
-## space, including whatever rotation/scale CameraController applies for
-## the isometric perspective toggle) so the ghost stays aligned with the
-## grid in both perspectives. Added last among WorldRoot's children in
+## space) so the ghost stays aligned with the grid. The camera no longer
+## rotates or scales the world — the isometric toggle was removed
+## 2026-09-15 — so there is one perspective to stay aligned with. Added
+## last among WorldRoot's children in
 ## Main.tscn so the ghost draws on top of buildings/fog/markers by plain
 ## sibling order.
 ##

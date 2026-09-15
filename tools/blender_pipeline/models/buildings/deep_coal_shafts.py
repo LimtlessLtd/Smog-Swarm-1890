@@ -1,7 +1,14 @@
-"""assets/buildings/deep_coal_shafts.png — GameEnums.BuildingType.
-DEEP_COAL_SHAFTS, Tier 3 Industry & Extraction. Twin headframes over one
-shaft — a doubled-up escalation of coal_pithead.py's single frame, reading
-as a bigger, later-tier version of the same mine family.
+"""assets/buildings/deep_coal_shafts.png — GameEnums.BuildingType.DEEP_COAL_SHAFTS.
+
+Tier 3 high-output Coal consolidator. Deliberately coal_pithead's site with TWO
+headframes instead of one, bigger heaps, and a tramway running between the shafts.
+The roster says this is "more colliery", so the art says the same rather than
+inventing an unrelated building: reading it against a Tier 1 pithead should feel
+like a bigger version of the same place.
+
+Re-authored 2026-09-15 for the straight-down camera, on the extraction family's
+ground/path system (see coal_pithead.py for the reference model, and
+render_common's organic-ground block for why the old full-quad plate went).
 """
 
 import bpy
@@ -9,30 +16,41 @@ import sys
 import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-from render_common import flat_material, part  # noqa: E402
+from render_common import (  # noqa: E402
+    flat_material, part, hip_roof, headframe, spoil_heaps, ground_patch, path,
+    family_materials,
+)
 
-STEEL_COLOR = (0.4, 0.38, 0.4)
-COAL_COLOR = (0.18, 0.17, 0.17)
-SHAFT_COLOR = (0.403, 0.333, 0.262)
+ORE_COLOR = (0.105, 0.098, 0.094)  # coal
 
-
-def _headframe(steel_mat, x_offset):
-    for x in (-0.13, 0.13):
-        part(bpy.ops.mesh.primitive_cylinder_add, steel_mat, (x_offset + x * 0.5, 0, 0.4),
-             rotation=(0, x * -1.3, 0), radius=0.04, depth=0.82)
-    part(bpy.ops.mesh.primitive_torus_add, steel_mat, (x_offset, 0.06, 0.76),
-         rotation=(1.5708, 0, 0), major_radius=0.09, minor_radius=0.02)
+SHAFT_A = (-0.30, 0.18)
+SHAFT_B = (0.22, 0.24)
+ENGINE_XY = (0.42, -0.14)
 
 
 def build():
-    steel_mat = flat_material("Steel", STEEL_COLOR)
-    coal_mat = flat_material("Coal", COAL_COLOR)
-    shaft_mat = flat_material("Shaft", SHAFT_COLOR)
+    spoil_mat, timber_mat, shaft_mat = family_materials("extraction")
+    ore_mat = flat_material("Ore", ORE_COLOR)
+    dirt_mat = flat_material("Dirt", (0.376, 0.318, 0.224), alpha=0.84)
+    track_mat = flat_material("Track", (0.290, 0.243, 0.176), alpha=0.92)
 
-    part(bpy.ops.mesh.primitive_cylinder_add, shaft_mat, (0, 0, 0.02), scale=(1.0, 1.0, 0.06), radius=0.4, depth=0.1)
+    for i, xy in enumerate((SHAFT_A, SHAFT_B)):
+        ground_patch(dirt_mat, (xy[0], xy[1], 0.002), radius_x=0.36, radius_y=0.34,
+                     seed=801 + i * 11, name="PitYard%d" % i)
+    ground_patch(dirt_mat, (ENGINE_XY[0], ENGINE_XY[1], 0.002), radius_x=0.28,
+                 radius_y=0.26, seed=821, name="EngineYard")
 
-    _headframe(steel_mat, -0.2)
-    _headframe(steel_mat, 0.2)
+    # Tramway linking both shafts to the winding house — "more of the same",
+    # made literal.
+    path(track_mat, [SHAFT_A, (-0.04, 0.22), SHAFT_B], width=0.12, seed=829)
+    path(track_mat, [SHAFT_B, (0.34, 0.06), ENGINE_XY], width=0.11, seed=833)
 
-    for x, y in ((-0.5, 0.25), (0.5, -0.2), (0.0, -0.4), (-0.15, 0.4)):
-        part(bpy.ops.mesh.primitive_uv_sphere_add, coal_mat, (x, y, 0.07), segments=7, ring_count=4, radius=0.1)
+    headframe(timber_mat, shaft_mat, SHAFT_A, shaft_half=0.15, wheel_outer=0.20)
+    headframe(timber_mat, shaft_mat, SHAFT_B, shaft_half=0.13, wheel_outer=0.18)
+
+    part(bpy.ops.mesh.primitive_cube_add, timber_mat, (ENGINE_XY[0], ENGINE_XY[1], 0.08),
+         scale=(0.28, 0.32, 0.14), size=1.0)
+    hip_roof(timber_mat, (ENGINE_XY[0], ENGINE_XY[1], 0.15), width=0.26, depth=0.30,
+             height=0.13, ridge_fraction=0.55)
+
+    spoil_heaps(ore_mat, ((-0.44, -0.34), (-0.12, -0.44), (0.16, -0.40)), base_radius=0.18)

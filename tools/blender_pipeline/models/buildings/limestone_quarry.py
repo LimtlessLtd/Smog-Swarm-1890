@@ -1,7 +1,13 @@
-"""assets/buildings/limestone_quarry.png — GameEnums.BuildingType.
-LIMESTONE_QUARRY, Tier 1 Industry & Extraction. A stepped open quarry cut
-— terraced rock ledges — distinct from clay_pit.py's smooth round pit by
-being angular/stepped and pale grey-white rather than a brown clay bowl.
+"""assets/buildings/limestone_quarry.png — GameEnums.BuildingType.LIMESTONE_QUARRY.
+
+Against clay_pit's round stepped hole, a quarry is a STRAIGHT worked face: benches
+cut square along one side of the site, in stone pale enough to be the brightest
+ground on the whole building roster. Rock face plus a kiln pair; no shaft, no
+headframe.
+
+Re-authored 2026-09-15 for the straight-down camera, on the extraction family's
+ground/path system (see coal_pithead.py for the reference model, and
+render_common's organic-ground block for why the old full-quad plate went).
 """
 
 import bpy
@@ -9,25 +15,46 @@ import sys
 import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-from render_common import flat_material, part  # noqa: E402
+from render_common import (  # noqa: E402
+    flat_material, part, ground_patch, path, family_materials,
+)
 
-STONE_LIGHT_COLOR = (0.874, 0.832, 0.709)
-STONE_MID_COLOR = (0.694, 0.654, 0.554)
-STONE_DARK_COLOR = (0.47, 0.432, 0.356)
+ORE_COLOR = (0.800, 0.780, 0.714)  # cut limestone
 
 
 def build():
-    light_mat = flat_material("StoneLight", STONE_LIGHT_COLOR)
-    mid_mat = flat_material("StoneMid", STONE_MID_COLOR)
-    dark_mat = flat_material("StoneDark", STONE_DARK_COLOR)
+    spoil_mat, timber_mat, shaft_mat = family_materials("extraction")
+    stone_mat = flat_material("Stone", ORE_COLOR)
+    dust_mat = flat_material("Dust", (0.702, 0.682, 0.620), alpha=0.86)
+    track_mat = flat_material("Track", (0.600, 0.580, 0.522), alpha=0.92)
 
-    # Three stepped terraces, each smaller and lower than the last —
-    # reads as a real quarry cut, not a flat pit.
-    part(bpy.ops.mesh.primitive_cylinder_add, dark_mat, (0, 0, 0.0), scale=(1.0, 1.0, 0.06), radius=0.55, depth=0.1)
-    part(bpy.ops.mesh.primitive_cylinder_add, mid_mat, (0, 0, 0.04), scale=(1.0, 1.0, 0.06), radius=0.4, depth=0.1)
-    part(bpy.ops.mesh.primitive_cylinder_add, light_mat, (0, 0, 0.08), scale=(1.0, 1.0, 0.06), radius=0.25, depth=0.1)
+    ground_patch(dust_mat, (0.0, 0.0, 0.002), radius_x=0.58, radius_y=0.50,
+                 sides=15, jitter=0.20, seed=501, name="QuarryFloor")
 
-    # Angular limestone block spoil pile beside the quarry.
-    for i, (x, y) in enumerate([(0.4, 0.35), (0.48, 0.22), (0.35, 0.45)]):
-        part(bpy.ops.mesh.primitive_cube_add, light_mat, (x, y, 0.06),
-             scale=(0.09, 0.09, 0.09), size=1.0, rotation=(0, 0, i * 0.4))
+    # Worked face: four straight benches stepping back, square-cut. The hard
+    # parallel edges are the opposite of clay_pit's concentric rings.
+    for i in range(4):
+        shade = 1.0 - i * 0.13
+        bench_mat = flat_material("Bench%d" % i, tuple(c * shade for c in ORE_COLOR))
+        part(bpy.ops.mesh.primitive_cube_add, bench_mat,
+             (-0.34 + i * 0.03, 0.30 - i * 0.075, 0.030 + i * 0.022),
+             scale=(0.74 - i * 0.06, 0.13, 0.045 + i * 0.030), size=1.0)
+
+    # Haul road from the face out past the kilns.
+    path(track_mat, [(-0.30, 0.06), (-0.06, -0.10), (0.24, -0.24), (0.48, -0.28)],
+         width=0.12, seed=509)
+
+    # Lime kilns: a PAIR of squat cylinders with dark mouths. Nothing else in the
+    # family has matched round openings at ground level.
+    for x in (0.26, 0.50):
+        part(bpy.ops.mesh.primitive_cylinder_add, stone_mat, (x, 0.18, 0.13),
+             radius=0.145, depth=0.26)
+        part(bpy.ops.mesh.primitive_cylinder_add, shaft_mat, (x, 0.18, 0.265),
+             radius=0.062, depth=0.03)
+
+    # Dressed block stock, stacked square on the floor.
+    for ix in range(3):
+        for iy in range(2):
+            part(bpy.ops.mesh.primitive_cube_add, stone_mat,
+                 (-0.30 + ix * 0.085, -0.38 + iy * 0.080, 0.040),
+                 scale=(0.066, 0.062, 0.042), size=1.0)

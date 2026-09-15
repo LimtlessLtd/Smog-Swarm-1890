@@ -30,7 +30,9 @@ extends Node2D
 ##
 ## Parented as a WorldRoot sibling, same as every other Tactical-adjacent
 ## overlay (LocalDetailManager, StrategicOverlayManager, UnitCommandController):
-## shares the coordinate space, including CameraController's isometric transform.
+## shares the coordinate space. The camera applies no world transform of its
+## own (the isometric mode was removed 2026-09-15), so world space and screen
+## space differ only by pan and zoom.
 ##
 ## **Rendering at scale:** HIGH-fidelity zombies are not this class's own
 ## figures at all any more — they are ZombieSwarmManager's crowds
@@ -270,8 +272,10 @@ func _build_unit_figure(instance: UnitInstance, facing: GameEnums.Facing8, radiu
 	var sprite := Sprite2D.new()
 	sprite.texture = texture
 	sprite.position = offset
-	var largest_dim := maxf(texture.get_width(), texture.get_height())
-	sprite.scale = Vector2.ONE * ((radius * 2.0) / largest_dim)
+	## Sized by the unit's own across-all-facings extent, NOT this facing's
+	## texture — see UnitVisuals.unit_facing_extent() for why a tight crop's
+	## axis-aligned box makes a long unit pulse as it turns.
+	sprite.scale = Vector2.ONE * ((radius * 2.0) / UnitVisuals.unit_facing_extent(instance.definition.unit_type))
 	return sprite
 
 ## MEDIUM fidelity's role/tier marker. Real art, when authored, replaces the
@@ -285,8 +289,7 @@ func _build_role_marker(instance: UnitInstance, facing: GameEnums.Facing8) -> No
 	if texture:
 		var sprite := Sprite2D.new()
 		sprite.texture = texture
-		var largest_dim := maxf(texture.get_width(), texture.get_height())
-		sprite.scale = Vector2.ONE * ((radius * 2.0) / largest_dim)
+		sprite.scale = Vector2.ONE * ((radius * 2.0) / UnitVisuals.unit_facing_extent(instance.definition.unit_type))
 		return sprite
 	var shape := Polygon2D.new()
 	match instance.definition.role:
@@ -314,8 +317,9 @@ func _build_zombie_figure(horde_id: int, index: int, offset: Vector2, facing: Ga
 	var sprite := Sprite2D.new()
 	sprite.texture = texture
 	sprite.position = offset
-	var largest_dim := maxf(texture.get_width(), texture.get_height())
-	sprite.scale = Vector2.ONE * ((ZOMBIE_RADIUS * 2.0) / largest_dim)
+	## Across-all-facings extent, not this facing's texture — see
+	## ZombieVisuals.variant_facing_extent().
+	sprite.scale = Vector2.ONE * ((ZOMBIE_RADIUS * 2.0) / ZombieVisuals.variant_facing_extent(horde_id + index))
 	return sprite
 
 ## --- Hordes (zombie blobs / clusters) --------------------------------------
@@ -528,8 +532,12 @@ func _apply_swarm_look(layer: MultiMeshInstance2D, index: int, swarm: ZombieSwar
 	var texture := ZombieVisuals.zombie_texture(swarm.lane, swarm.facing)
 	var mesh: QuadMesh = layer.multimesh.mesh
 	if texture:
-		var largest_dim := maxf(texture.get_width(), texture.get_height())
-		mesh.size = Vector2(texture.get_width(), texture.get_height()) * ((ZOMBIE_RADIUS * 2.0) / largest_dim)
+		## The mesh keeps the CURRENT facing's aspect (so the quad matches the
+		## image it samples) but is scaled by the variant's across-all-facings
+		## extent, so a turning figure does not pulse — see
+		## ZombieVisuals.variant_facing_extent().
+		var extent := ZombieVisuals.variant_facing_extent(swarm.lane)
+		mesh.size = Vector2(texture.get_width(), texture.get_height()) * ((ZOMBIE_RADIUS * 2.0) / extent)
 		layer.texture = texture
 		layer.modulate = Color.WHITE
 	else:

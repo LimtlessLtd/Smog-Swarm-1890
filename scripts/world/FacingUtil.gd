@@ -7,9 +7,12 @@ extends RefCounted
 ## per-unit facing tracking and its per-horde zombie facing tracking share
 ## one bucketing rule instead of two subtly different implementations.
 ##
-## The bucket-to-screen-direction mapping is NOT yet calibrated against
-## CameraController's actual isometric transform — world-space "+X" isn't
-## verified to read as screen-right once that projection applies. Reasoned
+## The bucket-to-screen-direction mapping is now exact rather than a guess:
+## the camera applies no rotation or scale to the world (the isometric mode
+## was removed 2026-09-15), so world-space "+X" IS screen-right, and the art
+## is rendered by spinning the camera in-plane about a model built facing +Y
+## (render_common.render_directional_to's base yaw of 0 for straight-down
+## categories). Reasoned
 ## placeholder (standard 8-way atan2 split in world space, N first,
 ## clockwise, matching Facing8's own declared order) rather than a
 ## blocker — revisit once directional art actually exists to look at

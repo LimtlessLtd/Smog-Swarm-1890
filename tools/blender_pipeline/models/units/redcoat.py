@@ -1,10 +1,17 @@
-"""assets/units/redcoat_<facing>.png — GameEnums.UnitType.BAYONETEER (Tier 2
-Melee). Filename stays "redcoat" — UnitVisuals._texture_key() keeps the
-pre-rename art key even though the enum became BAYONETEER (design_doc.md
-Tier 2 rename; see that function's own comment). Standardized military
-dress (Style DNA: "Tier 0-3 progressively more standardized/heavier") —
-a tall shako and a fixed-bayonet rifle instead of Navvy's flat cap and
-pickaxe or Truncheoneer's custodian helmet and truncheon.
+"""assets/units/redcoat_<facing>.png — GameEnums.UnitType.BAYONETEER (Tier 2 Melee).
+
+Filename stays "redcoat": UnitVisuals._texture_key() keeps the pre-rename art
+key even though the enum became BAYONETEER (design_doc.md Tier 2 rename).
+
+Tier 2 melee, and the pair-mate of rifleman.py — same shako, same drill, same
+line-infantry build. They are separated by ROLE COLOUR (this one red, that one
+blue) and by carry: this is the bayonet unit, so the rifle is held LOW AND
+LEVELLED for the charge, with an outsized bayonet leading, where rifleman.py
+carries at port arms with the muzzle high.
+
+Built on render_common's soldier rig (soldier_torso/soldier_arm/soldier_head),
+so every joint is a real articulation and the interior trim sits on FIGURE_TRIM_Z
+where it cannot widen the silhouette. See that block for why Z is draw order.
 """
 
 import bpy
@@ -12,70 +19,62 @@ import sys
 import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-from render_common import flat_material, part, sash  # noqa: E402
+from render_common import (  # noqa: E402
+    flat_material, part, bone, limb, hand, along, role_coat_color, ROLE_MELEE,
+    soldier_boots, soldier_torso, soldier_arm, soldier_head, soldier_trim,
+    soldier_pack, FIGURE_ARM_Z, FIGURE_TRIM_Z, FIGURE_TORSO_TOP, FIGURE_WEAPON_Z,
+)
 
-COAT_COLOR = (0.16, 0.15, 0.16)   # Near-black formal tunic — deliberately NOT red, so the deep-red sash/blade stay the only red instead of two competing reds.
-BOOT_COLOR = (0.08, 0.07, 0.06)
-BELT_COLOR = (0.85, 0.82, 0.75)   # Cream cross-belt leather — authentic Redcoat detail, neutral so it doesn't compete with the role accent.
-SKIN_COLOR = (0.72, 0.56, 0.46)
-SHAKO_COLOR = (0.1, 0.09, 0.09)
-BLADE_COLOR = (0.5, 0.03, 0.05)   # Melee role accent: deep red.
+TIER = 2
+COAT = role_coat_color(ROLE_MELEE, TIER)
+COAT_DARK = tuple(c * 0.70 for c in COAT)
+COAT_LIGHT = tuple(min(1.0, c * 1.26 + 0.02) for c in COAT)
+SLEEVE = tuple(c * 0.80 for c in COAT)
+SKIN = (0.769, 0.600, 0.486)
+BELT = (0.878, 0.851, 0.780)
+STEEL = (0.310, 0.322, 0.353)
+WOOD = (0.416, 0.278, 0.157)
+BOOT = (0.157, 0.141, 0.129)
+BRASS = (0.796, 0.635, 0.259)
+SHAKO = (0.216, 0.208, 0.235)
+
+BUTT = (0.225, -0.060, FIGURE_WEAPON_Z)
+MUZZLE = (-0.060, 0.360, FIGURE_WEAPON_Z)
 
 
 def build():
-    coat_mat = flat_material("Coat", COAT_COLOR)
-    boot_mat = flat_material("Boot", BOOT_COLOR)
-    belt_mat = flat_material("Belt", BELT_COLOR)
-    skin_mat = flat_material("Skin", SKIN_COLOR)
-    shako_mat = flat_material("Shako", SHAKO_COLOR)
-    blade_mat = flat_material("Blade", BLADE_COLOR)
-    wood_mat = flat_material("Stock", (0.3, 0.2, 0.12))
+    coat = flat_material("Coat", COAT)
+    coat_dark = flat_material("CoatDark", COAT_DARK)
+    coat_light = flat_material("CoatLight", COAT_LIGHT)
+    sleeve = flat_material("Sleeve", SLEEVE)
+    skin = flat_material("Skin", SKIN)
+    belt = flat_material("Belt", BELT)
+    steel = flat_material("Steel", STEEL)
+    wood = flat_material("Wood", WOOD)
+    boot = flat_material("Boot", BOOT)
+    brass = flat_material("Brass", BRASS)
+    shako = flat_material("Shako", SHAKO)
 
-    for side, forward in ((-0.14, 0.0), (0.14, -0.08)):
-        part(bpy.ops.mesh.primitive_cylinder_add, coat_mat,
-             (side, forward, 0.35), scale=(0.6, 0.6, 1.0), radius=0.14, depth=0.7)
-        part(bpy.ops.mesh.primitive_cube_add, boot_mat,
-             (side, forward + 0.05, 0.06), scale=(0.16, 0.22, 0.08), size=1.0)
+    soldier_boots(boot)
+    soldier_pack(coat_dark, belt)
+    left_shoulder, right_shoulder = soldier_torso(coat)
+    soldier_trim(coat_light, coat_dark, belt, brass, buttons=3)
 
-    part(bpy.ops.mesh.primitive_cone_add, coat_mat,
-         (0, 0, 1.05), radius1=0.34, radius2=0.28, depth=0.6)
+    right_hand = along(BUTT, MUZZLE, 0.24)[:2] + (FIGURE_ARM_Z,)
+    left_hand = along(BUTT, MUZZLE, 0.58)[:2] + (FIGURE_ARM_Z,)
+    soldier_arm(sleeve, coat_dark, skin, right_shoulder, right_hand, brass_material=brass)
+    soldier_arm(sleeve, coat_dark, skin, left_shoulder, left_hand, brass_material=brass)
 
-    # Cross-belt: a straight (not diagonal-torus) cream band — a
-    # single flat strap across the chest, distinct in shape from every
-    # other unit's sash/bandolier so far.
-    part(bpy.ops.mesh.primitive_torus_add, belt_mat,
-         (0, 0, 1.05), rotation=(0.35, 0.9, 0), major_radius=0.33, minor_radius=0.03)
-    sash(blade_mat, (0, 0, 1.05), 0.3, diagonal_rotation=(-0.35, 0.9, 0))  # Opposite diagonal from the cross-belt — an X, not two parallel stripes.
+    bone(steel, along(BUTT, MUZZLE, 0.42), MUZZLE, 0.017)
+    bone(wood, BUTT, along(BUTT, MUZZLE, 0.46), 0.030)
+    part(bpy.ops.mesh.primitive_cube_add, wood, BUTT,
+         rotation=(0.0, 0.0, -0.98), scale=(0.055, 0.105, 0.042), size=1.0)
+    # Long bayonet, deliberately oversized — it is this unit's whole identity
+    # against its blue twin, and a scale-accurate one would not read.
+    bone(steel, MUZZLE, along(BUTT, MUZZLE, 1.42), 0.013)
+    for t in (0.52, 0.76):
+        part(bpy.ops.mesh.primitive_cylinder_add, steel, along(BUTT, MUZZLE, t),
+             rotation=(1.5708, 0.0, -0.98), vertices=8, radius=0.025, depth=0.014)
 
-    part(bpy.ops.mesh.primitive_cylinder_add, belt_mat,
-         (0, 0, 0.78), scale=(1.0, 1.0, 0.1), radius=0.32, depth=1.0)
-
-    # Arms: fixed-bayonet present-arms stance — rifle held vertically
-    # in front, not diagonally slung like Yeoman Marksman's aiming pose.
-    part(bpy.ops.mesh.primitive_cylinder_add, coat_mat,
-         (-0.25, 0.15, 1.0), rotation=(0.3, 0, 0.3), radius=0.08, depth=0.5)
-    part(bpy.ops.mesh.primitive_cylinder_add, coat_mat,
-         (0.25, 0.15, 0.95), rotation=(0.5, 0, -0.3), radius=0.08, depth=0.4)
-    part(bpy.ops.mesh.primitive_uv_sphere_add, skin_mat,
-         (-0.3, 0.3, 1.2), segments=8, ring_count=5, radius=0.07)
-    part(bpy.ops.mesh.primitive_uv_sphere_add, skin_mat,
-         (0.3, 0.32, 0.75), segments=8, ring_count=5, radius=0.07)
-
-    part(bpy.ops.mesh.primitive_uv_sphere_add, skin_mat,
-         (0, 0, 1.53), segments=10, ring_count=6, radius=0.2)
-
-    # Shako: a tall straight-sided cylinder, MUCH taller than any earlier
-    # headwear (pillbox, flat cap, wide hat) — the single tallest silhouette
-    # on the roster so far, unmistakable even in outline alone.
-    part(bpy.ops.mesh.primitive_cylinder_add, shako_mat,
-         (0, 0, 1.85), radius=0.22, depth=0.4)
-    part(bpy.ops.mesh.primitive_cylinder_add, shako_mat,
-         (0, 0, 1.66), scale=(1.0, 1.0, 0.2), radius=0.25, depth=0.1)  # Peak/brim.
-
-    # Rifle with fixed bayonet: vertical barrel, thin blade cone at the tip
-    # — a straight vertical line breaking the figure's own silhouette top,
-    # unlike any earlier unit's diagonal weapon.
-    part(bpy.ops.mesh.primitive_cylinder_add, wood_mat,
-         (-0.3, 0.35, 1.3), radius=0.035, depth=0.9)
-    part(bpy.ops.mesh.primitive_cone_add, blade_mat,
-         (-0.3, 0.35, 1.85), radius1=0.03, radius2=0.002, depth=0.3)
+    soldier_head(shako, radius=0.090, height=0.120, peak=0.085,
+                 band_material=belt, badge_material=brass, collar_material=coat_dark)

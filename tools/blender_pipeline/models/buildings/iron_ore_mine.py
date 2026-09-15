@@ -1,7 +1,13 @@
-"""assets/buildings/iron_ore_mine.png — GameEnums.BuildingType.
-IRON_ORE_MINE, Tier 2 Industry & Extraction. Same headframe-over-shaft
-family as coal_pithead.py but with rust-orange ore chunks instead of black
-coal lumps, and a taller frame — a bigger, later-tier mine.
+"""assets/buildings/iron_ore_mine.png — GameEnums.BuildingType.IRON_ORE_MINE.
+
+One headframe, rust-red heaps, and a row of ore bins over a loading dock — the
+family member that looks like it SHIPS its output, against sulfur_mine's retorts
+(which cook it) and deep_coal_shafts' second headframe (which just does more of
+the same).
+
+Re-authored 2026-09-15 for the straight-down camera, on the extraction family's
+ground/path system (see coal_pithead.py for the reference model, and
+render_common's organic-ground block for why the old full-quad plate went).
 """
 
 import bpy
@@ -9,25 +15,39 @@ import sys
 import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-from render_common import flat_material, part  # noqa: E402
+from render_common import (  # noqa: E402
+    flat_material, part, headframe, spoil_heaps, ground_patch, path,
+    family_materials,
+)
 
-STEEL_COLOR = (0.42, 0.4, 0.42)
-ORE_COLOR = (0.616, 0.221, 0.0)
-SHAFT_COLOR = (0.426, 0.354, 0.283)
+ORE_COLOR = (0.545, 0.243, 0.133)  # haematite rust
+
+SHAFT_XY = (-0.20, 0.16)
+DOCK_XY = (0.34, -0.20)
 
 
 def build():
-    steel_mat = flat_material("Steel", STEEL_COLOR)
+    spoil_mat, timber_mat, shaft_mat = family_materials("extraction")
     ore_mat = flat_material("Ore", ORE_COLOR)
-    shaft_mat = flat_material("Shaft", SHAFT_COLOR)
+    dirt_mat = flat_material("Dirt", (0.451, 0.345, 0.267), alpha=0.82)
+    track_mat = flat_material("Track", (0.545, 0.443, 0.345), alpha=0.92)
 
-    part(bpy.ops.mesh.primitive_cylinder_add, shaft_mat, (0, 0, 0.02), scale=(1.0, 1.0, 0.06), radius=0.32, depth=0.1)
+    ground_patch(dirt_mat, (SHAFT_XY[0], SHAFT_XY[1], 0.002), radius_x=0.40,
+                 radius_y=0.38, seed=601, name="PitYard")
+    ground_patch(dirt_mat, (DOCK_XY[0], DOCK_XY[1], 0.002), radius_x=0.34,
+                 radius_y=0.24, sides=11, jitter=0.26, seed=613, name="DockGround")
 
-    for x in (-0.17, 0.17):
-        part(bpy.ops.mesh.primitive_cylinder_add, steel_mat, (x * 0.5, 0, 0.46),
-             rotation=(0, x * -1.3, 0), radius=0.045, depth=0.95)
-    part(bpy.ops.mesh.primitive_torus_add, steel_mat, (0, 0.08, 0.88),
-         rotation=(1.5708, 0, 0), major_radius=0.11, minor_radius=0.025)
+    path(track_mat, [SHAFT_XY, (0.02, -0.02), DOCK_XY], width=0.12, seed=617)
 
-    for x, y in ((-0.42, 0.3), (0.38, -0.25), (0.44, 0.18), (-0.3, -0.35)):
-        part(bpy.ops.mesh.primitive_uv_sphere_add, ore_mat, (x, y, 0.07), segments=7, ring_count=4, radius=0.1)
+    headframe(timber_mat, shaft_mat, SHAFT_XY)
+
+    # Ore bins: four hoppers in a row over the dock, each a square with a dark
+    # chute mouth. The row is this mine's own rhythm.
+    for i in range(4):
+        x = DOCK_XY[0] - 0.18 + i * 0.12
+        part(bpy.ops.mesh.primitive_cube_add, timber_mat, (x, DOCK_XY[1], 0.10),
+             scale=(0.10, 0.20, 0.20), size=1.0)
+        part(bpy.ops.mesh.primitive_cube_add, shaft_mat, (x, DOCK_XY[1] - 0.06, 0.205),
+             scale=(0.055, 0.055, 0.02), size=1.0)
+
+    spoil_heaps(ore_mat, ((-0.46, -0.30), (-0.16, -0.40), (0.06, -0.44)), base_radius=0.15)

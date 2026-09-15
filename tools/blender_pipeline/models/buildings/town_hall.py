@@ -1,8 +1,18 @@
-"""assets/buildings/town_hall.png — GameEnums.BuildingType.TOWN_HALL, Tier
-3 Housing & Civil. The colony's founding/prestige building — a grand hall
-with a clock tower, the tallest and most ornamented civic structure on the
-roster (taller than high_command_and_cavalry_depot.py, and the only
-building with a clock face), reflecting its unique founding-structure status.
+"""assets/buildings/town_hall.png — GameEnums.BuildingType.TOWN_HALL, Tier 3
+Housing & Civil. The colony's founding building, and the civic family's
+reference model.
+
+Re-authored 2026-09-15 for the straight-down camera. Everything that used to
+distinguish this building was vertical — a clock face on the side of a tower, a
+gabled facade, wall colour — and none of it projects: rendered overhead, the old
+model came out as two brown rectangles and a circle. The identity now lives in
+the roof plan: the civic family's pale stone forecourt, a hipped slate hall, and
+the pyramid-capped tower with a gold finial that no other family uses.
+
+Civic is the one family that keeps a straight-edged paved area, because a dressed
+stone forecourt genuinely has one — but it is now a small rectangle INSIDE an
+irregular ground patch rather than a slab filling the whole frame, so the site's
+own outer edge is ragged and the terrain carries through around it.
 """
 
 import bpy
@@ -10,28 +20,59 @@ import sys
 import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-from render_common import flat_material, part, gable_roof  # noqa: E402
-
-WALL_COLOR = (0.672, 0.538, 0.336)
-ROOF_COLOR = (0.336, 0.235, 0.168)
-TOWER_COLOR = (0.56, 0.459, 0.29)
-CLOCK_COLOR = (0.952, 0.862, 0.647)
-CLOCK_HAND_COLOR = (0.168, 0.134, 0.084)
+from render_common import (  # noqa: E402
+    flat_material, part, hip_roof, yard_plate, roof_vent, ground_patch, path,
+    family_materials,
+)
 
 
 def build():
-    wall_mat = flat_material("Wall", WALL_COLOR)
-    roof_mat = flat_material("Roof", ROOF_COLOR)
-    tower_mat = flat_material("Tower", TOWER_COLOR)
-    clock_mat = flat_material("Clock", CLOCK_COLOR)
-    hand_mat = flat_material("ClockHand", CLOCK_HAND_COLOR)
+    stone_mat, roof_mat, gold_mat = family_materials("civic")
+    tower_roof_mat = flat_material("TowerRoof", (0.196, 0.227, 0.282))
+    lawn_mat = flat_material("Lawn", (0.404, 0.451, 0.286), alpha=0.72)
+    gravel_mat = flat_material("Gravel", (0.596, 0.565, 0.494), alpha=0.88)
 
-    part(bpy.ops.mesh.primitive_cube_add, wall_mat, (-0.05, 0, 0.24), scale=(0.5, 0.36, 0.24), size=1.0)
-    gable_roof(roof_mat, (-0.05, 0, 0.5), width=0.54, depth=0.4, height=0.24, ridge_along_y=False)
+    # Grounds: a soft irregular lawn under the whole site, so the building sits
+    # in something rather than on a tile.
+    ground_patch(lawn_mat, (-0.02, 0.0, 0.002), radius_x=0.60, radius_y=0.50,
+                 sides=15, jitter=0.20, seed=5, name="Grounds")
 
-    # Clock tower — taller than the main hall, rising well above the roofline.
-    part(bpy.ops.mesh.primitive_cylinder_add, tower_mat, (0.28, 0, 0.5), scale=(1.0, 1.0, 1.0), radius=0.14, depth=0.6)
-    part(bpy.ops.mesh.primitive_cylinder_add, clock_mat, (0.28, 0.13, 0.72), rotation=(1.5708, 0, 0), scale=(1.0, 1.0, 0.3), radius=0.1, depth=0.05)
-    part(bpy.ops.mesh.primitive_cube_add, hand_mat, (0.28, 0.16, 0.72), scale=(0.01, 0.01, 0.06), size=1.0)
-    part(bpy.ops.mesh.primitive_cube_add, hand_mat, (0.28, 0.16, 0.75), scale=(0.05, 0.01, 0.01), size=1.0)
-    part(bpy.ops.mesh.primitive_cone_add, roof_mat, (0.28, 0, 0.92), radius1=0.16, radius2=0.02, depth=0.24)
+    # Approach walk up to the steps, and a service path round to the back.
+    path(gravel_mat, [(-0.08, -0.70), (-0.09, -0.52), (-0.08, -0.38)],
+         width=0.12, seed=9)
+    path(gravel_mat, [(-0.52, -0.10), (-0.46, 0.20), (-0.20, 0.34), (0.20, 0.36)],
+         width=0.09, seed=17)
+
+    # Paved forecourt — deliberately rectangular, and deliberately small.
+    yard_plate(stone_mat, location=(-0.08, -0.20, 0.004), width=0.74, depth=0.30,
+               thickness=0.012)
+
+    # Main hall. The plinth is wider than the roof so a pale stone border rings
+    # the dark slate — the ring is what stops the hall merging into the ground.
+    part(bpy.ops.mesh.primitive_cube_add, stone_mat, (-0.08, 0.06, 0.10),
+         scale=(0.80, 0.56, 0.16), size=1.0)
+    hip_roof(roof_mat, (-0.08, 0.06, 0.18), width=0.76, depth=0.52,
+             height=0.20, ridge_fraction=0.52)
+
+    # Four chimneys in a rectangle. The hall's own rhythm, against the
+    # tenement's single continuous row.
+    for x in (-0.32, 0.10):
+        for y in (-0.10, 0.22):
+            roof_vent(stone_mat, (x, y, 0.36), radius=0.042, height=0.10)
+
+    # Clock tower: square plinth, pyramid cap (ridge_fraction 0, so four
+    # triangles meet at a point) and a gold finial. The finial is the single
+    # brightest pixel cluster on any civic building and is what the eye finds
+    # first at map zoom.
+    part(bpy.ops.mesh.primitive_cube_add, stone_mat, (0.42, 0.06, 0.16),
+         scale=(0.28, 0.28, 0.32), size=1.0)
+    hip_roof(tower_roof_mat, (0.42, 0.06, 0.32), width=0.32, depth=0.32,
+             height=0.26, ridge_fraction=0.0, name="TowerCap")
+    part(bpy.ops.mesh.primitive_uv_sphere_add, gold_mat, (0.42, 0.06, 0.60),
+         segments=10, ring_count=6, radius=0.048)
+
+    # Entrance steps: three bands off the forecourt. With the facade gone this
+    # is the only thing that says which side the building faces.
+    for i, y in enumerate((-0.24, -0.28, -0.32)):
+        part(bpy.ops.mesh.primitive_cube_add, stone_mat, (-0.08, y, 0.014 + i * 0.002),
+             scale=(0.42 - i * 0.06, 0.03, 0.02), size=1.0)

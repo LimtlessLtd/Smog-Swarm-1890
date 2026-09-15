@@ -1,9 +1,21 @@
-"""assets/units/searchlight_tender_<facing>.png — Tier 4 Special,
-MOBILE_SUPPLY_DUMP ability. A raised searchlight lamp on a tall armature
-is this vehicle's whole silhouette signature — the only Tier 4 unit with
-anything rising well above the chassis line (Traction Ram's smokestack is
-short; Maxim Quadricycle's gun barrel is horizontal), plus visible supply
-crates in the bed for the "mobile supply dump" flavor.
+"""assets/units/searchlight_tender_<facing>.png — GameEnums.UnitType.SEARCHLIGHT_TENDER (Tier 4 Special, UnitAbility.MOBILE_SUPPLY_DUMP).
+
+Tier 4 special — projects a Military ZoC/resupply aura wherever it stands and
+doubles as a moving vision source (LogisticsNetwork.recompute()).
+
+Silhouette: the only unit carrying a large PALE DISC — the searchlight lens, the
+brightest single shape on the whole roster, deliberately echoing
+searchlight_tower.py so the mobile and static versions read as the same
+equipment. A generator box and cable drum sit behind it.
+
+Tiers 4-5 are machines, so there is no coat to carry the role hue —
+the role hue goes onto HULL PANELS instead, via role_panel_color() — the coat
+ramp knocked back toward the hull grey, because a painted steel panel is a
+muted version of a dress-uniform colour rather than the same colour. That keeps
+a Tier 5 melee vehicle in the same red family as a Tier 0 Truncheoneer while
+being obviously a different class of thing. Vehicles are also the only strictly RECTILINEAR
+outlines on the unit roster, where every figure is round and every horse is a
+long oval, so "machine" reads before anything else does.
 """
 
 import bpy
@@ -11,41 +23,59 @@ import sys
 import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-from render_common import flat_material, part, wheel  # noqa: E402
+from render_common import (  # noqa: E402
+    flat_material, part, bone, wheel, role_panel_color, ROLE_SPECIAL,
+)
 
-HULL_COLOR = (0.26, 0.24, 0.22)
-WHEEL_COLOR = (0.12, 0.1, 0.08)
-CRATE_COLOR = (0.34, 0.26, 0.16)
-LAMP_HOUSING_COLOR = (0.18, 0.17, 0.16)
-LENS_COLOR = (0.3, 0.03, 0.42)  # Special role accent: deep purple.
+TIER = 4
+PANEL = role_panel_color(ROLE_SPECIAL, TIER)
+PANEL_DARK = tuple(c * 0.68 for c in PANEL)
+HULL = (0.243, 0.231, 0.216)
+HULL_LIGHT = (0.353, 0.341, 0.325)
+TRACK = (0.118, 0.110, 0.102)
+CLEAT = (0.196, 0.188, 0.180)
+STEEL = (0.396, 0.412, 0.435)
+STACK = (0.157, 0.149, 0.145)
+BRASS = (0.796, 0.635, 0.259)
+WHEEL_C = (0.169, 0.161, 0.153)
+LENS = (0.937, 0.918, 0.804)
+
+DECK_Z = 0.22   # hull top; everything mounted on the vehicle sits above this
 
 
 def build():
-    hull_mat = flat_material("Hull", HULL_COLOR)
-    wheel_mat = flat_material("Wheel", WHEEL_COLOR)
-    crate_mat = flat_material("Crate", CRATE_COLOR)
-    housing_mat = flat_material("Housing", LAMP_HOUSING_COLOR)
-    lens_mat = flat_material("Lens", LENS_COLOR)
+    panel = flat_material("Panel", PANEL)
+    panel_dark = flat_material("PanelDark", PANEL_DARK)
+    hull = flat_material("Hull", HULL)
+    hull_light = flat_material("HullLight", HULL_LIGHT)
+    steel = flat_material("Steel", STEEL)
+    brass = flat_material("Brass", BRASS)
+    wheel_mat = flat_material("Wheel", WHEEL_C)
+    lens = flat_material("Lens", LENS)
 
-    part(bpy.ops.mesh.primitive_cube_add, hull_mat,
-         (0, 0, 0.3), scale=(0.36, 0.72, 0.22), size=1.0)
+    for sx in (-1.0, 1.0):
+        for sy in (-1.0, 1.0):
+            part(bpy.ops.mesh.primitive_cylinder_add, wheel_mat,
+                 (sx * 0.300, sy * 0.290, 0.105),
+                 rotation=(0.0, 1.5708, 0.0), vertices=12, radius=0.150, depth=0.075)
 
-    for side in (-0.24, 0.24):
-        for forward in (0.26, -0.26):
-            wheel(wheel_mat, (side, forward, 0.16), radius=0.16, thickness=0.09)
+    part(bpy.ops.mesh.primitive_cube_add, hull, (0.0, -0.030, 0.135),
+         scale=(0.450, 0.720, 0.250), size=1.0)
+    part(bpy.ops.mesh.primitive_cube_add, panel, (0.0, -0.250, DECK_Z + 0.040),
+         scale=(0.330, 0.200, 0.030), size=1.0)
 
-    # Supply crates stacked in the rear bed — the "mobile supply dump" read.
-    part(bpy.ops.mesh.primitive_cube_add, crate_mat,
-         (-0.1, -0.28, 0.5), scale=(0.14, 0.14, 0.16), size=1.0)
-    part(bpy.ops.mesh.primitive_cube_add, crate_mat,
-         (0.11, -0.3, 0.46), scale=(0.12, 0.12, 0.12), size=1.0, rotation=(0, 0, 0.2))
+    # Generator and cable drum on the rear deck.
+    part(bpy.ops.mesh.primitive_cube_add, hull_light, (-0.105, -0.140, DECK_Z + 0.075),
+         scale=(0.180, 0.180, 0.100), size=1.0)
+    part(bpy.ops.mesh.primitive_cylinder_add, steel, (0.135, -0.150, DECK_Z + 0.075),
+         vertices=12, radius=0.090, depth=0.100)
 
-    # Searchlight armature: a tall post rising well above the chassis,
-    # topped with a wide lamp housing and a large flat lens facing forward
-    # — the tallest, most vertically distinct silhouette on the roster.
-    part(bpy.ops.mesh.primitive_cylinder_add, housing_mat,
-         (0, 0.22, 0.65), radius=0.05, depth=0.6)
-    part(bpy.ops.mesh.primitive_cylinder_add, housing_mat,
-         (0, 0.22, 0.98), rotation=(1.5708, 0, 0), radius=0.16, depth=0.16)
-    part(bpy.ops.mesh.primitive_cylinder_add, lens_mat,
-         (0, 0.31, 0.98), rotation=(1.5708, 0, 0), scale=(1.0, 1.0, 0.3), radius=0.14, depth=0.05)
+    # The light: a drum with a big pale lens, on a turntable.
+    part(bpy.ops.mesh.primitive_cylinder_add, steel, (0.0, 0.180, DECK_Z + 0.045),
+         vertices=12, radius=0.115, depth=0.060)
+    part(bpy.ops.mesh.primitive_cylinder_add, hull_light, (0.0, 0.215, DECK_Z + 0.135),
+         vertices=16, radius=0.235, depth=0.130)
+    part(bpy.ops.mesh.primitive_cylinder_add, lens, (0.0, 0.215, DECK_Z + 0.205),
+         vertices=16, radius=0.190, depth=0.030)
+    part(bpy.ops.mesh.primitive_torus_add, brass, (0.0, 0.215, DECK_Z + 0.210),
+         major_radius=0.205, minor_radius=0.020)

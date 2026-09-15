@@ -48,11 +48,6 @@ enum TerrainFeature {
 	ESCARPMENT,  ## Mountain / hill chokepoint terrain.
 }
 
-enum CameraPerspective {
-	TOP_DOWN,
-	ISOMETRIC,
-}
-
 ## design_doc.md §2's "Streamlined Resource Pool": 6 raw, 5 processed, 4
 ## capacity/yield. Reordering this enum is a save-breaking change (values are
 ## stored as raw ordinals — ResourceManager/SaveGameData) but this rework

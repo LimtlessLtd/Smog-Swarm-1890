@@ -1,6 +1,21 @@
-"""assets/buildings/coal_pithead.png — GameEnums.BuildingType.COAL_MINE,
-Tier 1 Industry & Extraction. A headframe (winding tower) over a mine
-shaft — the tall A-frame silhouette is unique to mining buildings.
+"""assets/buildings/coal_pithead.png — GameEnums.BuildingType.COAL_MINE.
+
+Re-authored 2026-09-15 for the straight-down camera, and the extraction family's
+reference model. The old model was a tan mound with an angled headframe, which
+overhead collapsed into a featureless blob — and coal_pithead, iron_ore_mine,
+deep_coal_shafts and sulfur_mine were all that same blob, separated only by a few
+specks of ore colour.
+
+The extraction signature is the winding-gear wheel seen flat-on as a large ring
+directly over a black shaft square. Per-mine identity is then the ore colour on
+the spoil heaps and the number of shafts, not a different building.
+
+Ground is a scatter of ground_patch() blobs joined by path() tramways rather than
+one yard_plate() rectangle, per the user's note that the first slice was "all
+exact squares with no transparency anywhere". A colliery is the clearest case
+for it: the real thing IS a few structures standing in worn ground with tub
+roads running between them, so the gaps carry terrain through and the tramways
+are what tie the site together.
 """
 
 import bpy
@@ -8,26 +23,70 @@ import sys
 import os
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-from render_common import flat_material, part  # noqa: E402
+from render_common import (  # noqa: E402
+    flat_material, part, hip_roof, ring, ground_patch, path, family_materials,
+)
 
-STEEL_COLOR = (0.45, 0.44, 0.46)  # Lightened — the first pass's (0.22,0.21,0.22) was too close to the outline's black to read as a structure.
-COAL_COLOR = (0.14, 0.13, 0.13)
-SHAFT_COLOR = (0.448, 0.361, 0.274)
+ORE_COLOR = (0.105, 0.098, 0.094)  # coal — the per-mine variable across this family
+
+SHAFT_XY = (-0.16, 0.12)
+ENGINE_XY = (0.38, 0.16)
+HEAP_XY = ((-0.46, -0.40), (-0.10, -0.46), (0.26, -0.38))
 
 
 def build():
-    steel_mat = flat_material("Steel", STEEL_COLOR)
-    coal_mat = flat_material("Coal", COAL_COLOR)
-    shaft_mat = flat_material("Shaft", SHAFT_COLOR)
+    spoil_mat, timber_mat, shaft_mat = family_materials("extraction")
+    ore_mat = flat_material("Ore", ORE_COLOR)
+    # Ground sits under everything at alpha < 1 so the terrain's own tone still
+    # reads through the worn dirt instead of being replaced by it.
+    dirt_mat = flat_material("Dirt", (0.404, 0.337, 0.235), alpha=0.82)
+    track_mat = flat_material("Track", (0.302, 0.251, 0.180), alpha=0.90)
 
-    part(bpy.ops.mesh.primitive_cylinder_add, shaft_mat, (0, 0, 0.02), scale=(1.0, 1.0, 0.06), radius=0.3, depth=0.1)
+    # Worn ground, one blob per occupied area rather than a single slab. Seeds
+    # are fixed so the ragged edges are identical on every re-render.
+    ground_patch(dirt_mat, (SHAFT_XY[0], SHAFT_XY[1], 0.002),
+                 radius_x=0.40, radius_y=0.38, seed=11, name="PitYard")
+    ground_patch(dirt_mat, (ENGINE_XY[0], ENGINE_XY[1], 0.002),
+                 radius_x=0.30, radius_y=0.30, seed=23, name="EngineYard")
+    for i, (hx, hy) in enumerate(HEAP_XY):
+        ground_patch(dirt_mat, (hx, hy, 0.002), radius_x=0.22, radius_y=0.17,
+                     seed=31 + i * 7, jitter=0.30, name="SpoilGround%d" % i)
 
-    # A-frame headframe legs, converging at the top, with a wheel at the peak.
-    for x in (-0.16, 0.16):
-        part(bpy.ops.mesh.primitive_cylinder_add, steel_mat, (x * 0.5, 0, 0.4),
-             rotation=(0, x * -1.3, 0), radius=0.045, depth=0.85)
-    part(bpy.ops.mesh.primitive_torus_add, steel_mat, (0, 0.08, 0.78),
-         rotation=(1.5708, 0, 0), major_radius=0.1, minor_radius=0.025)
+    # Tub roads: shaft to engine house, and shaft out to each heap. These are
+    # the "paths between the various different buildings" — they also fill the
+    # gaps between patches, so the site reads as one place with holes in it
+    # rather than as three unrelated stains.
+    path(track_mat, [SHAFT_XY, (0.10, 0.15), ENGINE_XY], width=0.11, seed=3)
+    for i, heap in enumerate(HEAP_XY):
+        path(track_mat, [SHAFT_XY, ((SHAFT_XY[0] + heap[0]) * 0.5, (SHAFT_XY[1] + heap[1]) * 0.5 - 0.04), heap],
+             width=0.085, seed=41 + i * 5)
 
-    for x, y in ((-0.4, 0.3), (0.35, -0.25), (0.42, 0.15)):
-        part(bpy.ops.mesh.primitive_uv_sphere_add, coal_mat, (x, y, 0.06), segments=7, ring_count=4, radius=0.09)
+    # The shaft: a black square opening. Nothing else on the roster is a pure
+    # dark hole, so this is what says "mine" before any other detail resolves.
+    part(bpy.ops.mesh.primitive_cube_add, shaft_mat, (SHAFT_XY[0], SHAFT_XY[1], 0.030),
+         scale=(0.28, 0.28, 0.03), size=1.0)
+
+    # Winding gear: legs splay to the four corners of the shaft and the wheel
+    # sits flat above it, so from overhead it is a ring inside a square with
+    # four spokes running out to the corners.
+    for dx, dy in ((-1, -1), (1, -1), (-1, 1), (1, 1)):
+        part(bpy.ops.mesh.primitive_cube_add, timber_mat,
+             (SHAFT_XY[0] + dx * 0.14, SHAFT_XY[1] + dy * 0.14, 0.16),
+             scale=(0.034, 0.034, 0.32), size=1.0)
+    ring(timber_mat, (SHAFT_XY[0], SHAFT_XY[1], 0.34), outer=0.19, thickness=0.034, height=0.05)
+    for i in range(4):
+        part(bpy.ops.mesh.primitive_cube_add, timber_mat, (SHAFT_XY[0], SHAFT_XY[1], 0.345),
+             scale=(0.32, 0.021, 0.015), size=1.0, rotation=(0.0, 0.0, i * 0.7854))
+
+    # Winding house: small hipped shed housing the engine.
+    part(bpy.ops.mesh.primitive_cube_add, timber_mat, (ENGINE_XY[0], ENGINE_XY[1], 0.08),
+         scale=(0.30, 0.34, 0.14), size=1.0)
+    hip_roof(timber_mat, (ENGINE_XY[0], ENGINE_XY[1], 0.15), width=0.28, depth=0.32,
+             height=0.13, ridge_fraction=0.55)
+
+    # Spoil heaps — ore-coloured cones. Their colour is the per-mine
+    # differentiator across the extraction family (coal black here, rust for
+    # iron, yellow for sulfur).
+    for i, (hx, hy) in enumerate(HEAP_XY):
+        part(bpy.ops.mesh.primitive_cone_add, ore_mat, (hx, hy, 0.06),
+             radius1=0.15 - i * 0.02, radius2=0.0, depth=0.12)
