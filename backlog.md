@@ -348,23 +348,17 @@ shippable and independently visible.
   sets unit speed, so slowing hordes without slowing units means splitting it in two,
   and that changes how the whole game feels to play. Belongs with the opening-difficulty
   item above.
-- [ ] `[gated]` **Streamed chunk builds land whole inside one frame.**
-  `TerrainMeshView` and `TerrainDetailView` each build `CHUNKS_BUILT_PER_FRAME = 1`
-  synchronously in `_process()`, so panning across new ground spends a whole frame on
-  each. Measured 2026-09-07 over 12 real baked chunks
-  (`scripts/test/bench_chunk_build.gd`): **mean 61.7 ms per chunk, 3.7 frames of budget**,
-  worst 359 ms on a cold file read. Split by part: load 40.5 ms mean, scatter 20.7 ms,
-  the prop-bucketing loop 0.5 ms. Not the steady-state cost — that was the minimap, fixed
-  2026-09-07 — but it is what remains of "laggy while moving". Options are amortising a
-  build across frames, moving the file read off the main thread, or building at a coarser
-  prop density and refining. Re-measure with the bench before and after.
-- [ ] `[gated]` **`TerrainDetailView._build_chunk()` allocates a throwaway Array per
-  prop.** `indices_by_type.get(types[i], [])` builds the `[]` default on every
-  iteration — GDScript evaluates call arguments eagerly — and the untyped `Array` boxes
-  each index. Removing both takes the bucketing loop **6.10 ms -> 3.27 ms across 12
-  chunks (46%)**, measured. Small in absolute terms (0.5 ms of a 61.7 ms chunk build);
-  filed rather than done because it belongs with the chunk-build item above, and because
-  the same eager-default pattern appears in `_build_hex_index()` a few lines down.
+- [x] `[gated]` **Streamed chunk builds land whole inside one frame.** Done 2026-09-16.
+  Load, scatter, soil and mesh-array construction run on `WorkerThreadPool` through
+  `ChunkBuildQueue`; only node, `ArrayMesh` and `MultiMesh` creation stays on the main
+  thread, one chunk finalized per frame. `bench_chunk_build.gd`, 12 real chunks, both
+  views: main-thread cost per chunk **124.4 ms -> 1.64 ms mean, 490 ms -> 5.09 ms
+  worst** (headless, so the finalize upload is understated). Gated by
+  `verify_chunk_stream.gd`: queue contract, worker-vs-main output identity, and live
+  streaming around a camera that moves mid-build.
+- [x] `[gated]` **`TerrainDetailView._build_chunk()` allocates a throwaway Array per
+  prop.** Done 2026-09-16 with the item above: grouping into `PackedInt32Array` with a
+  `has()` check, and the same eager-default fix in `_build_hex_index()`.
 - [ ] `[design]` **Walls block bleed proportionally — blocked: there is no passive
   bleed to block.** Retagged from `[gated]` 2026-09-07. The wall half is still exactly
   as specified (sub-hex coverage extending `SubHexPortalGraph.has_any_crossing()`,

@@ -1,40 +1,36 @@
 extends Node
 
-## Breaks one TerrainDetailView/TerrainMeshView chunk build into its parts and
-## times each, over the real baked chunks. Run:
+## Splits one TerrainMeshView + TerrainDetailView chunk build into the part
+## that now runs on a worker thread and the part still on the main thread,
+## and times both over the real baked chunks. Run:
 ##
 ##   Godot_v4.7.1-stable_win64_console.exe --headless res://scenes/test/bench_chunk_build.tscn
+##   Godot_v4.7.1-stable_win64_console.exe res://scenes/test/bench_chunk_build.tscn   (windowed: real RenderingServer uploads)
 ##
-## Why a chunk build is worth taking apart: both streamed views build
-## CHUNKS_BUILT_PER_FRAME = 1 per frame, on the main thread, in _process(). So
-## a chunk build does not average out — it lands whole inside one frame, and
-## panning across new ground queues one per frame for as long as the pan lasts.
-## smoke_screenshot.gd's own comment already puts a dense build at "~90-170 ms",
-## which at 60 fps is six to ten frames' worth of budget spent in one.
+## Both views stream the same chunk addresses in the same order, so a chunk
+## used to land whole on ONE frame in both at once: BEFORE is everything,
+## summed. Since ChunkBuildQueue, only the finalize half does — AFTER is the
+## two finalizes, which is still the worst case of both finishing together.
 ##
-## MAX_PROPS_PER_CHUNK is 48,000, so the parts scale very differently and the
-## cheap-looking ones are not obviously cheap at that count. Measured
-## separately:
+##   MESH PREP     TerrainMeshView.prepare_chunk() — load, soil, crossfades, packed arrays
+##   MESH FINAL    ArrayMesh + MeshInstance2D + texture per surface
+##   DETAIL PREP   TerrainDetailView.prepare_chunk() — load, scatter, grouping
+##   DETAIL FINAL  MultiMesh + per-instance transforms per prop type
 ##
-##   LOAD      TerrainMeshChunkData.load_chunk() — file read + parse
-##   SCATTER   TerrainDetailScatter.scatter() — weighted pick per prop
-##   GROUP     bucketing prop indices by type, as TerrainDetailView does it
-##   GROUP-B   the same bucketing without the per-iteration allocation
+## The two FINAL columns mirror TerrainMeshView._surface_instance() and
+## TerrainDetailView._build_multimesh() rather than calling them: both are
+## private to their view. Headless, RenderingServer is a dummy and the FINAL
+## columns understate the upload; run windowed for that.
 ##
-## GROUP-B exists because `indices_by_type.get(types[i], [])` allocates a fresh
-## empty Array as the default argument on EVERY iteration — GDScript evaluates
-## a call's arguments eagerly, so the default is built and thrown away even
-## when the key is present. At 48,000 props that is 48,000 discarded
-## allocations per chunk. Whether that matters is exactly what this measures;
-## it is not obvious either way, which is why it is a row and not a patch.
-##
-## Reports per chunk and totalled, against a 16.6 ms frame.
+## Measured 2026-09-07 before the split (12 chunks, detail half only): mean
+## 61.7 ms per chunk, worst 359 ms on a cold file read.
 
 const FRAME_BUDGET_MS: float = 16.6
 const MAX_CHUNKS: int = 12  ## Enough for a spread of densities without a long run.
 
 
 func _ready() -> void:
+	SubHexSoilQuery.ensure_initialized()
 	var addresses := _find_chunks()
 	if addresses.is_empty():
 		print("SKIP: no baked chunks at %s — run tools/geo_bake/bake_vector_landcover.py first."
@@ -42,89 +38,129 @@ func _ready() -> void:
 		get_tree().quit(0)
 		return
 
-	print("=== One chunk build, by part (%d real chunks, budget %.1f ms/frame) ===" % [
-		addresses.size(), FRAME_BUDGET_MS])
-	print("%-14s %8s %9s %9s %9s %9s %9s" % [
-		"chunk", "props", "load ms", "scatter", "group", "group-B", "total"])
+	# Textures load once, on whichever chunk first uses them, before and after
+	# the split alike. Loaded up front so that one-off cost is its own line
+	# rather than inflating whichever chunk happens to be first.
+	var warm_start := Time.get_ticks_usec()
+	for prop_type: int in GameEnums.PropType.values():
+		PropVisuals.prop_texture(prop_type as GameEnums.PropType)
+	var props_ms := _ms_since(warm_start)
+	warm_start = Time.get_ticks_usec()
+	for biome: int in GameEnums.BiomeType.values():
+		for soil: int in GameEnums.SoilFertility.values():
+			TerrainVisuals.terrain_texture(biome as GameEnums.BiomeType, soil as GameEnums.SoilFertility)
+	print("first-use texture load, once per session: props %.2f ms, terrain %.2f ms" % [props_ms, _ms_since(warm_start)])
 
-	var totals := {"load": 0.0, "scatter": 0.0, "group": 0.0, "group_b": 0.0, "props": 0}
-	var worst := 0.0
-	var worst_name := ""
+	print("=== One chunk build, main thread before vs after (%d real chunks, budget %.1f ms/frame, %s) ===" % [
+		addresses.size(), FRAME_BUDGET_MS, DisplayServer.get_name()])
+	print("%-8s %6s %5s %10s %10s %11s %12s %9s %9s" % [
+		"chunk", "props", "surf", "mesh prep", "mesh final", "detail prep", "detail final", "BEFORE", "AFTER"])
+
+	var sums := {"before": 0.0, "after": 0.0}
+	var worst_before := 0.0
+	var worst_after := 0.0
 	for address in addresses:
 		var row := _time_chunk(address)
-		if row.is_empty():
-			continue
-		var total: float = row["load"] + row["scatter"] + row["group"]
-		if total > worst:
-			worst = total
-			worst_name = "%d_%d" % [address.x, address.y]
-		print("%-14s %8d %9.2f %9.2f %9.2f %9.2f %9.2f" % [
-			"%d_%d" % [address.x, address.y], row["props"],
-			row["load"], row["scatter"], row["group"], row["group_b"], total])
-		for key in ["load", "scatter", "group", "group_b", "props"]:
-			totals[key] += row[key]
+		var before: float = row["mesh_prep"] + row["mesh_final"] + row["detail_prep"] + row["detail_final"]
+		var after: float = row["mesh_final"] + row["detail_final"]
+		sums["before"] += before
+		sums["after"] += after
+		worst_before = maxf(worst_before, before)
+		worst_after = maxf(worst_after, after)
+		print("%-8s %6d %5d %10.2f %10.2f %11.2f %12.2f %9.2f %9.2f" % [
+			"%d_%d" % [address.x, address.y], row["props"], row["surfaces"],
+			row["mesh_prep"], row["mesh_final"], row["detail_prep"], row["detail_final"], before, after])
 
 	var n := float(addresses.size())
 	print()
-	print("mean per chunk: %.0f props, load %.2f ms, scatter %.2f ms, group %.2f ms  (total %.2f ms = %.1f frames)" % [
-		float(totals["props"]) / n, totals["load"] / n, totals["scatter"] / n, totals["group"] / n,
-		(totals["load"] + totals["scatter"] + totals["group"]) / n,
-		(totals["load"] + totals["scatter"] + totals["group"]) / n / FRAME_BUDGET_MS])
-	print("worst chunk:    %s at %.2f ms = %.1f frames of budget in one frame" % [
-		worst_name, worst, worst / FRAME_BUDGET_MS])
-	print("grouping without the per-iteration allocation: %.2f ms -> %.2f ms across all %d chunks (%.0f%%)" % [
-		totals["group"], totals["group_b"], addresses.size(),
-		100.0 * (totals["group"] - totals["group_b"]) / maxf(totals["group"], 0.001)])
-	print()
-	print("NOTE: this is the SCRIPT half only. Building the MultiMeshInstance2D nodes")
-	print("and handing their buffers to the renderer is not counted here and needs a")
-	print("windowed run (scripts/test/profile_tactical.gd) to see.")
+	print("main thread per chunk, mean:  before %.2f ms (%.1f frames)  after %.2f ms (%.1f frames)" % [
+		sums["before"] / n, sums["before"] / n / FRAME_BUDGET_MS, sums["after"] / n, sums["after"] / n / FRAME_BUDGET_MS])
+	print("main thread per chunk, worst: before %.2f ms (%.1f frames)  after %.2f ms (%.1f frames)" % [
+		worst_before, worst_before / FRAME_BUDGET_MS, worst_after, worst_after / FRAME_BUDGET_MS])
 	get_tree().quit(0)
 
 
 func _time_chunk(address: Vector2i) -> Dictionary:
-	var load_start := Time.get_ticks_usec()
-	var data := TerrainMeshChunkData.load_chunk(address.x, address.y)
-	var load_ms := float(Time.get_ticks_usec() - load_start) / 1000.0
-	if data == null:
-		return {}
+	var start := Time.get_ticks_usec()
+	var surfaces := TerrainMeshView.prepare_chunk(address)
+	var mesh_prep := _ms_since(start)
 
-	var positions := PackedVector2Array()
-	var types := PackedByteArray()
-	var rotations := PackedFloat32Array()
-	var scales := PackedFloat32Array()
-	var scatter_start := Time.get_ticks_usec()
-	TerrainDetailScatter.scatter(data, address, positions, types, rotations, scales)
-	var scatter_ms := float(Time.get_ticks_usec() - scatter_start) / 1000.0
+	start = Time.get_ticks_usec()
+	var holder := Node2D.new()
+	for surface: Dictionary in surfaces:
+		holder.add_child(_mesh_instance(surface))
+	var mesh_final := _ms_since(start)
+	holder.free()
 
-	# Exactly TerrainDetailView._build_chunk()'s own bucketing loop.
-	var group_start := Time.get_ticks_usec()
-	var indices_by_type: Dictionary = {}
-	for i in types.size():
-		var list: Array = indices_by_type.get(types[i], [])
-		if list.is_empty():
-			indices_by_type[types[i]] = list
-		list.append(i)
-	var group_ms := float(Time.get_ticks_usec() - group_start) / 1000.0
+	start = Time.get_ticks_usec()
+	var prepared := TerrainDetailView.prepare_chunk(address)
+	var detail_prep := _ms_since(start)
 
-	# Same result, without allocating a throwaway Array per prop and without
-	# boxing each index into a Variant.
-	var group_b_start := Time.get_ticks_usec()
-	var buckets: Dictionary = {}
-	for i in types.size():
-		var key := types[i]
-		if not buckets.has(key):
-			buckets[key] = PackedInt32Array()
-		buckets[key].append(i)
-	var group_b_ms := float(Time.get_ticks_usec() - group_b_start) / 1000.0
+	var props := 0
+	start = Time.get_ticks_usec()
+	holder = Node2D.new()
+	if not prepared.is_empty():
+		var positions: PackedVector2Array = prepared["positions"]
+		props = positions.size()
+		var by_type: Dictionary = prepared["indices_by_type"]
+		for prop_type: int in by_type:
+			var instance := _multimesh_instance(prop_type, by_type[prop_type], positions,
+				prepared["rotations"], prepared["scales"])
+			if instance != null:
+				holder.add_child(instance)
+	var detail_final := _ms_since(start)
+	holder.free()
 
 	return {
-		"props": positions.size(),
-		"load": load_ms,
-		"scatter": scatter_ms,
-		"group": group_ms,
-		"group_b": group_b_ms,
+		"props": props,
+		"surfaces": surfaces.size(),
+		"mesh_prep": mesh_prep,
+		"mesh_final": mesh_final,
+		"detail_prep": detail_prep,
+		"detail_final": detail_final,
 	}
+
+
+## Mirrors TerrainMeshView._surface_instance().
+func _mesh_instance(surface: Dictionary) -> MeshInstance2D:
+	var mesh := ArrayMesh.new()
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, surface["arrays"])
+	var instance := MeshInstance2D.new()
+	instance.mesh = mesh
+	var texture := TerrainVisuals.terrain_texture(surface["biome"], surface["soil"])
+	if texture != null:
+		instance.texture = texture
+	else:
+		instance.self_modulate = TerrainVisuals.biome_color(surface["biome"], surface["soil"])
+	return instance
+
+
+## Mirrors TerrainDetailView._build_multimesh().
+func _multimesh_instance(prop_type: int, indices: PackedInt32Array, positions: PackedVector2Array,
+		rotations: PackedFloat32Array, scales: PackedFloat32Array) -> MultiMeshInstance2D:
+	var texture := PropVisuals.prop_texture(prop_type as GameEnums.PropType)
+	if texture == null:
+		return null
+	var quad := QuadMesh.new()
+	quad.size = Vector2.ONE
+	var multimesh := MultiMesh.new()
+	multimesh.transform_format = MultiMesh.TRANSFORM_2D
+	multimesh.mesh = quad
+	multimesh.instance_count = indices.size()
+	var art_size := texture.get_size()
+	var longest := maxf(art_size.x, art_size.y)
+	var unit := Vector2(art_size.x / longest, art_size.y / longest) * TerrainDetailView.PROP_DIAMETER
+	for slot in indices.size():
+		var i := indices[slot]
+		multimesh.set_instance_transform_2d(slot, Transform2D(rotations[i], unit * scales[i], 0.0, positions[i]))
+	var instance := MultiMeshInstance2D.new()
+	instance.multimesh = multimesh
+	instance.texture = texture
+	return instance
+
+
+func _ms_since(start_usec: int) -> float:
+	return float(Time.get_ticks_usec() - start_usec) / 1000.0
 
 
 func _find_chunks() -> Array[Vector2i]:

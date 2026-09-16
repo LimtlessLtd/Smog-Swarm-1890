@@ -76,12 +76,21 @@ static func soil_for_biome_at(biome: GameEnums.BiomeType, world_pos: Vector2) ->
 		_:  # Matches HexMapGenerator._apply_real_terrain()'s own catch-all (OCEAN, or any future biome not listed above) — fixed POOR, never noise-varied.
 			return GameEnums.SoilFertility.POOR
 
+## Creates the noise field now rather than on first use. A caller that runs
+## soil_for_biome_at() on worker threads (TerrainMeshView via ChunkBuildQueue)
+## calls this on the main thread first: two threads racing the lazy branch in
+## _noise_fertility() would each assign a new FastNoiseLite to the static.
+## Reads of an initialised field are const and safe to share.
+static func ensure_initialized() -> void:
+	if _noise:
+		return
+	_noise = FastNoiseLite.new()
+	_noise.seed = HexMapGenerator.SOIL_NOISE_SEED
+	_noise.frequency = HexMapGenerator.SOIL_NOISE_FREQUENCY
+	_noise.noise_type = FastNoiseLite.TYPE_PERLIN
+
 static func _noise_fertility(world_pos: Vector2) -> GameEnums.SoilFertility:
-	if not _noise:
-		_noise = FastNoiseLite.new()
-		_noise.seed = HexMapGenerator.SOIL_NOISE_SEED
-		_noise.frequency = HexMapGenerator.SOIL_NOISE_FREQUENCY
-		_noise.noise_type = FastNoiseLite.TYPE_PERLIN
+	ensure_initialized()
 	var frac := HexCoord.world_to_axial_fractional(world_pos)
 	var n := _noise.get_noise_2d(frac.x, frac.y)
 	if n > HexMapGenerator.SOIL_NOISE_LUSH_THRESHOLD:
