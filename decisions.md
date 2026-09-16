@@ -211,8 +211,7 @@ reach of its own — a crude one, ahead of the Deferred §6 light-propagation wo
 ## 2026-09-16 — What the game is for, and how work gets chosen
 
 Settled by the user's design-audit brief. Everything quoted is the user verbatim.
-Numbering starts at D92 because the open texture-compression PR (#108) already
-claims D91.
+Numbering starts at D92 because D91 is the texture-compression decision (PR #108).
 
 **D92. The campaign is persistent and open-ended; local losses are setbacks, total
 defeat still ends it.** The game is "They Are Billions, but on a gigantic continuous
@@ -281,6 +280,37 @@ World War / dieselpunk / modern military RTS unless explicitly justified by the 
 design decisions." and "flag them for design review rather than silently rewriting
 them." The flagged list is `PLAYER_EXPERIENCE.md` §7.1; no catalogue entry, name or
 number changed with this decision.
+
+---
+
+## 2026-09-16 — Sprite textures on the GPU
+
+**D91. Sprites are VRAM-compressed and mipmapped at import, and the crop copy carries
+that encoding forward rather than baking the crop into the PNGs.**
+The import change alone reaches 42 of 214 sprite textures: `UnitVisuals`, `ZombieVisuals`
+and `PropVisuals` draw `TextureCropUtil.tight_crop_copy()`'s `ImageTexture` (D88), which
+uploads exactly the `Image` it is built from, so the crop decoded a compressed, mipmapped
+import back to RGBA8 with no chain. `tight_crop_copy()` now regenerates mipmaps if the
+source had them and re-encodes to the source's compression family, so the `.import` file
+stays the one place the encoding is decided.
+*Measured (`scripts/test/bench_texture_memory.gd`, windowed):* units 452.7 -> 113.7 MB,
+zombies 54.4 -> 13.7, props 43.3 -> 10.8, buildings 896.0 -> 224.0 — **1,446 -> 362 MB**.
+Buildings' cold load 1,344 -> 293 ms (no PNG decode).
+*Rejected: cropping the PNGs on disk.* It makes the runtime copy a no-op and needs no
+runtime encoder, but rewrites 172 binary art files and diverges from
+`tools/blender_pipeline`, whose units/zombies/props are framed at a category-shared
+ortho scale on purpose; the next render would reintroduce the margins.
+*Cost:* `Image.compress()` runs per cropped texture on first use — **~12 ms** each
+(S3TC with mips, 504x924), plus a **~0.6 s** one-time encoder warm-up on the first call.
+The re-encode is lossy-on-lossy (BC decoded, cropped, BC encoded), and a crop's size can
+move by a few pixels as near-zero alpha rounds (`redcoat` 504x922 -> 504x924, `zombie_0`
+457x749 -> 456x748) — under 0.3% of a figure, which is scaled by its largest dimension.
+*Known limit:* `Image.compress()` needs an encoder compiled into the running binary. The
+editor binary this project runs from has one; where one is missing the crop stays RGBA8
+with its mip chain rather than failing to draw.
+*The filter is project-wide* (`rendering/textures/canvas_textures/default_texture_filter`
+= 2, Linear Mipmap). Only textures that carry mipmaps sample differently under it, and
+only the four sprite categories do.
 
 ---
 

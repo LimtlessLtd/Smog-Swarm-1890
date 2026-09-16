@@ -175,7 +175,7 @@ BROKEN: its first seven steps need the economy to move on a session's timescale.
 - [measured] `bench_zombie_swarm.gd`: 60,000 zombies stepped in 2.79 ms.
 - [measured] Tactical view 20.8 → 153.6 fps after D70-D71.
 - [measured] Chunk streaming main-thread cost 124 ms → 1.64 ms mean, 5.09 ms worst.
-- [measured, PR #108 open] sprite VRAM 1,446 MB → 362 MB.
+- [measured] sprite VRAM 1,446 MB → 362 MB (D91, PR #108).
 - [code] Not POLISHED: relief tiles will not load in an exported build (`backlog.md`).
 
 ## 3. Systems against the loops

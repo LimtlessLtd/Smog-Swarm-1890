@@ -347,18 +347,16 @@ shippable and independently visible.
   80.4%. A **copy**, not `tight_crop()`'s AtlasTexture view: a MultiMesh takes a
   texture RID and `AtlasTexture.get_rid()` is its atlas's, so the region is dropped —
   probed, see D88.
-- [ ] `[gated]` **Texture import is uncompressed.** *(PR #108 open, 2026-09-16.)* `compress/mode=0` on every 2048^2
-  PNG means RGBA8 in VRAM: **16.8 MB per texture**, in `static var` caches that are
-  never evicted (`UnitVisuals._texture_cache`, `ZombieVisuals._texture_cache`). 264 MB
-  on disk across `assets/units|zombies|buildings|props`. **Smaller than it was since
-  the crop landed** — a cropped `redcoat` facing is 631x1022 = 2.5 MB, so 18 unit types
-  x 8 facings is ~350 MB rather than 2.4 GB (extrapolated from one measured asset).
-  Still worth VRAM compression, and the real on-screen size is now known: a figure is
-  17-46 px, so a 2048^2 source is ~40x the resolution anything samples. **Set
-  `mipmaps/generate` with it** — it is `false` on every asset, which was harmless while
-  figures were a sub-pixel smear and is not now: a 457x825 cropped zombie minified to
-  17 px without mipmaps shimmers across a moving crowd, which is the worst case the
-  battle-scale band exists to show.
+- [x] `[gated]` **Texture import is uncompressed.** Done 2026-09-16. Every PNG under
+  `assets/units|zombies|buildings|props` is `compress/mode=2` (S3TC/BPTC) with
+  `mipmaps/generate=true`, the canvas default filter is Linear Mipmap, and
+  `TextureCropUtil.tight_crop_copy()` re-encodes its crop to the source's own encoding —
+  without that last step the import change reaches only the 42 buildings, because units,
+  zombies and props draw the crop, and the crop decoded back to bare RGBA8. Measured
+  windowed (`scripts/test/bench_texture_memory.gd`): **1,446 MB -> 362 MB of VRAM** across
+  all 214 sprite textures; buildings' cold load 1,344 -> 293 ms. Cost: ~12 ms per cropped
+  texture on first use plus a one-time ~0.6 s encoder warm-up. Gated by
+  `scripts/test/verify_texture_import.gd`. (D91)
 - [x] `[gated]` **Recalibrate horde spread — it was ~77x too wide.** (D80) Done
   2026-09-07. `ZombieSwarmManager.HORDE_BASE_SPREAD` 20.0 -> 0.2588, so
   `_horde_spread(3758)` returns 7.09 wu = 69 m instead of 548 wu = 5.35 km. Measured

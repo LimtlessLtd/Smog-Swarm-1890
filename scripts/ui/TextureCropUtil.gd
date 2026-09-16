@@ -48,6 +48,8 @@ static func tight_crop(texture: Texture2D) -> Texture2D:
 	if not image:
 		_cache[key] = texture
 		return texture
+	if image.is_compressed():
+		image.decompress()  ## get_used_rect() reads no block-compressed format; get_image() returns a copy, so the source texture keeps its VRAM encoding.
 
 	var used_rect := image.get_used_rect()
 	if used_rect.size.x <= 0 or used_rect.size.y <= 0 or used_rect.size == image.get_size():
@@ -75,6 +77,17 @@ static func tight_crop(texture: Texture2D) -> Texture2D:
 ## Costs one image copy and gets VRAM back for it: nothing here retains the
 ## source, so a zombie frame carrying 22.3% x 40.3% ink leaves ~1.5 MB resident
 ## instead of the 2048^2 RGBA8 source's 16.8 MB.
+##
+## The copy carries the source's own import encoding forward, so the .import
+## file stays the one place that decides it. ImageTexture.create_from_image()
+## uploads exactly the Image it is given: without this step the crop decodes a
+## VRAM-compressed, mipmapped import back to bare RGBA8 with no mip chain, and
+## a figure minified from ~900 px to 17-46 px shimmers across a moving crowd.
+## If the source had mipmaps the crop regenerates them; if it was
+## block-compressed the crop is re-encoded to the same family. Image.compress()
+## needs an encoder compiled into the running binary (the editor build this
+## project runs from has one) — where it returns an error the crop stays RGBA8
+## with its mipmaps rather than failing to draw.
 static func tight_crop_copy(texture: Texture2D) -> Texture2D:
 	if not texture:
 		return null
@@ -85,11 +98,36 @@ static func tight_crop_copy(texture: Texture2D) -> Texture2D:
 	var cropped := texture
 	var image := texture.get_image()
 	if image:
+		var source_format := image.get_format()
+		var source_mipmaps := image.has_mipmaps()
+		if source_mipmaps:
+			image.clear_mipmaps()  ## Only level 0 is sliced, and dropping the chain first spares decompress() decoding it.
 		if image.is_compressed():
-			image.decompress()  ## get_region() cannot slice a block-compressed image; assets/*.import is compress/mode=0 today, so this only matters once VRAM compression lands.
+			image.decompress()  ## get_region() cannot slice a block-compressed image.
 		var used_rect := image.get_used_rect()
 		if used_rect.size.x > 0 and used_rect.size.y > 0 and used_rect.size != image.get_size():
-			cropped = ImageTexture.create_from_image(image.get_region(used_rect))
+			var region := image.get_region(used_rect)
+			if source_mipmaps:
+				region.generate_mipmaps()
+			var compress_mode := _compress_mode_for(source_format)
+			if compress_mode >= 0:
+				region.compress(compress_mode, Image.COMPRESS_SOURCE_SRGB)
+			cropped = ImageTexture.create_from_image(region)
 	if not key.is_empty():
 		_copy_cache[key] = cropped  ## Fully-transparent or already-tight art caches the source itself — copying it would buy nothing.
 	return cropped
+
+## The Image.CompressMode that re-encodes to the same block-compression family
+## as `format`, or -1 for an uncompressed format.
+static func _compress_mode_for(format: Image.Format) -> int:
+	match format:
+		Image.FORMAT_DXT1, Image.FORMAT_DXT3, Image.FORMAT_DXT5:
+			return Image.COMPRESS_S3TC
+		Image.FORMAT_BPTC_RGBA:
+			return Image.COMPRESS_BPTC
+		Image.FORMAT_ETC2_R11, Image.FORMAT_ETC2_RGB8, Image.FORMAT_ETC2_RGBA8, Image.FORMAT_ETC2_RGB8A1:
+			return Image.COMPRESS_ETC2
+		Image.FORMAT_ASTC_4x4:
+			return Image.COMPRESS_ASTC
+		_:
+			return -1
