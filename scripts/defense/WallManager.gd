@@ -397,7 +397,12 @@ func _register_freehand_segment(point_a: Vector2, point_b: Vector2, tier: int, i
 ## BuildingManager's own _ready() as long as this stays a later Main.tscn sibling.
 const _STARTING_WALL_GATE_COUNT: int = 2
 
-func seed_starting_defenses() -> void:
+## `gates_toward`: outside hexes whose shared edge should carry a gate, in
+## preference to the default choice. A scenario that sends its squad out through
+## one side of the town (VerticalSliceSetup) passes that side, so the only way out
+## is not a detour through the other side of the map. Each source hex still keeps
+## one solid edge, and never more than _STARTING_WALL_GATE_COUNT gates are placed.
+func seed_starting_defenses(gates_toward: Array[Vector2i] = []) -> void:
 	if not _segments.is_empty() or not _hex_grid_map or not _building_manager:
 		return
 	var core_hexes := _building_manager.get_starting_settlement_hexes()
@@ -440,10 +445,14 @@ func seed_starting_defenses() -> void:
 	var reserved_source: Dictionary = {}  # Vector2i -> true, one reservation per distinct source hex
 	for i in boundary_edges.size():
 		var source := boundary_sources[i]
-		if not reserved_source.has(source):
+		if not reserved_source.has(source) and not gates_toward.has(boundary_edges[i]):
 			reserved_source[source] = true
 			continue
 		gate_eligible_indices.append(i)
+	# Preferred edges first, each group keeping its original order.
+	var preferred: Array[int] = gate_eligible_indices.filter(func(i: int) -> bool: return gates_toward.has(boundary_edges[i]))
+	var others: Array[int] = gate_eligible_indices.filter(func(i: int) -> bool: return not gates_toward.has(boundary_edges[i]))
+	gate_eligible_indices = preferred + others
 
 	var gate_count := mini(_STARTING_WALL_GATE_COUNT, gate_eligible_indices.size())
 	var gate_indices: Dictionary = {}

@@ -94,6 +94,19 @@ const NIGHT_LIGHT_REACH_HEXES: int = 4
 const KIND_NOISE: StringName = &"noise"
 const KIND_LIGHT: StringName = &"light"
 
+## How many hexes out `lamps` lit buildings on one hex are seen by a horde needing
+## `threshold` attraction — the inverse of _accumulate_light()'s falloff, for a
+## player-facing "your town is seen from N hexes". -1 when they are not seen even
+## on their own hex.
+static func light_reach_hexes(lamps: int, threshold: float) -> int:
+	if lamps <= 0:
+		return -1
+	var reach := -1
+	for distance in range(NIGHT_LIGHT_REACH_HEXES + 1):
+		if float(lamps) * NIGHT_LIGHT_ATTRACTION * (1.0 - float(distance) / float(NIGHT_LIGHT_REACH_HEXES + 1)) >= threshold - 0.0001:
+			reach = distance
+	return reach
+
 @export var hex_grid_map_path: NodePath
 @export var building_manager_path: NodePath
 

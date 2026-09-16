@@ -1,4 +1,4 @@
-[gd_scene load_steps=30 format=3]
+[gd_scene load_steps=32 format=3]
 
 [ext_resource type="PackedScene" path="res://scenes/world/HexGridMap.tscn" id="1"]
 [ext_resource type="PackedScene" path="res://scenes/camera/CameraController.tscn" id="2"]
@@ -42,6 +42,8 @@
 [ext_resource type="PackedScene" path="res://scenes/world/ResidentDefenseController.tscn" id="40"]
 [ext_resource type="PackedScene" path="res://scenes/campaign/DefeatConditionMonitor.tscn" id="41"]
 [ext_resource type="PackedScene" path="res://scenes/defense/WallDefenseController.tscn" id="42"]
+[ext_resource type="Script" path="res://scripts/campaign/VerticalSliceDirector.gd" id="43"]
+[ext_resource type="Script" path="res://scripts/campaign/ConsequenceLog.gd" id="44"]
 
 [node name="Main" type="Node2D"]
 script = ExtResource("27")
@@ -215,6 +217,24 @@ defeat_condition_monitor_path = NodePath("../DefeatConditionMonitor")
 
 [node name="AlertManager" parent="." instance=ExtResource("24")]
 event_manager_path = NodePath("../EventManager")
+
+[node name="VerticalSliceDirector" type="Node" parent="."]
+script = ExtResource("43")
+building_manager_path = NodePath("../BuildingManager")
+unit_manager_path = NodePath("../UnitManager")
+resource_manager_path = NodePath("../ResourceManager")
+wall_manager_path = NodePath("../WallManager")
+infestation_manager_path = NodePath("../InfestationManager")
+horde_manager_path = NodePath("../HordeManager")
+
+[node name="ConsequenceLog" type="Node" parent="."]
+script = ExtResource("44")
+horde_manager_path = NodePath("../HordeManager")
+building_manager_path = NodePath("../BuildingManager")
+wall_manager_path = NodePath("../WallManager")
+wall_defense_controller_path = NodePath("../WallDefenseController")
+combat_coordinator_path = NodePath("../CombatCoordinator")
+infestation_manager_path = NodePath("../InfestationManager")
 
 [node name="SaveLoadManager" parent="." instance=ExtResource("9")]
 building_manager_path = NodePath("../BuildingManager")

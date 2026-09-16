@@ -23,9 +23,9 @@ signal volley_resolved(horde: Horde, segment: WallSegment, defenders: int)
 ## a defender behind a palisade is loosing into a packed mass, not trading blows
 ## that each take a full round. At the default 5x that is a volley every 2 real
 ## seconds. Balance number, measured at night in verify_wall_defense.gd: an
-## undefended Wooden piece breaches under an 800-strong horde after 714
-## game-seconds (143 real s at 5x); ten Toxophilites at the piece destroy that horde
-## in 396 (79 real s) with 62 of 100 HP left; three lose the piece at 866 with 284
+## undefended Wooden piece breaches under an 800-strong horde after 595
+## game-seconds (119 real s at 5x); ten Toxophilites at the piece destroy that horde
+## in 395 (79 real s) with 55 of 100 HP left; three lose the piece at 684 with 392
 ## zombies still standing.
 const VOLLEY_INTERVAL_SECONDS: float = 10.0
 ## Metres from the wall piece's line a RANGED unit can strike from — a war bow into
@@ -86,20 +86,36 @@ func run_volley() -> void:
 		volley_resolved.emit(horde, segment, defenders.size())
 
 
-## Units that can strike `horde` at `segment` right now: on the wall's other hex
-## from the horde, alive, armed, and within their role's reach of the piece.
+## Units that can strike `horde` at `segment` right now: alive, armed, within their
+## role's reach of the piece, and on the other side of its line from the horde.
+##
+## The side is decided geometrically, not from WallSegment.hex_a/hex_b. A piece
+## seeded along a hex edge (WallManager.seed_starting_defenses()) has both
+## endpoints exactly on the boundary, so world_to_coord() of each can land on
+## either hex. Measured on the real map (playtest vertical_slice, 2026-09-16): of
+## 113 pieces seeded around (79, 119) none connected the start hex to any one of
+## its six neighbours, and the first slice siege found zero defenders among ten
+## units standing 15 m inside the sieged piece. Deciding by side, the same siege
+## found all ten.
 func get_defenders(horde: Horde, segment: WallSegment) -> Array[UnitInstance]:
 	var result: Array[UnitInstance] = []
-	if not segment.connects(horde.hex_coord):
-		return result
-	var inner_hex := segment.other_end(horde.hex_coord)
-	for instance: UnitInstance in _unit_manager.get_units_at(inner_hex):
+	var horde_world := HexCoord.axial_to_world(horde.hex_coord) + horde.local_position
+	var horde_side := side_of(segment, horde_world)
+	for instance: UnitInstance in _unit_manager.get_all_units():
 		if instance.is_destroyed() or instance.definition.attack_damage <= 0.0:
 			continue
 		var world := HexCoord.axial_to_world(instance.hex_coord) + instance.local_position
-		if distance_to_segment_metres(world, segment) <= reach_metres(instance.definition):
-			result.append(instance)
+		if distance_to_segment_metres(world, segment) > reach_metres(instance.definition):
+			continue
+		if side_of(segment, world) == horde_side:
+			continue
+		result.append(instance)
 	return result
+
+
+## -1 or +1 for which side of the piece's infinite line `world` is on; 0 on it.
+static func side_of(segment: WallSegment, world: Vector2) -> int:
+	return signi(int(sign((segment.point_b - segment.point_a).cross(world - segment.point_a))))
 
 
 static func reach_metres(definition: UnitDefinition) -> float:

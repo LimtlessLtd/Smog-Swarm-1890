@@ -262,11 +262,14 @@ const WALL_SIEGE_DAMAGE_MULTIPLIER: float = 2.0  ## A horde hits a wall harder t
 ## making the wall decorative. Balance numbers.
 const WALL_CONTACT_FRONTAGE_MAX: int = 60
 ## Wall damage per zombie in contact per LOGIC_TICK_SECONDS, times
-## WALL_SIEGE_DAMAGE_MULTIPLIER and the night multiplier. At 0.025 an undefended
-## Wooden piece (100 HP) holds an 800-strong horde (28 in contact, 2.8 HP a tick
-## at night) for ~36 ticks = ~720 game-seconds, ~144 real seconds at the default
-## 5x, and twice that by day.
-const WALL_DAMAGE_PER_CONTACT_ZOMBIE: float = 0.025
+## WALL_SIEGE_DAMAGE_MULTIPLIER and the night multiplier. Fitted against the
+## vertical slice's fight (VerticalSliceConfig.HORDE_SIZE 1,500 at night on a
+## Wooden piece, 100 HP), in real seconds at the default 5x: undefended it breaches
+## in ~85 s; ten defenders at the piece lose it at ~109 s with ~420 still standing;
+## sixteen destroy the horde at ~94 s. By day every one of those walls holds twice
+## as long. At 0.025 ten defenders won with two zombies left, so preparing made no
+## difference; verify_wall_defense.gd measures the 800-strong case.
+const WALL_DAMAGE_PER_CONTACT_ZOMBIE: float = 0.03
 
 static func wall_contact_frontage(horde_size: int) -> int:
 	if horde_size <= 0:
@@ -366,6 +369,21 @@ func remove_horde(horde: Horde) -> void:
 ## The wall piece `horde` is blocked at and clawing, or null.
 func get_sieged_segment(horde: Horde) -> WallSegment:
 	return _sieged_segment_by_horde.get(horde, null)
+
+## Starts `horde` WANDERING toward `coord` along HordeFlowField's route, as though
+## its own drift had picked that hex. For an authored event
+## (VerticalSliceDirector); nothing else calls it. Everything after is ordinary:
+## a field that reaches the horde on the way still turns it
+## (_reevaluate_attraction()), and on arrival it replans as any horde does.
+## Returns false when there is no route.
+func send_wandering_toward(horde: Horde, coord: Vector2i) -> bool:
+	var path := HordeFlowField.trace_path(_hex_grid_map, _logistics_network, horde.hex_coord, coord)
+	if path.is_empty():
+		return false
+	horde.path = path
+	horde.state = GameEnums.HordeState.WANDERING
+	_set_attraction_source(horde, null)
+	return true
 
 ## Every horde currently blocked at a wall piece.
 func get_sieging_hordes() -> Array[Horde]:

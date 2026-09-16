@@ -40,6 +40,7 @@ const _SCENARIOS := {
 	"horde": preload("res://scripts/test/playtest/scenarios/horde.gd"),
 	"siege": preload("res://scripts/test/playtest/scenarios/siege.gd"),
 	"industrialisation": preload("res://scripts/test/playtest/scenarios/industrialisation.gd"),
+	"vertical_slice": preload("res://scripts/test/playtest/scenarios/vertical_slice.gd"),
 }
 const _Telemetry := preload("res://scripts/telemetry/GameplayTelemetry.gd")
 
@@ -61,6 +62,7 @@ var walls: WallManager
 var fog: FogOfWarManager
 var residents: ResidentDefenseController
 var wall_defense: WallDefenseController
+var slice_director: VerticalSliceDirector
 var telemetry: Node
 var start_hex: Vector2i
 var variant: String = ""
@@ -95,6 +97,8 @@ func _ready() -> void:
 		get_tree().quit(1)
 		return
 	_scenario = _SCENARIOS[_scenario_name].new()
+	if _scenario.has_method("launch_vertical_slice") and _scenario.launch_vertical_slice():
+		GameLaunchState.request_vertical_slice()
 
 	main = load("res://scenes/main/Main.tscn").instantiate()
 	if not _with_props and not _shots:  ## Screenshots need the props on screen.
@@ -128,6 +132,7 @@ func _run() -> void:
 	fog = main.get_node("FogOfWarManager")
 	residents = main.get_node("ResidentDefenseController")
 	wall_defense = main.get_node("WallDefenseController")
+	slice_director = main.get_node("VerticalSliceDirector")
 
 	var start_hexes := buildings.get_starting_settlement_hexes()
 	if start_hexes.is_empty():
@@ -195,6 +200,8 @@ func advance(seconds: float) -> void:
 	t = _charge("residents", t)
 	wall_defense._process(seconds)
 	t = _charge("wall_defense", t)
+	slice_director._process(seconds)
+	t = _charge("slice", t)
 	fog._process(seconds)
 	t = _charge("fog", t)
 	telemetry.observe_hordes()

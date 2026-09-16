@@ -210,6 +210,15 @@ func _spawn_local_position(coord: Vector2i, training_building_position: Vector2)
 	var radius := _SPAWN_CLEARANCE + _SPAWN_RING_STEP * float(already_near / _SPAWN_RING_SLOTS)
 	return training_building_position + Vector2(cos(angle), sin(angle)) * radius
 
+## A trained unit handed over as part of a scenario's starting state
+## (VerticalSliceSetup): no training cost or time, but its Population/Energy draw
+## is applied like a finished training.
+func grant_unit(unit_type: GameEnums.UnitType, coord: Vector2i, local_position: Vector2) -> UnitInstance:
+	var definition := UnitCatalog.get_definition(unit_type)
+	if _resource_manager:
+		_capacity.apply(definition)
+	return _register_instance(definition, coord, _next_id, true, -1.0, GameEnums.UnitOrderType.HOLD, coord, [], 0, local_position)
+
 func remove_unit(instance: UnitInstance) -> void:
 	_capacity.refund(instance.definition)
 	_instances.erase(instance)

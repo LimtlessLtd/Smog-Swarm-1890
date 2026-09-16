@@ -254,7 +254,12 @@ func seed_starting_buildings() -> void:
 		return
 	var target: HexCell = null
 	var fallback: HexCell = null
+	var override: Variant = GameLaunchState.get_starting_hex_override()
+	if override is Vector2i:
+		target = _hex_grid_map.get_cell(override)
 	for cell in _hex_grid_map.get_all_cells():
+		if target:
+			break
 		if not (cell.is_settlement and cell.biome_type == GameEnums.BiomeType.URBAN):
 			continue
 		if cell.region_name == _STARTING_REGION_NAME:
@@ -546,6 +551,18 @@ func _register_instance(definition: BuildingDefinition, coord: Vector2i, id: int
 
 	building_placed.emit(instance)
 	return instance
+
+## A finished building handed over as part of a scenario's starting state
+## (VerticalSliceSetup). Spends no construction cost and skips placement rules —
+## the scenario authored the spot — but applies the capacity ledger exactly as a
+## completed placement would, so Energy and Population read true from the first
+## frame. Grant producers before consumers: CapacityAllocator.apply() takes nothing
+## from a pool that cannot cover it.
+func grant_building(building_type: GameEnums.BuildingType, coord: Vector2i, local_position: Vector2) -> BuildingInstance:
+	var definition := BuildingCatalog.get_definition(building_type)
+	if _resource_manager:
+		_capacity.apply(definition)
+	return _register_instance(definition, coord, _next_id, local_position, true)
 
 ## Resolves `world_pos` to a hex + local offset and places there.
 func place_building_at_world(building_type: GameEnums.BuildingType, world_pos: Vector2) -> bool:
