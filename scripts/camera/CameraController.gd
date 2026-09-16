@@ -23,27 +23,30 @@ extends Camera2D
 ## tactical_zoom_threshold's comparison needed to move to the other side of
 ## the default zoom.
 ##
-## `max_zoom` was raised twice from its original 0.3125: first 19.2x to
-## 6.0 so a UnitInstance figure (TacticalEntityLayer.FIGURE_RADIUS = 6.0
-## world units), which rendered at a 1.875px sub-pixel smear at the old
-## value, reads at a legible ~36px screen radius at closest zoom — chosen
-## by working backward from "a 6-unit figure should read as a clear ~70px
-## circle at closest zoom," a usability floor, not an aesthetic preference.
-## Then doubled again to 12.0 per user feedback ("we should be able to zoom
-## in further too") — screen radius is world_radius * zoom.x, so the same
-## figure now reads at a 72px radius, roomier than the floor called for,
-## deliberately. medium_fidelity_threshold/high_fidelity_threshold below
-## are untouched by this second change — it only extends how much further
-## HIGH fidelity's own range goes.
+## `max_zoom` is 128.0, which is a battle-scale camera rather than another
+## increment (D76). Visible world width is viewport / zoom.x and the base
+## viewport is 1280x720 (project.godot, stretch/mode="canvas_items", so
+## world-to-screen does not depend on the monitor), so 128 shows
+## 97.5 m x 54.8 m — *They Are Billions*' own normal view is ~100 m across.
+## The previous 12.0 showed 1,040 m: a 10x WIDER camera than TAB's default,
+## which is why nothing in this game read as TAB however good the simulation
+## underneath it was. One world unit is 9.75 m
+## (HexCoord.WORLD_UNITS_PER_REAL_METER), so
+## TacticalEntityLayer.FIGURE_METRES (3.5 m) is 0.359 wu and reads at 46 px
+## here — TAB's own unit size. Earlier values (0.3125, then 6.0, then 12.0)
+## were each raised for the same reason at a smaller scale: a figure that was
+## a sub-pixel smear.
 ##
 ## `zoom_step` was replaced by `zoom_factor_per_step` (additive ->
 ## multiplicative): the old flat +/-0.0125 per scroll click needed ~465
-## clicks to cross the original Tactical range, and with max_zoom now 19x
-## further out a flat step is either too slow near the top of the range or
-## too coarse near the bottom. A percentage-per-click step (12%) handles a
-## wide dynamic range gracefully (the same reason Google Maps/most
-## strategy games zoom multiplicatively) — the full min_zoom..max_zoom span
-## takes ~65 clicks, tactical_zoom_threshold..max_zoom takes ~31.
+## clicks to cross the original Tactical range, and across a range this wide a
+## flat step is either too slow near the top of it or too coarse near the
+## bottom. A percentage-per-click step (12%) handles a wide dynamic range
+## gracefully (the same reason Google Maps/most strategy games zoom
+## multiplicatively) — the full min_zoom..max_zoom span takes ~92 clicks,
+## tactical_zoom_threshold..max_zoom takes ~58. A coarser step or a
+## modifier-key jump deep in the range is a UX follow-up D76 accepted, not a
+## blocker.
 
 @export var world_root_path: NodePath
 ## This is the world-units/sec pan rate AT zoom.x == 1.0, not a raw
@@ -54,19 +57,34 @@ extends Camera2D
 ## made panning catastrophically twitchy at the deeper max_zoom).
 @export var pan_speed: float = 220.0
 @export var min_zoom: float = 0.00375  ## The most zoomed-OUT allowed value. Visible world width is viewport/zoom.x, so a bigger world needs a SMALLER zoom value to keep framing the same fraction of it — see tactical_zoom_threshold.
-@export var max_zoom: float = 12.0  ## The most zoomed-IN allowed value — see this class's own doc comment for the two raises that got it here.
+@export var max_zoom: float = 128.0  ## The most zoomed-IN allowed value — see this class's own doc comment for why battle scale put it here.
 @export var zoom_factor_per_step: float = 1.12  ## Multiplicative zoom per scroll click (12%) — see this class's own doc comment for why this replaced a flat additive zoom_step.
 @export var tactical_zoom_threshold: float = 0.1875  ## zoom.x at/above this = Tactical view (LARGER zoom = more zoomed in). Unchanged by the max_zoom increases — this still marks "left the abstract Strategic map", independent of how much further Tactical itself now goes.
 
 ## Subdivides [tactical_zoom_threshold, max_zoom] into three LOW/MEDIUM/HIGH
 ## fidelity bands (GameEnums.TacticalFidelity) as the camera zooms in past
-## the Strategic/Tactical cut — see get_tactical_fidelity(). HIGH starts
-## where individual figures are already a legible ~18px screen radius
-## (FIGURE_RADIUS 6.0 * 2.0) and only gets clearer approaching max_zoom,
-## rather than starting the instant Tactical mode itself does. A
-## balancing/feel pass, not an architecture decision.
+## the Strategic/Tactical cut — see get_tactical_fidelity().
+##
+## `high_fidelity_threshold` is 48.0, and it was chosen by looking rather than
+## by arithmetic (D85, scripts/test/preview_crowd_threshold.gd). It is where
+## TacticalEntityLayer starts drawing every individual at metric scale (D86),
+## so it is also the zoom at which a figure has to be legible: 48 puts
+## 260 x 146 m on screen at 17.2 px per figure, with an engulfing horde of
+## ~12,834 individuals in view.
+##
+## The frame budget is NOT what bounds this and picking against it produced
+## the wrong answer twice — bench_zombie_render.gd measured 120,000 sprites at
+## 75x screen coverage for 2.93 ms, and 72,000 figures are affordable at zoom
+## 5 where each is 1.8 px. Legibility bounds it, and legibility is destroyed
+## by DENSITY rather than by count: 32 was the recommendation an hour before
+## 48 and a packed horde at 11.5 px collapsed back into grain.
+##
+## Not yet handled, recorded so it is not found later as a bug (D87): MEDIUM
+## draws MEDIUM_ZOMBIE_CLUSTER_SIZE = 5 figures per horde and HIGH draws every
+## individual, so crossing 48 is a jump between the two in the width of one
+## scroll click. The old 2.0 hid this because neither side of it was legible.
 @export var medium_fidelity_threshold: float = 0.5
-@export var high_fidelity_threshold: float = 2.0
+@export var high_fidelity_threshold: float = 48.0
 
 ## Pan the camera when the mouse sits at/near the screen edge, RTS-
 ## convention style, on top of (not instead of) keyboard pan and
@@ -168,9 +186,9 @@ func _handle_pan_input(delta: float) -> void:
 		# here means the fraction of the visible view crossed per second
 		# stays the same at any zoom. The OLD formula (pan_speed*zoom.x)
 		# made world-space speed scale UP with zoom — harmless at the old,
-		# narrow max_zoom, but with max_zoom now 19x further in, that
-		# formula would make panning ~369x more twitchy at max zoom than
-		# at the default view — exactly the fine control close-up unit
+		# narrow max_zoom, but at 128 that formula would make panning
+		# ~2,560x more twitchy at max zoom than at Main.tscn's starting
+		# Strategic zoom of 0.05 — exactly the fine control close-up unit
 		# inspection needs. pan_speed itself was recalibrated so this
 		# reads identically to the old formula at the default starting
 		# Strategic zoom.

@@ -52,10 +52,32 @@ const ALLOCATION_INTERVAL_SECONDS: float = 0.5
 ## as "a horde is parked at the exact centre".
 const RESIDENT_SPREAD: float = HexCoord.HEX_SIZE * 0.75
 
-## A horde's crowd grows with its size — same sqrt fan-out
-## TacticalEntityLayer._crowd_spread_radius() already applies, so a horde of
-## 500 covers more ground than a horde of 5 instead of packing into one blob.
-const HORDE_BASE_SPREAD: float = 20.0
+## A horde's crowd grows with its size — sqrt fan-out, so a horde of 500
+## covers more ground than a horde of 5 instead of packing into one blob.
+##
+## The base is the radius HORDE_SPREAD_REFERENCE_COUNT zombies occupy at one
+## per 4 m^2, which is what a loose mob is: sqrt(5 * 4 / PI) = 2.523 m, i.e.
+## 0.2588 world units. Written as a literal because a GDScript const
+## initializer cannot call sqrt(), the same constraint
+## MovementStepper.BASE_MOVE_SPEED records.
+##
+## **This was 20.0 and that was ~77x too wide (D80)** — a constant ratio at
+## every size, since both this and the true mob radius scale as sqrt(size).
+## _horde_spread() on the 3,758-strong export diagnose_infestation_pressure.gd
+## measured returned 548 wu = 5.35 km, wider than the hex the horde was
+## standing in; it now returns 7.09 wu = 69 m. A horde spread across five
+## kilometres cannot read as a horde at any zoom, which was a large part of
+## why hordes looked like scattered noise rather than a mass.
+##
+## *Measured consequence at the small end, accepted (D90):* ZombieSwarm's mill
+## moves a zombie 0.37 wu per update at one slice and 1.48 wu at MAX_SLICES, so
+## a small crowd cannot settle as tight as its own spread. Hordes of 500 and up
+## sit at 0.7-0.9x spread, exactly where the old constant put every horde;
+## below that they run 1.0-3.0x, a 5-zombie horde holding a 4-8 m puddle rather
+## than the 2.5 m huddle asked for. Nothing snapped in any combination measured
+## — worst single zombie was 5.97x against SNAP_SPREAD_MULTIPLE's 6x, in a
+## 50-zombie horde at MAX_SLICES.
+const HORDE_BASE_SPREAD: float = 0.2588
 const HORDE_SPREAD_REFERENCE_COUNT: int = 5
 
 ## Below this frame-to-frame anchor movement a group keeps its current facing,

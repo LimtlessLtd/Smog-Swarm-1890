@@ -56,10 +56,16 @@ const Z_INDEX: int = -2
 ## and the ground they stand on should appear and disappear together.
 const LOAD_MARGIN_WU: float = 2048.0
 
-## Scattering a chunk walks its whole triangulation and then places thousands
-## of props, so one per frame — same budget, and the same reason, as
-## TerrainMeshView.CHUNKS_BUILT_PER_FRAME.
-const CHUNKS_BUILT_PER_FRAME: int = 1
+## Load and scatter run on worker threads (ChunkBuildQueue); what is left on
+## the main thread is creating one MultiMesh per prop type and writing its
+## instance transforms, so one per frame — same budget, and the same reason,
+## as TerrainMeshView.CHUNKS_FINALIZED_PER_FRAME.
+const CHUNKS_FINALIZED_PER_FRAME: int = 1
+
+## Worker threads this view may occupy at once. TerrainMeshView takes the
+## same number, so the two together leave pool threads free for everything
+## else that uses WorkerThreadPool.
+const MAX_BUILDS_IN_FLIGHT: int = 2
 
 ## Refuses to stream at all beyond this many chunks on screen, so a
 ## pathological zoom threshold or viewport cannot queue hundreds of scatters.
@@ -74,7 +80,7 @@ var _camera: CameraController
 var _chunk_nodes: Dictionary = {}  ## Vector2i -> Node2D holding that chunk's MultiMeshInstance2Ds.
 var _chunk_props: Dictionary = {}  ## Vector2i -> Dictionary[Vector2i hex -> Array[PropInstance]], built lazily by get_props_at().
 var _chunk_scatter: Dictionary = {}  ## Vector2i -> Dictionary of the raw flat scatter arrays, kept so get_props_at() can answer without re-scattering.
-var _build_queue: Array[Vector2i] = []
+var _builds := ChunkBuildQueue.new(TerrainDetailView.prepare_chunk, MAX_BUILDS_IN_FLIGHT)
 
 
 func _ready() -> void:
@@ -99,10 +105,22 @@ func _process(_delta: float) -> void:
 	if not visible:
 		return
 	_sync_wanted_chunks()
-	for _i in CHUNKS_BUILT_PER_FRAME:
-		if _build_queue.is_empty():
+	_builds.pump()
+	for _i in CHUNKS_FINALIZED_PER_FRAME:
+		var finished := _builds.take_finished()
+		if finished.is_empty():
 			return
-		_build_chunk(_build_queue.pop_front())
+		_finalize_chunk(finished[0], finished[1])
+
+
+func _exit_tree() -> void:
+	_builds.wait_all()
+
+
+## True once nothing is queued or building. For capture scripts that must not
+## photograph half-streamed props.
+func is_streaming_idle() -> bool:
+	return _builds.is_idle()
 
 
 func _on_tactical_mode_changed(is_tactical: bool) -> void:
@@ -147,10 +165,11 @@ func _build_hex_index(address: Vector2i) -> Dictionary:
 		var prop := PropInstance.new(types[i] as GameEnums.PropType, positions[i] - HexCoord.axial_to_world(coord))
 		prop.rotation = rotations[i]
 		prop.scale = scales[i]
-		var list: Array = by_hex.get(coord, [] as Array[PropInstance])
-		if list.is_empty():
-			by_hex[coord] = list
-		list.append(prop)
+		# Not by_hex.get(coord, []): GDScript evaluates the default eagerly,
+		# allocating a throwaway Array for every prop.
+		if not by_hex.has(coord):
+			by_hex[coord] = [] as Array[PropInstance]
+		(by_hex[coord] as Array).append(prop)
 	return by_hex
 
 
@@ -175,36 +194,25 @@ func _sync_wanted_chunks() -> void:
 		for cy in range(lo.y, hi.y + 1):
 			var address := Vector2i(cx, cy)
 			wanted[address] = true
-			if not _chunk_nodes.has(address) and not _build_queue.has(address):
-				_build_queue.append(address)
+			if not _chunk_nodes.has(address):
+				_builds.request(address)
 
 	for address in _chunk_nodes.keys():
 		if not wanted.has(address):
 			_free_chunk(address)
 
-	# A queued address that left the view before its turn is dropped rather
-	# than built and immediately freed. Rebuilt element by element, not via
-	# Array.filter() — that returns an untyped Array, and assigning one to an
-	# Array[Vector2i] is a runtime error rather than a compile-time one.
-	var still_wanted: Array[Vector2i] = []
-	for address in _build_queue:
-		if wanted.has(address):
-			still_wanted.append(address)
-	_build_queue = still_wanted
+	# An address that left the view before its build finished is dropped
+	# rather than built and immediately freed.
+	_builds.retain_only(wanted)
 
 
-func _build_chunk(address: Vector2i) -> void:
-	var container := Node2D.new()
-	container.name = "Detail_%d_%d" % [address.x, address.y]
-	_chunk_nodes[address] = container
-	add_child(container)
-
-	# A chunk with no baked mesh is recorded as an empty node rather than
-	# retried: outside the baked corridor there is nothing to scatter into,
-	# and without the marker _sync_wanted_chunks() would re-queue it forever.
+## Worker-thread half of a chunk build: file read, scatter, and grouping by
+## prop type. Static and touching nothing but its arguments, per
+## ChunkBuildQueue's contract. Returns {} for an unbaked or empty chunk.
+static func prepare_chunk(address: Vector2i) -> Dictionary:
 	var data := TerrainMeshChunkData.load_chunk(address.x, address.y)
 	if data == null:
-		return
+		return {}
 
 	var positions := PackedVector2Array()
 	var types := PackedByteArray()
@@ -212,21 +220,49 @@ func _build_chunk(address: Vector2i) -> void:
 	var scales := PackedFloat32Array()
 	TerrainDetailScatter.scatter(data, address, positions, types, rotations, scales)
 	if positions.is_empty():
-		return
-	_chunk_scatter[address] = {
+		return {}
+
+	# Grouped by prop type, because a MultiMesh carries one mesh and one
+	# texture: a tree and a rock cannot share an instance buffer. Not
+	# `indices_by_type.get(type, [])`: the default is built eagerly, one
+	# throwaway Array per prop, and an untyped Array boxes every index —
+	# 6.10 ms -> 3.27 ms across 12 chunks (bench_chunk_build.gd).
+	var indices_by_type: Dictionary = {}  ## int prop type -> PackedInt32Array
+	for i in types.size():
+		var prop_type := types[i]
+		if not indices_by_type.has(prop_type):
+			indices_by_type[prop_type] = PackedInt32Array()
+		indices_by_type[prop_type].append(i)
+
+	return {
 		"positions": positions, "types": types,
+		"rotations": rotations, "scales": scales,
+		"indices_by_type": indices_by_type,
+	}
+
+
+## Main-thread half: nodes and MultiMeshes for a prepared chunk.
+##
+## A chunk with nothing to scatter is recorded as an empty node rather than
+## retried: outside the baked corridor there is nothing to scatter into, and
+## without the marker _sync_wanted_chunks() would re-request it forever.
+func _finalize_chunk(address: Vector2i, prepared: Dictionary) -> void:
+	var container := Node2D.new()
+	container.name = "Detail_%d_%d" % [address.x, address.y]
+	_chunk_nodes[address] = container
+	add_child(container)
+	if prepared.is_empty():
+		return
+
+	var positions: PackedVector2Array = prepared["positions"]
+	var rotations: PackedFloat32Array = prepared["rotations"]
+	var scales: PackedFloat32Array = prepared["scales"]
+	_chunk_scatter[address] = {
+		"positions": positions, "types": prepared["types"],
 		"rotations": rotations, "scales": scales,
 	}
 
-	# Grouped by prop type, because a MultiMesh carries one mesh and one
-	# texture: a tree and a rock cannot share an instance buffer.
-	var indices_by_type: Dictionary = {}
-	for i in types.size():
-		var list: Array = indices_by_type.get(types[i], [])
-		if list.is_empty():
-			indices_by_type[types[i]] = list
-		list.append(i)
-
+	var indices_by_type: Dictionary = prepared["indices_by_type"]
 	for prop_type: int in indices_by_type:
 		var instance := _build_multimesh(prop_type, indices_by_type[prop_type], positions, rotations, scales)
 		if instance != null:
@@ -240,7 +276,7 @@ func _build_chunk(address: Vector2i) -> void:
 ## is not worth reviving: PropVisuals returns a texture for every type that
 ## exists today, and a type added without art should be invisible rather than
 ## drawn as a flat blob at forest density.
-func _build_multimesh(prop_type: int, indices: Array, positions: PackedVector2Array,
+func _build_multimesh(prop_type: int, indices: PackedInt32Array, positions: PackedVector2Array,
 		rotations: PackedFloat32Array, scales: PackedFloat32Array) -> MultiMeshInstance2D:
 	var texture := PropVisuals.prop_texture(prop_type as GameEnums.PropType)
 	if texture == null:
@@ -265,7 +301,7 @@ func _build_multimesh(prop_type: int, indices: Array, positions: PackedVector2Ar
 	var unit := Vector2(art_size.x / longest, art_size.y / longest) * PROP_DIAMETER
 
 	for slot in indices.size():
-		var i: int = indices[slot]
+		var i := indices[slot]
 		multimesh.set_instance_transform_2d(slot,
 			Transform2D(rotations[i], unit * scales[i], 0.0, positions[i]))
 
@@ -288,4 +324,4 @@ func _clear_all() -> void:
 	_chunk_nodes.clear()
 	_chunk_scatter.clear()
 	_chunk_props.clear()
-	_build_queue.clear()
+	_builds.clear()

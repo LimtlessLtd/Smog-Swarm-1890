@@ -34,6 +34,16 @@ extends RefCounted
 ## hasn't been authored yet, then to null — the same incremental "art lands
 ## one piece at a time, zero code changes" contract this class always had,
 ## just with an extra rung.
+##
+## **What is returned is cropped to the figure's own ink, not to its render
+## frame.** render_directional.py never ran units through
+## render_common.frame_content() the way buildings were, so `redcoat_s.png`
+## fills 30.8% x 49.9% of its 2048^2 PNG. Every consumer sizes art by dividing
+## the target diameter by the texture's longest axis, so an uncropped frame
+## renders the soldier at ~half the size asked for, and Sprite2D/QuadMesh both
+## centre on the FRAME, so the body also sits ~15% of the frame above its own
+## simulated position and visibly hovers. Cropping here fixes both for every
+## call site at once, which is why it is not done in the renderer.
 
 static var _texture_cache: Dictionary = {}  # "<UnitType>_<Facing8>" -> Texture2D (nullable)
 
@@ -92,8 +102,8 @@ static func _load_texture(unit_type: GameEnums.UnitType, facing: GameEnums.Facin
 		return null
 	var directional_path := "res://assets/units/%s_%s.png" % [key, FacingUtil.suffix(facing)]
 	if ResourceLoader.exists(directional_path):
-		return load(directional_path) as Texture2D
+		return TextureCropUtil.tight_crop_copy(load(directional_path) as Texture2D)
 	var flat_path := "res://assets/units/%s.png" % key  # Pre-directional single-facing art, if that's all that's been authored.
 	if ResourceLoader.exists(flat_path):
-		return load(flat_path) as Texture2D
+		return TextureCropUtil.tight_crop_copy(load(flat_path) as Texture2D)
 	return null
