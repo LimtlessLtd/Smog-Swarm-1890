@@ -32,45 +32,45 @@ extends RefCounted
 
 signal powered_down(instance: BuildingInstance)
 signal power_down_rejected(instance: BuildingInstance, reason: String)
-signal restart_started(instance: BuildingInstance, days: int)
+signal restart_started(instance: BuildingInstance, hours: int)
 signal restart_rejected(instance: BuildingInstance, reason: String)
 signal restart_cancelled(instance: BuildingInstance)
 signal powered_up(instance: BuildingInstance)
 
 ## "Restarting costs a delay proportional to building tier" — read directly
 ## off BuildingDefinition.tier rather than through
-## BuildingConstructionController.days_for()'s cost proxy, because the spec
+## BuildingConstructionController.hours_for()'s cost proxy, because the spec
 ## names tier and because the two are not the same ordering: a Tier 5
 ## Ordnance Complex and a Tier 1 Brickworks can land on the same clamped 1-4
 ## construction days, and "banking a Victorian furnace and bringing it back
 ## up is a real operation" has to bite hardest at the top of the tree.
 ## Tier 0 costs 1 day, Tier 5 costs 6. Placeholder balancing numbers, not an
 ## architecture decision.
-const RESTART_DAYS_BASE: int = 1
-const RESTART_DAYS_PER_TIER: int = 1
+const RESTART_HOURS_BASE: int = 1
+const RESTART_HOURS_PER_TIER: int = 1
 
 var _capacity: CapacityAllocator
-var _pending: Array[Dictionary] = []  # {instance: BuildingInstance, days_remaining: int}
+var _pending: Array[Dictionary] = []  # {instance: BuildingInstance, hours_remaining: int}
 
 func _init(capacity: CapacityAllocator) -> void:
 	_capacity = capacity
 
-func restart_days_for(definition: BuildingDefinition) -> int:
-	return RESTART_DAYS_BASE + definition.tier * RESTART_DAYS_PER_TIER
+func restart_hours_for(definition: BuildingDefinition) -> int:
+	return RESTART_HOURS_BASE + definition.tier * RESTART_HOURS_PER_TIER
 
 ## Days left on this instance's restart, or 0 if it isn't restarting. Same
 ## shape (and same "0 means no job") contract as
-## BuildingConstructionController.days_remaining_for().
-func days_remaining_for(instance: BuildingInstance) -> int:
+## BuildingConstructionController.hours_remaining_for().
+func hours_remaining_for(instance: BuildingInstance) -> int:
 	for job in _pending:
 		if job["instance"] == instance:
-			return job["days_remaining"]
+			return job["hours_remaining"]
 	return 0
 
 ## Off AND already coming back up, as opposed to off and staying off. The
 ## flag alone cannot tell them apart — see BuildingInstance.is_powered_down.
 func is_restarting(instance: BuildingInstance) -> bool:
-	return days_remaining_for(instance) > 0
+	return hours_remaining_for(instance) > 0
 
 ## "" when `instance` can be switched off right now. A ruin has nothing left
 ## running and a construction site has not started yet, so both are refused
@@ -131,7 +131,7 @@ func power_down(instance: BuildingInstance) -> bool:
 ## every listener sees one state rather than two overlapping ones.
 ##
 ## Both halves are load-bearing. Dropping the queued restart stops
-## process_day() bringing a RUIN back online days later — it would draw the
+## process_hour() bringing a RUIN back online days later — it would draw the
 ## full Energy/Population allocation for a building that no longer exists and
 ## clear is_powered_down on it, and demolish() would then refuse to refund
 ## that allocation because the instance reads as a ruin. Clearing the flag
@@ -157,7 +157,7 @@ func get_restart_error(instance: BuildingInstance) -> String:
 	if not instance.is_powered_down:
 		return "%s is already running." % instance.definition.display_name
 	if is_restarting(instance):
-		return "%s is already restarting (%d days)." % [instance.definition.display_name, days_remaining_for(instance)]
+		return "%s is already restarting (%d hours)." % [instance.definition.display_name, hours_remaining_for(instance)]
 	if instance.is_ruined:
 		return "%s must be repaired before it can be restarted." % instance.definition.display_name
 	if _capacity and not _capacity.can_afford_cost(instance.definition):
@@ -168,7 +168,7 @@ func can_restart(instance: BuildingInstance) -> bool:
 	return get_restart_error(instance).is_empty()
 
 ## Queues the delay and takes NO capacity yet — the draw is made by
-## process_day() at the moment is_powered_down flips back to false.
+## process_hour() at the moment is_powered_down flips back to false.
 ##
 ## This is deliberately NOT BuildingHealthController.repair()'s ordering,
 ## which applies capacity when the job is queued. Settling capacity on the
@@ -186,15 +186,15 @@ func can_restart(instance: BuildingInstance) -> bool:
 ## noted rather than fixed here (it needs its own test and its own change).
 ##
 ## is_powered_down stays true for the whole countdown: the building is dark
-## until process_day() says otherwise, which is the point of the delay.
+## until process_hour() says otherwise, which is the point of the delay.
 func restart(instance: BuildingInstance) -> bool:
 	var error := get_restart_error(instance)
 	if not error.is_empty():
 		restart_rejected.emit(instance, error)
 		return false
-	var days := restart_days_for(instance.definition)
-	_pending.append({"instance": instance, "days_remaining": days})
-	restart_started.emit(instance, days)
+	var hours := restart_hours_for(instance.definition)
+	_pending.append({"instance": instance, "hours_remaining": hours})
+	restart_started.emit(instance, hours)
 	return true
 
 ## Re-queues a restart read back out of a save. No capacity handling needed
@@ -203,8 +203,8 @@ func restart(instance: BuildingInstance) -> bool:
 ## Mirrors BuildingManager.load_save_entries()' construction re-queue,
 ## including its maxi(1, ...) guard against a corrupt 0-or-negative saved
 ## value stalling the job forever.
-func load_pending_restart(instance: BuildingInstance, days_remaining: int) -> void:
-	_pending.append({"instance": instance, "days_remaining": maxi(1, days_remaining)})
+func load_pending_restart(instance: BuildingInstance, hours_remaining: int) -> void:
+	_pending.append({"instance": instance, "hours_remaining": maxi(1, hours_remaining)})
 
 ## Drops any queued restart for `instance` — BuildingManager calls this from
 ## remove_building(), same as it does for the construction and repair queues,
@@ -221,12 +221,12 @@ func remove_pending(instance: BuildingInstance) -> void:
 ## so an unaffordable apply() takes the grant without the draw — or sitting
 ## in the queue forever as an invisible job. The player re-orders it once the
 ## grid recovers.
-func process_day() -> void:
+func process_hour() -> void:
 	var still_pending: Array[Dictionary] = []
 	for job in _pending:
-		job["days_remaining"] -= 1
+		job["hours_remaining"] -= 1
 		var instance: BuildingInstance = job["instance"]
-		if job["days_remaining"] > 0:
+		if job["hours_remaining"] > 0:
 			still_pending.append(job)
 			continue
 		if instance.is_ruined:

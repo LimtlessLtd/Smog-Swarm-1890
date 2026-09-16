@@ -4,7 +4,7 @@ extends Node
 ## Runtime owner of every trained UnitInstance — the "unit lifecycle" half:
 ## validating training against cost (ResourceManager) and the currently
 ## unlocked tier (TechManager.is_unit_tier_unlocked()), and draining daily
-## Gunpowder upkeep (TickManager.day_completed). Mirrors BuildingManager's
+## Gunpowder upkeep (TickManager.hour_completed). Mirrors BuildingManager's
 ## own place/validate/tally-upkeep shape, minus everything specific to
 ## buildings (daily output, Food/population, Discontent) — units don't
 ## produce a daily yield or house civilians, they're trained once and then
@@ -43,7 +43,7 @@ extends Node
 ## Not implemented yet: Morale/veterancy is a separate system (UnitMorale).
 ##
 ## Food upkeep and one-time Population/Energy capacity (design_doc.md §4)
-## are both real: Food/Coal drain daily via _on_day_completed()'s
+## are both real: Food/Coal drain hourly via _on_hour_completed()'s
 ## daily_upkeep tally (same loop that already drained Gunpowder), while
 ## Population/Energy are reserved/refunded once via CapacityAllocator —
 ## applied in train_unit()/retrain_unit() (immediately, same "pay upfront"
@@ -56,14 +56,14 @@ signal unit_removed(instance: UnitInstance)
 signal training_rejected(unit_type: GameEnums.UnitType, coord: Vector2i, reason: String)
 signal unit_retrained(instance: UnitInstance)
 signal retrain_rejected(instance: UnitInstance, new_type: GameEnums.UnitType, reason: String)
-signal training_started(unit_type: GameEnums.UnitType, coord: Vector2i, days: int)  ## unit_trained/unit_retrained (above) only fire once a queued job finishes; these fire the moment it's accepted and paid for.
-signal retrain_started(instance: UnitInstance, new_type: GameEnums.UnitType, days: int)
+signal training_started(unit_type: GameEnums.UnitType, coord: Vector2i, hours: int)  ## unit_trained/unit_retrained (above) only fire once a queued job finishes; these fire the moment it's accepted and paid for.
+signal retrain_started(instance: UnitInstance, new_type: GameEnums.UnitType, hours: int)
 
 const RETRAIN_COST_FRACTION: float = 0.5  ## 50% of the target unit's normal training cost.
 
-const _TRAINING_DAYS_PER_TIER: int = 1  ## Tier is this project's own proxy for "how advanced a unit is", doubling as a training-time proxy too rather than a second per-unit cost field.
-const _MAX_TRAINING_DAYS: int = 4
-const _RETRAIN_DAYS_FRACTION: float = 0.5  ## Same halving RETRAIN_COST_FRACTION applies to resource cost — retraining an existing veteran is faster than training a recruit, not just cheaper.
+const _TRAINING_HOURS_PER_TIER: int = 1  ## Tier is this project's own proxy for "how advanced a unit is", doubling as a training-time proxy too rather than a second per-unit cost field.
+const _MAX_TRAINING_HOURS: int = 4
+const _RETRAIN_HOURS_FRACTION: float = 0.5  ## Same halving RETRAIN_COST_FRACTION applies to resource cost — retraining an existing veteran is faster than training a recruit, not just cheaper.
 
 @export var hex_grid_map_path: NodePath
 @export var building_manager_path: NodePath
@@ -80,8 +80,8 @@ var _capacity: CapacityAllocator
 var _instances: Array[UnitInstance] = []
 var _next_id: int = 1
 ## Paid-for training/retraining not yet finished.
-## training: {unit_type, coord, days_remaining}
-## retrain: {instance, new_type, days_remaining}
+## training: {unit_type, coord, hours_remaining}
+## retrain: {instance, new_type, hours_remaining}
 var _pending_training: Array[Dictionary] = []
 var _pending_retrain: Array[Dictionary] = []
 
@@ -96,7 +96,7 @@ func _ready() -> void:
 		_tech_manager = get_node(tech_manager_path)
 		_tech_manager.tech_researched.connect(_on_tech_researched)
 	_capacity = CapacityAllocator.new(_resource_manager)
-	TickManager.day_completed.connect(_on_day_completed)
+	TickManager.hour_completed.connect(_on_hour_completed)
 
 func get_all_units() -> Array[UnitInstance]:
 	return _instances.duplicate()
@@ -156,17 +156,17 @@ func train_unit(unit_type: GameEnums.UnitType, coord: Vector2i) -> bool:
 		_resource_manager.spend(definition.training_cost)
 		_capacity.apply(definition)
 
-	var days := mini(definition.tier * _TRAINING_DAYS_PER_TIER + _TRAINING_DAYS_PER_TIER, _MAX_TRAINING_DAYS)
-	_pending_training.append({"unit_type": unit_type, "coord": coord, "days_remaining": days})
-	training_started.emit(unit_type, coord, days)
+	var hours := mini(definition.tier * _TRAINING_HOURS_PER_TIER + _TRAINING_HOURS_PER_TIER, _MAX_TRAINING_HOURS)
+	_pending_training.append({"unit_type": unit_type, "coord": coord, "hours_remaining": hours})
+	training_started.emit(unit_type, coord, hours)
 	return true
 
 ## Mirrors BuildingConstructionController's own shape exactly.
 func _process_pending_training() -> void:
 	var still_pending: Array[Dictionary] = []
 	for job in _pending_training:
-		job["days_remaining"] -= 1
-		if job["days_remaining"] <= 0:
+		job["hours_remaining"] -= 1
+		if job["hours_remaining"] <= 0:
 			_complete_training(job["unit_type"], job["coord"])
 		else:
 			still_pending.append(job)
@@ -274,16 +274,16 @@ func retrain_unit(instance: UnitInstance, new_type: GameEnums.UnitType) -> bool:
 		_capacity.refund(instance.definition)
 		_capacity.apply(new_definition)
 
-	var days := maxi(1, ceili(float(mini(new_definition.tier * _TRAINING_DAYS_PER_TIER + _TRAINING_DAYS_PER_TIER, _MAX_TRAINING_DAYS)) * _RETRAIN_DAYS_FRACTION))
-	_pending_retrain.append({"instance": instance, "new_type": new_type, "days_remaining": days})
-	retrain_started.emit(instance, new_type, days)
+	var hours := maxi(1, ceili(float(mini(new_definition.tier * _TRAINING_HOURS_PER_TIER + _TRAINING_HOURS_PER_TIER, _MAX_TRAINING_HOURS)) * _RETRAIN_HOURS_FRACTION))
+	_pending_retrain.append({"instance": instance, "new_type": new_type, "hours_remaining": hours})
+	retrain_started.emit(instance, new_type, hours)
 	return true
 
 func _process_pending_retrain() -> void:
 	var still_pending: Array[Dictionary] = []
 	for job in _pending_retrain:
-		job["days_remaining"] -= 1
-		if job["days_remaining"] <= 0:
+		job["hours_remaining"] -= 1
+		if job["hours_remaining"] <= 0:
 			_complete_retrain(job["instance"], job["new_type"])
 		else:
 			still_pending.append(job)
@@ -404,7 +404,7 @@ func _has_incomplete_training_building(coord: Vector2i) -> bool:
 			return true
 	return false
 
-## Daily recurring upkeep tally (Gunpowder — only nonzero for
+## Hourly share (D98 work clock) of the daily recurring upkeep tally (Gunpowder — only nonzero for
 ## requires_gunpowder units — plus Food for every unit and Coal for Tier 4-5
 ## vehicles) — ResourceManager.apply_daily_flow() with an empty `produced`
 ## dict, since units generate no daily output of their own. Excludes
@@ -415,7 +415,7 @@ func _has_incomplete_training_building(coord: Vector2i) -> bool:
 ## computed here — that's CombatEngine's job at attack time, reading the
 ## stockpile fresh rather than caching a "shortfall happened" flag from
 ## today's tally.
-func _on_day_completed(_day_number: int) -> void:
+func _on_hour_completed(_day_number: int, _hour: int) -> void:
 	_process_pending_training()
 	_process_pending_retrain()
 	if not _resource_manager or _instances.is_empty():
@@ -425,7 +425,7 @@ func _on_day_completed(_day_number: int) -> void:
 		for resource_type in instance.definition.daily_upkeep:
 			if CapacityAllocator.CAPACITY_RESOURCE_TYPES.has(resource_type):
 				continue
-			consumed[resource_type] = consumed.get(resource_type, 0.0) + float(instance.definition.daily_upkeep[resource_type])
+			consumed[resource_type] = consumed.get(resource_type, 0.0) + float(instance.definition.daily_upkeep[resource_type]) / float(TickManager.HOURS_PER_DAY)
 	if not consumed.is_empty():
 		_resource_manager.apply_daily_flow(consumed, {})
 

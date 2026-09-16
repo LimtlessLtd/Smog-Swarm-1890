@@ -108,7 +108,7 @@ func compute_daily_totals(instances: Array[BuildingInstance]) -> Dictionary:
 	return {"consumed": consumed, "produced": produced, "ratio": ratio}
 
 ## Read-only preview of today's projected upkeep/output at current
-## building/population state — same math apply_day() banks, not a second
+## building/population state — same math apply_share_of_day() banks, not a second
 ## approximation.
 func get_projected_daily_flow(instances: Array[BuildingInstance]) -> Dictionary:
 	var totals := compute_daily_totals(instances)
@@ -132,11 +132,16 @@ func _production_multiplier(ratio: float) -> float:
 		return 1.0
 	return clampf(ratio, 0.0, 1.0)
 
-## Applies this day's totals to ResourceManager. Below FOOD_STARVATION_RATIO
-## that's a production penalty only now (_production_multiplier(), already
-## folded into `produced` by compute_daily_totals()) — no population
-## consequence to apply here anymore.
-func apply_day(instances: Array[BuildingInstance]) -> void:
+## Applies `share` of a day's totals to ResourceManager — 1/24 per hour on the
+## D98 work clock, so a building's output appears every in-game hour at the same
+## daily rate. Below FOOD_STARVATION_RATIO that's a production penalty only
+## (_production_multiplier(), already folded into `produced` by
+## compute_daily_totals()).
+##
+## The Food satisfaction ratio is still judged against the WHOLE day's demand
+## and output: scaling demand down to one hour while the stockpile stays whole
+## would read a colony with a day's food as 24x fed and grant the surplus bonus.
+func apply_share_of_day(instances: Array[BuildingInstance], share: float) -> void:
 	if not _resource_manager:
 		return
 	var totals := compute_daily_totals(instances)
@@ -144,4 +149,10 @@ func apply_day(instances: Array[BuildingInstance]) -> void:
 	var produced: Dictionary = totals["produced"]
 	var ratio: float = totals["ratio"]
 	food_satisfaction_changed.emit(ratio)
-	_resource_manager.apply_daily_flow(consumed, produced)
+	_resource_manager.apply_daily_flow(_scaled(consumed, share), _scaled(produced, share))
+
+static func _scaled(amounts: Dictionary, share: float) -> Dictionary:
+	var result: Dictionary = {}
+	for resource_type in amounts:
+		result[resource_type] = float(amounts[resource_type]) * share
+	return result

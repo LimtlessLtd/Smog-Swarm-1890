@@ -114,7 +114,7 @@ func _on_roster_changed(_instance: UnitInstance) -> void:
 ## existing one, both need the selected building's panel (if any) to
 ## redraw. _refresh_current_selection() no-ops if nothing/a non-training
 ## building is selected.
-func _on_training_started(_unit_type: GameEnums.UnitType, _coord: Vector2i, _days: int) -> void:
+func _on_training_started(_unit_type: GameEnums.UnitType, _coord: Vector2i, _hours: int) -> void:
 	_refresh_current_selection()
 
 func _on_day_completed(_day_number: int) -> void:
@@ -259,9 +259,9 @@ func _add_training_queue(coord: Vector2i) -> void:
 	for job in jobs:
 		var definition := UnitCatalog.get_definition(job["unit_type"])
 		var display_name := definition.display_name if definition else "Unit"
-		var days: int = job["days_remaining"]
+		var hours: int = job["hours_remaining"]
 		var line := Label.new()
-		line.text = "%s — ready in %d day%s" % [display_name, days, "" if days == 1 else "s"]
+		line.text = "%s — ready in %d hour%s" % [display_name, hours, "" if hours == 1 else "s"]
 		HUDStyles.style_label(line, false, true)
 		_list.add_child(line)
 
@@ -415,7 +415,7 @@ func _render_wall_panel(segment: WallSegment) -> void:
 ## TacticalHexView._building_base_modulate()'s precedence so the header and
 ## the sprite never disagree. The restart countdown is read through
 ## UnitCommandController's manager rather than stored on the instance — see
-## BuildingPowerController.days_remaining_for().
+## BuildingPowerController.hours_remaining_for().
 func _building_state_tag(instance: BuildingInstance) -> String:
 	if instance.is_ruined:
 		return " (RUINED)"
@@ -423,9 +423,9 @@ func _building_state_tag(instance: BuildingInstance) -> String:
 		return " (UNDER CONSTRUCTION)"
 	if not instance.is_powered_down:
 		return ""
-	var days := _building_manager.get_restart_days_remaining(instance) if _building_manager else 0
-	if days > 0:
-		return " (RESTARTING — %d day%s)" % [days, "" if days == 1 else "s"]
+	var hours := _building_manager.get_restart_hours_remaining(instance) if _building_manager else 0
+	if hours > 0:
+		return " (RESTARTING — %d hour%s)" % [hours, "" if hours == 1 else "s"]
 	return " (SWITCHED OFF)"
 
 ## One button, three states — "Switch off" while the building is running,
@@ -445,8 +445,8 @@ func _add_power_button(instance: BuildingInstance) -> void:
 		return
 	var is_off := instance.is_powered_down
 	var restarting := is_off and _building_manager and _building_manager.is_building_restarting(instance)
-	var days := _restart_days(instance)
-	var plural := "" if days == 1 else "s"
+	var hours := _restart_hours(instance)
+	var plural := "" if hours == 1 else "s"
 	var button := Button.new()
 	var error: String
 	if restarting:
@@ -464,12 +464,12 @@ func _add_power_button(instance: BuildingInstance) -> void:
 	elif restarting:
 		button.tooltip_text = "Stop the restart and leave %s dark." % instance.definition.display_name
 	elif is_off:
-		button.tooltip_text = "Bring %s back online over %d day%s." % [instance.definition.display_name, days, plural]
+		button.tooltip_text = "Bring %s back online over %d hour%s." % [instance.definition.display_name, hours, plural]
 	else:
 		# Names what going dark actually buys, because none of it is visible on
 		# this panel: the noise and light terms live in NoiseManager's field,
 		# which has no UI of its own.
-		button.tooltip_text = "Stop production, upkeep, noise and light. Restarting takes %d day%s." % [days, plural]
+		button.tooltip_text = "Stop production, upkeep, noise and light. Restarting takes %d hour%s." % [hours, plural]
 	button.pressed.connect(func() -> void:
 		if is_off and not restarting:
 			_unit_command_controller.restart_selected_building()
@@ -481,10 +481,10 @@ func _add_power_button(instance: BuildingInstance) -> void:
 
 ## 0 with no BuildingManager wired, matching this class's existing "optional
 ## manager, degrade quietly" contract (see setup()'s own default arguments).
-func _restart_days(instance: BuildingInstance) -> int:
+func _restart_hours(instance: BuildingInstance) -> int:
 	if not _building_manager:
 		return 0
-	return _building_manager.get_restart_days_for(instance.definition)
+	return _building_manager.get_restart_hours_for(instance.definition)
 
 ## Shared by both panels above — a Repair button only appears once the
 ## thing is actually damaged enough to repair (is_ruined/is_breached(),

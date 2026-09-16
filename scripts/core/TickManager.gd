@@ -20,13 +20,25 @@ extends Node
 ## defined, kept index-parallel.
 
 signal day_completed(day_number: int)
+## The work clock (D98): construction, training, repair and restart jobs count
+## down in hours, and building production/upkeep settle hourly at a 1/24 share
+## of their daily rate. `hour` is 1..HOURS_PER_DAY; the 24th fires immediately
+## before the matching day_completed.
+signal hour_completed(day_number: int, hour: int)
 signal speed_changed(multiplier: float)
 
 const DAY_LENGTH_SECONDS: float = 2400.0  ## 40 real-time minutes per full day at 1x speed (20 min Day / 20 min Night), matching Engine.time_scale directly so higher speeds shorten a day's real-time length instead of changing its meaning.
+## D98, verbatim question and answer: "Should the economy (construction,
+## training, research) move to a faster clock ...?" "Yes." A job that took N days
+## now takes N hours, 24x faster: at the default 5x speed one hour is 20 real
+## seconds, so a 1-4 unit construction lands in 20-80 s rather than 8-32 min.
+const HOURS_PER_DAY: int = 24
+const HOUR_LENGTH_SECONDS: float = DAY_LENGTH_SECONDS / HOURS_PER_DAY
 const SPEED_MULTIPLIERS: Array[float] = [0.0, 5.0, 20.0, 50.0, 100.0, 1000.0]
 
 var current_day: int = 1
 var elapsed_in_day: float = 0.0
+var _hours_emitted_today: int = 0
 var speed_index: int = 1
 ## Updated centrally inside set_speed_index() (not just from toggle_pause())
 ## so it tracks correctly no matter WHAT paused the game: the spacebar, or
@@ -66,8 +78,17 @@ func _ready() -> void:
 
 func _process(delta: float) -> void:
 	elapsed_in_day += delta
-	while elapsed_in_day >= DAY_LENGTH_SECONDS:
+	# Hours are drained in the same loop as days so a large-delta catch-up frame
+	# still emits every hour of every day it crosses, in order.
+	while true:
+		var hours_due := mini(int(elapsed_in_day / HOUR_LENGTH_SECONDS), HOURS_PER_DAY)
+		while _hours_emitted_today < hours_due:
+			_hours_emitted_today += 1
+			hour_completed.emit(current_day, _hours_emitted_today)
+		if elapsed_in_day < DAY_LENGTH_SECONDS:
+			break
 		elapsed_in_day -= DAY_LENGTH_SECONDS
+		_hours_emitted_today = 0
 		current_day += 1
 		day_completed.emit(current_day)
 
@@ -119,4 +140,5 @@ func get_save_state() -> Dictionary:
 func load_save_state(state: Dictionary) -> void:
 	current_day = state.get("current_day", 1)
 	elapsed_in_day = state.get("elapsed_in_day", 0.0)
+	_hours_emitted_today = mini(int(elapsed_in_day / HOUR_LENGTH_SECONDS), HOURS_PER_DAY)
 	set_speed_index(state.get("speed_index", speed_index))

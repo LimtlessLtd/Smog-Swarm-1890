@@ -33,7 +33,7 @@ extends Resource
 
 ## True from the moment BuildingManager.place_building() registers the
 ## instance (immediately, not at completion) until
-## BuildingConstructionController.process_day() finishes counting down its
+## BuildingConstructionController.process_hour() finishes counting down its
 ## build time. A real, selectable, demolishable instance the whole time;
 ## this flag is purely "is it still a construction site" for rendering/
 ## production purposes, not a gate on whether the instance exists at all.

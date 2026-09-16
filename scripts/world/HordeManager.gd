@@ -183,6 +183,15 @@ const ENTITY_RADIUS: float = 20.0  ## Clearance radius presented to MovementStep
 const DAY_MOVE_SPEED_MULTIPLIER: float = 0.35
 const NIGHT_MOVE_SPEED_MULTIPLIER: float = 1.5
 
+## D98: "hordes are slowed separately from units", so a horde's approach has a
+## travel time a warning can be acted on inside. Applied on top of the day/night
+## pair above; units keep MovementStepper.BASE_MOVE_SPEED. At 0.3 and the default
+## 5x speed a horde takes ~38 real seconds per hex by day and ~9 by night
+## (was ~11 and ~2.7); `diagnose_horde_contact.gd` measured 85.1 hexes per horde
+## per day before it. A balance number, chosen so the vertical slice's attracted
+## horde is on screen for minutes by day rather than seconds.
+const HORDE_TRAVEL_MULTIPLIER: float = 0.3
+
 ## Flat daily chance to seed a tiny ambient horde outside the starting seed
 ## and casualty conversion — reuses seed_starting_hordes()'s own
 ## _spawnable_coords()/Horde.new() machinery.
@@ -747,6 +756,7 @@ func _movement_speed(from_coord: Vector2i, to_coord: Vector2i) -> float:
 	var speed := MovementStepper.BASE_MOVE_SPEED
 	speed *= HexPathfinder.get_movement_speed_multiplier(_hex_grid_map, _logistics_network, from_coord, to_coord, false)
 	speed *= NIGHT_MOVE_SPEED_MULTIPLIER if TimeCycleManager.is_night() else DAY_MOVE_SPEED_MULTIPLIER
+	speed *= HORDE_TRAVEL_MULTIPLIER
 	return speed
 
 ## SubHexPortalGraph.portal_offset_for_step() needs a live HexGridMap — same
