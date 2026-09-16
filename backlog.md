@@ -42,6 +42,9 @@ The golden slice (`PLAYER_EXPERIENCE.md` §11) is the target. Ranked by `CLAUDE.
 | 1 Broken | ↳ *The undefended colony is destroyed on day 13* (below) | `[design]` | OPEN-4 |
 | 1 Broken | ↳ *A horde crosses Britain in a day and a half* (below) | `[design]` | HORDE-2 |
 | 1 Broken | **new** — Does a founded Town Hall get civilian ZoC? | `[gated]` | SET-1 |
+| 1 Broken | **new** — An unroutable move order re-runs a ~234 ms failed search every 2 game-seconds | `[gated]` | COMBAT-1, FB-2 |
+| 1 Broken | **new** — A new game starts unwalled: `seed_starting_defenses()` has no production caller | `[gated]` | OPEN-4, DEF-1 |
+| 1 Broken | **new** — The first expansion from the real start is into Manchester's own 68,075 zombies | `[design]` | EXP-1, OPEN-2 |
 | 2 Boring | *The ATTRACTED mechanic never fires in the opening* (below) | `[design]` | HORDE-3, HORDE-4 |
 | 2 Boring | **new** — Units and gunfire make no noise | `[design]` | HORDE-3, HORDE-5, IND-5 |
 | 2 Boring | **new** — How threat escalates inside an open campaign | `[design]` | OPEN-2, §9 |
@@ -50,6 +53,7 @@ The golden slice (`PLAYER_EXPERIENCE.md` §11) is the target. Ranked by `CLAUDE.
 | 3 Feedback | **new** — The horde warning misses wandering hordes and gives no bearing | `[gated]` | HORDE-1, HORDE-2, FB-2 |
 | 3 Feedback | *Placement status line is never cleared* (Next) | `[gated]` | OPEN-5 |
 | 3 Feedback | *6 of 15 resource counters have no icon, name or tooltip* (Next) | `[visual-autonomous]` | FB-3 |
+| 3 Feedback | **new** — At battle zoom one building fills the screen | `[visual-autonomous]` | COMBAT-3 |
 | 3 Feedback | **new** — The game is silent | `[visual-human]` | COMBAT-4, §13 |
 | 4 Decisions | **new** — Ranged units have no range; gunpowder is never spent | `[design]` | COMBAT-7, IND-2 |
 | 4 Decisions | **new** — Why want this hex: deposits and city value | `[design]` | EXP-2, EXP-5, §8 |
@@ -57,6 +61,7 @@ The golden slice (`PLAYER_EXPERIENCE.md` §11) is the target. Ranked by `CLAUDE.
 | 5 Pacing | *Infestation balance pass* (below) | `[design]` | — |
 | 6 Horde | *Walls block bleed proportionally — blocked* (below) | `[design]` | DEF-2 |
 | 6 Horde | *`HordeManager` stuck-detection/bypass* (Next) | `[gated]` | — |
+| 6 Horde | **new** — Hordes on the map grow 4 → 306 in 60 days with no player input | `[gated]` | HORDE-6, performance |
 | 7-8 Expansion/logistics | *Per-settlement stockpiles*, *logistics geometry*, *terminals*, *§2.1 ZoC consequences* (Next/below) | `[gated]` | SET-1, SET-2, LOG-1..4 |
 | 9 Capability | **new** — Historical coherence review | `[design]` | §7.1 |
 | 10 Polish | *MEDIUM -> HIGH pop*, *camera-rect allocation*, *urban clustering*, *stride A/B* (Battle scale, below) | mixed | COMBAT-3, readability |
@@ -111,6 +116,76 @@ needs them, not ahead of it.
   on whichever class owns districts — not by `SettlementFoundingController` writing
   another class's fields (`CLAUDE.md` §1).
   **VERIFICATION:** new `verify_settlement_founding_zoc.gd`, mutation-tested.
+
+- [ ] `[gated]` **An unroutable move order re-runs a ~234 ms failed path search every 2
+  game-seconds.** **WHY:** rank 1 — found 2026-09-16 by the playtest runner's
+  per-manager timing, and diagnosed by instrumenting `UnitOrderController` (reverted, not
+  committed). Opening scenario: two Truncheoneers attack-moved from the walled starting
+  settlement (79, 118) to its neighbour (78, 119). `HexPathfinder.find_path()` (gates
+  passable) returns no route; `_replan_with_backoff()` retries every
+  `REPLAN_RETRY_SECONDS` = 2.0 game-seconds, and each failed search measured **~234 ms**
+  (46.7 s per 200 calls) — **214 s of wall time per simulated day for two units**, while
+  hordes, residents and fog together cost ~2 s. At default 5x that is one 234 ms stall
+  per unit every 0.4 real seconds for as long as the order stands; at 1000x it is every
+  frame. The units never moved. *An earlier note here blamed per-prop obstacle
+  dictionaries; removing `TerrainDetailView` changed nothing, so that was wrong.*
+  **Two questions in one:** (1) why (78, 119) — passable at hex level, adjacent — has no
+  unit route out of the start hex (starting walls/gate placement, a boundary rule, or a
+  water crossing; the runner now notes every such hex); (2) why a failed search is so
+  expensive — an unreachable goal expands the whole reachable region of the map.
+  **PLAYER EXPERIENCE:** a move order either works or says immediately why not, and the
+  game never stutters because of one (COMBAT-1, FB-2; `move_order_unreachable` already
+  exists and fires once).
+  **IMPLEMENTATION:** measure first with `diagnose_route_failure.gd` adapted to a fresh
+  map. Candidates: bound failed searches (a node budget, or a cheap connectivity check
+  before A*), back off exponentially rather than every 2 game-seconds, and fix the
+  starting-hex route if the walls are the cause. `verify_gates.gd` and
+  `verify_unit_border_crossing.gd` must still pass; enumerate every caller of
+  `find_path()` (`CLAUDE.md` §3 trap).
+  **VERIFICATION:** a verification that an unroutable order costs bounded time per game
+  second; `run_scenarios.py opening` with the target forced to (78, 119).
+
+- [ ] `[gated]` **A new game starts unwalled.** **WHY:** rank 1 — measured 2026-09-16:
+  `WallManager.seed_starting_defenses()` has no production caller (only
+  `verify_gates.gd` calls it), while `WallManager`'s doc comment says it "Runs from
+  _ready()" and `BuildingManager` places its starting Farm on the assumption that the
+  start hex is fenced. The siege scenario had to call it itself (96 pieces). Either the
+  call was dropped by accident or the walls were removed on purpose and the comments
+  are stale — check `git log -S seed_starting_defenses` before choosing.
+  **PLAYER EXPERIENCE:** the opening has the defensive footing its own code assumes
+  (OPEN-4, DEF-1). **IMPLEMENTATION:** restore the call where the comment says, or delete
+  the stale comments if removal was deliberate. **VERIFICATION:** a verification that a
+  fresh `Main.tscn` has wall segments around the start; `run_scenarios.py opening`.
+
+- [ ] `[design]` **The first expansion from the real start is into Manchester's own
+  zombies.** **WHY:** rank 1 — measured 2026-09-16: the start (79, 118) is a Manchester
+  hex (D35), so its ring 1 at D7's 25% is Manchester too; the least-populated routable
+  neighbour holds **68,075 zombies** (capacity 272,298, frontage 3 per D49). Twelve Tier
+  0 units attack-moved in and all died the same day; the D51 table already says a
+  Truncheoneer garrison "wiped in 76 rounds" there. So the golden slice's "first
+  clearing operation" (§11 step 5) is not winnable at Tier 0 from the real start.
+  **PLAYER EXPERIENCE:** the first push out is hard but winnable, and the map's density
+  gradient is something to choose against (EXP-1, EXP-5). **IMPLEMENTATION — options:**
+  (a) D7's rings are a fraction of each hex's capacity, so a city start is harsh by
+  construction — seed ring 1 by an absolute count or a lower fraction for dense hexes;
+  (b) start on the edge of Manchester rather than inside it; (c) accept it and give Tier
+  0 a lower-density direction to expand (moorland toward the Pennines) and make that
+  readable (the infestation overlay item). *Recommendation:* (c) first — it is the
+  cheapest, keeps "history decides the difficulty curve" (D3), and the scenario can
+  measure whether any routable neighbour is winnable. **VERIFICATION:**
+  `run_scenarios.py expansion` EXP-1 in range.
+
+- [ ] `[gated]` **Hordes on the map grow 4 → 306 in 60 days with no player input.**
+  **WHY:** rank 6 — measured 2026-09-16 (`industrialisation` scenario, no units): the
+  count climbs roughly linearly after D74's fix (33 at day 15 matches D74; it does not
+  plateau), and simulation wall time per day rises 1.7 s → 31 s with it. Contributors on
+  the day ticks: ambient spawns (35%/day), one export per day (D39), splits, and
+  defending waves that wander off (D51). **PLAYER EXPERIENCE:** threat that accumulates
+  into masses rather than a growing confetti of hordes (HORDE-6); frame time that does
+  not decay over a long campaign. **IMPLEMENTATION:** measure first which source
+  dominates (`diagnose_horde_contact.gd --days 60` split by spawn source); merging and
+  export sizing are balance knobs, so a structural cap would be `[design]`.
+  **VERIFICATION:** 60-day count and per-day wall time.
 
 - [ ] `[design]` **Units and gunfire make no noise.** **WHY:** rank 2 — the P2 chain
   (`PLAYER_EXPERIENCE.md` §5.5) has no link between fighting and attention, and "draw
@@ -183,6 +258,19 @@ needs them, not ahead of it.
   heading closes on a player building, with bearing and size class; ETA from
   `HordeManager.get_eta_seconds()`. **VERIFICATION:** a verification over a fixture
   horde wandering toward a building; `horde` scenario HORDE-1.
+
+- [ ] `[visual-autonomous]` **At battle zoom one building fills the screen.** **WHY:** rank 3 —
+  observed 2026-09-16 in `playtest_shots/siege/day03_zoom60_0.png` (`run_scenarios.py
+  --shots siege`, image inspected): centred on the starting settlement at zoom 60, a
+  building's outline art covers the whole 1920x1080 frame. D86 made figures metric at
+  HIGH fidelity; buildings were not part of that change. The battle-scale band is where
+  "Hold the wall" is supposed to be watched, and today a settlement is unreadable there.
+  **PLAYER EXPERIENCE:** at battle zoom the player sees buildings, walls, units and the
+  crowd at consistent scale (COMBAT-3). **IMPLEMENTATION:** find which view draws the
+  building at that zoom (`TacticalHexView`/`BuildingVisuals`) and give it D86's metric
+  rule; check the smoke shot `06_battle_scale` too (framed one hex off the settlement,
+  so it may not show this). **VERIFICATION:** `--shots siege` zoom-60 PNG inspected
+  before/after; `smoke_screenshot.tscn` all framings.
 
 - [ ] `[visual-human]` **The game is silent.** **WHY:** rank 3 — `AlertManager._MUTE_ALL_SOUND`
   is `true`, muting the Master bus at startup, and the only sounds are five square-wave

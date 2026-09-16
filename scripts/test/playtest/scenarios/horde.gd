@@ -1,12 +1,13 @@
 extends "res://scripts/test/playtest/scenarios/scenario_base.gd"
 
 ## HORDE — a 2,000-strong horde appears five hexes out once the colony has a
-## noise source (a Coal Mine, after building_tier_1). Measures what a
+## noise source (a Brickworks, after building_tier_1 — a Coal Mine cannot stand on
+## the URBAN start hex; measured 2026-09-16). Measures what a
 ## player can know and do about it: when it becomes visible, whether it heads for
 ## the colony, how long they have, and what it does on arrival.
 ##
 ## Variants (--variant=):
-##   (none)  a noisy colony — a Coal Mine is placed so attraction has a source.
+##   (none)  a noisy colony — a Brickworks is placed so attraction has a source.
 ##   dark    the same colony, and every switchable building goes dark the moment
 ##           the horde is first visible: the counterplay vision.md P2 names.
 
@@ -36,6 +37,11 @@ func setup(ctx) -> void:
 	# Every noisy building is Tier 1+ (backlog: "17 of 42 buildings carry a
 	# noise_source_db, every one of them industrial"), so the colony needs
 	# building_tier_1 before it can make a sound for the horde to hear.
+	# The starting colony has too little Energy capacity for a Brickworks (-30);
+	# measured 2026-09-16, the placement was refused until a furnace stood.
+	# Houses first: a furnace alone was also refused for capacity on day 1.
+	ctx.place(GameEnums.BuildingType.WOODEN_HOUSES, ctx.start_hex)
+	ctx.place(GameEnums.BuildingType.STEAM_FURNACE, ctx.start_hex)
 	if not ctx.tech.start_research(&"building_tier_1"):
 		ctx.note("could not research building_tier_1: %s" % ctx.tech.get_research_error(&"building_tier_1"))
 
@@ -45,9 +51,11 @@ func on_day(ctx, _day: int) -> void:
 		return
 	if not _mine_attempted:
 		_mine_attempted = true
-		ctx.place(GameEnums.BuildingType.COAL_MINE, ctx.start_hex)
+		ctx.note("capacity before Brickworks: Energy %.0f, Population %.0f" % [
+			ctx.resources.get_amount(GameEnums.ResourceType.ENERGY), ctx.resources.get_amount(GameEnums.ResourceType.POPULATION)])
+		ctx.place(GameEnums.BuildingType.BRICKWORKS, ctx.start_hex)
 		return  ## A day for construction to start; the site is loud (D60) from placement.
-	_spawn_hex = ctx.hex_at_distance(_SPAWN_DISTANCE, false)
+	_spawn_hex = ctx.hex_at_distance(_SPAWN_DISTANCE, false, false)
 	var horde: Horde = ctx.spawn_horde(_spawn_hex, _HORDE_SIZE)
 	_horde_id = horde.id if horde else -2
 	ctx.note("horde %d (%d) spawned at %s, %d hexes out" % [_horde_id, _HORDE_SIZE, _spawn_hex, _SPAWN_DISTANCE])

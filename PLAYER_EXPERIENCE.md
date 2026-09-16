@@ -155,7 +155,10 @@ food, a wall, a handful of constables and archers. The world is hostile one hex 
 (D7's 0/25/50/75/100 rings). *Experience:* scarcity and a small safe circle; every
 push outward is a risk the player chooses. *Decision:* what to build first, when to
 send the first squad out. *Settled:* start hex 0%, ring 1 25% (D7); only killing clears
-(D8); the start is walled (`WallManager.seed_starting_defenses()`).
+(D8). *Measured 2026-09-16:* the start's ring 1 is Manchester itself (68,075 zombies in
+the least-populated routable neighbour), which 12 Tier 0 units cannot clear; and
+`WallManager.seed_starting_defenses()` exists but has no production caller, so the start
+is unwalled.
 
 **Mid game — industrial town to fortified city.** Bricks, coal, iron, gunpowder.
 Firearms replace truncheons. Industry makes noise, noise draws hordes (D10, D66-D69),

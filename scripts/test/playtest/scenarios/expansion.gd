@@ -66,8 +66,8 @@ func assess(ctx) -> Array:
 		"The reward today is build rights only; a Lumber Yard gives the same flat output on any hex."))
 	var lost: int = int(counters.get("units_removed", 0))
 	out.append(check("EXP-3", "Did expansion cost anything?",
-		"%d of 12 units lost, %d engagements" % [lost, int(counters.get("engagements", 0))], lost == 0 and _cleared_day > 0,
-		"A clear with no losses and no response is the 'expanding without resistance' failure mode."))
+		"%d of 12 units lost, %d engagements" % [lost, int(counters.get("engagements", 0))], (lost == 0 and _cleared_day > 0) or lost >= 12,
+		"No losses is 'expanding without resistance'; losing the whole force with nothing cleared is no counterplay. Both are concerns."))
 	var exported: float = float(counters.get("exported_hordes", 0.0))
 	out.append(check("EXP-4", "Did pushing out provoke a response from the map?",
 		"%d exported hordes, %d reached a building" % [int(exported), int(t["hordes_that_made_contact"])],

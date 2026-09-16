@@ -1,7 +1,8 @@
 extends "res://scripts/test/playtest/scenarios/scenario_base.gd"
 
-## SIEGE — the walled starting settlement (WallManager.seed_starting_defenses())
-## with six Truncheoneers on garrison, and a 3,000-strong horde placed on an
+## SIEGE — the starting settlement walled by WallManager.seed_starting_defenses()
+## (which has no production caller as of 2026-09-16, so a real new game starts
+## unwalled — the scenario calls it the way verify_gates.gd does) with six Truncheoneers on garrison, and a 3,000-strong horde placed on an
 ## adjacent hex on day 2. Measures the siege arc PLAYER_EXPERIENCE.md describes:
 ## contact, pressure, breach, response, recovery.
 
@@ -26,6 +27,7 @@ func setup(ctx) -> void:
 	ctx.grant({GameEnums.ResourceType.WOOD: 2000.0, GameEnums.ResourceType.FOOD: 1000.0})
 	ctx.place(GameEnums.BuildingType.WOODEN_HOUSES, ctx.start_hex)
 	ctx.train(GameEnums.UnitType.TRUNCHEONEER, 6)
+	ctx.walls.seed_starting_defenses()
 	ctx.note("%d wall pieces around the start" % ctx.walls.get_segments().size())
 
 
@@ -34,7 +36,7 @@ func on_day(ctx, day: int) -> void:
 		_spawned = true
 		for unit in ctx.living_units():
 			ctx.orders.issue_garrison_order(unit)
-		_spawn_hex = ctx.hex_at_distance(1, true)
+		_spawn_hex = ctx.hex_at_distance(1, true, false)
 		var horde: Horde = ctx.spawn_horde(_spawn_hex, _HORDE_SIZE)
 		_horde_id = horde.id if horde else -1
 		ctx.note("%d units garrisoned; horde %d (%d) placed at %s" % [ctx.living_units().size(), _horde_id, _HORDE_SIZE, _spawn_hex])
@@ -56,7 +58,7 @@ func assess(ctx) -> Array:
 	var wall_hits: int = int(c.get("wall_damage_events", 0))
 	var engagements: int = int(c.get("engagements", 0))
 	out.append(check("DEF-1", "Does a horde next door actually besiege the settlement?",
-		"%d wall damage events, %d engagements" % [wall_hits, engagements], wall_hits == 0 and engagements == 0,
+		"%d wall damage events, %d engagements" % [wall_hits, engagements], wall_hits == 0,
 		"Hordes WANDER unless attracted, and residents never attack buildings (D49), so a siege is not guaranteed."))
 	out.append(check("DEF-2", "Do walls buy time rather than immunity?",
 		("breached day %d" % _breach_day) if _breach_day > 0 else "no breach",
