@@ -213,6 +213,9 @@ BROKEN: its first seven steps need the economy to move on a session's timescale.
   costs ~2 s. At default speed that is a 234 ms stall per unit every 0.4 real seconds
   while the order stands. `backlog.md` rank-1 item. Would be STRONG on the evidence
   below alone.
+- *(slice)* [measured] `industrialisation` scenario on this branch: wall time for day 60
+  **31.5 s → 11.0 s**, hordes on the map 306 → 333, IND checks unchanged. Not isolated;
+  slower hordes (D112) cross fewer hexes per frame and replan less.
 - [measured] `bench_zombie_swarm.gd`: 60,000 zombies stepped in 2.79 ms.
 - [measured] Tactical view 20.8 → 153.6 fps after D70-D71.
 - [measured] Chunk streaming main-thread cost 124 ms → 1.64 ms mean, 5.09 ms worst.
