@@ -64,8 +64,8 @@ This agrees with what was already settled: `vision.md` P4 (losing is real),
 D9 (buildings die to attacks, never to a ratio), D29 (an isolated settlement stagnates,
 it does not die), and `vision.md` §1 (`BackgroundExecutionManager` is not an idle
 mode). It **settles one open question**: the campaign is open-ended and persistent,
-not a fixed-length *They Are Billions* map with a final wave (D92). How threat
-escalates *within* that open campaign is still [design] — §10.
+not a fixed-length *They Are Billions* map with a final wave (D92). Threat escalates
+through expansion and the settlement's own light and noise, not a calendar (D101).
 
 ### 1.2 Sessions inside a campaign
 
@@ -132,8 +132,8 @@ default speed. So in the first hour the player gets ~7.5 production ticks, the f
 building takes at least 8 minutes to stand, the first brick-tier research
 (`building_tier_1`, 50 RP against the Town Hall's 5 RP/day) takes ~80 minutes, and a
 horde crosses five hexes in 20 seconds. **The economy runs on a clock ~100x slower
-than movement.** Whether that is intended is the top [design] question in
-`backlog.md` (§10 below), because every session target here depends on it.
+than movement.** *Decided 2026-09-16 (D98):* construction, training and research move
+to a session timescale and hordes are slowed separately from units; the day stays.
 
 The intended experience at each scale. None of these are timings to hit exactly; they
 are what the player should be able to *say happened*.
@@ -155,7 +155,9 @@ food, a wall, a handful of constables and archers. The world is hostile one hex 
 (D7's 0/25/50/75/100 rings). *Experience:* scarcity and a small safe circle; every
 push outward is a risk the player chooses. *Decision:* what to build first, when to
 send the first squad out. *Settled:* start hex 0%, ring 1 25% (D7); only killing clears
-(D8). *Measured 2026-09-16:* the start's ring 1 is Manchester itself (68,075 zombies in
+(D8); the first clear is won by building an economy and an army first, and nearby
+resources may deplete to push the player outward (D99). *Measured 2026-09-16:* the
+start's ring 1 is Manchester itself (68,075 zombies in
 the least-populated routable neighbour), which 12 Tier 0 units cannot clear; and
 `WallManager.seed_starting_defenses()` exists but has no production caller, so the start
 is unwalled.
@@ -248,6 +250,9 @@ existing systems without new rules, and what is open.
      travel time to warn across.
   4. The HUD warning shows only a fog-VISIBLE, ATTRACTED horde, with no bearing.
   None of these need a new mechanic; they need the existing ones tuned and connected.
+  *Decided 2026-09-16:* combat makes noise (D100); hordes slow relative to units (D98);
+  settlement light and noise reach further as it grows, which is how threat escalates
+  (D101).
 
 ### 5.6 Defence
 - **Want:** preparation choices; defences that buy time; breaches that are emergencies;
@@ -595,23 +600,23 @@ systems already produce the answer. **[design]** = genuinely open; recorded in
 
 | # | Question | Standing |
 | ---: | :--- | :--- |
-| 1 | What does the player do every minute? | **[design]** — blocked by pacing (§3): the minute-scale loop is micro combat, which has no content yet (§5.12). |
+| 1 | What does the player do every minute? | Pacing decided (D98); the minute-scale loop is micro combat, which still has no content (§5.12). |
 | 2 | What are they deciding every few minutes? | Follows partly — where to push, what to build, whether to go dark. Pacing-blocked. |
-| 3 | What changes over 30 minutes? | **[design]** §3 — depends on day length. |
-| 4 | …over 60 minutes? | **[design]** §3. |
+| 3 | What changes over 30 minutes? | Follows once D98 lands — build-up toward the first clear (D99). |
+| 4 | …over 60 minutes? | Follows once D98 lands — first tier and first real clear (D99). |
 | 5 | …over 2-3 hours? | **[design]** §3; second settlement is the intended marker (D21). |
-| 6 | Why expand? | Settled direction (resource deposits gate mines, user 2026-08-19); unbuilt. |
+| 6 | Why expand? | Settled direction: deposits gate mines (2026-08-19), and nearby resources may deplete, forcing expansion (D99, "Perhaps"); unbuilt. |
 | 7 | Why is expansion dangerous? | **Follows** — D39 export proximity, D49 frontage, D51 leaks, D9 re-infestation. |
 | 8 | Why clear cities? | **[design]** §8 — only placement permissions follow today. |
 | 9 | Why is a city different from an empty hex? | Follows for threat (D3/D49); **[design]** for reward. |
 | 10 | Why does industrialisation feel exciting? | **[design]** §7 — capabilities in spec, not wired. |
 | 11 | Why does a second settlement feel important? | Settled (D21: it is where logistics begins); unbuilt. |
 | 12 | Why does connecting settlements feel important? | Settled (D22-D29); unbuilt. |
-| 13 | Why does a huge horde create decisions? | Settled (P2, D11, D17); chain broken in practice (§5.5). |
+| 13 | Why does a huge horde create decisions? | Settled (P2, D11, D17, D100, D101); chain broken in practice until those land (§5.5). |
 | 14 | Why is defending a city fun? | **[design]** §5.6-5.7 — no active defence mechanics. |
 | 15 | Why is attacking a zombie-held city fun? | **[design]** §5.8 — follows as a grind, lacks payoff and activity. |
 | 16 | Why is discovering a resource exciting? | **[design]** §5.9. |
 | 17 | Why does moving deeper into Britain change the situation? | **Follows** — census density rises toward the great cities (D3), D39 wakes Hive Cores as the player approaches. |
 | 18 | Why care about specific locations? | Partly follows (§6 table); resource and city value **[design]**. |
-| 19 | Why keep playing once comfortable? | Follows partly — the next region is more dangerous (D3); **[design]** for escalation over time (see `backlog.md`, opening-difficulty and escalation items). |
+| 19 | Why keep playing once comfortable? | Settled: growth and expansion draw bigger threats (D101); nearby resources run out (D99, tentative). |
 | 20 | What is the climax of a successful campaign? | Settled as narrative target (London, 7.1 Act III; whole island, P6); mechanics deferred (P3). |

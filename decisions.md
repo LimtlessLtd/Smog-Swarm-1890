@@ -14,6 +14,65 @@ Rules for this file:
 
 ---
 
+## 2026-09-16 — Answers to the audit's first four design questions
+
+The user answered four of the questions `backlog.md`'s priority index raised. Quoted
+verbatim; each entry says what the answer settles and what it leaves open.
+
+**D98. The economy moves to a faster clock, and hordes are slowed separately from
+units.** Asked: "Should the economy (construction, training, research) move to a faster
+clock, and should hordes be slowed separately from units?" Answer: "Yes."
+*Settles:* construction, training and research durations come down to a session's
+timescale (today 1-4 days, `tier + 1` days and whole days, at 8 real minutes per day);
+`MovementStepper.BASE_MOVE_SPEED` is split so hordes travel slower than units, restoring
+§2.1's "predictable cross-country travel time". This is the recommendation the question
+carried — option (a) plus (c) — so the day length and the day/night rhythm that noise,
+light and horde speed hang off stay as they are.
+*Left open, as balance numbers disclosed in the code's own comments:* the new durations
+and the horde speed. *Left open, not asked:* whether production also ticks more than once
+a day (the resource-tick pacing item's catch-up-safety constraint still applies).
+*Verification it answers to:* OPEN-1, OPEN-2, IND-4, HORDE-2 in the scenarios.
+
+**D99. The first expansion out of Manchester is won by building up, and nearby
+resources may run out.** Asked: how the first expansion from the Manchester start should
+be made winnable (its ring 1 holds 68,075 zombies; twelve Tier 0 units die on contact).
+Answer: "Via resource extraction and military build up. Perhaps the resources nearest
+manchester become exhausted eventually forcing the users to expand and find new resources
+to extract."
+*Settles:* the start stays inside Manchester and D7's rings stay as they are — the
+recommendation to point Tier 0 at a lower-density direction is not taken. The first
+clear is meant to need an economy and an army behind it, so Tier 0 failing against
+Manchester is expected, not a defect. *Consequence:* the opening is a build-up phase, and
+D98's pacing is what makes that phase playable rather than a wait.
+*Direction, marked "Perhaps" and so not yet a rule:* finite resource deposits near
+Manchester that deplete and push the player outward. This extends the user's earlier
+choice of "real deposits that gate mines" (2026-08-19). Depletion rate, what depletes
+(per deposit or per building), and whether deposits are real geology remain [design].
+
+**D100. Units and gunfire make noise that draws hordes.** Asked: "Should units and
+gunfire make noise that draws hordes?" Answer: "Yes."
+*Settles:* combat is a noise source through the same `NoisePropagation` model as
+buildings (D66-D69), so fighting has an attention cost and a decoy force is a real play.
+*Left open, as balance numbers:* the strategic reach of an engagement, how long the
+source lingers, and the per-weapon levels — ordered by §6's table (melee and bow near
+silent, rifles loud, Maxim louder, artillery loudest), scaled for the strategic layer
+per D66, not applied literally.
+
+**D101. Threat escalates through expansion and the settlement's own light and noise, not
+a calendar.** Answer, verbatim: "The threat escalates via the player expanding their base
+coming into contact with larger and more numerous hordes and their settlement creating
+more light and noise drawing in zombies from further afield."
+*Settles:* no time-based escalation — no day-indexed spawn growth, no swarm schedule
+(consistent with D92). Two drivers only: spatial (pushing toward denser population meets
+bigger hordes — D3, D39, D49 already do this) and activity (a growing settlement's light
+and noise reaches further). This was options (a) plus (c) of the escalation item.
+*Consequence for build:* "drawing in zombies from further afield" means attraction reach
+has to grow with the settlement. Today light is a flat +1.0 on the building's own hex at
+night and `HordeManager.ATTRACTION_AWARENESS_RADIUS` is a fixed 6 hexes, so light needs a
+reach of its own — a crude one, ahead of the Deferred §6 light-propagation work.
+
+---
+
 ## 2026-09-16 — What the game is for, and how work gets chosen
 
 Settled by the user's design-audit brief. Everything quoted is the user verbatim.

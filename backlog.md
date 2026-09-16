@@ -38,16 +38,15 @@ The golden slice (`PLAYER_EXPERIENCE.md` §11) is the target. Ranked by `CLAUDE.
 
 | Rank | Item | Tag | Criteria |
 | :--- | :--- | :--- | :--- |
-| 1 Broken | **new** — The economy clock is ~100x slower than the movement clock | `[design]` | OPEN-1, OPEN-2, IND-4, HORDE-2 |
+| 1 Broken | **new** — The economy clock is ~100x slower than the movement clock (**decided, D98**) | `[gated]` | OPEN-1, OPEN-2, IND-4, HORDE-2 |
 | 1 Broken | ↳ *The undefended colony is destroyed on day 13* (below) | `[design]` | OPEN-4 |
 | 1 Broken | ↳ *A horde crosses Britain in a day and a half* (below) | `[design]` | HORDE-2 |
 | 1 Broken | **new** — Does a founded Town Hall get civilian ZoC? | `[gated]` | SET-1 |
 | 1 Broken | **new** — An unroutable move order re-runs a ~234 ms failed search every 2 game-seconds | `[gated]` | COMBAT-1, FB-2 |
 | 1 Broken | **new** — A new game starts unwalled: `seed_starting_defenses()` has no production caller | `[gated]` | OPEN-4, DEF-1 |
-| 1 Broken | **new** — The first expansion from the real start is into Manchester's own 68,075 zombies | `[design]` | EXP-1, OPEN-2 |
 | 2 Boring | *The ATTRACTED mechanic never fires in the opening* (below) | `[design]` | HORDE-3, HORDE-4 |
-| 2 Boring | **new** — Units and gunfire make no noise | `[design]` | HORDE-3, HORDE-5, IND-5 |
-| 2 Boring | **new** — How threat escalates inside an open campaign | `[design]` | OPEN-2, §9 |
+| 2 Boring | **new** — Units and gunfire make no noise (**decided, D100**) | `[gated]` | HORDE-3, HORDE-5, IND-5 |
+| 2 Boring | **new** — Settlement light and noise reach further as it grows (**decided, D101**) | `[gated]` | HORDE-3, OPEN-2, §9 |
 | 3 Feedback | **new** — Infestation is never drawn on the map | `[visual-autonomous]` | FB-1, EXP-5 |
 | 3 Feedback | **new** — Combat has no on-screen presentation | `[visual-autonomous]` | COMBAT-2..6 |
 | 3 Feedback | **new** — The horde warning misses wandering hordes and gives no bearing | `[gated]` | HORDE-1, HORDE-2, FB-2 |
@@ -56,7 +55,7 @@ The golden slice (`PLAYER_EXPERIENCE.md` §11) is the target. Ranked by `CLAUDE.
 | 3 Feedback | **new** — At battle zoom one building fills the screen | `[visual-autonomous]` | COMBAT-3 |
 | 3 Feedback | **new** — The game is silent | `[visual-human]` | COMBAT-4, §13 |
 | 4 Decisions | **new** — Ranged units have no range; gunpowder is never spent | `[design]` | COMBAT-7, IND-2 |
-| 4 Decisions | **new** — Why want this hex: deposits and city value | `[design]` | EXP-2, EXP-5, §8 |
+| 4 Decisions | **new** — Why want this hex: depleting deposits (D99 direction) and city value | `[design]` | EXP-2, EXP-5, §8 |
 | 4 Decisions | *Should the Town Hall / ZoC / building sites go dark* (below) | `[design]` | HORDE-5 |
 | 5 Pacing | *Infestation balance pass* (below) | `[design]` | — |
 | 6 Horde | *Walls block bleed proportionally — blocked* (below) | `[design]` | DEF-2 |
@@ -74,7 +73,11 @@ needs them, not ahead of it.
 
 ### Golden-slice items (new 2026-09-16)
 
-- [ ] `[design]` **The economy clock is ~100x slower than the movement clock.**
+- [ ] `[gated]` **The economy clock is ~100x slower than the movement clock.**
+  **Decided 2026-09-16 (D98): "Yes"** — construction, training and research move to a
+  session timescale, and hordes are slowed separately from units; the day length stays.
+  The numbers are balance choices to disclose in code comments. Still open (not asked):
+  whether production ticks more than once a day.
   **WHY:** rank 1 — the session structure in `PLAYER_EXPERIENCE.md` §3 cannot happen.
   `TickManager.DAY_LENGTH_SECONDS` 2400 at default speed 5x = **8 real minutes per
   day**. Construction 1-4 days, training `tier+1` days, production and research once a
@@ -157,23 +160,14 @@ needs them, not ahead of it.
   the stale comments if removal was deliberate. **VERIFICATION:** a verification that a
   fresh `Main.tscn` has wall segments around the start; `run_scenarios.py opening`.
 
-- [ ] `[design]` **The first expansion from the real start is into Manchester's own
-  zombies.** **WHY:** rank 1 — measured 2026-09-16: the start (79, 118) is a Manchester
-  hex (D35), so its ring 1 at D7's 25% is Manchester too; the least-populated routable
-  neighbour holds **68,075 zombies** (capacity 272,298, frontage 3 per D49). Twelve Tier
-  0 units attack-moved in and all died the same day; the D51 table already says a
-  Truncheoneer garrison "wiped in 76 rounds" there. So the golden slice's "first
-  clearing operation" (§11 step 5) is not winnable at Tier 0 from the real start.
-  **PLAYER EXPERIENCE:** the first push out is hard but winnable, and the map's density
-  gradient is something to choose against (EXP-1, EXP-5). **IMPLEMENTATION — options:**
-  (a) D7's rings are a fraction of each hex's capacity, so a city start is harsh by
-  construction — seed ring 1 by an absolute count or a lower fraction for dense hexes;
-  (b) start on the edge of Manchester rather than inside it; (c) accept it and give Tier
-  0 a lower-density direction to expand (moorland toward the Pennines) and make that
-  readable (the infestation overlay item). *Recommendation:* (c) first — it is the
-  cheapest, keeps "history decides the difficulty curve" (D3), and the scenario can
-  measure whether any routable neighbour is winnable. **VERIFICATION:**
-  `run_scenarios.py expansion` EXP-1 in range.
+- [x] `[design]` **The first expansion from the real start is into Manchester's own
+  zombies.** *Closed 2026-09-16 by D99:* "Via resource extraction and military build
+  up. Perhaps the resources nearest manchester become exhausted eventually forcing the
+  users to expand and find new resources to extract." The start and D7's rings stay;
+  Tier 0 losing to ring 1 is expected, and the opening is a build-up phase that D98's
+  pacing must make playable. The depletion direction moved into the deposits item.
+  Original measurement: least-populated routable neighbour 68,075 zombies, twelve
+  Tier 0 units dead the same day (`run_scenarios.py expansion`).
 
 - [ ] `[gated]` **Hordes on the map grow 4 → 306 in 60 days with no player input.**
   **WHY:** rank 6 — measured 2026-09-16 (`industrialisation` scenario, no units): the
@@ -187,7 +181,9 @@ needs them, not ahead of it.
   export sizing are balance knobs, so a structural cap would be `[design]`.
   **VERIFICATION:** 60-day count and per-day wall time.
 
-- [ ] `[design]` **Units and gunfire make no noise.** **WHY:** rank 2 — the P2 chain
+- [ ] `[gated]` **Units and gunfire make no noise.** **Decided 2026-09-16 (D100): "Yes"** —
+  combat emits noise through `NoisePropagation`, ordered by §6 (melee/bow near silent,
+  rifle, Maxim, artillery loudest) and scaled per D66. **WHY:** rank 2 — the P2 chain
   (`PLAYER_EXPERIENCE.md` §5.5) has no link between fighting and attention, and "draw
   the horde away with some military units" (the user, `vision.md` P2) has no mechanism.
   `NoiseManager.recompute()` iterates buildings only. §6 makes gunfire the loudest
@@ -201,20 +197,23 @@ needs them, not ahead of it.
   it. **VERIFICATION:** `horde` scenario HORDE-3 with units fighting near the colony;
   `verify_noise_emission.gd` extended.
 
-- [ ] `[design]` **How threat escalates inside an open campaign.** **WHY:** rank 2 —
-  D92 settles that the campaign is not a fixed-length TAB map, which closes the inherited
-  "nothing escalates" item's fixed-schedule proposal but not its question.
-  `HordeManager._on_ambient_spawn_day` ignores the day, and escalation today is purely
-  spatial (D39: exports wake as the player approaches). **PLAYER EXPERIENCE:** the
-  player is never safe to strip the walls (§9 "nothing dangerous happening") without the
-  run becoming a timer. **IMPLEMENTATION — options:** (a) spatial only — escalation is
-  the map (census density and D39) and the player's own noise; (b) time pressure too —
-  ambient spawn size/rate grows with days survived; (c) activity-driven — escalation
-  follows the colony's total noise/industry, so growth itself is the clock.
-  *Recommendation:* (c) layered on (a): it is the user's causal chain ("INDUSTRIAL
-  ACTIVITY → … → MORE THREAT") taken literally and needs no calendar. **VERIFICATION:**
-  a 60-day `opening` run (`--days=60`) with a scripted growing economy; time between
-  threats in telemetry `events`.
+- [ ] `[gated]` **Settlement light and noise reach further as it grows.** **Decided
+  2026-09-16 (D101):** "The threat escalates via the player expanding their base coming
+  into contact with larger and more numerous hordes and their settlement creating more
+  light and noise drawing in zombies from further afield." No calendar escalation.
+  **WHY:** rank 2 — the spatial half already exists (D3, D39, D49); the activity half does
+  not reach "further afield": light is a flat +1.0 on the building's own hex at night
+  (`NoiseManager.NIGHT_LIGHT_ATTRACTION`), and `HordeManager.ATTRACTION_AWARENESS_RADIUS`
+  is a fixed 6 hexes. **PLAYER EXPERIENCE:** growth is the clock — a bigger, brighter,
+  louder settlement draws from further away, so expanding and industrialising raise the
+  threat and going dark lowers it (HORDE-3, HORDE-5, IND-5). **IMPLEMENTATION:** give
+  `lit_at_night` a reach through the same propagation shape as noise (a crude radial
+  falloff, ahead of the Deferred §6 line-of-sight light work), and check that combined
+  settlement emission, not only the loudest building, sets how far a horde can hear;
+  reach numbers are balance choices disclosed in comments. Depends on D100 for the
+  combat half. **VERIFICATION:** `run_scenarios.py horde` HORDE-3 on a grown colony; a
+  60-day opening (`--days=60`) with a scripted growing economy shows contacts rising with
+  settlement size, not with the day number; `verify_noise_emission.gd` extended.
 
 - [ ] `[visual-autonomous]` **Infestation is never drawn on the map.** **WHY:** rank 3 —
   the game's primary strategic threat (P1) has no overlay: no UI, overlay or view file
@@ -291,7 +290,10 @@ needs them, not ahead of it.
   is whether a minimal range (engage an adjacent hex, or within N m at HIGH fidelity)
   comes first. **VERIFICATION:** `siege` DEF-3; `diagnose_resident_combat.gd` re-run.
 
-- [ ] `[design]` **Why want this hex: resource deposits and city value.** **WHY:**
+- [ ] `[design]` **Why want this hex: resource deposits and city value.** *D99 direction
+  (2026-09-16, marked "Perhaps"): resources nearest Manchester deplete and push the
+  player outward — to settle: what depletes (deposit or building), how fast, and whether
+  deposits come from real geology (BGS/GSI).* **WHY:**
   rank 4 — output is flat on every legal hex (only farm soil varies), and a city differs
   from an empty hex only in threat and placement permissions (`PLAYER_EXPERIENCE.md`
   §8). The user has already chosen "real deposits that gate mines" (countryside item,
