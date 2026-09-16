@@ -72,10 +72,15 @@ const GROUND_Z_INDEX: int = -3
 ## not stream at the screen edge. Half a chunk.
 const LOAD_MARGIN_WU: float = 2048.0
 
-## Building a chunk walks tens of thousands of triangles in GDScript, which is
-## a visible hitch if several land on one frame. One per frame keeps the cost
-## bounded while panning; a chunk covers 40 km, so the queue is rarely deep.
-const CHUNKS_BUILT_PER_FRAME: int = 1
+## Walking a chunk's tens of thousands of triangles runs on worker threads
+## (ChunkBuildQueue, prepare_chunk()). What stays on the main thread is one
+## ArrayMesh upload and one MeshInstance2D per surface, still bounded to one
+## chunk per frame so several finishing together do not land on one frame.
+const CHUNKS_FINALIZED_PER_FRAME: int = 1
+
+## Worker threads this view may occupy at once. Same as
+## TerrainDetailView.MAX_BUILDS_IN_FLIGHT; see there.
+const MAX_BUILDS_IN_FLIGHT: int = 2
 
 ## Safety bound on one frame's wanted-set, derived from the widest framing
 ## Tactical can actually produce rather than picked: viewport /
@@ -102,7 +107,7 @@ func _max_chunks_in_view() -> int:
 
 var _camera: CameraController
 var _chunk_nodes: Dictionary = {}  ## Vector2i -> Node2D holding that chunk's surfaces.
-var _build_queue: Array[Vector2i] = []
+var _builds := ChunkBuildQueue.new(TerrainMeshView.prepare_chunk, MAX_BUILDS_IN_FLIGHT)
 
 
 func _ready() -> void:
@@ -123,6 +128,9 @@ func _ready() -> void:
 		return
 	_camera.tactical_mode_changed.connect(_on_tactical_mode_changed)
 	visible = _camera.is_tactical_zoom()
+	# prepare_chunk() reads soil noise on worker threads; see
+	# SubHexSoilQuery.ensure_initialized().
+	SubHexSoilQuery.ensure_initialized()
 
 
 ## Only the VISIBILITY of the whole layer is signal-driven; which chunks are
@@ -134,10 +142,22 @@ func _process(_delta: float) -> void:
 	if not visible:
 		return
 	_sync_wanted_chunks()
-	for _i in CHUNKS_BUILT_PER_FRAME:
-		if _build_queue.is_empty():
+	_builds.pump()
+	for _i in CHUNKS_FINALIZED_PER_FRAME:
+		var finished := _builds.take_finished()
+		if finished.is_empty():
 			return
-		_build_chunk(_build_queue.pop_front())
+		_finalize_chunk(finished[0], finished[1])
+
+
+func _exit_tree() -> void:
+	_builds.wait_all()
+
+
+## True once nothing is queued or building. For capture scripts that must not
+## photograph half-streamed terrain.
+func is_streaming_idle() -> bool:
+	return _builds.is_idle()
 
 
 func _on_tactical_mode_changed(is_tactical: bool) -> void:
@@ -168,48 +188,56 @@ func _sync_wanted_chunks() -> void:
 		for cy in range(lo.y, hi.y + 1):
 			var address := Vector2i(cx, cy)
 			wanted[address] = true
-			if not _chunk_nodes.has(address) and not _build_queue.has(address):
-				_build_queue.append(address)
+			if not _chunk_nodes.has(address):
+				_builds.request(address)
 
 	for address in _chunk_nodes.keys():
 		if not wanted.has(address):
 			_chunk_nodes[address].queue_free()
 			_chunk_nodes.erase(address)
-	# A queued address that left the view before its turn is dropped rather
-	# than built and immediately freed. Rebuilt element by element, not via
-	# Array.filter() -- that returns an untyped Array, and assigning one to an
-	# Array[Vector2i] is a runtime error, not a compile-time one.
-	var still_wanted: Array[Vector2i] = []
-	for address in _build_queue:
-		if wanted.has(address):
-			still_wanted.append(address)
-	_build_queue = still_wanted
+	# An address that left the view before its build finished is dropped
+	# rather than built and immediately freed.
+	_builds.retain_only(wanted)
 
 
 func _clear_all() -> void:
 	for address in _chunk_nodes:
 		_chunk_nodes[address].queue_free()
 	_chunk_nodes.clear()
-	_build_queue.clear()
+	_builds.clear()
 
 
-## One Node2D per chunk holding one MeshInstance2D per (biome, soil) pair.
-## Grouping is what keeps this to a handful of draw calls for ~40,000
+## Main-thread half of a chunk build: one Node2D per chunk holding one
+## MeshInstance2D per prepared surface, in prepared order. Grouping by
+## (biome, soil) is what keeps this to a handful of draw calls for ~40,000
 ## triangles, over a chunk that spans 40 km -- the square ground this replaced
 ## needed 121 Sprite2D nodes to cover a single hex.
 ##
 ## A chunk with no baked file is recorded as an empty node rather than
 ## retried: outside the baked corridor there is nothing to load, and without
-## the marker _sync_wanted_chunks() would re-queue it every frame.
-func _build_chunk(address: Vector2i) -> void:
+## the marker _sync_wanted_chunks() would re-request it every frame.
+func _finalize_chunk(address: Vector2i, surfaces: Array) -> void:
 	var container := Node2D.new()
 	container.name = "Chunk_%d_%d" % [address.x, address.y]
 	_chunk_nodes[address] = container
 	add_child(container)
+	for surface: Dictionary in surfaces:
+		container.add_child(_surface_instance(surface))
 
+
+## Worker-thread half of a chunk build: file read, per-triangle grouping, soil
+## and biome crossfades, and the packed vertex arrays for every surface.
+## Static and touching nothing but its arguments and SubHexSoilQuery's
+## initialised noise, per ChunkBuildQueue's contract.
+##
+## Returns surfaces in draw order -- opaque bases, soil crossfades, biome
+## crossfades -- each {"biome", "soil", "arrays"} for _surface_instance().
+## Empty for an unbaked chunk.
+static func prepare_chunk(address: Vector2i) -> Array:
+	var surfaces: Array = []
 	var data := TerrainMeshChunkData.load_chunk(address.x, address.y)
 	if data == null:
-		return
+		return surfaces
 
 	# Accumulates into plain Arrays, not PackedVector3Arrays: a Packed array is
 	# copy-on-write and the Dictionary holds a reference, so the
@@ -255,7 +283,7 @@ func _build_chunk(address: Vector2i) -> void:
 			_add_soil_crossfade(biome, soil, a, b, c, soil_cache, soil_points, soil_alphas)
 
 	for key: Vector2i in triangles_by_key:
-		container.add_child(_build_surface(key.x, key.y, triangles_by_key[key]))
+		surfaces.append(_surface_arrays(key.x, key.y, triangles_by_key[key]))
 
 	# Over the opaque bases, under the biome-boundary blend. Keys sorted so the
 	# order two variants composite in is the same in every chunk -- dictionary
@@ -264,12 +292,13 @@ func _build_chunk(address: Vector2i) -> void:
 	var soil_keys: Array = soil_points.keys()
 	soil_keys.sort()
 	for key: Vector2i in soil_keys:
-		container.add_child(_build_surface(key.x, key.y, soil_points[key], soil_alphas[key]))
+		surfaces.append(_surface_arrays(key.x, key.y, soil_points[key], soil_alphas[key]))
 
 	# After every base surface, so the crossfade draws over the hard edges
 	# rather than under them. Same z_index throughout — MeshInstance2D
-	# siblings resolve by tree order, and add_child() appends.
-	_build_blend_surfaces(container, data, kept, soil_cache)
+	# siblings resolve by tree order, and _finalize_chunk() adds in this order.
+	_append_blend_surfaces(surfaces, data, kept, soil_cache)
+	return surfaces
 
 
 ## Draws each biome a second time in a fixed-width strip just inside whichever
@@ -285,7 +314,7 @@ func _build_chunk(address: Vector2i) -> void:
 ## at the triangle's centroid: this is the neighbour biome's art bleeding
 ## across its own boundary, so the variant it picks should be the one in use
 ## on the neighbour's side of the line.
-func _build_blend_surfaces(container: Node2D, data: TerrainMeshChunkData,
+static func _append_blend_surfaces(surfaces: Array, data: TerrainMeshChunkData,
 		kept: PackedByteArray, soil_cache: Dictionary) -> void:
 	var crossings := TerrainBoundaryBlend.find_crossings(data, kept)
 	if crossings.is_empty():
@@ -319,7 +348,7 @@ func _build_blend_surfaces(container: Node2D, data: TerrainMeshChunkData,
 		(alphas_by_key[key] as Array).append_array(band_alphas)
 
 	for key: Vector2i in points_by_key:
-		container.add_child(_build_surface(key.x, key.y, points_by_key[key], alphas_by_key[key]))
+		surfaces.append(_surface_arrays(key.x, key.y, points_by_key[key], alphas_by_key[key]))
 
 
 ## Redraws one triangle in each soil variant its VERTICES resolve to that the
@@ -350,7 +379,7 @@ func _build_blend_surfaces(container: Node2D, data: TerrainMeshChunkData,
 ## overlays, and their order then decides the interior mix. Sorted keys make
 ## that order stable rather than correct — with three ratings meeting inside
 ## one triangle there is no single right answer, and the case is rare.
-func _add_soil_crossfade(biome: GameEnums.BiomeType, base_soil: GameEnums.SoilFertility,
+static func _add_soil_crossfade(biome: GameEnums.BiomeType, base_soil: GameEnums.SoilFertility,
 		a: Vector2, b: Vector2, c: Vector2, soil_cache: Dictionary,
 		points_by_key: Dictionary, alphas_by_key: Dictionary) -> void:
 	var soil_a := _soil_at(biome, a, soil_cache)
@@ -385,7 +414,7 @@ func _add_soil_crossfade(biome: GameEnums.BiomeType, base_soil: GameEnums.SoilFe
 ## it per ~25-wu triangle was resolving detail the field does not contain;
 ## one answer per rendered texture cell is exactly the granularity the square
 ## grid this replaced already had.
-func _soil_at(biome: GameEnums.BiomeType, world_pos: Vector2, cache: Dictionary) -> GameEnums.SoilFertility:
+static func _soil_at(biome: GameEnums.BiomeType, world_pos: Vector2, cache: Dictionary) -> GameEnums.SoilFertility:
 	var cell := Vector2i((world_pos / TEXTURE_WORLD_SIZE).floor())
 	var key := Vector3i(int(biome), cell.x, cell.y)
 	var hit: Variant = cache.get(key)
@@ -396,7 +425,7 @@ func _soil_at(biome: GameEnums.BiomeType, world_pos: Vector2, cache: Dictionary)
 	return soil
 
 
-## One MeshInstance2D for one (biome, soil) pair's triangles.
+## Packed vertex arrays for one (biome, soil) pair's triangles.
 ##
 ## Vertices are absolute world positions and this node's transform is
 ## identity, so no per-chunk offset is applied or needed. Unlike the preview
@@ -406,12 +435,12 @@ func _soil_at(biome: GameEnums.BiomeType, world_pos: Vector2, cache: Dictionary)
 ## scripts/test/preview_terrain_mesh.gd does not arise.
 ##
 ## `alphas`, when given, is one opacity per point and makes this a crossfade
-## surface rather than an opaque one — see _build_blend_surfaces(). Empty
+## surface rather than an opaque one — see _append_blend_surfaces(). Empty
 ## (every base surface) leaves ARRAY_COLOR off entirely rather than filling
 ## it with white, so nothing about how the interior of a biome renders
 ## changes.
-func _build_surface(biome: GameEnums.BiomeType, soil: GameEnums.SoilFertility,
-		world_points: Array, alphas: Array = []) -> MeshInstance2D:
+static func _surface_arrays(biome: GameEnums.BiomeType, soil: GameEnums.SoilFertility,
+		world_points: Array, alphas: Array = []) -> Dictionary:
 	# Both packed arrays are sized once and filled by index -- no append, so
 	# no reallocation across tens of thousands of vertices.
 	var count := world_points.size()
@@ -434,9 +463,16 @@ func _build_surface(biome: GameEnums.BiomeType, soil: GameEnums.SoilFertility,
 		for i in count:
 			colors[i] = Color(1.0, 1.0, 1.0, alphas[i])
 		arrays[Mesh.ARRAY_COLOR] = colors
+	return {"biome": biome, "soil": soil, "arrays": arrays}
 
+
+## MeshInstance2D for one prepared surface. Main thread only: ArrayMesh and
+## the texture load both allocate resources.
+func _surface_instance(surface: Dictionary) -> MeshInstance2D:
+	var biome: GameEnums.BiomeType = surface["biome"]
+	var soil: GameEnums.SoilFertility = surface["soil"]
 	var mesh := ArrayMesh.new()
-	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, surface["arrays"])
 
 	var instance := MeshInstance2D.new()
 	instance.mesh = mesh
