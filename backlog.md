@@ -307,8 +307,13 @@ needs them, not ahead of it.
   can be salvaged for building materials over time (no instant population-scaled stock). **First step:** check the BGS/GSI dataset
   licences for commercial use and record the result in `decisions.md`. **D105/D106 (2026-09-16):** pre-existing roads and rail are supply lines that "need
   repair before being able to be used", give nothing (no movement, no supply) until
-  repaired, and a railway repair requires the Railway tech tier. **Still open:** a
-  data source for 1890s railways; repair and salvage costs/times are balance numbers. **WHY:**
+  repaired, and a railway repair requires the Railway tech tier. **D107** (delegated):
+  repair reuses `ReclamationManager`'s severed-line costs and takes half a new segment's
+  construction time; roads restore as Dirt Road, railways as Railway; salvage yields 25%
+  of the equivalent building's cost over half its construction time, on Cleared ground
+  only; railway data from a dated historical dataset if its licence allows commercial
+  use, else OSM with post-1890 `start_date` lines dropped. **Nothing in this item is
+  waiting on the user any more** except the licence results, which are facts to find. **WHY:**
   rank 4 — output is flat on every legal hex (only farm soil varies), and a city differs
   from an empty hex only in threat and placement permissions (`PLAYER_EXPERIENCE.md`
   §8). The user has already chosen "real deposits that gate mines" (countryside item,

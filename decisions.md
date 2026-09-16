@@ -14,6 +14,50 @@ Rules for this file:
 
 ---
 
+## 2026-09-16 — Delegated details for roads, rail and salvage
+
+**D107. Repair, salvage and railway-data details — decided by Claude on the user's
+delegation, revisitable.** The user, verbatim: "I think those are all things you can
+decide for now, we may revisit them in the distant future." Each call below reuses a
+rule the code already has rather than a new number where one exists; the constants are
+starting values to tune, stated here so they are not re-derived.
+
+- **Repairing a pre-existing segment costs what repairing a severed one already costs.**
+  `ReclamationManager._REPAIR_COST_BY_LINE_TYPE` — Road 15 Wood, Railway 25 Iron + 10
+  Wood, Canal 20 Bricks per segment. *Why:* the game already prices "this line exists and
+  is unusable; restore it", and a second price table for the same act would drift.
+- **Repair is not instant: it takes half the construction time of a new segment of that
+  type and tier**, on the same construction queue buildings use, so D98's faster clock
+  scales it too. *Why:* the existing severed-line repair is instant because severance is
+  a temporary infestation state (D28); a derelict 1890s railway is a work party's job,
+  and half-time keeps reclaiming cheaper than building while still being a commitment.
+- **A repaired pre-existing road comes back as a Dirt Road (tier 0); a repaired railway
+  as Railway.** Upgrading then follows the normal tier rules. *Why:* D106 tech-gates only
+  rail; restoring a road at a higher tier would hand out Tier 1-2 infrastructure for free
+  in the opening. The railway already needs its tier to repair (D106), so it restores
+  whole.
+- **Salvage yields 25% of the equivalent building's construction cost and takes half its
+  construction time, then removes the ruin.** A player ruin's equivalent is its own
+  definition. An ambient ruin from real settlement data maps by its OSM land use:
+  residential and unknown → Brick Houses, industrial → Iron Foundry. *Why:* 25% sits
+  under `BuildingHealthController.REPAIR_COST_FRACTION` (50%), so salvaging a ruin and
+  rebuilding never beats repairing it, and no salvage-rebuild loop mints materials; the
+  two mappings use existing catalogue entries instead of a new yield table.
+- **Salvage needs Cleared ground** — the same Build Rights band a non-defensive building
+  needs (D40). *Why:* a work party picking through rubble in a Contested hex is exactly
+  what §2.1's band table forbids for construction; one rule, not two.
+- **1890s railway data: a dated historical railway GIS dataset first, OSM as the
+  fallback.** First candidate to check is the Cambridge Group's historical railway and
+  station layers (the same research programme as the turnpike layer the roads item
+  names) — confirm it exists in usable form and that its licence allows commercial use,
+  exactly as D103 requires for geology. Fallback: OSM `railway=rail|disused|abandoned|dismantled`,
+  dropping lines whose `start_date` is after 1890. *Why:* Britain's network in 1890 was
+  close to its pre-1914 peak, so OSM's active plus abandoned lines over-approximates far
+  less than modern roads do; the known error is post-1890 lines without a `start_date`,
+  stated here so it is not discovered late.
+
+---
+
 ## 2026-09-16 — Follow-ups to D103 and D105
 
 **D106. Four details settled.** The user's answers, verbatim, to the open details D103 and
@@ -30,8 +74,8 @@ D105 left:
 4. Whether an unrepaired pre-existing road still speeds movement: "Nothing until
    repaired." An unrepaired road or railway gives no movement bonus and carries no
    supply; it is only something to reclaim.
-*Still open, as balance numbers:* salvage duration and yield, repair cost and time.
-*Still open, not a balance number:* the data source for 1890s railways.
+*Salvage duration and yield, repair cost and time, and the 1890s railway data source were
+delegated to Claude — see D107.*
 
 ---
 
@@ -50,9 +94,8 @@ which is the campaign fantasy in miniature — rather than skipping it.
 *Fits existing machinery:* `SupplyLineSegment.is_severed` and `ReclamationManager`'s
 un-severing path already model "exists, not usable, restore it"; D6 still holds, so
 hordes gain nothing from a repaired road.
-*Left open:* repair cost and time (balance), and the data source for 1890s railways,
-since the roads item only scoped roads. *Tech gating and pre-repair movement settled by
-D106.*
+*Tech gating and pre-repair movement settled by D106; repair cost and time and the
+railway data source by D107.*
 
 ---
 
@@ -87,8 +130,7 @@ and cities that come with roads, rail, room, and salvage that takes time.**
   iii); the user deleted it — "It doesn't mean anything. Delete the requirement."* Salvage is instead a **timed action on abandoned and
   ruined buildings** that recoups some building materials.
 *Promotes D99's "Perhaps" to a rule for deposits:* nearby deposits are finite and deplete.
-*Left open:* deposit sizes and drain rates (balance); salvage duration and yield
-(balance). *Supply-line status settled by D105; which ruins count settled by D106 (both).*
+*Left open:* deposit sizes and drain rates (balance). *Salvage duration and yield: D107.* *Supply-line status settled by D105; which ruins count settled by D106 (both).*
 
 **D104. The flagged names are renamed to shorter period equivalents; stats unchanged.**
 "Approve them all but dont make the names of buildings or units too long just for
