@@ -14,6 +14,28 @@ Rules for this file:
 
 ---
 
+## 2026-09-16 — Pre-existing roads and rail
+
+**D105. Pre-existing 1890s roads and rail are supply lines, but must be repaired before
+they can be used.** Asked, as one of D103's open details: do the pre-existing roads and
+rail count as supply lines, or only speed up movement? Answer: "Yes they count as supply
+lines but need repair before being able to be used"
+*Settles* the gameplay question the 1890s-roads backlog item left for the user (free
+Tier-0 supply line, decoration, or movement bonus only): none of those. A pre-existing
+road or railway is a real `LogisticsNetwork` supply line that starts unusable, and the
+player's investment is the repair, not the construction. That keeps the early-game
+logistics build a decision — the network exists on the map as something to reclaim,
+which is the campaign fantasy in miniature — rather than skipping it.
+*Fits existing machinery:* `SupplyLineSegment.is_severed` and `ReclamationManager`'s
+un-severing path already model "exists, not usable, restore it"; D6 still holds, so
+hordes gain nothing from a repaired road.
+*Left open:* repair cost and time (balance); whether repairing a railway needs its tech
+tier (Railway is Tier 3 today); what "usable before repair" means for movement (whether
+a broken road still speeds units); and the data source for 1890s railways, since the
+roads item only scoped roads.
+
+---
+
 ## 2026-09-16 — Answers to the audit's questions 5-7
 
 **D102. Gunpowder is spent per shot, and ranged units get a realistic range.** Asked:
