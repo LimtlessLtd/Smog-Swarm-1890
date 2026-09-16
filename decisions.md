@@ -14,6 +14,82 @@ Rules for this file:
 
 ---
 
+## 2026-09-16 — What the game is for, and how work gets chosen
+
+Settled by the user's design-audit brief. Everything quoted is the user verbatim.
+Numbering starts at D92 because the open texture-compression PR (#108) already
+claims D91.
+
+**D92. The campaign is persistent and open-ended; local losses are setbacks, total
+defeat still ends it.** The game is "They Are Billions, but on a gigantic continuous
+map of 1890s industrial Britain, with a persistent long-form campaign where the player
+steadily develops from a tiny settlement into an industrial military power and
+progressively reclaims Britain from an enormous zombie population." And: "The player
+should NOT repeatedly throw away an entire developed base just because they lost a
+local fight ... However, complete strategic defeat can still end the campaign." and
+"Do not turn the game into an idle game or remove meaningful failure."
+*What this closes:* `backlog.md`'s inherited "nothing escalates" item asked whether the
+game should become "a fixed-length siege campaign rather than an open-ended builder"
+on TAB's 100-day, 10-swarm model. It does not. TAB's *warning* conventions (ETA,
+bearing) are still the reference; its fixed-length map is not.
+*What this does not close:* how threat escalates over time inside an open campaign —
+still [design], with the opening-difficulty and horde-speed items.
+*Consistent with, not a change to:* P4, D29, D73, and `vision.md` §1's "not a core
+idle/persistent mode" — that sentence is about unattended play, this one is about
+what carries over between fights.
+
+**D93. The progression arc is core, not late content.** "SMALL SURVIVOR SETTLEMENT →
+DEVELOPING SETTLEMENT → INDUSTRIAL TOWN → FORTIFIED CITY → NETWORK OF CONNECTED
+SETTLEMENTS → REGIONAL INDUSTRIAL POWER → MASSIVE MILITARY/INDUSTRIAL EMPIRE → BRITAIN
+BEING RECLAIMED. This progression is the emotional backbone of the game."
+*Reconciled with P3/P6:* the first stages of that arc (through a second connected
+settlement) are the core game and are built now; the narrative campaign (Phase 7),
+automation/governors and the whole-island endgame stay after the core loop — "Do not
+move to campaign content simply because the golden slice exists." and governors
+"should only become a priority once multiple-settlement gameplay actually works."
+
+**D94. Work is chosen by player impact, not by the next unchecked feature.** The
+autonomous philosophy changes from "implement the next missing feature" to "improve
+the current player's experience." Priority order, the user's list: 1 broken core
+gameplay, 2 boring core gameplay, 3 poor player feedback, 4 weak strategic decisions,
+5 poor pacing, 6 weak enemy/horde behaviour, 7 weak expansion loop, 8 weak
+economy/logistics, 9 missing major core capability, 10 visual/audio polish, 11
+performance optimisation, 12 additional content, 13 campaign/endgame. "A polished
+button is less important than boring combat."
+*Why recorded:* the unattended runner already passes `tools/autonomous_dev_brief.md`
+(same philosophy) while `/next-item` said "topmost `[gated]` Now item" — so the three
+unattended runs of 2026-09-16 took chunk streaming, gate proofs and texture compression,
+all priority 11 or below, while every core-loop problem sat tagged `[design]`.
+*Consequence:* `CLAUDE.md` §0.2 and `/next-item` carry the order; `backlog.md` Now is
+sorted by it; every significant new item states WHY / PLAYER EXPERIENCE /
+IMPLEMENTATION / VERIFICATION.
+
+**D95. `[visual]` splits into `[visual-autonomous]` and `[visual-human]`; the unattended
+loop may take the first.** "Autonomous agents MUST NOT simply avoid visual work because
+it is tagged visual." `[visual-autonomous]`: the agent can change it, run the game,
+capture the render and inspect it. `[visual-human]`: human judgement of taste or feel is
+genuinely required. `[design]` still needs the user.
+*Why this is safe to allow:* the project's own rule is that every real visual defect was
+found by looking at an image, and the tooling to look already exists
+(`smoke_screenshot.tscn`, `preview_*`, the playtest runner's `--shots`). An unattended
+visual change without a captured and inspected image is still not done.
+
+**D96. Telemetry and playtest scenarios are evidence, never a score or a gate.**
+"Telemetry is evidence, not a score." and "Do NOT assume that maximizing any metric
+makes the game better." `GameplayTelemetry` and `tools/playtest/run_scenarios.py` exit 0
+whenever a scenario ran; a check reports `ok`/`concern` against a PLAYER_EXPERIENCE.md
+criterion with its threshold's reason beside it. `GAME_HEALTH.md` states are written by
+a reader from that evidence, never computed.
+
+**D97. Historical coherence: post-1900 drift is flagged for the user, not rewritten.**
+"Alternate history is allowed. But the game should not gradually become a generic First
+World War / dieselpunk / modern military RTS unless explicitly justified by the existing
+design decisions." and "flag them for design review rather than silently rewriting
+them." The flagged list is `PLAYER_EXPERIENCE.md` §7.1; no catalogue entry, name or
+number changed with this decision.
+
+---
+
 ## 2026-09-07 — Battle scale, built
 
 D76's `max_zoom`, D80's horde spread, D85's threshold and D86's metric band landed as

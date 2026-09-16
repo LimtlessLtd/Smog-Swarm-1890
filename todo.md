@@ -10,15 +10,18 @@
 | File | What it answers | Read at session start? |
 | :--- | :--- | :--- |
 | `vision.md` | What the game is *for*. Pillars, anti-goals, and the three checks every backlog item must pass. | **Yes** |
-| `backlog.md` | What to build next, tagged `[gated]`/`[visual]`/`[design]` and split Now / Next / Deferred. | **Yes** |
+| `PLAYER_EXPERIENCE.md` | Why a player enjoys the mechanics: fantasy, loops, session structure, acceptance criteria, boring failure modes, golden slice. | **Yes** |
+| `GAME_HEALTH.md` | Where the build stands against that, per area, with evidence. | **Yes** |
+| `backlog.md` | What to build next, tagged `[gated]`/`[visual-autonomous]`/`[visual-human]`/`[design]`, split Now / Next / Deferred, Now sorted by player impact. | **Yes** |
 | `decisions.md` | Calls that are settled, and why. Read before re-opening any of them. | On demand |
 | `design_doc.md` | The numbers spec: terrain, economy, buildings, units, infestation (§2.1), logistics (§2.2), vision/sound/light (§6). | On demand |
 | `todo.md` | This index, plus the reference sections below. | Skim |
 | `devlog/` | Append-only history of completed work, archived monthly. | **No** |
 | `CLAUDE.md` | Coding rules that override default behaviour. | **Yes** |
 
-**Only `[gated]` items in `backlog.md` may be taken by an unattended loop.** `[visual]`
-needs a render or a playtest agent; `[design]` needs the user.
+**The unattended loop takes `[gated]` and `[visual-autonomous]` items, chosen by player
+impact** (`CLAUDE.md` §0.2, D94-D95). `[visual-human]` needs a person's judgement;
+`[design]` needs the user.
 
 ---
 
@@ -38,10 +41,14 @@ units/hex) drives everything from country-scale strategy to individual soldiers.
 roster with combat/morale/veterancy, horde AI, walls/ZoC/supply lines, Fog of War,
 Day/Night, save/load, and a complete code-drawn HUD.
 
-**Not built:** the entire §2.1 infestation model and §2.2 logistics rework settled on
-2026-08-27 — `infestation` appears nowhere in the code and the map holds ~45-75 zombies
-across 4,692 hexes. Also §6 (Vision/Sound/Light), the sewer layer (Phase 3), and the
-campaign (Phase 5.11, Phase 7).
+**Also built since (2026-08-28 to 2026-09-16):** §2.1's infestation model (~37M
+zombies, bands, breeding/export, resident combat), the 60,000-entity tactical zombie
+layer and battle-scale camera, going dark, the dB noise model, and campaign defeat.
+
+**Not built:** §2.2's logistics rework (per-settlement stockpiles, throughput,
+terminals), §6's line of sight / light / tactical sound, any combat presentation or
+audio, and the campaign (Phase 7). Where that leaves the player's experience is
+`GAME_HEALTH.md`, not this summary.
 
 Godot binary: `E:\Program Files\GoDot\Godot_v4.7.1-stable_win64_console.exe`. For
 anything touching a manager's `_ready()`, run `--headless scenes/main/Main.tscn --quit`,
@@ -73,7 +80,8 @@ decision the old world made, or the first sign that whatever did this was alread
 
 - **Core Loop:** Continuous persistent expansion across Victorian Britain hex sectors.
   Build defenses, automate patrols, manage daily resource upkeeps (Food/Energy/Gunpowder),
-  and protect supply lines.
+  and protect supply lines. The six layered loops (micro → campaign) are defined in
+  `PLAYER_EXPERIENCE.md` §2.
 - **Aesthetic Direction:** Grounded late-18th/19th-century Industrial Revolution (brick,
   cast iron, coal smoke, authentic Victorian architecture) — explicitly **no**
   retro-futuristic steampunk tropes, including top-tier "mechanized" units (heavy steam

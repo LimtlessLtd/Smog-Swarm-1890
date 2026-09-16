@@ -6,6 +6,11 @@
 > epic's Now items are ticked.** Do not let it grow; `CLAUDE.md` §0 exists because
 > `todo.md` became exactly this and then never stopped.
 
+> **Re-ranked 2026-09-16 (`decisions.md` D94).** Under the player-impact priority model
+> the remaining battle-scale items are rank 10 (presentation groundwork), below pacing,
+> feedback and horde counterplay. §6's order below still holds *within* the epic; take
+> D78/D84 when `backlog.md`'s combat-presentation item needs them.
+
 ---
 
 ## 1. Where this came from

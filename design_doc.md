@@ -1,5 +1,21 @@
 # Technical Specifications & Game Design Document: The Smog & The Swarm (1890s-1920s Era Post-Zombie Apocalypse Industrial Revolution British Empire) - v4.6
 
+> **Note (2026-09-16), no mechanic or number changed.** This document answers "what are
+> the mechanics and numbers?". `PLAYER_EXPERIENCE.md` answers "why should a player enjoy
+> them?" and ranks above this one (`CLAUDE.md` §0): a mechanic implemented exactly as
+> written here and failing an acceptance criterion there is not done. Three things in
+> this file are flagged rather than edited:
+> - **The title's "1890s-1920s Era"**, and several Tier 4-5 names (Holt Breaker, Howitzer
+>   Gun Tractor, Armoured Command Car, Armored Bunker Fortification, Tower Blocks,
+>   Concrete Road, Central High-Voltage Grid Station, Automated Freight Marshalling
+>   Yard, Synthetic Chemical Refinery) drift past the user's 1890s bar — `[design]`
+>   review, `decisions.md` D97, list and reasoning in `PLAYER_EXPERIENCE.md` §7.1.
+> - **Tier names disagree with themselves:** §2's research thresholds say "Automation
+>   Era / Super-Complex Era", §2's extraction hierarchy says "Traction Era / Armament Era".
+> - **§2's ZoC paragraph** ("Linked ZoCs pool global stockpiles; unlinked ZoCs remain
+>   local") predates §2.2, which supersedes it with one stockpile per Town Hall and
+>   throughput-limited pooling (D21-D23).
+>
 > **v4.6 (2026-08-18)** reconciles §5 with what the terrain pipeline actually does.
 > Biomes are a real vector polygon partition, not a splatmap; the land-cover source is
 > OpenStreetMap rather than CORINE; elevation comes from AWS/Mapzen Terrain Tiles rather

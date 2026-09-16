@@ -3,16 +3,224 @@
 Everything not yet built. **Read the index; grep the detail.** Full detail for
 inherited items is preserved below the index under "Detail (inherited from todo.md)".
 
-**Tags** — what it takes to know an item is done:
-- `[gated]` — a script or test can verify it. **These are the only items an unattended
-  loop may take.**
-- `[visual]` — only a render or screenshot can verify it. Human or playtest agent.
+**This is the implementation queue.** `PLAYER_EXPERIENCE.md` is the experience
+authority, `design_doc.md` the mechanics/numbers authority, `decisions.md` the record of
+settled calls, `GAME_HEALTH.md` the current state. Restructured 2026-09-16 (D94-D95):
+work is chosen by player impact, not by the next unchecked line.
+
+**Tags** — what it takes to know an item is done (`CLAUDE.md` §0.2):
+- `[gated]` — a script or test can verify it. Unattended loop: yes.
+- `[visual-autonomous]` — only a render can verify it, and the agent can capture and
+  inspect one. Unattended loop: **yes; not to be avoided for being visual.**
+- `[visual-human]` — needs a person's judgement of taste or feel.
 - `[design]` — needs a user decision before any code.
+
+Items tagged `[visual-autonomous]` before 2026-09-16 were retagged `[visual-autonomous]` unless
+their entry says otherwise.
 
 **Sections** — from `vision.md` §5's three checks. An item fails check 3 (solves a
 problem that only exists after the core loop works) → Deferred, however well specified.
+Within Now, **the priority index below decides order**, using `CLAUDE.md` §0.2's list.
+
+**New items carry four parts:** **WHY** (which priority and which
+`PLAYER_EXPERIENCE.md` criterion), **PLAYER EXPERIENCE** (the five player-impact
+answers, briefly), **IMPLEMENTATION**, **VERIFICATION** (gate + scenario or render).
+Older items predate this and are kept verbatim; bring one into the format when it is
+taken.
 
 ---
+
+## Now — priority index (2026-09-16, D94)
+
+The golden slice (`PLAYER_EXPERIENCE.md` §11) is the target. Ranked by `CLAUDE.md`
+§0.2; within a rank, actionable-unattended first. Items marked **new** are detailed in
+"Golden-slice items" directly below; the rest point at entries further down.
+
+| Rank | Item | Tag | Criteria |
+| :--- | :--- | :--- | :--- |
+| 1 Broken | **new** — The economy clock is ~100x slower than the movement clock | `[design]` | OPEN-1, OPEN-2, IND-4, HORDE-2 |
+| 1 Broken | ↳ *The undefended colony is destroyed on day 13* (below) | `[design]` | OPEN-4 |
+| 1 Broken | ↳ *A horde crosses Britain in a day and a half* (below) | `[design]` | HORDE-2 |
+| 1 Broken | **new** — Does a founded Town Hall get civilian ZoC? | `[gated]` | SET-1 |
+| 2 Boring | *The ATTRACTED mechanic never fires in the opening* (below) | `[design]` | HORDE-3, HORDE-4 |
+| 2 Boring | **new** — Units and gunfire make no noise | `[design]` | HORDE-3, HORDE-5, IND-5 |
+| 2 Boring | **new** — How threat escalates inside an open campaign | `[design]` | OPEN-2, §9 |
+| 3 Feedback | **new** — Infestation is never drawn on the map | `[visual-autonomous]` | FB-1, EXP-5 |
+| 3 Feedback | **new** — Combat has no on-screen presentation | `[visual-autonomous]` | COMBAT-2..6 |
+| 3 Feedback | **new** — The horde warning misses wandering hordes and gives no bearing | `[gated]` | HORDE-1, HORDE-2, FB-2 |
+| 3 Feedback | *Placement status line is never cleared* (Next) | `[gated]` | OPEN-5 |
+| 3 Feedback | *6 of 15 resource counters have no icon, name or tooltip* (Next) | `[visual-autonomous]` | FB-3 |
+| 3 Feedback | **new** — The game is silent | `[visual-human]` | COMBAT-4, §13 |
+| 4 Decisions | **new** — Ranged units have no range; gunpowder is never spent | `[design]` | COMBAT-7, IND-2 |
+| 4 Decisions | **new** — Why want this hex: deposits and city value | `[design]` | EXP-2, EXP-5, §8 |
+| 4 Decisions | *Should the Town Hall / ZoC / building sites go dark* (below) | `[design]` | HORDE-5 |
+| 5 Pacing | *Infestation balance pass* (below) | `[design]` | — |
+| 6 Horde | *Walls block bleed proportionally — blocked* (below) | `[design]` | DEF-2 |
+| 6 Horde | *`HordeManager` stuck-detection/bypass* (Next) | `[gated]` | — |
+| 7-8 Expansion/logistics | *Per-settlement stockpiles*, *logistics geometry*, *terminals*, *§2.1 ZoC consequences* (Next/below) | `[gated]` | SET-1, SET-2, LOG-1..4 |
+| 9 Capability | **new** — Historical coherence review | `[design]` | §7.1 |
+| 10 Polish | *MEDIUM -> HIGH pop*, *camera-rect allocation*, *urban clustering*, *stride A/B* (Battle scale, below) | mixed | COMBAT-3, readability |
+| 11 Performance | *Relief tiles will not load in an exported build*, *`portal_offset_for_step()`* (Next) | `[gated]` | — |
+
+**Why battle scale sits at rank 10 and not at the top of Now any more:** it is
+presentation groundwork. The camera-rect allocation (D78) and the stride A/B (D84) are
+what *pay for* combat presentation, so take them when the combat-presentation item
+needs them, not ahead of it.
+
+### Golden-slice items (new 2026-09-16)
+
+- [ ] `[design]` **The economy clock is ~100x slower than the movement clock.**
+  **WHY:** rank 1 — the session structure in `PLAYER_EXPERIENCE.md` §3 cannot happen.
+  `TickManager.DAY_LENGTH_SECONDS` 2400 at default speed 5x = **8 real minutes per
+  day**. Construction 1-4 days, training `tier+1` days, production and research once a
+  day; the first `building_tier_1` needs 50 RP against the Town Hall's 5 RP/day = **~80
+  real minutes**. Meanwhile a horde moves a hex per 20 game-seconds = 4 real seconds.
+  So in the first hour: ~7.5 production ticks, the first building stands after 8
+  minutes, and a horde from 4 hexes out arrives in 16 seconds. This one number sits
+  under three existing items (day-13 colony loss, 735 km/day hordes, resource-tick
+  pacing) and they should be answered together.
+  **PLAYER EXPERIENCE:** the player gets to act within the first minute and sees the
+  colony change every few minutes (OPEN-1); a horde's approach is something to respond
+  to rather than a surprise (HORDE-2); a tier arrives inside a session (IND-4).
+  **IMPLEMENTATION — options, not decided:** (a) keep the day, express construction,
+  training and research in hours (`BuildingConstructionController._MIN_DAYS`, the
+  training formula, `TechDefinition.research_days`) and tick production more than once
+  a day — the catch-up-safety constraint in the resource-tick item applies;
+  (b) shorten the day; (c) split `MovementStepper.BASE_MOVE_SPEED` so hordes travel at
+  walking pace while units keep theirs; (d) change the default speed.
+  *Recommendation:* (a) plus (c) — (a) moves the economy onto the scale of a session
+  without changing the day/night rhythm that noise, light and horde speed already hang
+  off, and (c) is what §2.1 already assumes when it says zombies have "a predictable
+  cross-country travel time". (b) and (d) rescale everything at once, including the
+  things that are already right.
+  **VERIFICATION:** `run_scenarios.py opening expansion industrialisation` before and
+  after; OPEN-1, OPEN-2, EXP-1 and IND-4 move into range; `diagnose_horde_contact.gd`
+  for km/day.
+
+- [ ] `[gated]` **Does a Town Hall founded after worldgen get civilian ZoC?**
+  **WHY:** rank 1 if true — the second settlement is D21's whole logistics premise.
+  Inferred from the code, not measured: `LogisticsNetwork` requires a safe district for
+  civilian ZoC; safe districts are created only by `DistrictPartitioner` at map
+  generation for hexes that were settlements then; `SettlementFoundingController` sets
+  `is_settlement` but creates no district. So a founded settlement may project no
+  civilian ZoC, and `DiscontentManager` regions (built from it) would exclude it.
+  **PLAYER EXPERIENCE:** founding a settlement grants territory (SET-1).
+  **IMPLEMENTATION:** write the verification first (found a Town Hall on a cleared
+  non-settlement hex, complete construction, assert civilian ZoC covers it). If it
+  fails, the district creation belongs with the founding event, through a public method
+  on whichever class owns districts — not by `SettlementFoundingController` writing
+  another class's fields (`CLAUDE.md` §1).
+  **VERIFICATION:** new `verify_settlement_founding_zoc.gd`, mutation-tested.
+
+- [ ] `[design]` **Units and gunfire make no noise.** **WHY:** rank 2 — the P2 chain
+  (`PLAYER_EXPERIENCE.md` §5.5) has no link between fighting and attention, and "draw
+  the horde away with some military units" (the user, `vision.md` P2) has no mechanism.
+  `NoiseManager.recompute()` iterates buildings only. §6 makes gunfire the loudest
+  routine event; D66 records that its tactical table must not be applied at the
+  strategic layer literally. **PLAYER EXPERIENCE:** firing has a cost (HORDE-5);
+  a decoy force is a real play; bows vs rifles becomes a choice (COMBAT-7).
+  **IMPLEMENTATION — needs deciding:** the strategic reach of combat noise (a transient
+  per-engagement dB source through `NoisePropagation`, decaying over a logic tick or
+  two, is the shape that reuses D66-D69), and whether melee/bows are silent. Same gap as
+  the §6 item's step (d) under Deferred, pulled forward because the opening depends on
+  it. **VERIFICATION:** `horde` scenario HORDE-3 with units fighting near the colony;
+  `verify_noise_emission.gd` extended.
+
+- [ ] `[design]` **How threat escalates inside an open campaign.** **WHY:** rank 2 —
+  D92 settles that the campaign is not a fixed-length TAB map, which closes the inherited
+  "nothing escalates" item's fixed-schedule proposal but not its question.
+  `HordeManager._on_ambient_spawn_day` ignores the day, and escalation today is purely
+  spatial (D39: exports wake as the player approaches). **PLAYER EXPERIENCE:** the
+  player is never safe to strip the walls (§9 "nothing dangerous happening") without the
+  run becoming a timer. **IMPLEMENTATION — options:** (a) spatial only — escalation is
+  the map (census density and D39) and the player's own noise; (b) time pressure too —
+  ambient spawn size/rate grows with days survived; (c) activity-driven — escalation
+  follows the colony's total noise/industry, so growth itself is the clock.
+  *Recommendation:* (c) layered on (a): it is the user's causal chain ("INDUSTRIAL
+  ACTIVITY → … → MORE THREAT") taken literally and needs no calendar. **VERIFICATION:**
+  a 60-day `opening` run (`--days=60`) with a scripted growing economy; time between
+  threats in telemetry `events`.
+
+- [ ] `[visual-autonomous]` **Infestation is never drawn on the map.** **WHY:** rank 3 —
+  the game's primary strategic threat (P1) has no overlay: no UI, overlay or view file
+  reads `InfestationManager.band_at`/`infestation_at`. The player cannot see which hex is
+  Cleared, Fringe, Contested or Hive Core, and so cannot answer "why do I want this hex"
+  or "where will the next horde come from". **PLAYER EXPERIENCE:** the map shows the
+  frontier of reclaimed Britain (the campaign fantasy made visible), which hexes are
+  buildable, and where exports come from (FB-1, EXP-5). **IMPLEMENTATION:** a renderer
+  under `StrategicOverlayManager`, shape-plus-colour per band (`todo.md`'s accessibility
+  rule: never colour alone), drawn only on EXPLORED hexes, updated from
+  `InfestationManager.band_changed` (push, not polling — `CLAUDE.md` §1), toggleable like
+  the other overlays; an iterator over the non-Cleared set if a per-frame walk is
+  needed (D70). **VERIFICATION:** a verification that the renderer's hex set follows
+  `band_changed`; windowed `smoke_screenshot.tscn` 01/02 framings **inspected**; before
+  and after PNGs in the PR.
+
+- [ ] `[visual-autonomous]` **Combat has no on-screen presentation.** **WHY:** rank 3 —
+  COMBAT-2..6 all fail today: no attack animation, projectile, muzzle flash, hit flash,
+  damage number, death effect or on-map health bar; nothing but `EventManager` listens
+  to `CombatCoordinator.engagement_resolved`, and nothing at all to
+  `WallManager.wall_segment_damaged`. A fight is static figures thinning out.
+  **PLAYER EXPERIENCE:** the player can see who is fighting whom, that hits land, what
+  died, and whether the line is holding — the minimum for "Hold the wall" to mean
+  anything. **IMPLEMENTATION:** first increment inside the existing model, no combat
+  rule changes: at HIGH fidelity, a per-engagement flash/tracer from unit figures toward
+  the crowd, a hit flash on the crowd, figures removed with a brief fall/fade rather
+  than vanishing, and a wall-impact effect on `wall_segment_damaged`. Driven by the
+  signals, in a view class, not in `CombatCoordinator` (`CLAUDE.md` §1). The D78/D84
+  battle-scale items pay for per-entity work if the first increment needs it.
+  **VERIFICATION:** `run_scenarios.py siege --shots` at the battle-scale framing,
+  **PNGs inspected**; frame cost with `bench_zombie_render.gd` if anything per-entity
+  lands.
+
+- [ ] `[gated]` **The horde warning misses wandering hordes and gives no bearing.**
+  **WHY:** rank 3 — `HUDReconTracker` shows only a fog-VISIBLE horde in ATTRACTED
+  state; most hordes that reach the colony WANDER there (0 of 73 ATTRACTED, D74 run),
+  so the colony is hit with no warning. TAB's reference is an ETA and a compass bearing
+  (inherited escalation item). **PLAYER EXPERIENCE:** "Oh shit, that horde is much
+  bigger than I expected" needs to be *seen*: size, direction, time (HORDE-1, HORDE-2,
+  FB-2). **IMPLEMENTATION:** extend the tracker to any visible horde whose path or
+  heading closes on a player building, with bearing and size class; ETA from
+  `HordeManager.get_eta_seconds()`. **VERIFICATION:** a verification over a fixture
+  horde wandering toward a building; `horde` scenario HORDE-1.
+
+- [ ] `[visual-human]` **The game is silent.** **WHY:** rank 3 — `AlertManager._MUTE_ALL_SOUND`
+  is `true`, muting the Master bus at startup, and the only sounds are five square-wave
+  tones. Why it was muted is not recorded. **PLAYER EXPERIENCE:** warnings that do not
+  need eyes; weapon identity; the audio roadmap in `PLAYER_EXPERIENCE.md` §13.
+  **IMPLEMENTATION:** ask the user why it is muted before unmuting; then roadmap layer 1
+  (warnings). **VERIFICATION:** a person listens.
+
+- [ ] `[design]` **Ranged units have no range, and gunpowder is never spent.** **WHY:**
+  rank 4 — `CombatEngine` resolves MELEE, RANGED and SPECIAL identically as a same-hex
+  exchange; `UnitDefinition` has no range. `design_doc.md` §4 specifies "1
+  Gunpowder/shot", but `CombatCoordinator` only checks the stockpile is above zero.
+  **PLAYER EXPERIENCE:** army composition is a decision; ammunition is a siege resource
+  (§5.7); Tier 1 firearms feel like a new era (IND-2). **IMPLEMENTATION — needs
+  deciding:** per-shot consumption is already specified and could be `[gated]` on its
+  own, but at today's 20 s rounds it is a balance change to every ranged unit, so it
+  wants the user's nod. Range belongs to §6's tactical layer (Deferred) — the question
+  is whether a minimal range (engage an adjacent hex, or within N m at HIGH fidelity)
+  comes first. **VERIFICATION:** `siege` DEF-3; `diagnose_resident_combat.gd` re-run.
+
+- [ ] `[design]` **Why want this hex: resource deposits and city value.** **WHY:**
+  rank 4 — output is flat on every legal hex (only farm soil varies), and a city differs
+  from an empty hex only in threat and placement permissions (`PLAYER_EXPERIENCE.md`
+  §8). The user has already chosen "real deposits that gate mines" (countryside item,
+  2026-08-19). **PLAYER EXPERIENCE:** "Now I need that coal." / "If I clear that city,
+  I can build the next part of my industrial network." (EXP-2, EXP-5).
+  **IMPLEMENTATION — needs deciding:** the deposit data source (BGS/GSI, `design_doc.md`
+  §5 PLANNED) and whether deposits are finite; for cities, which of the existing scoped
+  items carries the reward (1890s roads/rail converging on cities, salvageable ruins
+  from real settlement data, a larger urban extent) — no arbitrary bonus.
+  **VERIFICATION:** `expansion` EXP-2 against a deposit hex.
+
+- [ ] `[design]` **Historical coherence review.** **WHY:** rank 9 — D97; the Tier 4-5
+  catalogue and the design doc's "1890s-1920s" title drift toward First World War
+  vocabulary. **PLAYER EXPERIENCE:** the late game still feels like Victorian industry
+  pushed to its limit. **IMPLEMENTATION:** user decides keep / rename / rework per
+  flagged item (`PLAYER_EXPERIENCE.md` §7.1); renames are data-only. **VERIFICATION:**
+  gate only.
 
 ## Now — the core loop (P1, P2)
 
@@ -33,7 +241,7 @@ shippable and independently visible.
   80.4%. A **copy**, not `tight_crop()`'s AtlasTexture view: a MultiMesh takes a
   texture RID and `AtlasTexture.get_rid()` is its atlas's, so the region is dropped —
   probed, see D88.
-- [ ] `[gated]` **Texture import is uncompressed.** `compress/mode=0` on every 2048^2
+- [ ] `[gated]` **Texture import is uncompressed.** *(PR #108 open, 2026-09-16.)* `compress/mode=0` on every 2048^2
   PNG means RGBA8 in VRAM: **16.8 MB per texture**, in `static var` caches that are
   never evicted (`UnitVisuals._texture_cache`, `ZombieVisuals._texture_cache`). 264 MB
   on disk across `assets/units|zombies|buildings|props`. **Smaller than it was since
@@ -51,7 +259,7 @@ shippable and independently visible.
   before changing it, because the mill step was tuned against the old value: nothing
   snaps at any size, and only hordes under ~50 sit looser than their own spread — see
   D90 for the table.
-- [x] `[visual]` **Raise `max_zoom` 12 -> 128 and add the metric figure band.**
+- [x] `[visual-autonomous]` **Raise `max_zoom` 12 -> 128 and add the metric figure band.**
   (D76, D86) Done 2026-09-07. The closest zoom showed **1,040 m** of ground and now
   shows 97.5 m, where a 3.5 m figure reads at 46 px. Figure size is metric exactly
   where HIGH fidelity is active and the world-space icon radii apply everywhere below,
@@ -75,7 +283,7 @@ shippable and independently visible.
   `scripts/test/bench_zombie_render.gd` (windowed). Settled D81-D84: fill rate is a
   non-issue (120,000 sprites at 75x coverage = **2.93 ms**), the simulation is the
   whole constraint, and the threshold is a legibility choice rather than a budget one.
-- [x] `[visual]` **Move `high_fidelity_threshold` 2.0 -> 48.0.** Landed 2026-09-07 with
+- [x] `[visual-autonomous]` **Move `high_fidelity_threshold` 2.0 -> 48.0.** Landed 2026-09-07 with
   the `max_zoom` item. Decided 2026-09-07 by
   looking (`scripts/test/preview_crowd_threshold.gd`), settled in D85-D87. **32 was the
   wrong answer and the images said so**: a packed horde at 11.5 px collapses back into
@@ -83,7 +291,10 @@ shippable and independently visible.
   being the worst picture. At 48 the view is 260 x 146 m, figures are 17.2 px, an
   engulfing horde is 12,834 individuals at ~0.63 ms. Code change is one exported
   default on `CameraController`; it lands with the `max_zoom` item above.
-- [ ] `[visual]` **Handle the MEDIUM -> HIGH pop at the threshold.** (D87) MEDIUM draws
+- [ ] `[visual-autonomous]` **Handle the MEDIUM -> HIGH pop at the threshold.** (D87)
+  *Tag note 2026-09-16:* `HANDOFF.md` called this `[design]`. It is a look decision of
+  the same kind as D85, which the user delegated ("you make the decision"), so it is
+  autonomous — render both options and put the images in the PR. MEDIUM draws
   `MEDIUM_ZOMBIE_CLUSTER_SIZE` = 5 figures per horde and HIGH draws all 12,834, so zoom
   48 is a jump between them in one scroll click. The old 2.0 threshold hid this because
   neither side was legible. Crossfade, or scale MEDIUM's cluster count with zoom.
@@ -378,7 +589,7 @@ shippable and independently visible.
   hex into its neighbours — a mechanic nobody has built, which would change how fast
   infestation creeps across the whole map and is therefore a balance decision, not a
   wiring one. **The user has to pick which; do not infer it from the wording.**
-- [ ] `[visual]` **Hex-border snapping as a wall placement aid.** Freehand model
+- [ ] `[visual-autonomous]` **Hex-border snapping as a wall placement aid.** Freehand model
   unchanged; snap when a drawn line runs near a border, modifier key to refuse.
   Sealing a border is ~50 pieces over ~4,992 m and is pixel-hunting without it. (D20)
 - [x] `[gated]` **Gate pass-through.** Closed 2026-09-16 — it had shipped 2026-08-19
@@ -453,10 +664,10 @@ shippable and independently visible.
   net-new. Required, one at each end of a line. (D25)
 - [ ] `[gated]` **Canal locks.** Canals dead flat; locks cost resources and reduce
   throughput. Needs the fine elevation bake. (D26, D27)
-- [ ] `[visual]` **Placed-segment renderer for Infrastructure.** No persistent visual
+- [ ] `[visual-autonomous]` **Placed-segment renderer for Infrastructure.** No persistent visual
   exists once a segment is placed. Now part of the §2.2 rework. Detail below.
 - [ ] `[gated]` **Epic phase 2 — mechanics read the vector layer.** Detail below.
-- [ ] `[visual]` **Epic phase 4 — vertex-displaced elevation relief.** Unblocked by the
+- [ ] `[visual-autonomous]` **Epic phase 4 — vertex-displaced elevation relief.** Unblocked by the
   fine elevation bake. Detail below.
 - [ ] `[gated]` **`HordeManager` stuck-detection/bypass.** Shares `MovementStepper`
   clearance math with `UnitOrderController` but has no bypass at all. Detail below.
@@ -472,10 +683,10 @@ shippable and independently visible.
   hard-won details (a stray desktop mouse wheel rezooming mid-run; relief streaming 2
   tiles/frame so a shot taken too early photographs half-loaded terrain), and a fix to
   one of them today reaches one script in five.
-- [ ] `[visual]` **6 of 15 resource counters have no icon, name or tooltip.** Detail below.
+- [ ] `[visual-autonomous]` **6 of 15 resource counters have no icon, name or tooltip.** Detail below.
 - [ ] `[gated]` **Placement status line is never cleared**, so no-op clicks read as
   successes. Detail below.
-- [ ] `[visual]` **Tech Tree panel drew as an empty black rectangle** (unconfirmed).
+- [ ] `[visual-autonomous]` **Tech Tree panel drew as an empty black rectangle** (unconfirmed).
   Detail below.
 - [ ] `[gated]` **Relief tiles will not load in an exported build.**
   `ReliefTileView._load_tile()` calls `Image.load()` on a `res://` path, and Godot
@@ -510,17 +721,28 @@ Not forgotten. Not worked on until the core loop works. Do not justify work by t
   acknowledged consequence of "killing is the only suppression" (D8).
 - [ ] `[design]` **Physical goods transport** with travelling carts and trains. §2.2's
   throughput numbers are the upgrade path.
-- [ ] `[visual]` Coastline/minimap still trace `_LAND_RLE`'s hex-quantized boundary.
-- [ ] `[visual]` Epic 3b — blending across biome boundaries.
-- [ ] `[visual]` Epic 5 — escarpment cliff faces + coastline detail.
+- [ ] `[visual-autonomous]` Coastline/minimap still trace `_LAND_RLE`'s hex-quantized boundary.
+- [ ] `[visual-autonomous]` Epic 3b — blending across biome boundaries.
+- [ ] `[visual-autonomous]` Epic 5 — escarpment cliff faces + coastline detail.
 - [ ] `[gated]` Epic 6 — `SubHexTerrainOverride` runtime patch path.
 - [ ] `[gated]` Epic 7 — LOD / caching / perf pass.
 - [ ] `[gated]` Real 1890s main roads baked from geographic data.
-- [ ] `[visual]` Ambient ruins from real settlement data.
-- [ ] `[visual]` Countryside features outstanding from the 2026-08-19 request.
+- [ ] `[visual-autonomous]` Ambient ruins from real settlement data.
+- [ ] `[visual-autonomous]` Countryside features outstanding from the 2026-08-19 request.
 - [ ] `[design]` Resource-tick pacing/balancing.
 - [ ] `[design]` Famine-severity input to Morale.
 - [ ] `[design]` Game time runs unattended while the playtester thinks (harness artifact).
+  *2026-09-16:* the deterministic half of this is answered by
+  `tools/playtest/run_scenarios.py`, which hand-drives time at a fixed step; the
+  AgentHarness (real UI) still has no `step_days`.
+- [ ] `[gated]` **Playtest scenarios: longer and richer runs.** **WHY:** the scenario set
+  shipped 2026-09-16 scripts only Tier 0 play and short horizons, so it cannot yet see
+  the 2-3 hour session (`PLAYER_EXPERIENCE.md` §3). **PLAYER EXPERIENCE:** none directly;
+  it is how every rank 1-8 item proves itself. **IMPLEMENTATION:** a scripted economy
+  that grows through Tier 1-2, a wall-building helper (`WallManager.place_wall_line()`),
+  a second-settlement scenario once §2.2 lands, and a headless-safe "long opening"
+  (60 days) for the escalation item. **VERIFICATION:** each new scenario runs to JSON
+  on `origin/master`.
 - [ ] **Phase 3 — Sewers/Underground** (3.1, 3.2, 3.3). Cut order #1.
 - [ ] **Phase 7 — Narrative Campaign** (7.1-7.7). Ships in v1.0, started only once the
   core game works. 7.5 Naval/Ireland is cut order #2.
@@ -531,6 +753,10 @@ Not forgotten. Not worked on until the core loop works. Do not justify work by t
   days"** (playtest, 2026-08-17). This was the structural gap that drove the entire
   §2.1 design. It is answered by the infestation model, not by a separate escalation
   feature. Detail retained below for the original observation.
+  *2026-09-16:* its fixed-length-campaign question is closed by D92 (the campaign is
+  persistent and open-ended). Escalation over time is re-opened as its own `[design]`
+  item in the Now priority index, and the TAB warning conventions it researched (ETA,
+  bearing) feed the horde-warning item.
 
 ---
 
