@@ -13,9 +13,15 @@ extends Node
 ## KIND_LIGHT, so the words and the mechanic cannot drift apart.
 
 signal objectives_changed
-## A short headline, a sentence or two of what it means, and where (has_coord false
-## when it is nowhere in particular).
-signal dispatch(title: String, body: String, coord: Vector2i, has_coord: bool)
+## A short headline, a sentence or two of what it means, where to look (a world
+## position and the camera zoom that frames it — hex scale for a hex, wall scale
+## for a siege), and whether it is urgent enough to stop the clock.
+signal dispatch(title: String, body: String, world: Vector2, zoom: float, urgent: bool)
+
+## Camera zooms a dispatch asks for (CameraController.set_zoom_level): the start and
+## its ring, and close enough on a wall piece that a bow's 200 m reads as ~100 px.
+const ZOOM_HEX_SCALE: float = 0.3
+const ZOOM_WALL_SCALE: float = 5.0
 ## &"success", &"defeat" or &"time".
 signal slice_finished(outcome: StringName)
 
@@ -153,7 +159,7 @@ func _process(delta: float) -> void:
 func _announce_start() -> void:
 	dispatch.emit("Manchester, the southern edge",
 		"%s, south-west beyond the wall, is open ground for farms and coal under %d of the dead. Clear it: send the squad onto the hex and they fight whatever reaches them. %d must fall before it counts as cleared." % [VerticalSliceConfig.TARGET_NAME.capitalize(), _target_seeded, _target_seeded - _target_threshold],
-		VerticalSliceConfig.TARGET_HEX, true)
+		HexCoord.axial_to_world(VerticalSliceConfig.TARGET_HEX), ZOOM_HEX_SCALE, false)
 
 
 func _release_horde() -> void:
@@ -173,7 +179,7 @@ func _release_horde() -> void:
 		"Scouts on the moor to the %s: a horde of %d has left its ground %d hexes out and is drifting along the moor toward the town. Nothing of yours reaches it yet. At nightfall your %d lit Watchtower%s will be seen from %d hex%s, and within a hex it will hear the Brickworks. Meet it at the wall with archers, or be dark and quiet when it passes." % [
 			_bearing_word(VerticalSliceConfig.START_HEX, _horde.hex_coord), _horde.size, HexCoord.distance(VerticalSliceConfig.START_HEX, _horde.hex_coord),
 			lamps, "" if lamps == 1 else "s", NoiseManager.light_reach_hexes(lamps, HordeManager.ATTRACTION_THRESHOLD), "" if NoiseManager.light_reach_hexes(lamps, HordeManager.ATTRACTION_THRESHOLD) == 1 else "es"],
-		_horde.hex_coord, true)
+		_horde_world(_horde), ZOOM_HEX_SCALE, true)
 
 
 func _evaluate() -> void:
@@ -183,7 +189,7 @@ func _evaluate() -> void:
 	objectives_changed.emit()
 	if _finish_countdown < 0.0 and _all_required_done():
 		_finish_countdown = FINISH_DELAY_SECONDS
-		dispatch.emit("The ground is yours", "%s is cleared and the horde is dealt with. The debrief follows." % VerticalSliceConfig.TARGET_NAME.capitalize(), VerticalSliceConfig.TARGET_HEX, true)
+		dispatch.emit("The ground is yours", "%s is cleared, claimed and farmed, and the horde is dealt with. The debrief follows." % VerticalSliceConfig.TARGET_NAME.capitalize(), HexCoord.axial_to_world(VerticalSliceConfig.TARGET_HEX), ZOOM_HEX_SCALE, false)
 
 
 func _refresh_clear_objective() -> void:
@@ -205,10 +211,13 @@ func _complete_clear() -> void:
 	objective["state"] = &"done"
 	objective["progress"] = 1.0
 	objective["detail"] = "Cleared — build rights on the whole hex"
-	_objectives.append({"id": OBJECTIVE_FARM, "title": "Build a farm on %s" % VerticalSliceConfig.TARGET_NAME, "detail": "Optional — the reason the ground was worth taking", "progress": 0.0, "state": &"active", "required": false})
+	# Required: taking ground is only half of expansion (EXP-2, "clearing yields
+	# something the player wanted from that hex"); the slice ends when the ground
+	# produces.
+	_objectives.append({"id": OBJECTIVE_FARM, "title": "Claim it: build a farm on %s" % VerticalSliceConfig.TARGET_NAME, "detail": "A Smallholding Farm (100 Wood) anywhere on the cleared hex", "progress": 0.0, "state": &"active", "required": true})
 	dispatch.emit("%s is cleared" % VerticalSliceConfig.TARGET_NAME.capitalize(),
-		"Fewer than %d dead remain, so the hex is Cleared: every building the colony can raise may now go there. It stays cleared only while the dead are kept off it." % _target_threshold,
-		VerticalSliceConfig.TARGET_HEX, true)
+		"Fewer than %d dead remain, so the hex is Cleared: every building the colony can raise may now go there. Claim it — put a Smallholding Farm on it (Agriculture, 100 Wood). It stays cleared only while the dead are kept off it." % _target_threshold,
+		HexCoord.axial_to_world(VerticalSliceConfig.TARGET_HEX), ZOOM_HEX_SCALE, false)
 
 
 func _refresh_horde_objective() -> void:
@@ -249,7 +258,7 @@ func _on_horde_attracted(horde: Horde, source: BuildingInstance, kind: StringNam
 	dispatch.emit("It has found you",
 		"The horde caught %s and turned toward it — %d hex%s out, about %s at this speed. Switch that off and it loses you; keep it lit and meet it at the wall with archers within %d m of the piece it hits." % [
 			what, HexCoord.distance(horde.hex_coord, source.hex_coord), "" if HexCoord.distance(horde.hex_coord, source.hex_coord) == 1 else "es", _format_real(eta), int(WallDefenseController.RANGED_REACH_METRES)],
-		horde.hex_coord, true)
+		_horde_world(horde), ZOOM_HEX_SCALE, true)
 
 
 func _on_horde_lost_attraction(horde: Horde, previous_source: BuildingInstance) -> void:
@@ -264,7 +273,7 @@ func _on_horde_lost_attraction(horde: Horde, previous_source: BuildingInstance) 
 		why = "dawn put out"
 	dispatch.emit("It has lost you",
 		"The horde is wandering again: %s the %s that drew it. Nothing of yours reaches it now." % [why, previous_source.definition.display_name],
-		horde.hex_coord, true)
+		_horde_world(horde), ZOOM_HEX_SCALE, false)
 
 
 func _on_horde_siege_started(horde: Horde, segment: WallSegment) -> void:
@@ -274,7 +283,7 @@ func _on_horde_siege_started(horde: Horde, segment: WallSegment) -> void:
 	dispatch.emit("At the wall",
 		"%d are clawing at a %s. Undefended it falls in about %s. Units within %d m (bows) or %d m (hand weapons) of it on your side strike from cover every volley and take nothing back." % [
 			horde.size, "gate" if segment.is_gate else "wall piece", _format_real(undefended_seconds), int(WallDefenseController.RANGED_REACH_METRES), int(WallDefenseController.MELEE_REACH_METRES)],
-		horde.hex_coord, true)
+		(segment.point_a + segment.point_b) * 0.5, ZOOM_WALL_SCALE, true)
 
 
 func _on_horde_removed(horde: Horde) -> void:
@@ -287,7 +296,7 @@ func _on_horde_removed(horde: Horde) -> void:
 			objective["state"] = &"done"
 			objective["progress"] = 1.0
 			objective["detail"] = "Destroyed"
-			dispatch.emit("The horde is destroyed", "All %d are down." % VerticalSliceConfig.HORDE_SIZE, VerticalSliceConfig.START_HEX, true)
+			dispatch.emit("The horde is destroyed", "All %d are down." % VerticalSliceConfig.HORDE_SIZE, HexCoord.axial_to_world(VerticalSliceConfig.START_HEX), ZOOM_HEX_SCALE, false)
 		return
 	# Merged into another horde on its hex: follow the survivor.
 	var survivors := _hordes.get_hordes_at(horde.hex_coord)
@@ -300,7 +309,7 @@ func _on_phase_changed(phase: GameEnums.DayPhase) -> void:
 		var reach := NoiseManager.light_reach_hexes(lamps, HordeManager.ATTRACTION_THRESHOLD)
 		dispatch.emit("Nightfall",
 			"%d lamp%s lit: the town is seen from %d hex%s, and the dead move four times faster in the dark. Each Watchtower switched off shortens that by a hex, and costs its night vision." % [lamps, "" if lamps == 1 else "s", reach, "" if reach == 1 else "es"],
-			VerticalSliceConfig.START_HEX, true)
+			HexCoord.axial_to_world(VerticalSliceConfig.START_HEX), ZOOM_HEX_SCALE, false)
 		return
 	if not _horde_released:
 		return
@@ -313,7 +322,7 @@ func _on_phase_changed(phase: GameEnums.DayPhase) -> void:
 		objective["state"] = &"done"
 		objective["progress"] = 1.0
 		objective["detail"] = "Driven off — %d hexes out at dawn with nothing to follow" % distance
-		dispatch.emit("Dawn — it never found you", "The horde is %d hexes out and wandering. It is still out there, and the next dark night your lamps will show you to it again." % distance, _horde.hex_coord, true)
+		dispatch.emit("Dawn — it never found you", "The horde is %d hexes out and wandering. It is still out there, and the next dark night your lamps will show you to it again." % distance, _horde_world(_horde), ZOOM_HEX_SCALE, false)
 		objectives_changed.emit()
 
 
@@ -333,7 +342,7 @@ func _on_wall_breached(segment: WallSegment) -> void:
 		return
 	dispatch.emit("The wall is breached",
 		"A %s has fallen. Whatever is clawing at it walks into the town next, and units it meets in the open fight the whole horde, not a wall's width of it. Pull back, or get archers onto the next piece." % ("gate" if segment.is_gate else "wall piece"),
-		VerticalSliceConfig.START_HEX, true)
+		(segment.point_a + segment.point_b) * 0.5, ZOOM_WALL_SCALE, true)
 
 
 func _finish(outcome: StringName) -> void:
@@ -373,6 +382,10 @@ func _lit_lamps_at_start() -> int:
 
 ## Game-seconds as real time at TickManager's default speed, which is how long the
 ## player actually has.
+static func _horde_world(horde: Horde) -> Vector2:
+	return HexCoord.axial_to_world(horde.hex_coord) + horde.local_position
+
+
 static func _format_real(game_seconds: float) -> String:
 	var real := int(round(game_seconds / TickManager.SPEED_MULTIPLIERS[1]))
 	if real < 60:

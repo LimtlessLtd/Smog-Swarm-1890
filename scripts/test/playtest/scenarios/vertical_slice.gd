@@ -30,6 +30,7 @@ var _defending: bool = false
 var _returned_to_clearing: bool = false
 var _dark: bool = false
 var _dispatches: Array[String] = []
+var _farm_ordered: bool = false
 
 
 func launch_vertical_slice() -> bool:
@@ -41,7 +42,17 @@ func days() -> int:
 
 
 func checkpoints() -> Array:
-	return [0, 1]
+	return [0]
+
+
+## Report, dusk, siege under way, siege late, after. Game-seconds since the start.
+func shot_seconds() -> Array:
+	return [800.0, 1215.0, 1300.0, 1500.0, 1900.0]
+
+
+## Hex scale (the town, the moor and the ring the lamps reach) and wall scale.
+func shot_zooms() -> Array:
+	return [0.3, 5.0]
 
 
 func setup(ctx) -> void:
@@ -50,7 +61,7 @@ func setup(ctx) -> void:
 	if not _director.is_active():
 		ctx.note("the slice director is not active — GameLaunchState did not carry the slice")
 		return
-	_director.dispatch.connect(func(title: String, _body: String, _coord: Vector2i, _has: bool) -> void:
+	_director.dispatch.connect(func(title: String, _body: String, _world: Vector2, _zoom: float, _urgent: bool) -> void:
 		_dispatches.append("%s %s" % [_real(_director.get_elapsed_seconds()), title])
 		ctx.note("dispatch at %s: %s" % [_real(_director.get_elapsed_seconds()), title]))
 	_director.slice_finished.connect(func(outcome: StringName) -> void:
@@ -87,6 +98,9 @@ func on_step(ctx, _step: int) -> void:
 	if _director == null or not _director.is_active() or _finished_at >= 0.0:
 		return
 	var horde := _director.get_horde()
+	if not _farm_ordered and ctx.infestation.is_cleared(VerticalSliceConfig.TARGET_HEX):
+		_farm_ordered = true
+		ctx.note("farm on the cleared moor at %s: %s" % [_real(_director.get_elapsed_seconds()), ctx.place(GameEnums.BuildingType.SMALLHOLDING_FARM, VerticalSliceConfig.TARGET_HEX)])
 	if horde != null and _reported_at < 0.0:
 		_reported_at = _director.get_elapsed_seconds()
 		if ctx.variant == "dark":
@@ -153,8 +167,8 @@ func assess(ctx) -> Array:
 		summary.append("%s=%s (%s)" % [objective["id"], objective["state"], objective["detail"]])
 	var length := _finished_at if _finished_at >= 0.0 else _director.get_elapsed_seconds()
 	out.append(check("SLICE-LENGTH", "Does the slice end inside 10-20 real minutes?",
-		"%s, outcome %s" % [_real(length), _outcome if _outcome != &"" else "unfinished"], _finished_at < 0.0 or length < 3000.0 or length > 6000.0,
-		"The ask: a 10-20 minute vertical slice. 3,000-6,000 game-seconds at 5x."))
+		"%s, outcome %s" % [_real(length), _outcome if _outcome != &"" else "unfinished"], _finished_at < 0.0 or length < 1800.0 or length > 6000.0,
+		"The ask: a 10-20 minute vertical slice. This player reacts instantly and never reads a dispatch, so its length is a floor for a person's: concern under 6 real minutes (1,800 game-seconds) or over 20."))
 	out.append(check("HORDE-1", "Was the horde reported before it arrived?",
 		"reported %s, attracted %s, siege %s" % [_real(_reported_at), _real(_attracted_at), _real(_siege_at)],
 		_reported_at < 0.0 or (_siege_at >= 0.0 and _siege_at <= _reported_at),
@@ -169,14 +183,32 @@ func assess(ctx) -> Array:
 	out.append(check("EXP-1", "Was the first clear an operation of minutes?",
 		"; ".join(summary), not _objective_done(objectives, VerticalSliceDirector.OBJECTIVE_CLEAR),
 		"The target must clear inside the slice."))
+	var hud: VerticalSliceHUD = ctx.main.get_node("VerticalSliceHUD")
+	var debrief := hud.get_debrief_preview(_outcome if _outcome != &"" else &"time")
+	for line in debrief["why"]:
+		ctx.note("DEBRIEF WHY: " + line)
+	for line in debrief["timeline"]:
+		ctx.note("DEBRIEF TIMELINE: " + line)
+	out.append(check("DEBRIEF", "Does the debrief say why, not only what?",
+		"%d why-lines, %d timeline lines: %s" % [debrief["why"].size(), debrief["timeline"].size(), debrief["title"]], debrief["why"].size() < 2,
+		"The ask: 'immediately understand why what I did mattered'. At least the horde and the ground each need a cause."))
 	out.append(check("FEEDBACK", "Did the world explain itself?",
 		"%d dispatches: %s | %d log entries" % [_dispatches.size(), " / ".join(_dispatches), _log.get_entries().size()], _dispatches.size() < 4,
 		"Start, report, nightfall and at least one horde response should all be spoken."))
 	return out
 
 
+## Follows the action so each checkpoint frames what a player would be looking at:
+## the sieged piece while there is one, the horde while it is out, the town and the
+## moor otherwise.
 func camera_focus(ctx) -> Vector2:
-	return HexCoord.axial_to_world(ctx.start_hex)
+	var horde: Horde = _director.get_horde() if _director else null
+	if horde != null:
+		var segment := ctx.hordes.get_sieged_segment(horde) as WallSegment
+		if segment != null:
+			return (segment.point_a + segment.point_b) * 0.5
+		return (HexCoord.axial_to_world(ctx.start_hex) + HexCoord.axial_to_world(horde.hex_coord) + horde.local_position) * 0.5
+	return (HexCoord.axial_to_world(ctx.start_hex) + HexCoord.axial_to_world(VerticalSliceConfig.TARGET_HEX)) * 0.5
 
 
 static func _objective_done(objectives: Array[Dictionary], id: StringName) -> bool:

@@ -49,6 +49,8 @@ var _kills_by_hex: Dictionary = {}          # Vector2i -> int, contact kills (re
 var _siege_kills: Dictionary = {}           # Horde -> int, kills from cover during its current siege
 var _siege_peak_defenders: Dictionary = {}  # Horde -> int
 var _units_lost: int = 0
+var _cleared_hexes: Dictionary = {}          # Vector2i -> true once logged, so a hex is reported cleared once
+var _seen_uncleared: Dictionary = {}         # Vector2i -> true once a fight there happened while it was not cleared
 var _wall_damage_taken: float = 0.0
 
 
@@ -157,13 +159,18 @@ func _on_engagement_resolved(instance: UnitInstance, horde: Horde, result: Dicti
 	else:
 		_kills_in_contact += killed
 		_kills_by_hex[horde.hex_coord] = int(_kills_by_hex.get(horde.hex_coord, 0)) + killed
+		_check_cleared(horde.hex_coord)
 	if instance.is_destroyed():
 		_units_lost += 1
 		_add(KIND_UNIT_LOST, "A %s squad was wiped out fighting in the open." % instance.definition.display_name, instance.hex_coord,
 			{"unit": instance.definition.display_name, "horde_size": horde.size, "from_cover": result.get("from_cover", false)})
 
+## Only hordes that besieged a wall are logged as destroyed. A hex's residents come
+## out to fight as a fresh horde every wave (ResidentDefenseController) and each
+## one that dies is removed too — logging those buried a slice's debrief under
+## dozens of identical lines.
 func _on_horde_removed(horde: Horde) -> void:
-	if horde.size > 0:
+	if horde.size > 0 or not _siege_kills.has(horde):
 		_siege_kills.erase(horde)
 		_siege_peak_defenders.erase(horde)
 		return
@@ -181,8 +188,30 @@ func _on_building_ruined(instance: BuildingInstance, lost_population: int) -> vo
 		instance.hex_coord, {"building": instance.definition.display_name, "lost_population": lost_population})
 
 func _on_band_changed(coord: Vector2i, band: GameEnums.InfestationBand) -> void:
-	if band != GameEnums.InfestationBand.CLEARED:
+	if band == GameEnums.InfestationBand.CLEARED:
+		_log_cleared(coord)
+
+
+## Clearing by killing residents never emits InfestationManager.band_changed:
+## residents leave through condense_defenders(), which writes without the band
+## comparison, and die as a horde. So a kill in the field is also when to look.
+##
+## Only a hex first seen NOT cleared during a fight counts: a horde that breaks into
+## the town and loses a couple of zombies there would otherwise read as the town
+## being "cleared".
+func _check_cleared(coord: Vector2i) -> void:
+	if not _infestation or _cleared_hexes.has(coord) or _infestation.capacity_at(coord) <= 0:
 		return
+	if not _infestation.is_cleared(coord):
+		_seen_uncleared[coord] = true
+	elif _seen_uncleared.has(coord):
+		_log_cleared(coord)
+
+
+func _log_cleared(coord: Vector2i) -> void:
+	if _cleared_hexes.has(coord):
+		return
+	_cleared_hexes[coord] = true
 	_add(KIND_CLEARED, "Hex %s was cleared after %d kills there." % [coord, get_contact_kills_at(coord)], coord, {"kills": get_contact_kills_at(coord)})
 
 func _on_phase_changed(phase: GameEnums.DayPhase) -> void:

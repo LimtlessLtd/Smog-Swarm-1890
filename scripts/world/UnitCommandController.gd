@@ -33,6 +33,9 @@ extends Node2D
 ## need to special-case either view mode.
 
 signal unit_selected(instance: UnitInstance)
+## A drag-box or select_units() picked several at once. unit_selected still fires
+## for the first, so a panel that shows one unit keeps working.
+signal units_selected(instances: Array[UnitInstance])
 signal building_instance_selected(instance: BuildingInstance)
 signal wall_segment_selected(segment: WallSegment)
 signal selection_cleared
@@ -52,6 +55,15 @@ const _SELECTION_RING_COLOR := Color(1.0, 0.9, 0.2, 0.9)
 const _PATROL_PREVIEW_COLOR := Color(0.9, 0.85, 0.2, 0.9)
 const _WALL_HIGHLIGHT_COLOR := Color(1.0, 0.9, 0.2, 0.9)  ## Same gold as _SELECTION_RING_COLOR — one shared "this is selected" language regardless of what kind of thing it is.
 const _WALL_CLICK_TOLERANCE := 24.0  ## Max distance (world units) from a wall segment's own line (hex_a center to hex_b center) a click still counts as "on" it. Small relative to HexCoord.HEX_SIZE (512).
+## Screen pixels the mouse must travel with the left button held before a press
+## becomes a box selection instead of a click.
+const _BOX_DRAG_THRESHOLD_PX := 10.0
+## World units between figures when a group is ordered to one point — ~25 m,
+## so a squad of sixteen stands in a block about 100 m across rather than on one
+## spot, which also keeps a group ordered to a wall piece inside a bow's reach
+## of it (WallDefenseController.RANGED_REACH_METRES 200 m).
+const _FORMATION_SPACING := 2.5
+const _BOX_FILL_COLOR := Color(1.0, 0.9, 0.2, 0.12)
 const _UNIT_CLICK_TOLERANCE := 40.0  ## Max distance (world units) from a unit's own real rendered position a click still counts as "on" it. Covers a whole squad's visual scatter cluster (TacticalEntityLayer.FIGURE_SPREAD, 20.0, plus jitter).
 
 @export var hex_grid_map_path: NodePath
@@ -71,6 +83,13 @@ var _build_placement_controller: BuildPlacementController
 var _wall_placement_controller: WallPlacementController
 
 var _selected_unit: UnitInstance
+var _selected_units: Array[UnitInstance] = []  ## Every unit in the current selection; _selected_unit is its first.
+var _press_screen := Vector2.ZERO
+var _press_world := Vector2.ZERO
+var _left_held: bool = false
+var _box_active: bool = false
+var _group_marker: Node2D
+var _group_marker_shown: bool = false  ## Whether the marker drew something last frame, so it is redrawn once more to clear.
 var _selected_building: BuildingInstance
 var _selected_wall: WallSegment
 var _is_recording_patrol: bool = false
@@ -125,8 +144,32 @@ func _ready() -> void:
 	_patrol_preview.default_color = _PATROL_PREVIEW_COLOR
 	add_child(_patrol_preview)
 
+	_group_marker = Node2D.new()
+	_group_marker.draw.connect(_draw_group_marker)
+	add_child(_group_marker)
+
 func get_selected_unit() -> UnitInstance:
 	return _selected_unit
+
+func get_selected_units() -> Array[UnitInstance]:
+	return _selected_units.duplicate()
+
+## Selects `instances` as a group (a HUD "select army" button, or a drag-box).
+func select_units(instances: Array[UnitInstance]) -> void:
+	var alive: Array[UnitInstance] = []
+	for instance in instances:
+		if not instance.is_destroyed():
+			alive.append(instance)
+	if alive.is_empty():
+		clear_selection()
+		return
+	if alive.size() == 1:
+		_select_unit(alive[0])
+		return
+	_select_unit(alive[0])
+	_selected_units = alive
+	_selection_ring.visible = false
+	units_selected.emit(alive.duplicate())
 
 func is_recording_patrol() -> bool:
 	return _is_recording_patrol
@@ -139,13 +182,27 @@ func _unhandled_input(event: InputEvent) -> void:
 		return
 	if _wall_placement_controller and _wall_placement_controller.is_placing():
 		return
-	if event is InputEventMouseButton and event.pressed:
-		if event.button_index == MOUSE_BUTTON_LEFT:
-			_on_left_click(get_global_mouse_position())
-			get_viewport().set_input_as_handled()
-		elif event.button_index == MOUSE_BUTTON_RIGHT:
-			_on_right_click(get_global_mouse_position())
-			get_viewport().set_input_as_handled()
+	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+		if event.pressed:
+			# Decided on release: a press that travels becomes a box selection.
+			_left_held = true
+			_box_active = false
+			_press_screen = event.position
+			_press_world = get_global_mouse_position()
+		elif _left_held:
+			_left_held = false
+			if _box_active:
+				_box_active = false
+				_select_in_box(_press_world, get_global_mouse_position())
+			else:
+				_on_left_click(_press_world)
+		get_viewport().set_input_as_handled()
+	elif event is InputEventMouseMotion and _left_held:
+		if not _box_active and event.position.distance_to(_press_screen) > _BOX_DRAG_THRESHOLD_PX and not _is_recording_patrol:
+			_box_active = true
+	elif event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_RIGHT:
+		_on_right_click(get_global_mouse_position())
+		get_viewport().set_input_as_handled()
 	elif event.is_action_pressed("ui_cancel"):
 		if _is_recording_patrol:
 			_cancel_patrol_recording()
@@ -175,6 +232,14 @@ func _on_right_click(world_pos: Vector2) -> void:
 	if _is_recording_patrol:
 		_cancel_patrol_recording()
 		return
+	if _selected_units.size() > 1 and _unit_order_controller:
+		var columns := int(ceil(sqrt(float(_selected_units.size()))))
+		for i in _selected_units.size():
+			var slot := Vector2(float(i % columns) - float(columns - 1) * 0.5, float(i / columns) - float(columns - 1) * 0.5) * _FORMATION_SPACING
+			var target_world := world_pos + slot
+			var target_coord := _hex_grid_map.world_to_coord(target_world)
+			_unit_order_controller.issue_move_order(_selected_units[i], target_coord, target_world - HexCoord.axial_to_world(target_coord))
+		return
 	if _selected_unit and _unit_order_controller:
 		var local_offset := world_pos - HexCoord.axial_to_world(coord)
 		_unit_order_controller.issue_move_order(_selected_unit, coord, local_offset)
@@ -199,7 +264,28 @@ func _select_at(coord: Vector2i, world_pos: Vector2) -> void:
 				return
 	clear_selection()
 
+func _select_in_box(world_a: Vector2, world_b: Vector2) -> void:
+	if not _unit_manager:
+		return
+	var box := Rect2(world_a, Vector2.ZERO).expand(world_b)
+	var picked: Array[UnitInstance] = []
+	for instance in _unit_manager.get_all_units():
+		if not instance.is_destroyed() and box.has_point(HexCoord.axial_to_world(instance.hex_coord) + instance.local_position):
+			picked.append(instance)
+	select_units(picked)
+
+func _draw_group_marker() -> void:
+	var pixel := 1.0 / maxf(0.0001, get_viewport().get_canvas_transform().get_scale().x)
+	if _box_active:
+		var box := Rect2(_press_world, Vector2.ZERO).expand(get_global_mouse_position())
+		_group_marker.draw_rect(box, _BOX_FILL_COLOR, true)
+		_group_marker.draw_rect(box, _SELECTION_RING_COLOR, false, 2.0 * pixel)
+	if _selected_units.size() > 1:
+		for instance in _selected_units:
+			_group_marker.draw_arc(HexCoord.axial_to_world(instance.hex_coord) + instance.local_position, 7.0 * pixel, 0.0, TAU, 12, _SELECTION_RING_COLOR, 2.0 * pixel)
+
 func _select_unit(instance: UnitInstance) -> void:
+	_selected_units = [instance]
 	_selected_unit = instance
 	_selected_building = null
 	_selected_wall = null
@@ -216,6 +302,7 @@ func _select_unit(instance: UnitInstance) -> void:
 	unit_selected.emit(_selected_unit)
 
 func _select_building(instance: BuildingInstance) -> void:
+	_selected_units.clear()
 	_selected_unit = null
 	_selected_building = instance
 	_selected_wall = null
@@ -230,6 +317,7 @@ func _select_building(instance: BuildingInstance) -> void:
 	building_instance_selected.emit(instance)
 
 func _select_wall(segment: WallSegment) -> void:
+	_selected_units.clear()
 	_selected_unit = null
 	_selected_building = null
 	_selected_wall = segment
@@ -383,6 +471,7 @@ func demolish_selected_wall() -> bool:
 	return false
 
 func clear_selection() -> void:
+	_selected_units.clear()
 	_selected_unit = null
 	_selected_building = null
 	_selected_wall = null
@@ -393,8 +482,10 @@ func clear_selection() -> void:
 ## --- Order commands, called by UnitPanelView's buttons ---------------------
 
 func order_hold() -> void:
-	if _selected_unit and _unit_order_controller:
-		_unit_order_controller.issue_hold_order(_selected_unit)
+	if not _unit_order_controller:
+		return
+	for instance in _selected_units:
+		_unit_order_controller.issue_hold_order(instance)
 
 func order_garrison() -> void:
 	if _selected_unit and _unit_order_controller:
@@ -439,6 +530,10 @@ func train_at_selected_building(coord: Vector2i, unit_type: GameEnums.UnitType) 
 		_unit_manager.train_unit(unit_type, coord)
 
 func _on_unit_removed(instance: UnitInstance) -> void:
+	if _selected_units.size() > 1 and _selected_units.has(instance):
+		_selected_units.erase(instance)
+		select_units(_selected_units.duplicate())
+		return
 	if _selected_unit == instance:
 		clear_selection()
 
@@ -462,6 +557,10 @@ func _on_wall_segment_removed(segment: WallSegment) -> void:
 func _process(_delta: float) -> void:
 	if _selected_unit:
 		_selection_ring.position = HexCoord.axial_to_world(_selected_unit.hex_coord) + _selected_unit.local_position
+	var showing := _box_active or _selected_units.size() > 1
+	if showing or _group_marker_shown:
+		_group_marker.queue_redraw()
+	_group_marker_shown = showing
 
 ## UnitPanelView has no direct reference to UnitOrderController (this
 ## controller owns that), so an order change reaches it by re-emitting the

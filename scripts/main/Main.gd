@@ -62,3 +62,9 @@ func _ready() -> void:
 	if hexes.is_empty():
 		return
 	camera.position = HexCoord.axial_to_world(hexes[0])
+	# The slice opens framed on the town and the moor it asks the player to clear,
+	# at the hex-scale zoom its overlays are drawn for, instead of the whole-country
+	# view a campaign opens on.
+	if GameLaunchState.is_vertical_slice():
+		camera.position = (HexCoord.axial_to_world(hexes[0]) + HexCoord.axial_to_world(VerticalSliceConfig.TARGET_HEX)) * 0.5
+		camera.set_zoom_level(VerticalSliceDirector.ZOOM_HEX_SCALE)
