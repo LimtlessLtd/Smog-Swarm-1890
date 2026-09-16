@@ -393,8 +393,11 @@ func _register_freehand_segment(point_a: Vector2, point_b: Vector2, tier: int, i
 ## consume the whole shared reservation first.
 ##
 ## No-op if segments already exist (a loaded save has its own wall state) or
-## if the dependencies aren't wired. Runs from _ready(), which fires after
-## BuildingManager's own _ready() as long as this stays a later Main.tscn sibling.
+## if the dependencies aren't wired. Not called for a campaign: the free starting
+## wall was removed at the user's request on 2026-08-11 (commit 5263e5e5) and this
+## was kept "for a possible future 'start with walls' option". VerticalSliceSetup is
+## that option; verify_gates.gd, verify_wall_defense.gd and the siege playtest call it
+## on fixtures. Needs BuildingManager.seed_starting_buildings() to have run first.
 const _STARTING_WALL_GATE_COUNT: int = 2
 
 ## `gates_toward`: outside hexes whose shared edge should carry a gate, in

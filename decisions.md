@@ -14,6 +14,99 @@ Rules for this file:
 
 ---
 
+## 2026-09-16 — The vertical slice, and the rules it needed
+
+The user asked, verbatim: "Produce a 10–20 minute vertical slice where I can start with
+a tiny settlement, expand into zombie territory, encounter a genuinely frightening
+horde, use noise/light/going-dark to manipulate the threat, fight it, clear the
+territory, and immediately understand why what I did mattered."
+
+**Status of these entries:** D108 and D113 fix measured defects. D109-D112 and every
+number below are **Claude's calls, made unattended to deliver the slice, and open for
+the user to overturn** — none was asked. Where an entry implements something the user
+already decided (D98, D101) it says which part is new. Evidence for every number is the
+headless `vertical_slice` scenario (four scripted players) and
+`verify_horde_perception.gd` / `verify_wall_defense.gd` / `verify_work_clock.gd`.
+
+**D108. The slice is its own authored mode on the real map; the campaign's start is
+untouched.** Main menu "Vertical Slice (15 min)" → `GameLaunchState.request_vertical_slice()`.
+Every authored value lives in `VerticalSliceConfig`: start (80, 119) on Manchester's
+south-east edge (D99's "the start stays inside Manchester" holds), the moor at (79, 120)
+to clear (815 residents, ~650 kills), a starting kit (the starting wall with a gate
+toward the moor, Garrison, Brickworks, three lit Watchtowers, six Truncheoneers and four
+Toxophilites), and one inciting event: at 2:30 real, 1,500 residents of (82, 120) leave
+as a horde through `InfestationManager.condense_defenders()` (counts conserved, D1) and
+their first wander is sent 2 hexes out (`HordeManager.send_wandering_toward()`), so dusk
+at 4:00 finds them in reach of the lamps. Everything after that is the ordinary rules.
+*Why authored:* a random wander took the horde 18 hexes away in the first run, and the
+canonical start's ring 1 is Manchester core (D99). *Why the wall:* the campaign dropped
+its free starting wall at the user's request on 2026-08-11 and kept the function "for a
+possible future 'start with walls' option" (commit 5263e5e5); the slice is that option.
+*Found, not fixed:* (79, 119), the first-choice start, is an URBAN hex with a PEAT_BOG
+feature, so `HexPathfinder` treats the whole hex as impassable and no unit can leave it
+(`backlog.md`).
+*Measured length:* a scripted player that reacts instantly finishes in 6:47 (holding the
+wall) or 8:07 (going dark); a person reading five dispatches and giving orders by hand
+takes longer. Not yet played by a person.
+
+**D109. A horde reacts to the attraction reaching its own hex, and walks toward the
+source hex contributing most there.** Before, `HordeManager._pick_attraction_target()`
+took the loudest hex within `ATTRACTION_AWARENESS_RADIUS` (6) and tested *that hex's
+own* level, so any running emitter drew every horde within 6 hexes regardless of
+loudness — a Brickworks as far as a Bessemer complex, and D69's woodland shielding
+irrelevant to attraction (mutation-tested: the old rule draws a horde 3 hexes from a
+Brickworks whose field there is 0). Dominance is **summed per source hex** and named by
+its strongest building: a place is perceived, so a decoy needs two lamps beside a horde
+to out-pull a town of three, not one. Every horde re-reads the field on
+`NoiseManager.noise_recomputed`, so going dark, dawn or a new decoy retargets a horde
+already on the road; the comparison is by source *hex* (comparing building instances
+dropped siege paths on unrelated rebuilds). New signals: `horde_attracted`,
+`horde_lost_attraction`, `horde_siege_started`.
+
+**D110. D101's light reach: `NIGHT_LIGHT_ATTRACTION` 2.5 on the lamp's hex, falling
+linearly to nothing past `NIGHT_LIGHT_REACH_HEXES` 4, summed across lamps.** One lamp
+does not draw a horde of mean susceptibility at all; two are seen from 2 hexes, three
+from 3 (`NoiseManager.light_reach_hexes()`). *What D101 settled:* reach grows with the
+settlement. *What is new here:* the numbers, and that it stays a crude radial falloff
+blocked only by Level 4 mountains — the §6 line-of-sight work is still Deferred. Noise
+propagation (D66-D69) is unchanged; it reaches a horde only within ~1 hex at night for a
+Brickworks, which the slice uses as the "going dark means fully dark" lever.
+
+**D111. Siege pressure is contact-limited, and units behind a wall strike the horde at
+it.** A horde's wall damage used to be its whole size every tick — 800 zombies broke a
+100 HP Wooden piece in ~2 game-seconds, so a siege could not be fought. Now
+`wall_contact_frontage()` = √size, capped at 60, at `WALL_DAMAGE_PER_CONTACT_ZOMBIE` 0.03.
+`WallDefenseController` (new): every 10 game-seconds each unit within 200 m (RANGED) or
+25 m (MELEE/SPECIAL) of a sieged piece, on the other side of its line from the horde,
+strikes through `CombatCoordinator.strike_from_cover()` — full outgoing damage, nothing
+back. Fitted so preparation decides the fight (1,500 at night on a Wooden piece, real
+seconds at 5x): undefended breach ~85 s; ten defenders lose it at ~109 s with ~420
+standing; sixteen win at ~94 s; by day every wall lasts twice as long.
+`SiegeForecast` projects the same rules for the overlay's "at this rate" line and the
+debrief's counterfactual, and `verify_wall_defense.gd` holds it within 1% of the
+simulated race. *Left as it was, and a [design] question:* a horde met in the open
+still deals its whole size in damage, so Tier 0 squads die on contact with a big horde
+outside a wall. The slice leans on that ("a horde in the field is avoided or walled").
+
+**D112. D98, as built: jobs count in-game hours, production settles hourly, hordes
+travel at 0.3x.** `TickManager.hour_completed` (24 a day, all emitted in order before
+`day_completed` on a large-delta frame). Construction, repair, restart, training,
+retraining and wall repair keep their 1-4 unit durations but count hours — 24x faster,
+20-80 real seconds at 5x. Building production/upkeep and unit upkeep settle a 1/24
+share each hour (Food satisfaction still judged on the whole day). `HordeManager.HORDE_TRAVEL_MULTIPLIER`
+0.3: ~38 real seconds per hex by day and ~9 by night at 5x. *Not done:* research still
+advances per day, so `building_tier_1` is still ~80 real minutes on Town Hall RP; D98
+names research too.
+
+**D113. A horde walks up to the wall piece before it sieges.** `_advance_horde()` tests a
+whole crossing's straight line against wall pieces and used to stop the horde wherever
+it stood when that line met one — measured in the slice at 8.6 km from the piece it was
+damaging, out of sight and out of every defender's reach. `_approach_wall()` walks it to
+~20 m short first; `verify_wall_defense.gd` requires a sieging horde within 50 m (19 m
+measured). This predates the slice and affected every siege.
+
+---
+
 ## 2026-09-16 — Delegated details for roads, rail and salvage
 
 **D107. Repair, salvage and railway-data details — decided by Claude on the user's
