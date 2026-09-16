@@ -12,12 +12,32 @@
 
 ---
 
+## 0. The game, in the user's words (2026-09-16)
+
+> "They Are Billions, but on a gigantic continuous map of 1890s industrial Britain,
+> with a persistent long-form campaign where the player steadily develops from a tiny
+> settlement into an industrial military power and progressively reclaims Britain from
+> an enormous zombie population."
+
+The fantasy is "I am building an industrial civilisation in a zombie-infested
+Britain", and the transformation from survivor settlement to a power reclaiming
+Britain is "the emotional backbone of the game". `PLAYER_EXPERIENCE.md` turns this
+into loops, session targets and acceptance criteria; `GAME_HEALTH.md` records how far
+the build is from it. Settled as D92-D97.
+
+---
+
 ## 1. What this is
 
 A sit-down RTS played in real sessions with full attention — 1-3 hours, like *They
 Are Billions* or *Anno*. `BackgroundExecutionManager` exists so the world doesn't
 freeze on alt-tab; it is a convenience, **not** a core idle/persistent mode. Design
 for engagement density, not for legible catch-up after hours away.
+
+Sessions are chapters of one persistent campaign save, not separate games (D92):
+"The player should NOT repeatedly throw away an entire developed base just because
+they lost a local fight." Local losses are setbacks; total strategic defeat still ends
+the campaign (P4).
 
 The reference remains the standing directive in `todo.md`: design against *They Are
 Billions*, don't invent new mechanics. Research how TAB does a thing before deriving
@@ -39,9 +59,9 @@ primary engine of tension — not a doom clock, not scheduled waves.
 Fully specified as of 2026-08-27 in `design_doc.md` §2.1: infestation is a derived
 ratio of `zombie_count / total_zombie_pop`, capacity is baked from real 1890s
 population, and the world starts at 0/25/50/75/100% in rings out from the player's
-hex. **None of it is built yet** — `infestation` appears nowhere in the code, and the
-map currently holds ~45-75 zombies total across 4,692 hexes. This is the largest gap
-between the vision and the build.
+hex. **Built 2026-08-28/29** (D33-D51): ~37M zombies across the map, bands, breeding
+and export, resident combat. *The 2026-08-27 status that stood here ("none of it is
+built yet") is superseded.*
 
 ### P2 — Hordes big enough to end the run, and the counterplay is going quiet
 
@@ -60,16 +80,14 @@ reframes `design_doc.md` §6 (Vision, Sound, Light & Zombie AI) from "the larges
 unimplemented section of the spec" into **the core tension engine of the game**. It
 is not a polish tier.
 
-Build state, checked 2026-08-27:
-- **Noise attraction is already built** — `HordeManager`'s ATTRACTED state and
-  `_pick_attraction_target()` read `NoiseManager` and path toward the loudest nearby
-  hex. What's broken is *emission*: a flat 2-hex building-only aura, ~40x the reach
-  of §6's loudest listed sound.
-- **Buildings cannot be switched off.** No such mechanic exists. This is the most
-  direct expression of the pillar and probably the smallest piece of work in it.
-- **Light attraction does not exist**, but a crude version is nearly free —
-  buildings already carry `lit_at_night`. Full §6 line-of-sight illumination is a
-  later increment, not a prerequisite.
+Build state, re-checked 2026-09-16 (was 2026-08-27):
+- **Noise attraction is built**, and emission was rewritten as a real dB model
+  (D66-D69). **Buildings can be switched off** (D52-D58). The crude `lit_at_night`
+  light term is built.
+- **The chain still does not engage in play.** The opening colony emits nothing, so
+  0 of 73 hordes were ever ATTRACTED in a 30-day run; units and gunfire make no noise;
+  hordes cross Britain in a day and a half. See `PLAYER_EXPERIENCE.md` §5.5 — the
+  mechanics exist and need connecting, not adding.
 - **Blood attraction** is raised and explicitly deferred by the user. Discuss before
   building.
 
@@ -112,6 +130,13 @@ Reclaiming Britain and Ireland fully lit is the eventual win condition. It impli
 hundreds of hours, heavy automation, and macro tools for many settlements. Per P3,
 **none of that is a current concern** and no work should be justified by it today.
 
+**Reconciled 2026-09-16 (D93):** the *early* stages of the progression arc — survivor
+settlement through industrial town to a second, connected settlement — are the core
+game, not late content, because they are what a first session is about. What stays
+deferred is the far end: many-settlement automation, the narrative campaign, and the
+whole-island endgame. "Do not move to campaign content simply because the golden slice
+exists."
+
 ---
 
 ## 3. Deferred — not forgotten, not now
@@ -145,7 +170,8 @@ accepted that trade knowingly. Britain-only is an acceptable v1.0.
 
 ## 5. The check
 
-Every backlog item must pass all three before it is scheduled:
+Every backlog item must pass all three before it is scheduled, and is then ranked by
+`CLAUDE.md` §0.2's priority order and player-impact questions (D94):
 
 1. **Does it make the map more hostile, or the player's counterplay to hostility
    richer?** (P1, P2 — the core loop.)
@@ -156,3 +182,8 @@ Every backlog item must pass all three before it is scheduled:
 
 An item that fails #3 goes to `backlog.md` under Deferred and is not worked on,
 however well specified it is.
+
+Check 1 was written when the core loop's missing piece was hostility. As of 2026-09-16
+the map is hostile and what is missing is the player's *experience* of it — feedback,
+pacing, decisions. An item that makes an existing hostility legible, answerable or
+paced for a session passes check 1 on its "counterplay richer" half.

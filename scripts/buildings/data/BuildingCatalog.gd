@@ -368,7 +368,7 @@ static func _industrial_farm() -> BuildingDefinition:
 	return d
 
 static func _tower_blocks() -> BuildingDefinition:
-	var d := BuildingDefinition.new(GameEnums.BuildingType.TOWER_BLOCKS, "Tower Blocks")
+	var d := BuildingDefinition.new(GameEnums.BuildingType.TOWER_BLOCKS, "Tenements")
 	d.category = GameEnums.BuildingCategory.HOUSING_CIVIL
 	d.tier = 2
 	d.construction_cost = {GameEnums.ResourceType.WOOD: 150, GameEnums.ResourceType.BRICKS: 100, GameEnums.ResourceType.IRON: 50, GameEnums.ResourceType.CONCRETE: 50}
@@ -589,7 +589,7 @@ static func _bessemer_smelting_complex() -> BuildingDefinition:
 ## Global rail speed +500%, zero transfer delay — no rail-speed-bonus system
 ## exists yet to read this; see Tier 4's _steam_excavator_depot() own note.
 static func _automated_freight_marshalling_yard() -> BuildingDefinition:
-	var d := BuildingDefinition.new(GameEnums.BuildingType.AUTOMATED_FREIGHT_MARSHALLING_YARD, "Automated Freight Marshalling Yard")
+	var d := BuildingDefinition.new(GameEnums.BuildingType.AUTOMATED_FREIGHT_MARSHALLING_YARD, "Marshalling Yard")
 	d.category = GameEnums.BuildingCategory.INDUSTRY_EXTRACTION
 	d.tier = 5
 	d.construction_cost = {GameEnums.ResourceType.WOOD: 400, GameEnums.ResourceType.BRICKS: 500, GameEnums.ResourceType.CONCRETE: 400, GameEnums.ResourceType.STEEL: 300}
@@ -598,7 +598,7 @@ static func _automated_freight_marshalling_yard() -> BuildingDefinition:
 	return d
 
 static func _synthetic_chemical_refinery() -> BuildingDefinition:
-	var d := BuildingDefinition.new(GameEnums.BuildingType.SYNTHETIC_CHEMICAL_REFINERY, "Synthetic Chemical Refinery")
+	var d := BuildingDefinition.new(GameEnums.BuildingType.SYNTHETIC_CHEMICAL_REFINERY, "Chemical Works")
 	d.category = GameEnums.BuildingCategory.INDUSTRY_EXTRACTION
 	d.tier = 5
 	d.construction_cost = {GameEnums.ResourceType.WOOD: 400, GameEnums.ResourceType.BRICKS: 400, GameEnums.ResourceType.CONCRETE: 300, GameEnums.ResourceType.STEEL: 300}
@@ -609,7 +609,7 @@ static func _synthetic_chemical_refinery() -> BuildingDefinition:
 	return d
 
 static func _central_high_voltage_grid_station() -> BuildingDefinition:
-	var d := BuildingDefinition.new(GameEnums.BuildingType.CENTRAL_HIGH_VOLTAGE_GRID_STATION, "Central High-Voltage Grid Station")
+	var d := BuildingDefinition.new(GameEnums.BuildingType.CENTRAL_HIGH_VOLTAGE_GRID_STATION, "Generating Station")
 	d.category = GameEnums.BuildingCategory.INDUSTRY_EXTRACTION
 	d.tier = 5
 	d.construction_cost = {GameEnums.ResourceType.WOOD: 500, GameEnums.ResourceType.BRICKS: 800, GameEnums.ResourceType.CONCRETE: 600, GameEnums.ResourceType.STEEL: 600}
@@ -628,5 +628,5 @@ static func _ordnance_and_armament_complex() -> BuildingDefinition:
 	d.allowed_biomes = [GameEnums.BiomeType.URBAN]
 	d.requires_settlement = true
 	d.zoc_roles = [GameEnums.ZoneOfControlType.MILITARY]
-	d.can_train_units = true  ## Trains Tier 5 vehicles (design_doc.md §4: Holt Breaker, Howitzer Gun Tractor, Armoured Command Car).
+	d.can_train_units = true  ## Trains Tier 5 vehicles (design_doc.md §4: Road Locomotive, Siege Howitzer, Staff Wagon).
 	return d

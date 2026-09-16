@@ -46,7 +46,7 @@ static func get_display_name(line_type: GameEnums.SupplyLineType, tier: int) -> 
 			match tier:
 				0: return "Dirt Road"
 				1: return "Cobblestone Road"
-				2: return "Concrete Road"
+				2: return "Macadam Road"
 		GameEnums.SupplyLineType.RAILWAY:
 			return "Railway"
 		GameEnums.SupplyLineType.CANAL:

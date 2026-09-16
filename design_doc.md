@@ -1,5 +1,23 @@
-# Technical Specifications & Game Design Document: The Smog & The Swarm (1890s-1920s Era Post-Zombie Apocalypse Industrial Revolution British Empire) - v4.6
+# Technical Specifications & Game Design Document: The Smog & The Swarm (1890s Era Post-Zombie Apocalypse Industrial Revolution British Empire) - v4.6
 
+> **Note (2026-09-16), no mechanic or number changed.** This document answers "what are
+> the mechanics and numbers?". `PLAYER_EXPERIENCE.md` answers "why should a player enjoy
+> them?" and ranks above this one (`CLAUDE.md` §0): a mechanic implemented exactly as
+> written here and failing an acceptance criterion there is not done.
+> - **Renamed 2026-09-16 (D104), stats unchanged:** title era "1890s-1920s" → "1890s";
+>   Tower Blocks → Tenements; Concrete Road → Macadam Road; Holt Breaker → Road
+>   Locomotive; Howitzer Gun Tractor → Siege Howitzer; Armoured Command Car → Staff
+>   Wagon; Armored Bunker Fortification → Casemate Wall; Central High-Voltage Grid
+>   Station → Generating Station; Automated Freight Marshalling Yard → Marshalling Yard;
+>   Synthetic Chemical Refinery → Chemical Works. Enum identifiers keep the old names.
+>
+> Two things are still flagged rather than edited:
+> - **Tier names disagree with themselves:** §2's research thresholds say "Automation
+>   Era / Super-Complex Era", §2's extraction hierarchy says "Traction Era / Armament Era".
+> - **§2's ZoC paragraph** ("Linked ZoCs pool global stockpiles; unlinked ZoCs remain
+>   local") predates §2.2, which supersedes it with one stockpile per Town Hall and
+>   throughput-limited pooling (D21-D23).
+>
 > **v4.6 (2026-08-18)** reconciles §5 with what the terrain pipeline actually does.
 > Biomes are a real vector polygon partition, not a splatmap; the land-cover source is
 > OpenStreetMap rather than CORINE; elevation comes from AWS/Mapzen Terrain Tiles rather
@@ -34,9 +52,9 @@
   * **Resources:** None
 
 ### Terrain vs. Infrastructure Speed Stacking Rule
-Constructed transit corridors (**Dirt Road, Cobblestone Road, Concrete Road, Railway, Bridges**) increase base movement speed by their respective tier multiplier while **completely ignoring underlying biome movement speed reductions** (terrain penalties do not apply while units are actively traversing directly on the infrastructure tile itself). These movement bonuses and biome immunity do not apply broadly to off-road movement within the surrounding biome.
+Constructed transit corridors (**Dirt Road, Cobblestone Road, Macadam Road, Railway, Bridges**) increase base movement speed by their respective tier multiplier while **completely ignoring underlying biome movement speed reductions** (terrain penalties do not apply while units are actively traversing directly on the infrastructure tile itself). These movement bonuses and biome immunity do not apply broadly to off-road movement within the surrounding biome.
 
-*For example, a unit traveling directly along a Concrete Road (+100% base speed) through a Wetland (normally 0.5x speed) moves at the full +100% speed bonus (2.0x base speed), completely ignoring the native 50% Wetland movement penalty. However, stepping off the road into the adjacent Wetland tile immediately applies the native 0.5x Wetland movement penalty.*
+*For example, a unit traveling directly along a Macadam Road (+100% base speed) through a Wetland (normally 0.5x speed) moves at the full +100% speed bonus (2.0x base speed), completely ignoring the native 50% Wetland movement penalty. However, stepping off the road into the adjacent Wetland tile immediately applies the native 0.5x Wetland movement penalty.*
 
 ---
 
@@ -55,14 +73,14 @@ To maintain deep industrial strategy without overwhelming player management, res
 * **Tier 2 (Iron Base):** Iron Ore (Iron Ore Mine)
 * **Tier 3 (Steel Base):** Sulfur (Sulfur Mine), Coal/Wood high-output consolidators (Deep Coal Shafts, Sawmills) & **City Expansion** (Remote specialized outposts)
 * **Tier 4 (Traction Era):** Advanced Extraction (Steam Excavator Depot boosts node yields by +50%)
-* **Tier 5 (Armament Era):** Mass Synthesis & Automation (Bessemer Smelting Complexes & Synthetic Refineries)
+* **Tier 5 (Armament Era):** Mass Synthesis & Automation (Bessemer Smelting Complexes & Chemical Works)
 
 ### Processed Resource Recipes
 * **Bricks** — Produced at Brickworks (Inputs: Clay).
 * **Iron** — Produced at Iron Foundry (Inputs: Iron Ore, Coal).
 * **Steel** — Produced at Steelworks / Bessemer Complex (Inputs: Iron Ore or Iron + Coal).
 * **Concrete** — Produced at Concrete Plant (Inputs: Limestone, Clay, Coal).
-* **Gunpowder** — Produced at Gunpowder Mill / Synthetic Refinery (Inputs: Sulfur, Coal).
+* **Gunpowder** — Produced at Gunpowder Mill / Chemical Works (Inputs: Sulfur, Coal).
 
 ### Capacity Systems & Research Pacing
 * **Population** — Provided by housing. Reserved as flat cost by facilities and military units. Fully refunded upon demolition or unit death.
@@ -85,7 +103,7 @@ To maintain deep industrial strategy without overwhelming player management, res
 Each tier of road/transit infrastructure increases base movement speed while ignoring all native biome movement speed reductions:
 * **Dirt Road:** +25% Speed (Ignores Biome Reductions)
 * **Cobblestone Road:** +50% Speed (Ignores Biome Reductions)
-* **Concrete Road:** +100% Speed (Ignores Biome Reductions)
+* **Macadam Road:** +100% Speed (Ignores Biome Reductions)
 * **Railway:** +300% Speed (Primary heavy bulk freight line; Ignores Biome Reductions)
 * **Canal:** +200% Speed (Bulk aquatic freight route; Ignores Biome Reductions)
 
@@ -502,9 +520,9 @@ placement-time build-rights check exists to avoid.
 * **Iron Foundry** — **Cost:** 200 Wood, 100 Bricks | **Capacity:** -40 Pop, -150 Energy | **Upkeep:** 100 Iron Ore/day, 25 Coal/day, 30 Food/day | **Output:** 100 Iron/day | **Time:** 3 days
 * **Concrete Plant** — **Cost:** 100 Wood, 100 Bricks | **Capacity:** -30 Pop, -80 Energy | **Upkeep:** 100 Limestone/day, 50 Clay/day, 20 Coal/day, 30 Food/day | **Output:** 150 Concrete/day | **Time:** 3 days
 * **Industrial Farm** — **Cost:** 400 Wood, 200 Bricks, 50 Iron | **Capacity:** -30 Pop, -20 Energy | **Output:** 1,200 Food/day | **Time:** 3 days
-* **Tower Blocks** — **Cost:** 150 Wood, 100 Bricks, 50 Iron, 50 Concrete | **Capacity:** +500 Pop, -25 Energy | **Upkeep:** 200 Food/day | **Time:** 3 days
+* **Tenements** — **Cost:** 150 Wood, 100 Bricks, 50 Iron, 50 Concrete | **Capacity:** +500 Pop, -25 Energy | **Upkeep:** 200 Food/day | **Time:** 3 days
 * **Armory & Barracks** — **Cost:** 250 Wood, 150 Bricks, 50 Iron | **Capacity:** -30 Pop, -40 Energy | **Time:** 3 days
-* **Concrete Road** — **Cost:** 5 Wood, 10 Bricks, 10 Iron/seg | **Bonus:** +100% Speed (Ignores Biome Reductions)
+* **Macadam Road** — **Cost:** 5 Wood, 10 Bricks, 10 Iron/seg | **Bonus:** +100% Speed (Ignores Biome Reductions)
 * **Iron Girder Bridge** — **Cost:** 10 Wood, 20 Bricks, 20 Iron/seg
 * **Concrete Wall & Gate** — **Cost:** 10 Wood, 10 Bricks, 10 Concrete/seg
 * **Search Light** — **Cost:** 80 Wood, 50 Bricks, 30 Concrete, 20 Iron | **Capacity:** -5 Pop, -50 Energy | Large area of visibility.
@@ -541,11 +559,11 @@ placement-time build-rights check exists to avoid.
 
 ### Tier 5: Heavy Industrial / Super-Complex Era
 * **Bessemer Smelting Complex** — **Cost:** 500 Wood, 600 Bricks, 500 Concrete, 400 Steel | **Capacity:** -50 Pop, -600 Energy | **Upkeep:** 150 Iron Ore/day, 50 Coal/day | **Output:** 250 Steel/day
-* **Automated Freight Marshalling Yard** — **Cost:** 400 Wood, 500 Bricks, 400 Concrete, 300 Steel | **Capacity:** -40 Pop, -300 Energy | **Upkeep:** 50 Coal/day | Global rail speed +500%, zero transfer delay.
-* **Synthetic Chemical Refinery** — **Cost:** 400 Wood, 400 Bricks, 300 Concrete, 300 Steel | **Capacity:** -40 Pop, -400 Energy | **Upkeep:** 150 Coal/day, 100 Sulfur/day | **Output:** 350 Gunpowder/day
-* **Central High-Voltage Grid Station** — **Cost:** 500 Wood, 800 Bricks, 600 Concrete, 600 Steel | **Capacity:** -40 Pop, +18,000 Energy | **Upkeep:** 500 Coal/day
+* **Marshalling Yard** — **Cost:** 400 Wood, 500 Bricks, 400 Concrete, 300 Steel | **Capacity:** -40 Pop, -300 Energy | **Upkeep:** 50 Coal/day | Global rail speed +500%, zero transfer delay.
+* **Chemical Works** — **Cost:** 400 Wood, 400 Bricks, 300 Concrete, 300 Steel | **Capacity:** -40 Pop, -400 Energy | **Upkeep:** 150 Coal/day, 100 Sulfur/day | **Output:** 350 Gunpowder/day
+* **Generating Station** — **Cost:** 500 Wood, 800 Bricks, 600 Concrete, 600 Steel | **Capacity:** -40 Pop, +18,000 Energy | **Upkeep:** 500 Coal/day
 * **Ordnance & Armament Complex** — **Cost:** 600 Wood, 500 Bricks, 500 Concrete, 500 Steel | **Capacity:** -60 Pop, -300 Energy
-* **Armored Bunker Fortification** — **Cost:** 20 Wood, 20 Bricks, 40 Concrete, 30 Steel/seg | **Capacity:** -10 Energy
+* **Casemate Wall** — **Cost:** 20 Wood, 20 Bricks, 40 Concrete, 30 Steel/seg | **Capacity:** -10 Energy
 
 ---
 
@@ -584,9 +602,9 @@ placement-time build-rights check exists to avoid.
 * **Searchlight Tender** (Special Vehicle) — **Cost:** 120 Wood, 80 Bricks, 100 Concrete, 80 Steel | **Cap:** -2 Pop, -15 Energy | **Upkeep:** 8 Food/day, 5 Coal/day | **Fuel Reserve:** 50 Coal
 
 ### Tier 5 Units (Ordnance & Armament Complex)
-* **Holt Breaker** (Melee Vehicle) — **Cost:** 300 Wood, 200 Bricks, 200 Concrete, 300 Steel | **Cap:** -5 Pop, -50 Energy | **Upkeep:** 15 Food/day, 20 Coal/day | **Fuel Reserve:** 50 Coal
-* **Howitzer Gun Tractor** (Ranged Vehicle) — **Cost:** 200 Wood, 200 Bricks, 200 Concrete, 400 Steel, 80 Gunpowder | **Cap:** -4 Pop, -40 Energy | **Upkeep:** 12 Food/day, 15 Coal/day, 3 Gunpowder/shell | **Fuel Reserve:** 50 Coal
-* **Armoured Command Car** (Special Vehicle) — **Cost:** 250 Wood, 150 Bricks, 150 Concrete, 250 Steel, 30 Gunpowder | **Cap:** -4 Pop, -30 Energy | **Upkeep:** 12 Food/day, 10 Coal/day | **Fuel Reserve:** 50 Coal
+* **Road Locomotive** (Melee Vehicle) — **Cost:** 300 Wood, 200 Bricks, 200 Concrete, 300 Steel | **Cap:** -5 Pop, -50 Energy | **Upkeep:** 15 Food/day, 20 Coal/day | **Fuel Reserve:** 50 Coal
+* **Siege Howitzer** (Ranged Vehicle) — **Cost:** 200 Wood, 200 Bricks, 200 Concrete, 400 Steel, 80 Gunpowder | **Cap:** -4 Pop, -40 Energy | **Upkeep:** 12 Food/day, 15 Coal/day, 3 Gunpowder/shell | **Fuel Reserve:** 50 Coal
+* **Staff Wagon** (Special Vehicle) — **Cost:** 250 Wood, 150 Bricks, 150 Concrete, 250 Steel, 30 Gunpowder | **Cap:** -4 Pop, -30 Energy | **Upkeep:** 12 Food/day, 10 Coal/day | **Fuel Reserve:** 50 Coal
 
 ---
 

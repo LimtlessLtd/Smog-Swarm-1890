@@ -14,6 +14,275 @@ Rules for this file:
 
 ---
 
+## 2026-09-16 — Delegated details for roads, rail and salvage
+
+**D107. Repair, salvage and railway-data details — decided by Claude on the user's
+delegation, revisitable.** The user, verbatim: "I think those are all things you can
+decide for now, we may revisit them in the distant future." Each call below reuses a
+rule the code already has rather than a new number where one exists; the constants are
+starting values to tune, stated here so they are not re-derived.
+
+- **Repairing a pre-existing segment costs what repairing a severed one already costs.**
+  `ReclamationManager._REPAIR_COST_BY_LINE_TYPE` — Road 15 Wood, Railway 25 Iron + 10
+  Wood, Canal 20 Bricks per segment. *Why:* the game already prices "this line exists and
+  is unusable; restore it", and a second price table for the same act would drift.
+- **Repair is not instant: it takes half the construction time of a new segment of that
+  type and tier**, on the same construction queue buildings use, so D98's faster clock
+  scales it too. *Why:* the existing severed-line repair is instant because severance is
+  a temporary infestation state (D28); a derelict 1890s railway is a work party's job,
+  and half-time keeps reclaiming cheaper than building while still being a commitment.
+- **A repaired pre-existing road comes back as a Dirt Road (tier 0); a repaired railway
+  as Railway.** Upgrading then follows the normal tier rules. *Why:* D106 tech-gates only
+  rail; restoring a road at a higher tier would hand out Tier 1-2 infrastructure for free
+  in the opening. The railway already needs its tier to repair (D106), so it restores
+  whole.
+- **Salvage yields 25% of the equivalent building's construction cost and takes half its
+  construction time, then removes the ruin.** A player ruin's equivalent is its own
+  definition. An ambient ruin from real settlement data maps by its OSM land use:
+  residential and unknown → Brick Houses, industrial → Iron Foundry. *Why:* 25% sits
+  under `BuildingHealthController.REPAIR_COST_FRACTION` (50%), so salvaging a ruin and
+  rebuilding never beats repairing it, and no salvage-rebuild loop mints materials; the
+  two mappings use existing catalogue entries instead of a new yield table.
+- **Salvage needs Cleared ground** — the same Build Rights band a non-defensive building
+  needs (D40). *Why:* a work party picking through rubble in a Contested hex is exactly
+  what §2.1's band table forbids for construction; one rule, not two.
+- **1890s railway data: a dated historical railway GIS dataset first, OSM as the
+  fallback.** First candidate to check is the Cambridge Group's historical railway and
+  station layers (the same research programme as the turnpike layer the roads item
+  names) — confirm it exists in usable form and that its licence allows commercial use,
+  exactly as D103 requires for geology. Fallback: OSM `railway=rail|disused|abandoned|dismantled`,
+  dropping lines whose `start_date` is after 1890. *Why:* Britain's network in 1890 was
+  close to its pre-1914 peak, so OSM's active plus abandoned lines over-approximates far
+  less than modern roads do; the known error is post-1890 lines without a `start_date`,
+  stated here so it is not discovered late.
+
+---
+
+## 2026-09-16 — Follow-ups to D103 and D105
+
+**D106. Four details settled.** The user's answers, verbatim, to the open details D103 and
+D105 left:
+1. What "a larger settlement site" means: "It doesn't mean anything. Delete the
+   requirement." **D103 is edited in place** — a cleared city's reward is its
+   pre-existing roads and rail plus salvage, and nothing about settlement size.
+2. Which ruins can be salvaged — the player's own ruined buildings, pre-existing ruins
+   placed from real settlement data, or both: "Both." So the scoped ambient-ruins item
+   gains its mechanic: its ruins are salvageable.
+3. Whether repairing a pre-existing railway needs the Railway tech tier: "Yes it requires
+   the tech tier." Railway is Tier 3 today (`TechManager` gates supply-line tiers by
+   building tier), so old track cannot be restored before new track could be built.
+4. Whether an unrepaired pre-existing road still speeds movement: "Nothing until
+   repaired." An unrepaired road or railway gives no movement bonus and carries no
+   supply; it is only something to reclaim.
+*Salvage duration and yield, repair cost and time, and the 1890s railway data source were
+delegated to Claude — see D107.*
+
+---
+
+## 2026-09-16 — Pre-existing roads and rail
+
+**D105. Pre-existing 1890s roads and rail are supply lines, but must be repaired before
+they can be used.** Asked, as one of D103's open details: do the pre-existing roads and
+rail count as supply lines, or only speed up movement? Answer: "Yes they count as supply
+lines but need repair before being able to be used"
+*Settles* the gameplay question the 1890s-roads backlog item left for the user (free
+Tier-0 supply line, decoration, or movement bonus only): none of those. A pre-existing
+road or railway is a real `LogisticsNetwork` supply line that starts unusable, and the
+player's investment is the repair, not the construction. That keeps the early-game
+logistics build a decision — the network exists on the map as something to reclaim,
+which is the campaign fantasy in miniature — rather than skipping it.
+*Fits existing machinery:* `SupplyLineSegment.is_severed` and `ReclamationManager`'s
+un-severing path already model "exists, not usable, restore it"; D6 still holds, so
+hordes gain nothing from a repaired road.
+*Tech gating and pre-repair movement settled by D106; repair cost and time and the
+railway data source by D107.*
+
+---
+
+## 2026-09-16 — Answers to the audit's questions 5-7
+
+**D102. Gunpowder is spent per shot, and ranged units get a realistic range.** Asked:
+per-shot gunpowder, a minimal range, both, or neither. Answer: "Both except the range of
+ranged units should be realistic e.g. they shouldnt be shooting across entire hex's
+obviously."
+*Settles:* `design_doc.md` §4's "1 Gunpowder/shot" is implemented as written (today
+`CombatCoordinator._engage()` only checks the stockpile is above zero). Ranged range is
+metric and a small fraction of a hex (8,647 m centre to centre) — the recommendation's
+"engage an adjacent hex" option is **rejected**.
+*Consequence for build:* a realistic range cannot be expressed in today's combat, which
+engages only when a unit and a horde share a hex. Ranged engagement has to be decided by
+world-space distance between a unit and the zombies it targets — the tactical positions
+`ZombieSwarm` and `UnitOrderController` already hold — rather than by hex membership.
+*Left open, as balance numbers:* per-weapon ranges (a bow, a rifle volley, a Maxim, a
+howitzer), ordered as §6 orders their noise and grounded in period weapons.
+
+**D103. What makes a hex or city worth taking: depleting deposits from real geology,
+and cities that come with roads, rail, room, and salvage that takes time.**
+- **6a:** "Each deposit holds a finite amount that its extractors drain."
+- **6b:** "real geology if the licence allows commercial use, biome-weighted otherwise."
+  The licence check comes first; the biome-weighted fallback uses the extractor biome
+  gating that already exists.
+- **6c:** "Both ii and iii, we should be able to salvage abandoned and ruined buildings
+  and recoup some building materials that way, but it takes time to salvage abandoned
+  buildings." So a cleared city offers **pre-existing 1890s roads and rail converging on
+  it**; option (i), an instant one-off stock scaled by population, is **not** taken.
+  *Edited 2026-09-16 (D106): this originally also listed "a larger settlement site" (option
+  iii); the user deleted it — "It doesn't mean anything. Delete the requirement."* Salvage is instead a **timed action on abandoned and
+  ruined buildings** that recoups some building materials.
+*Promotes D99's "Perhaps" to a rule for deposits:* nearby deposits are finite and deplete.
+*Left open:* deposit sizes and drain rates (balance). *Salvage duration and yield: D107.* *Supply-line status settled by D105; which ruins count settled by D106 (both).*
+
+**D104. The flagged names are renamed to shorter period equivalents; stats unchanged.**
+"Approve them all but dont make the names of buildings or units too long just for
+historical coherence. If it can be shortened but still evoke victorian england then do
+so please." Applied: title era → 1890s; Tower Blocks → **Tenements**; Concrete Road →
+**Macadam Road**; Holt Breaker → **Road Locomotive**; Field Howitzer Gun Tractor → **Siege
+Howitzer**; Armoured Command Car → **Staff Wagon**; Armored Bunker Fortification → **Casemate
+Wall** (design doc only — not in code); Central High-Voltage Grid Station → **Generating
+Station**; Automated Freight Marshalling Yard → **Marshalling Yard**; Synthetic Chemical
+Refinery → **Chemical Works**.
+*Not renamed:* enum identifiers (`HOLT_BREAKER`, `TOWER_BLOCKS`, ...) and asset filenames,
+because saves and the Blender pipeline key on them; historical `decisions.md` and devlog
+entries keep the names they were written with. Other long names (e.g. "Heavy Coal
+Washery & Pulverizer", "High Command & Cavalry Depot") were not in the approved list and
+are unchanged.
+
+---
+
+## 2026-09-16 — Answers to the audit's first four design questions
+
+The user answered four of the questions `backlog.md`'s priority index raised. Quoted
+verbatim; each entry says what the answer settles and what it leaves open.
+
+**D98. The economy moves to a faster clock, and hordes are slowed separately from
+units.** Asked: "Should the economy (construction, training, research) move to a faster
+clock, and should hordes be slowed separately from units?" Answer: "Yes."
+*Settles:* construction, training and research durations come down to a session's
+timescale (today 1-4 days, `tier + 1` days and whole days, at 8 real minutes per day);
+`MovementStepper.BASE_MOVE_SPEED` is split so hordes travel slower than units, restoring
+§2.1's "predictable cross-country travel time". This is the recommendation the question
+carried — option (a) plus (c) — so the day length and the day/night rhythm that noise,
+light and horde speed hang off stay as they are.
+*Left open, as balance numbers disclosed in the code's own comments:* the new durations
+and the horde speed. *Left open, not asked:* whether production also ticks more than once
+a day (the resource-tick pacing item's catch-up-safety constraint still applies).
+*Verification it answers to:* OPEN-1, OPEN-2, IND-4, HORDE-2 in the scenarios.
+
+**D99. The first expansion out of Manchester is won by building up, and nearby
+resources may run out.** Asked: how the first expansion from the Manchester start should
+be made winnable (its ring 1 holds 68,075 zombies; twelve Tier 0 units die on contact).
+Answer: "Via resource extraction and military build up. Perhaps the resources nearest
+manchester become exhausted eventually forcing the users to expand and find new resources
+to extract."
+*Settles:* the start stays inside Manchester and D7's rings stay as they are — the
+recommendation to point Tier 0 at a lower-density direction is not taken. The first
+clear is meant to need an economy and an army behind it, so Tier 0 failing against
+Manchester is expected, not a defect. *Consequence:* the opening is a build-up phase, and
+D98's pacing is what makes that phase playable rather than a wait.
+*Direction, marked "Perhaps" and so not yet a rule:* finite resource deposits near
+Manchester that deplete and push the player outward. This extends the user's earlier
+choice of "real deposits that gate mines" (2026-08-19). Depletion rate, what depletes
+(per deposit or per building), and whether deposits are real geology remain [design].
+
+**D100. Units and gunfire make noise that draws hordes.** Asked: "Should units and
+gunfire make noise that draws hordes?" Answer: "Yes."
+*Settles:* combat is a noise source through the same `NoisePropagation` model as
+buildings (D66-D69), so fighting has an attention cost and a decoy force is a real play.
+*Left open, as balance numbers:* the strategic reach of an engagement, how long the
+source lingers, and the per-weapon levels — ordered by §6's table (melee and bow near
+silent, rifles loud, Maxim louder, artillery loudest), scaled for the strategic layer
+per D66, not applied literally.
+
+**D101. Threat escalates through expansion and the settlement's own light and noise, not
+a calendar.** Answer, verbatim: "The threat escalates via the player expanding their base
+coming into contact with larger and more numerous hordes and their settlement creating
+more light and noise drawing in zombies from further afield."
+*Settles:* no time-based escalation — no day-indexed spawn growth, no swarm schedule
+(consistent with D92). Two drivers only: spatial (pushing toward denser population meets
+bigger hordes — D3, D39, D49 already do this) and activity (a growing settlement's light
+and noise reaches further). This was options (a) plus (c) of the escalation item.
+*Consequence for build:* "drawing in zombies from further afield" means attraction reach
+has to grow with the settlement. Today light is a flat +1.0 on the building's own hex at
+night and `HordeManager.ATTRACTION_AWARENESS_RADIUS` is a fixed 6 hexes, so light needs a
+reach of its own — a crude one, ahead of the Deferred §6 light-propagation work.
+
+---
+
+## 2026-09-16 — What the game is for, and how work gets chosen
+
+Settled by the user's design-audit brief. Everything quoted is the user verbatim.
+Numbering starts at D92 because D91 is the texture-compression decision (PR #108).
+
+**D92. The campaign is persistent and open-ended; local losses are setbacks, total
+defeat still ends it.** The game is "They Are Billions, but on a gigantic continuous
+map of 1890s industrial Britain, with a persistent long-form campaign where the player
+steadily develops from a tiny settlement into an industrial military power and
+progressively reclaims Britain from an enormous zombie population." And: "The player
+should NOT repeatedly throw away an entire developed base just because they lost a
+local fight ... However, complete strategic defeat can still end the campaign." and
+"Do not turn the game into an idle game or remove meaningful failure."
+*What this closes:* `backlog.md`'s inherited "nothing escalates" item asked whether the
+game should become "a fixed-length siege campaign rather than an open-ended builder"
+on TAB's 100-day, 10-swarm model. It does not. TAB's *warning* conventions (ETA,
+bearing) are still the reference; its fixed-length map is not.
+*What this does not close:* how threat escalates over time inside an open campaign —
+still [design], with the opening-difficulty and horde-speed items.
+*Consistent with, not a change to:* P4, D29, D73, and `vision.md` §1's "not a core
+idle/persistent mode" — that sentence is about unattended play, this one is about
+what carries over between fights.
+
+**D93. The progression arc is core, not late content.** "SMALL SURVIVOR SETTLEMENT →
+DEVELOPING SETTLEMENT → INDUSTRIAL TOWN → FORTIFIED CITY → NETWORK OF CONNECTED
+SETTLEMENTS → REGIONAL INDUSTRIAL POWER → MASSIVE MILITARY/INDUSTRIAL EMPIRE → BRITAIN
+BEING RECLAIMED. This progression is the emotional backbone of the game."
+*Reconciled with P3/P6:* the first stages of that arc (through a second connected
+settlement) are the core game and are built now; the narrative campaign (Phase 7),
+automation/governors and the whole-island endgame stay after the core loop — "Do not
+move to campaign content simply because the golden slice exists." and governors
+"should only become a priority once multiple-settlement gameplay actually works."
+
+**D94. Work is chosen by player impact, not by the next unchecked feature.** The
+autonomous philosophy changes from "implement the next missing feature" to "improve
+the current player's experience." Priority order, the user's list: 1 broken core
+gameplay, 2 boring core gameplay, 3 poor player feedback, 4 weak strategic decisions,
+5 poor pacing, 6 weak enemy/horde behaviour, 7 weak expansion loop, 8 weak
+economy/logistics, 9 missing major core capability, 10 visual/audio polish, 11
+performance optimisation, 12 additional content, 13 campaign/endgame. "A polished
+button is less important than boring combat."
+*Why recorded:* the unattended runner already passes `tools/autonomous_dev_brief.md`
+(same philosophy) while `/next-item` said "topmost `[gated]` Now item" — so the three
+unattended runs of 2026-09-16 took chunk streaming, gate proofs and texture compression,
+all priority 11 or below, while every core-loop problem sat tagged `[design]`.
+*Consequence:* `CLAUDE.md` §0.2 and `/next-item` carry the order; `backlog.md` Now is
+sorted by it; every significant new item states WHY / PLAYER EXPERIENCE /
+IMPLEMENTATION / VERIFICATION.
+
+**D95. `[visual]` splits into `[visual-autonomous]` and `[visual-human]`; the unattended
+loop may take the first.** "Autonomous agents MUST NOT simply avoid visual work because
+it is tagged visual." `[visual-autonomous]`: the agent can change it, run the game,
+capture the render and inspect it. `[visual-human]`: human judgement of taste or feel is
+genuinely required. `[design]` still needs the user.
+*Why this is safe to allow:* the project's own rule is that every real visual defect was
+found by looking at an image, and the tooling to look already exists
+(`smoke_screenshot.tscn`, `preview_*`, the playtest runner's `--shots`). An unattended
+visual change without a captured and inspected image is still not done.
+
+**D96. Telemetry and playtest scenarios are evidence, never a score or a gate.**
+"Telemetry is evidence, not a score." and "Do NOT assume that maximizing any metric
+makes the game better." `GameplayTelemetry` and `tools/playtest/run_scenarios.py` exit 0
+whenever a scenario ran; a check reports `ok`/`concern` against a PLAYER_EXPERIENCE.md
+criterion with its threshold's reason beside it. `GAME_HEALTH.md` states are written by
+a reader from that evidence, never computed.
+
+**D97. Historical coherence: post-1900 drift is flagged for the user, not rewritten.**
+"Alternate history is allowed. But the game should not gradually become a generic First
+World War / dieselpunk / modern military RTS unless explicitly justified by the existing
+design decisions." and "flag them for design review rather than silently rewriting
+them." The flagged list is `PLAYER_EXPERIENCE.md` §7.1; no catalogue entry, name or
+number changed with this decision.
+
+---
+
 ## 2026-09-16 — Sprite textures on the GPU
 
 **D91. Sprites are VRAM-compressed and mipmapped at import, and the crop copy carries

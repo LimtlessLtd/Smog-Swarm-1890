@@ -84,6 +84,15 @@ the final swarm, how the player is warned), cite what you find, and propose a
 concrete day-indexed schedule this game could adopt. Give real numbers. A
 proposal without numbers is not a proposal.
 
+**Boring failure modes are a required lens.** While playing, watch for each of these
+and name the ones you hit, with the number that shows it: waiting for resources,
+waiting for research, nothing dangerous happening, expanding without resistance,
+fighting identical small groups repeatedly, building without meaningful decisions,
+armies sitting idle, zombies dangerous with no counterplay, zombies numerous but
+irrelevant, defences as permanent immunity, battles unreadable, UI you cannot decode.
+The project's list lives in `PLAYER_EXPERIENCE.md` §9 — the orchestrator maps your
+findings onto it, so use these names and do not read that file.
+
 ## Report format
 
 Hard cap: **7 findings**, ranked worst first. If you have twelve, the five you

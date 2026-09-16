@@ -5,23 +5,98 @@ Godot 4.x / GDScript RTS. These rules override default behavior and apply to all
 ## 0. Where things live (read order)
 
 Restructured 2026-08-27; `todo.md` is no longer the spec-and-log dumping ground.
+Experience layer added 2026-09-16 (`decisions.md` D92-D97).
 
-1. **`vision.md`** — what the game is for. Its section 5 has three checks every
-   backlog item must pass. Read first.
-2. **`backlog.md`** — what to build next. Items are tagged `[gated]` (a script can
-   verify it), `[visual]` (needs a render or playtest agent), or `[design]` (needs the
-   user), and split Now / Next / Deferred. **Only `[gated]` items may be taken by an
-   unattended loop.**
-3. **`decisions.md`** — settled calls and their reasons. **Read the relevant entry
+Authority runs top to bottom — a lower document never overrides a higher one:
+
+```
+VISION → PLAYER EXPERIENCE → GAME HEALTH → DESIGN SPEC → DECISIONS → BACKLOG
+       → IMPLEMENTATION → TEST / PLAYTEST / VISUAL VALIDATION
+```
+
+1. **`vision.md`** — what the game is for: pillars, and the checks every backlog item
+   must pass (§5). Read first.
+2. **`PLAYER_EXPERIENCE.md`** — why a player should enjoy the mechanics: core fantasy,
+   the six layered loops, session structure, acceptance criteria (IDs like `HORDE-2`),
+   boring failure modes, and the golden slice. A mechanic that matches
+   `design_doc.md` and fails a criterion here is not done.
+3. **`GAME_HEALTH.md`** — where the build currently stands against that, one
+   BROKEN/FUNCTIONAL/ENGAGING/STRONG/POLISHED state per area with factual evidence.
+   Internal states, not scores. Where to look for the highest-value problem.
+4. **`backlog.md`** — the implementation queue, tagged and split Now / Next / Deferred
+   (§0.2). Now is sorted by the priority model, not by dependency alone.
+5. **`decisions.md`** — settled calls and their reasons. **Read the relevant entry
    before re-opening any design question**; it exists so decisions are not re-derived.
-4. **`design_doc.md`** — the numbers spec. Authoritative for terrain, economy,
+6. **`design_doc.md`** — the numbers spec. Authoritative for terrain, economy,
    buildings, units, infestation (2.1), logistics (2.2), and vision/sound/light (6).
-5. **`todo.md`** — index plus the reference sections that do not churn.
-6. **`devlog/`** — append-only history of completed work. **Not read at session start.**
+7. **`todo.md`** — index plus the reference sections that do not churn.
+8. **`devlog/`** — append-only history of completed work. **Not read at session start.**
 
 When work lands, update `backlog.md` (tick or remove the item) and append to
-`devlog/`. When a design question gets settled, add it to `decisions.md`. Never grow
-`todo.md` back into a log.
+`devlog/`. When a design question gets settled, add it to `decisions.md`. When the
+evidence for an area's state changes, update `GAME_HEALTH.md`. Never grow `todo.md`
+back into a log.
+
+## 0.2 Choosing work: player impact first
+
+The unattended loop's job is "improve the current player's experience", not
+"implement the next missing feature" (D94). Pick the highest-ranked problem that is
+actionable, in this order — the user's list:
+
+1. Broken core gameplay
+2. Boring core gameplay
+3. Poor player feedback
+4. Weak strategic decisions
+5. Poor pacing
+6. Weak enemy/horde behaviour
+7. Weak expansion loop
+8. Weak economy/logistics
+9. Missing major core capability
+10. Visual/audio polish
+11. Performance optimisation
+12. Additional content
+13. Campaign/endgame
+
+"A polished button is less important than boring combat. A new unit is less important
+than broken expansion." Dependencies still apply — a task whose prerequisite is
+unbuilt takes the prerequisite first — but a dependency is a reason to reorder, not a
+reason to fall back to the next unticked line.
+
+**Player impact.** Every significant task answers, in its backlog entry:
+1. What does the player get to do that they couldn't before?
+2. What decision does this create?
+3. What feedback does it provide?
+4. What makes it more fun?
+5. What strategic consequence does it create?
+
+A task that cannot answer them is not automatically prioritised. Infrastructure,
+tooling and performance work answer them through what they unblock, and say so.
+New backlog items carry **WHY / PLAYER EXPERIENCE / IMPLEMENTATION / VERIFICATION**,
+never just "implement X".
+
+**Tags** — what it takes to know an item is done (D95):
+- `[gated]` — a script or verification proves it. Unattended loop: yes.
+- `[visual-autonomous]` — only a render proves it, and the agent can capture and inspect
+  one (`smoke_screenshot.tscn`, `preview_*`, `tools/playtest/run_scenarios.py --shots`).
+  Unattended loop: **yes, and it must not avoid these** — implement, run, capture,
+  inspect, iterate. Not done without an inspected image.
+- `[visual-human]` — needs human judgement of taste or feel (how audio sounds, whether
+  an animation reads as weighty). Unattended loop: prepare evidence, do not decide.
+- `[design]` — needs the user. Unattended loop: never decide it; it may measure it and
+  sharpen the question with a recommendation.
+
+**Evidence of experience.** `python3 tools/playtest/run_scenarios.py` runs the
+deterministic scenarios (opening, expansion, horde, horde:dark, siege,
+industrialisation) against the real map and writes JSON with experience checks keyed to
+`PLAYER_EXPERIENCE.md` criteria plus gameplay telemetry. It is evidence, never a gate or
+a score (D96): run it before and after a gameplay change and compare. The
+`playtest-critic` agent plays through the real UI for what a script cannot see.
+
+**Boring failure modes** (`PLAYER_EXPERIENCE.md` §9) are things to hunt for, not only
+to avoid: waiting for resources or research, nothing dangerous happening, expansion
+without resistance, identical fights, idle armies, zombies with no counterplay or no
+strategic relevance, industry as a passive multiplier, defences as immunity, map
+painting.
 
 ## 0.1 The gate
 
@@ -41,9 +116,14 @@ counts as a failure on purpose — `verify_gates.gd` once hung for three hours.
 
 **Visual work is not gated by any of these.** Run
 `<godot> res://scenes/test/smoke_screenshot.tscn` (windowed, NOT headless — a headless
-viewport has no texture to read) to confirm the game still renders at four framings.
-Every real visual defect in this project was found by looking at an image, never by
-reasoning about the code.
+viewport has no texture to read) to confirm the game still renders at its six framings,
+and read the PNGs. Every real visual defect in this project was found by looking at an
+image, never by reasoning about the code. For `[visual-autonomous]` work the inspected
+image is the gate.
+
+**Gameplay work is not proven by these either.** The three commands prove the code runs;
+`tools/playtest/run_scenarios.py` before and after is what shows whether the player's
+experience changed (§0.2).
 
 `/next-item` is the unattended loop's entry point and enforces all of the above.
 

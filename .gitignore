@@ -45,3 +45,8 @@ tools/geo_bake/*_preview.png
 tools/geo_bake/*_comparison.png
 tools/geo_bake/*_preview.png.import
 tools/geo_bake/*_comparison.png.import
+
+# Playtest scenario output (tools/playtest/run_scenarios.py). Evidence for a
+# specific before/after comparison, regenerated on demand; GAME_HEALTH.md quotes
+# the numbers that matter.
+playtest_results/
