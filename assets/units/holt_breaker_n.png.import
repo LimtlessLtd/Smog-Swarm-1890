@@ -3,19 +3,20 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://cowvmom5y1g6n"
-path="res://.godot/imported/holt_breaker_n.png-6ad554495a13f8673b3b96a13e1c6746.ctex"
+path.s3tc="res://.godot/imported/holt_breaker_n.png-6ad554495a13f8673b3b96a13e1c6746.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 
 [deps]
 
 source_file="res://assets/units/holt_breaker_n.png"
-dest_files=["res://.godot/imported/holt_breaker_n.png-6ad554495a13f8673b3b96a13e1c6746.ctex"]
+dest_files=["res://.godot/imported/holt_breaker_n.png-6ad554495a13f8673b3b96a13e1c6746.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0
@@ -23,7 +24,7 @@ compress/rdo_quality_loss=0.0
 compress/hdr_compression=1
 compress/normal_map=0
 compress/channel_pack=0
-mipmaps/generate=false
+mipmaps/generate=true
 mipmaps/limit=-1
 roughness/mode=0
 roughness/src_normal=""
