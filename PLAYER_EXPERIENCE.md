@@ -607,7 +607,7 @@ systems already produce the answer. **[design]** = genuinely open; recorded in
 | 5 | …over 2-3 hours? | **[design]** §3; second settlement is the intended marker (D21). |
 | 6 | Why expand? | Settled direction: deposits gate mines (2026-08-19), and nearby resources may deplete, forcing expansion (D99, "Perhaps"); unbuilt. |
 | 7 | Why is expansion dangerous? | **Follows** — D39 export proximity, D49 frontage, D51 leaks, D9 re-infestation. |
-| 8 | Why clear cities? | Settled (D103): pre-existing 1890s roads and rail, a larger settlement site, and timed salvage of ruins; unbuilt. |
+| 8 | Why clear cities? | Settled (D103, D105, D106): pre-existing 1890s roads and rail to repair, and timed salvage of ruins; unbuilt. |
 | 9 | Why is a city different from an empty hex? | Follows for threat (D3/D49); reward settled by D103. |
 | 10 | Why does industrialisation feel exciting? | **[design]** §7 — capabilities in spec, not wired. |
 | 11 | Why does a second settlement feel important? | Settled (D21: it is where logistics begins); unbuilt. |

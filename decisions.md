@@ -14,6 +14,27 @@ Rules for this file:
 
 ---
 
+## 2026-09-16 — Follow-ups to D103 and D105
+
+**D106. Four details settled.** The user's answers, verbatim, to the open details D103 and
+D105 left:
+1. What "a larger settlement site" means: "It doesn't mean anything. Delete the
+   requirement." **D103 is edited in place** — a cleared city's reward is its
+   pre-existing roads and rail plus salvage, and nothing about settlement size.
+2. Which ruins can be salvaged — the player's own ruined buildings, pre-existing ruins
+   placed from real settlement data, or both: "Both." So the scoped ambient-ruins item
+   gains its mechanic: its ruins are salvageable.
+3. Whether repairing a pre-existing railway needs the Railway tech tier: "Yes it requires
+   the tech tier." Railway is Tier 3 today (`TechManager` gates supply-line tiers by
+   building tier), so old track cannot be restored before new track could be built.
+4. Whether an unrepaired pre-existing road still speeds movement: "Nothing until
+   repaired." An unrepaired road or railway gives no movement bonus and carries no
+   supply; it is only something to reclaim.
+*Still open, as balance numbers:* salvage duration and yield, repair cost and time.
+*Still open, not a balance number:* the data source for 1890s railways.
+
+---
+
 ## 2026-09-16 — Pre-existing roads and rail
 
 **D105. Pre-existing 1890s roads and rail are supply lines, but must be repaired before
@@ -29,10 +50,9 @@ which is the campaign fantasy in miniature — rather than skipping it.
 *Fits existing machinery:* `SupplyLineSegment.is_severed` and `ReclamationManager`'s
 un-severing path already model "exists, not usable, restore it"; D6 still holds, so
 hordes gain nothing from a repaired road.
-*Left open:* repair cost and time (balance); whether repairing a railway needs its tech
-tier (Railway is Tier 3 today); what "usable before repair" means for movement (whether
-a broken road still speeds units); and the data source for 1890s railways, since the
-roads item only scoped roads.
+*Left open:* repair cost and time (balance), and the data source for 1890s railways,
+since the roads item only scoped roads. *Tech gating and pre-repair movement settled by
+D106.*
 
 ---
 
@@ -62,15 +82,13 @@ and cities that come with roads, rail, room, and salvage that takes time.**
 - **6c:** "Both ii and iii, we should be able to salvage abandoned and ruined buildings
   and recoup some building materials that way, but it takes time to salvage abandoned
   buildings." So a cleared city offers **pre-existing 1890s roads and rail converging on
-  it** and **a larger settlement site**; option (i), an instant one-off stock scaled by
-  population, is **not** taken. Salvage is instead a **timed action on abandoned and
+  it**; option (i), an instant one-off stock scaled by population, is **not** taken.
+  *Edited 2026-09-16 (D106): this originally also listed "a larger settlement site" (option
+  iii); the user deleted it — "It doesn't mean anything. Delete the requirement."* Salvage is instead a **timed action on abandoned and
   ruined buildings** that recoups some building materials.
 *Promotes D99's "Perhaps" to a rule for deposits:* nearby deposits are finite and deplete.
-*Left open:* deposit sizes and drain rates (balance); whether pre-existing roads and rail
-act as supply lines or only as movement (the 1890s-roads item's own open question); what
-"a larger settlement site" means mechanically (urban extent, placement room or stockpile);
-salvage duration, yield, and which ruins count (player ruins, ambient ruins from real
-settlement data, or both).
+*Left open:* deposit sizes and drain rates (balance); salvage duration and yield
+(balance). *Supply-line status settled by D105; which ruins count settled by D106 (both).*
 
 **D104. The flagged names are renamed to shorter period equivalents; stats unchanged.**
 "Approve them all but dont make the names of buildings or units too long just for

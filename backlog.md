@@ -302,13 +302,13 @@ needs them, not ahead of it.
 - [ ] `[gated]` **Why want this hex: resource deposits and city value.** **Decided
   2026-09-16 (D103):** deposits hold a finite amount their extractors drain; they come
   from "real geology if the licence allows commercial use, biome-weighted otherwise";
-  a cleared city offers pre-existing 1890s roads and rail and a larger settlement site,
-  and abandoned and ruined buildings can be salvaged for building materials over time
-  (no instant population-scaled stock). **First step:** check the BGS/GSI dataset
-  licences for commercial use and record the result in `decisions.md`. **D105 (2026-09-16):** pre-existing roads and rail are supply lines that "need repair
-  before being able to be used". **Still open, and to ask before building those parts:**
-  what "a larger settlement site" means mechanically; which ruins are salvageable;
-  repair cost/time and whether a railway repair needs its tech tier. **WHY:**
+  a cleared city offers pre-existing 1890s roads and rail, and abandoned and ruined
+  buildings — the player's own and pre-existing ones from real settlement data (D106) —
+  can be salvaged for building materials over time (no instant population-scaled stock). **First step:** check the BGS/GSI dataset
+  licences for commercial use and record the result in `decisions.md`. **D105/D106 (2026-09-16):** pre-existing roads and rail are supply lines that "need
+  repair before being able to be used", give nothing (no movement, no supply) until
+  repaired, and a railway repair requires the Railway tech tier. **Still open:** a
+  data source for 1890s railways; repair and salvage costs/times are balance numbers. **WHY:**
   rank 4 — output is flat on every legal hex (only farm soil varies), and a city differs
   from an empty hex only in threat and placement permissions (`PLAYER_EXPERIENCE.md`
   §8). The user has already chosen "real deposits that gate mines" (countryside item,
@@ -828,7 +828,8 @@ Not forgotten. Not worked on until the core loop works. Do not justify work by t
 - [ ] `[gated]` Epic 6 — `SubHexTerrainOverride` runtime patch path.
 - [ ] `[gated]` Epic 7 — LOD / caching / perf pass.
 - [ ] `[gated]` Real 1890s main roads baked from geographic data.
-- [ ] `[visual-autonomous]` Ambient ruins from real settlement data.
+- [ ] `[visual-autonomous]` Ambient ruins from real settlement data. *D106: salvageable, like
+  the player's own ruins.*
 - [ ] `[visual-autonomous]` Countryside features outstanding from the 2026-08-19 request.
 - [ ] `[design]` Resource-tick pacing/balancing.
 - [ ] `[design]` Famine-severity input to Morale.
@@ -905,9 +906,9 @@ Verbatim, for the items above that reference it.
 
   **Two options for how a road is carried, and they are not equivalent.** As a **new mesh class**, following the WATERWAY precedent exactly (a LINE buffered to a real width, priority above the built environment, `_BIOME_CODE` 9 append-only with matching entries in `RealTerrainSampler._BIOME_BY_CODE` and `GameEnums.BiomeType`) — cheapest, reuses the whole existing pipeline including `_despeckle`'s WATERWAY exemption, but a road is not a biome and every consumer that switches on biome would have to learn to ignore it. Or as a **separate baked line layer** with its own renderer — more work, but a road keeps its centreline, which is what a movement bonus wants to follow and what a buffered ribbon throws away. A real 1890 main road is ~6–9 m wide, i.e. **0.6–0.9 wu** — a *seventh* of the 4.62 wu river ribbon and well under the 1.0 wu quantization grid — so the mesh-class option cannot represent one at true width and would have to draw it deliberately oversized. That alone probably decides it: take the line layer.
 
-  **Decided 2026-09-16 (D105):** pre-existing roads (and rail) count as supply lines but
-  start unusable and must be repaired — not free Tier-0 supply, not decoration, not a
-  bare movement bonus. The analysis below is kept for the reasoning.
+  **Decided 2026-09-16 (D105, D106):** pre-existing roads (and rail) count as supply lines
+  but start unusable — no movement bonus, no supply — until repaired, and a railway
+  repair requires its tech tier. Not free Tier-0 supply, not decoration. The analysis below is kept for the reasoning.
 
   **The gameplay question is the real decision and needs the user, not a default.** `LogisticsNetwork` already has a ROAD `SupplyLineType` with tiers in `SupplyLineCatalog`, and `HexPathfinder` has no road-cost term at all today. If pre-existing roads act as free Tier-0 supply line, the player starts connected to everywhere a turnpike went and the early-game logistics build is largely skipped; if they are only decoration, the map gains detail and nothing else; the middle option — roads give a movement bonus but carry no supply until the player invests in upgrading the segment — is probably what "main roads that existed" should mean, but it is a balance change either way and should be asked rather than assumed. Note the horde uses the same graph: a road that speeds the player's units up speeds an attacking swarm along the same corridor.
 
