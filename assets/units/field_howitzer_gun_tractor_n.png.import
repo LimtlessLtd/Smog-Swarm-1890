@@ -3,19 +3,20 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://bplhigdp7qyvy"
-path="res://.godot/imported/field_howitzer_gun_tractor_n.png-1b8f65a89c2530a087762dcc100f472e.ctex"
+path.s3tc="res://.godot/imported/field_howitzer_gun_tractor_n.png-1b8f65a89c2530a087762dcc100f472e.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 
 [deps]
 
 source_file="res://assets/units/field_howitzer_gun_tractor_n.png"
-dest_files=["res://.godot/imported/field_howitzer_gun_tractor_n.png-1b8f65a89c2530a087762dcc100f472e.ctex"]
+dest_files=["res://.godot/imported/field_howitzer_gun_tractor_n.png-1b8f65a89c2530a087762dcc100f472e.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0
@@ -23,7 +24,7 @@ compress/rdo_quality_loss=0.0
 compress/hdr_compression=1
 compress/normal_map=0
 compress/channel_pack=0
-mipmaps/generate=false
+mipmaps/generate=true
 mipmaps/limit=-1
 roughness/mode=0
 roughness/src_normal=""

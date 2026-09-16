@@ -3,19 +3,20 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://cfj67c4da2cjr"
-path="res://.godot/imported/zombie_0_w.png-ea6ebbf3f8a71eeba0fbbf396231f864.ctex"
+path.s3tc="res://.godot/imported/zombie_0_w.png-ea6ebbf3f8a71eeba0fbbf396231f864.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 
 [deps]
 
 source_file="res://assets/zombies/zombie_0_w.png"
-dest_files=["res://.godot/imported/zombie_0_w.png-ea6ebbf3f8a71eeba0fbbf396231f864.ctex"]
+dest_files=["res://.godot/imported/zombie_0_w.png-ea6ebbf3f8a71eeba0fbbf396231f864.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0
@@ -23,7 +24,7 @@ compress/rdo_quality_loss=0.0
 compress/hdr_compression=1
 compress/normal_map=0
 compress/channel_pack=0
-mipmaps/generate=false
+mipmaps/generate=true
 mipmaps/limit=-1
 roughness/mode=0
 roughness/src_normal=""

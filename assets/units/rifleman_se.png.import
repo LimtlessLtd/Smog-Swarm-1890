@@ -3,19 +3,20 @@
 importer="texture"
 type="CompressedTexture2D"
 uid="uid://b0gmcl55y7txi"
-path="res://.godot/imported/rifleman_se.png-23742820219acdd282d4d1c11717bbdf.ctex"
+path.s3tc="res://.godot/imported/rifleman_se.png-23742820219acdd282d4d1c11717bbdf.s3tc.ctex"
 metadata={
-"vram_texture": false
+"imported_formats": ["s3tc_bptc"],
+"vram_texture": true
 }
 
 [deps]
 
 source_file="res://assets/units/rifleman_se.png"
-dest_files=["res://.godot/imported/rifleman_se.png-23742820219acdd282d4d1c11717bbdf.ctex"]
+dest_files=["res://.godot/imported/rifleman_se.png-23742820219acdd282d4d1c11717bbdf.s3tc.ctex"]
 
 [params]
 
-compress/mode=0
+compress/mode=2
 compress/high_quality=false
 compress/lossy_quality=0.7
 compress/uastc_level=0
@@ -23,7 +24,7 @@ compress/rdo_quality_loss=0.0
 compress/hdr_compression=1
 compress/normal_map=0
 compress/channel_pack=0
-mipmaps/generate=false
+mipmaps/generate=true
 mipmaps/limit=-1
 roughness/mode=0
 roughness/src_normal=""
