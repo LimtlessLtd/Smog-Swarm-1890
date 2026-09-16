@@ -23,6 +23,10 @@ extends Node
 ##    every defender's HP untouched, and engagement_resolved says `from_cover`.
 ## 5. **Holding the wall is a race the player can win or lose.** Undefended, the
 ##    piece breaches. Ten archers at it destroy the horde first. Three do not.
+## 6. **The forecast tells the truth.** SiegeForecast.project() — what the siege
+##    overlay's "at this rate" line and the debrief's counterfactual both read —
+##    predicts each of those three races' outcome, and its time within
+##    _FORECAST_TOLERANCE of the simulated one.
 ##
 ## Fixture rather than the real map, same reasoning verify_gates.gd gives.
 
@@ -36,6 +40,7 @@ const _MAX_APPROACH_STEPS: int = 2000
 const _MAX_SIEGE_STEPS: int = 20000
 const _EPSILON: float = 0.001
 const _MAX_SIEGE_STANDOFF_METRES: float = 50.0
+const _FORECAST_TOLERANCE: float = 0.15
 
 var _map: HexGridMap
 var _resources: ResourceManager
@@ -195,6 +200,17 @@ func _check_the_race() -> void:
 		_failures.append("ten archers at the piece did not destroy the horde before it breached (%s)" % defended)
 	if thin["outcome"] != "breached":
 		_failures.append("three archers held the piece against 800 — a thin defence should lose (%s)" % thin)
+	var kills := SiegeForecast.kills_per_strike(UnitCatalog.get_definition(GameEnums.UnitType.TOXOPHILITE), TimeCycleManager.is_day())
+	for pair in [[0, undefended], [10, defended], [3, thin]]:
+		var simulated: Dictionary = pair[1]
+		var forecast := SiegeForecast.project(_HORDE_SIZE, WallCatalog.get_max_hp(WallCatalog.WOODEN), pair[0], kills, TimeCycleManager.is_night())
+		var want: StringName = &"breach" if simulated["outcome"] == "breached" else &"destroyed"
+		var error := absf(float(forecast["seconds"]) - float(simulated.get("game_seconds", 0.0))) / maxf(1.0, float(simulated.get("game_seconds", 1.0)))
+		print("6. forecast with %d archers: %s at %.0f game-s; simulated %s at %.0f (error %.0f%%)" % [pair[0], forecast["outcome"], forecast["seconds"], simulated["outcome"], simulated.get("game_seconds", 0.0), error * 100.0])
+		if forecast["outcome"] != want:
+			_failures.append("SiegeForecast predicts %s with %d archers where the siege %s" % [forecast["outcome"], pair[0], simulated["outcome"]])
+		elif error > _FORECAST_TOLERANCE:
+			_failures.append("SiegeForecast's time with %d archers is %.0f%% off the simulated siege" % [pair[0], error * 100.0])
 
 
 ## Resets the siege, stations `archers` beside the sieged piece, and steps horde
