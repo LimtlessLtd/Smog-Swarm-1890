@@ -1,4 +1,4 @@
-[gd_scene load_steps=29 format=3]
+[gd_scene load_steps=30 format=3]
 
 [ext_resource type="PackedScene" path="res://scenes/world/HexGridMap.tscn" id="1"]
 [ext_resource type="PackedScene" path="res://scenes/camera/CameraController.tscn" id="2"]
@@ -41,6 +41,7 @@
 [ext_resource type="PackedScene" path="res://scenes/world/ZombieSwarmManager.tscn" id="39"]
 [ext_resource type="PackedScene" path="res://scenes/world/ResidentDefenseController.tscn" id="40"]
 [ext_resource type="PackedScene" path="res://scenes/campaign/DefeatConditionMonitor.tscn" id="41"]
+[ext_resource type="PackedScene" path="res://scenes/defense/WallDefenseController.tscn" id="42"]
 
 [node name="Main" type="Node2D"]
 script = ExtResource("27")
@@ -197,6 +198,11 @@ unit_manager_path = NodePath("../UnitManager")
 combat_coordinator_path = NodePath("../CombatCoordinator")
 infestation_manager_path = NodePath("../InfestationManager")
 horde_manager_path = NodePath("../HordeManager")
+
+[node name="WallDefenseController" parent="." instance=ExtResource("42")]
+unit_manager_path = NodePath("../UnitManager")
+horde_manager_path = NodePath("../HordeManager")
+combat_coordinator_path = NodePath("../CombatCoordinator")
 
 [node name="EventManager" parent="." instance=ExtResource("23")]
 building_manager_path = NodePath("../BuildingManager")

@@ -47,6 +47,13 @@ var path: Array[Vector2i] = []
 ## save/load; a horde reloaded mid-stun just resumes unstunned.
 var stun_seconds_remaining: float = 0.0
 
+## The building this horde is walking toward while ATTRACTED, or null. Runtime
+## only, like `path`: HordeManager re-derives it from NoiseManager on the first
+## replan after a load. Kept so a change in the field can tell "my source went
+## quiet" or "something else now pulls harder" from "nothing changed", and so a
+## warning can name what drew the horde.
+var attraction_source: BuildingInstance = null
+
 ## Placeholder balancing numbers, not an architecture decision. A modest
 ## per-zombie contribution: a starting horde (10-25, see HordeManager)
 ## fields roughly a Tier-0/1 unit's worth of HP and a fraction of its

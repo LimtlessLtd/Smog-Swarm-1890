@@ -124,7 +124,9 @@ func _on_wall_segment_breached(segment: WallSegment) -> void:
 ## A unit under sustained attack warns ONCE, not every round — see this class's
 ## own doc comment. Death is always raised: it happens once by definition, and
 ## it is the event the player most needs interrupted for.
-func _on_engagement_resolved(instance: UnitInstance, _horde: Horde, _result: Dictionary) -> void:
+func _on_engagement_resolved(instance: UnitInstance, _horde: Horde, result: Dictionary) -> void:
+	if result.get("from_cover", false):
+		return  # A defender shooting over an unbreached wall is not under attack (CombatCoordinator.strike_from_cover()).
 	var name := instance.definition.display_name if instance.definition else "A unit"
 	if instance.is_destroyed():
 		_unit_under_attack.erase(instance.id)

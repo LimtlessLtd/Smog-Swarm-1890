@@ -60,6 +60,7 @@ var tech: TechManager
 var walls: WallManager
 var fog: FogOfWarManager
 var residents: ResidentDefenseController
+var wall_defense: WallDefenseController
 var telemetry: Node
 var start_hex: Vector2i
 var variant: String = ""
@@ -126,6 +127,7 @@ func _run() -> void:
 	walls = main.get_node("WallManager")
 	fog = main.get_node("FogOfWarManager")
 	residents = main.get_node("ResidentDefenseController")
+	wall_defense = main.get_node("WallDefenseController")
 
 	var start_hexes := buildings.get_starting_settlement_hexes()
 	if start_hexes.is_empty():
@@ -191,6 +193,8 @@ func advance(seconds: float) -> void:
 	t = _charge("unit_orders", t)
 	residents._process(seconds)
 	t = _charge("residents", t)
+	wall_defense._process(seconds)
+	t = _charge("wall_defense", t)
 	fog._process(seconds)
 	t = _charge("fog", t)
 	telemetry.observe_hordes()
