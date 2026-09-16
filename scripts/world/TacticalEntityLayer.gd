@@ -53,6 +53,12 @@ extends Node2D
 ## every currently-tracked group redraws under the new band on the next
 ## _process() poll.
 ##
+## The band boundary is also the SCALE boundary (D86): HIGH draws figures at
+## honest metric size — FIGURE_METRES of real ground, 17.2 px at the
+## threshold — and LOW/MEDIUM draw the world-space *_RADIUS icons they always
+## drew. One rule, one boundary, and it is the boundary the player can already
+## feel. See METRIC_FIGURE_RADIUS.
+##
 ## **Unit/zombie art:** `_build_unit_figure()`/`_build_role_marker()` both
 ## consult `UnitVisuals.unit_texture()` and draw a real sprite in place of
 ## the flat procedural shape wherever a PNG has been authored — HIGH and
@@ -72,7 +78,36 @@ const ZOMBIE_COLOR := Color(0.33, 0.4, 0.27)   ## Sickly green-grey, distinct fr
 const FIGURE_RADIUS := 6.0
 const VEHICLE_RADIUS := 16.0
 const ZOMBIE_RADIUS := 5.0
-const FIGURE_SPREAD := 20.0  ## How far individual squad/zombie figures scatter from their entity's own local_position.
+const FIGURE_SPREAD := 20.0  ## How far LOW/MEDIUM figures scatter from their entity's own local_position. HIGH uses METRIC_SQUAD_SPREAD instead — 20.0 wu is 195 m, which is a formation wider than the whole screen once the camera reaches battle zoom.
+
+## D76/D86 — honest metric scale, applied exactly where HIGH fidelity is
+## active. The *_RADIUS constants above stay in force in LOW/MEDIUM, which are
+## icons and are meant to be: "metric scale exactly where HIGH fidelity is
+## active, icons everywhere below it" (D86, which deleted D77's separate
+## crossover at zoom 67 rather than leave a 48-to-67 band that was neither).
+##
+## A 1.8 m human drawn at the RTS convention of ~2x life is 3.5 m, which is
+## 0.359 wu — 17.2 px at CameraController.high_fidelity_threshold (48.0) and
+## 45.9 px at max_zoom (128.0), the size *They Are Billions* draws a unit at.
+## Sized from ZOMBIE_RADIUS/FIGURE_RADIUS instead, as HIGH did until D76, the
+## same figure was 10-12 wu: a 97-117 m person.
+const FIGURE_METRES := 3.5
+## D76 sized the human figure only. A Tier 4-5 model keeps the vehicle-to-
+## figure ratio the icon band already uses rather than inventing a second
+## metric constant nothing measured: 3.5 * (16.0 / 6.0) = 9.33 m of ground.
+const VEHICLE_METRES := FIGURE_METRES * (VEHICLE_RADIUS / FIGURE_RADIUS)
+## A squad in loose order at metric scale. Not a decision D76-D87 records, but
+## forced by them: FIGURE_SPREAD scatters twelve figures over a 195 m radius,
+## which read as one unit only while a figure was itself ~117 m. At 6 m the
+## ring is ~3 m between neighbours — figures that do not overlap and still
+## belong to each other at every zoom from the threshold to max_zoom.
+const SQUAD_SPREAD_METRES := 6.0
+
+## The three above, converted once. `radius` at every call site means half the
+## figure's LONGEST axis (see _build_unit_figure()), so these are halved.
+const METRIC_FIGURE_RADIUS := FIGURE_METRES * HexCoord.WORLD_UNITS_PER_REAL_METER * 0.5
+const METRIC_VEHICLE_RADIUS := VEHICLE_METRES * HexCoord.WORLD_UNITS_PER_REAL_METER * 0.5
+const METRIC_SQUAD_SPREAD := SQUAD_SPREAD_METRES * HexCoord.WORLD_UNITS_PER_REAL_METER
 
 ## World units of frame-to-frame movement below which a stale facing is
 ## kept rather than recomputed — a stationary unit/horde's position still
@@ -236,12 +271,12 @@ func _update_unit_group(instance: UnitInstance) -> void:
 			group.add_child(_build_figure(FIGURE_COLOR, LOW_UNIT_RADIUS, Vector2.ZERO))
 		GameEnums.TacticalFidelity.MEDIUM:
 			group.add_child(_build_role_marker(instance, facing))
-		_:  # HIGH — UnitVisuals-aware.
+		_:  # HIGH — UnitVisuals-aware, and the only band drawn at metric scale (D86).
 			if instance.is_squad_rendered():
 				for i in range(headcount):
-					group.add_child(_build_unit_figure(instance, facing, FIGURE_RADIUS, _scatter_offset(i, headcount, instance.id), FIGURE_COLOR))
+					group.add_child(_build_unit_figure(instance, facing, METRIC_FIGURE_RADIUS, _scatter_offset(i, headcount, instance.id, METRIC_SQUAD_SPREAD), FIGURE_COLOR))
 			else:
-				group.add_child(_build_unit_figure(instance, facing, VEHICLE_RADIUS, Vector2.ZERO, VEHICLE_COLOR))
+				group.add_child(_build_unit_figure(instance, facing, METRIC_VEHICLE_RADIUS, Vector2.ZERO, VEHICLE_COLOR))
 
 ## Facing-only update path for a group whose figures already exist (see
 ## _update_unit_group()'s draw_key-unchanged branch) — walks existing
@@ -472,7 +507,7 @@ func _refresh_swarm_batches() -> void:
 		# real crowd stood 120,000 world units away, off the item's own rect,
 		# and was culled entirely. Nothing in the data was wrong; 60,000
 		# zombies simply never reached the screen.
-		var reach := swarm.spread * ZombieSwarm.SNAP_SPREAD_MULTIPLE + ZOMBIE_RADIUS
+		var reach := swarm.spread * ZombieSwarm.SNAP_SPREAD_MULTIPLE + METRIC_FIGURE_RADIUS
 		mm.custom_aabb = AABB(
 			Vector3(swarm.anchor.x - reach, swarm.anchor.y - reach, -1.0),
 			Vector3(reach * 2.0, reach * 2.0, 2.0))
@@ -516,9 +551,12 @@ func _swarm_layer(index: int) -> MultiMeshInstance2D:
 ## separated.
 ##
 ## The quad is sized from the texture's real dimensions, scaled so its longer
-## axis lands on the same ZOMBIE_RADIUS * 2.0 diameter every other rendering
-## path uses — a QuadMesh's UVs span its own `size` regardless of the
-## texture's pixel dimensions, so a fixed square would stretch non-square art.
+## axis lands on FIGURE_METRES of real ground — a QuadMesh's UVs span its own
+## `size` regardless of the texture's pixel dimensions, so a fixed square would
+## stretch non-square art. This is the crowd half of D86's metric band; the
+## sprite half is _build_unit_figure()'s own radius argument. LOW/MEDIUM never
+## reach here (see _refresh_swarm_batches()'s first line), so ZOMBIE_RADIUS
+## still sizes the icon bands and nothing else.
 func _apply_swarm_look(layer: MultiMeshInstance2D, index: int, swarm: ZombieSwarm) -> void:
 	var key := Vector2i(swarm.lane, swarm.facing)
 	if _swarm_layer_keys[index] == key:
@@ -529,11 +567,11 @@ func _apply_swarm_look(layer: MultiMeshInstance2D, index: int, swarm: ZombieSwar
 	var mesh: QuadMesh = layer.multimesh.mesh
 	if texture:
 		var largest_dim := maxf(texture.get_width(), texture.get_height())
-		mesh.size = Vector2(texture.get_width(), texture.get_height()) * ((ZOMBIE_RADIUS * 2.0) / largest_dim)
+		mesh.size = Vector2(texture.get_width(), texture.get_height()) * ((METRIC_FIGURE_RADIUS * 2.0) / largest_dim)
 		layer.texture = texture
 		layer.modulate = Color.WHITE
 	else:
-		mesh.size = Vector2.ONE * (ZOMBIE_RADIUS * 2.0)  ## No art to derive real dimensions from — same square fallback the flat-color case implies.
+		mesh.size = Vector2.ONE * (METRIC_FIGURE_RADIUS * 2.0)  ## No art to derive real dimensions from — same square fallback the flat-color case implies.
 		layer.texture = null
 		layer.modulate = ZOMBIE_COLOR  ## A MultiMesh has no per-instance shape the way a lone Polygon2D circle does.
 
@@ -574,10 +612,10 @@ func _advance_facing(id: int, new_pos: Vector2, last_position: Dictionary, facin
 ## deterministic hash (_hash01()) rather than a clean division of the
 ## circle, and `group_seed` (caller passes the owning Horde/UnitInstance's
 ## own .id) means different groups scatter differently from each other too.
-## `spread_radius` defaults to FIGURE_SPREAD and no caller overrides it any
-## more — the HIGH-fidelity path that did now gets its fan-out from
-## ZombieSwarmManager._horde_spread(), which applies the same sqrt growth to
-## a real crowd instead of to a scatter pattern.
+## `spread_radius` defaults to FIGURE_SPREAD, which is the icon bands' value;
+## HIGH passes METRIC_SQUAD_SPREAD for squads, and HIGH's zombies get their
+## fan-out from ZombieSwarmManager._horde_spread() instead, which applies the
+## same sqrt growth to a real crowd rather than to a scatter pattern.
 ## `individual_variance` (default 1.0), read from
 ## Horde.individual_speed_variance(index) at the zombie call sites — a
 ## faster zombie (variance > 1.0) drifts further from the group's center, a

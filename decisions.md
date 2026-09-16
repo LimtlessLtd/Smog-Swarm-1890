@@ -14,6 +14,285 @@ Rules for this file:
 
 ---
 
+## 2026-09-07 — Battle scale, built
+
+D76's `max_zoom`, D80's horde spread, D85's threshold and D86's metric band landed as
+one change, because each is wrong in the absence of the others: cropping alone raises a
+zombie from 4.03 wu to the full 10 wu and makes the crowd shot *worse*, and D80's spread
+alone turns hordes into dots at the old zoom. Three things had to be decided that
+D76-D87 did not cover.
+
+**D88. The sprite crop is a pixel copy, not an `AtlasTexture` view.**
+`TextureCropUtil.tight_crop()` wraps the crop in an `AtlasTexture` — no pixel copy, and
+correct for `BuildingIconButton`. It cannot serve the crowd. `MultiMeshInstance2D` draws
+through `RenderingServer.canvas_item_add_multimesh()`, which takes a texture **RID**, and
+`AtlasTexture.get_rid()` returns its *atlas's* RID. *Measured, not assumed:* a probe
+confirmed `atlas.get_rid() == source.get_rid()` and a quad textured with a 16x16 region of
+a 64x64 source drew the whole 64x64 source, region dropped. `Sprite2D` is unaffected (it
+goes through `Texture2D.draw_rect_region`), but `TacticalEntityLayer` draws the same zombie
+texture through both paths, so `tight_crop_copy()` returns an `ImageTexture` of the cropped
+pixels and `UnitVisuals`/`ZombieVisuals` return that.
+*Consequence, and it is a gain:* nothing retains the source, so a cropped zombie leaves
+~1.5 MB resident instead of the 2048^2 RGBA8 source's 16.8 MB. The uncompressed-import
+backlog item is a smaller problem than it was measured to be.
+*Cost:* one `get_used_rect()` scan and one region copy per texture per facing, once, at
+first use — on top of a load that already decoded a 2048^2 PNG.
+
+**D89. Squad scatter is metric too, at 6 m.**
+Not a decision D76-D87 recorded; forced by them. `TacticalEntityLayer.FIGURE_SPREAD` is
+20.0 wu = **195 m**, which read as one unit only while a figure was itself ~117 m. Against
+a 3.5 m figure it scatters twelve men across two screens at battle zoom, so the unit
+visibly disintegrates at the exact zoom D76 exists to reach. HIGH now passes
+`METRIC_SQUAD_SPREAD` — 6 m, about 3 m between neighbours in a twelve-man ring.
+`FIGURE_SPREAD` is unchanged and stays the icon bands' value, which is what
+`UnitOrderController.ENTITY_RADIUS` and `UnitCommandController._UNIT_CLICK_TOLERANCE` still
+refer to.
+
+**D90. D80's spread has a floor at the small end, and it is accepted rather than fixed.**
+Measured before the constant changed, because a 77x reduction against a step size tuned for
+the old value is exactly where a crowd would start snapping. **It does not snap — 0.00% of
+samples past `SNAP_SPREAD_MULTIPLE` in every combination measured** — but `ZombieSwarm`
+moves a zombie 0.37 wu per mill update at one slice and 1.48 wu at `MAX_SLICES`, which is
+what a full 60,000-entity allocation hands every swarm, so a small crowd cannot settle as
+tight as its own `spread` says.
+
+| horde size | spread | mean radius | worst individual | past SNAP (6x) |
+| ---: | ---: | ---: | ---: | ---: |
+| 5 | 0.26 wu | 0.39-0.78 wu | 2.6-5.0x spread | 0.00% |
+| 20 | 0.52 | 0.54-0.76 | 2.3-2.5x | 0.00% |
+| 50 | 0.82 | 0.55-2.10 | 1.3-**6.0x** | 0.00% |
+| 200 | 1.64 | 0.96-3.02 | 1.1-3.2x | 0.00% |
+| 500 | 2.59 | 1.92 | 1.1x | 0.00% |
+| 3,758 | 7.09 | 6.46 | 1.0x | 0.00% |
+| 20,000 | 16.37 | 13.42 | 1.1x | 0.00% |
+
+Ranges span slices 1 to `MAX_SLICES`; the last three rows are at the division
+`slices_for()` actually picks for those counts. Hordes of 500 and up sit at 0.7-0.9x their
+own spread, which is where the OLD constant put every horde, so nothing that reads as a
+mass changed shape. Below that the crowd is looser than asked — a five-zombie horde holds
+a 4-8 m puddle rather than the 2.5 m huddle — and the worst single case measured, a
+50-zombie horde at `MAX_SLICES`, put one zombie at **5.97x spread, a whisker under the
+re-placement threshold**. Being 3x too loose at the smallest sizes is not worth a second
+constant against being 77x too loose at every size. If individual zombies are ever seen
+popping inside a small horde, `SNAP_SPREAD_MULTIPLE` is the number that did it, not
+`HORDE_BASE_SPREAD`.
+*Checked while measuring:* `TacticalEntityLayer`'s culling AABB is `spread * 6 + figure`,
+so 5.97x still fits inside it — the crowd cannot fall out of its own rect.
+
+---
+
+## 2026-09-07 — `high_fidelity_threshold` is 48, chosen by looking
+
+`scripts/test/preview_crowd_threshold.gd` (new, windowed) renders the candidates at
+D76's metric scale and D79's clustered densities. User's instruction: **"you make the
+decision, and maybe increase from 32 if at all possible and if you think it would be
+ok"**.
+
+**D85. `high_fidelity_threshold` moves 2.0 -> 48.0, superseding D82's 16-20.**
+D82 read 16-20 off the frame budget; the budget was never the constraint (D81), so the
+value it produced was answering the wrong question. The images answer the right one.
+
+| zoom | on screen | px/figure | residents | horde engulfing |
+| ---: | ---: | ---: | ---: | ---: |
+| 32 | 390 x 219 m | 11.5 | 1,103 | 28,877 |
+| 40 | 312 x 176 m | 14.4 | 706 | 18,481 |
+| **48** | **260 x 146 m** | **17.2** | **490** | **12,834** |
+| 64 | 195 x 110 m | 23.0 | 275 | 7,219 |
+
+**Why not 32, which was the recommendation an hour earlier: a packed horde at 11.5 px
+collapses back into grain.** `engulfed_032.png` holds the MOST zombies of any shot —
+28,877 — and reads as the worst picture of the four, because at mob density (0.25/m^2)
+figures overlap into texture long before they do at resident density (0.0129/m^2).
+11.5 px was measured legible against scattered residents and assumed to hold for
+hordes. It does not. **Density, not count, is what destroys legibility**, and the
+packed case is the one the game is about (P2's run-ending horde), so it is the case
+the threshold must be picked against.
+
+**Why not 64**, which is the most legible: 195 x 110 m is too tight to give orders in,
+and ordinary infested ground drops to 275 residents on screen, so everywhere that is
+not a horde reads as empty.
+
+*The crowd requirement is still met with room to spare.* The ask was "at least as many
+as They Are Billions can handle on screen at once". 12,834 engulfing figures at 17.2 px
+is several times what TAB shows on one screen — its ~20,000 is a MAP total, and at its
+own ~40 px unit size 20,000 on one 1080p screen would be ~15x screen coverage, which is
+not what it draws. *Confidence: the TAB figure is `vision.md`'s own recorded claim, not
+a sourced measurement — the research that would have confirmed it died on an API limit.
+If it turns out TAB peaks far higher on screen, this is the number to revisit.*
+*Cost:* 12,834 simulated figures is ~0.63 ms by `bench_zombie_render.gd`'s curve.
+
+**D86. The metric crossover moves from 67 to the threshold itself, and D77's third band
+disappears.**
+D77 put honest metric scale above zoom 67 and pixel-clamped icons below, deriving 67
+from a 24 px readability floor. With HIGH fidelity starting at 48 that leaves a
+48-to-67 band that is neither — figures drawn ~1.4x oversized for no reason anyone
+looking at the screen could name. Simpler, and what the images support: **metric scale
+exactly where HIGH fidelity is active, icons everywhere below it.** Figures run 17.2 px
+at the threshold to 45.9 px at `max_zoom` 128. One rule, one boundary, and the boundary
+is already the one the player can feel.
+
+**D87. The MEDIUM -> HIGH transition at 48 needs handling, and does not have it.**
+Consequence of D85, recorded so it is not discovered later as a bug. MEDIUM draws
+`MEDIUM_ZOMBIE_CLUSTER_SIZE` = 5 figures per horde; HIGH draws every individual. At
+zoom 48 that is a jump from 5 figures to 12,834 in the width of one scroll click. The
+old 2.0 threshold hid this because neither side was legible. Options are a crossfade,
+or scaling MEDIUM's cluster count with zoom so the two meet. Not designed yet.
+*Amended 2026-09-07, after photographing it: the gap is bigger than this entry said.*
+MEDIUM's cluster is per HORDE, and a hex's RESIDENTS have no `Horde` to hang one on, so
+MEDIUM draws **nothing at all** for them. `05_tactical_crowd.png` at zoom 2.6 stands on
+a hex holding 60,000 instantiated residents and photographs clean ground. The jump is
+zero-to-everything rather than 5-to-12,834, and it spans 0.1875 to 48 rather than
+0.1875 to 2.0 — 85% of the tactical range by log measure, against 57% before. The
+defect is not new; D85 widened it, and D85 is still right, because what the old band
+drew there was 0.7 px of static rather than zombies.
+
+---
+
+## 2026-09-07 — Where individual figures start drawing (measured)
+
+`scripts/test/bench_zombie_render.gd` (new, windowed — a headless MultiMesh backs
+no storage, so a headless run measures an empty scene and calls it fast). RTX 2060,
+OpenGL Compatibility, 1280x720, vsync off, median of 60 frames.
+
+**D81. Rendering a crowd is not the constraint. Simulating one is.**
+*Measured, pure render:* **120,000 sprites at 75x screen coverage cost 2.93 ms**, and
+20,000 sprites painting the screen **89x over cost 1.88 ms**. Fill rate is roughly an
+order of magnitude under budget at every count the game can reach, so the
+overdraw worry that prompted this bench is answered: there isn't one.
+*Measured, whole frame* — live `ZombieSwarm` crowds stepped and uploaded every frame,
+counts derived from London density (D79) rather than chosen:
+
+| zoom | figures | px each | sim ms | total ms |
+| ---: | ---: | ---: | ---: | ---: |
+| 2.0 | 452,102 | 0.7 | 24.16 | **24.67 OVER** |
+| 5.0 | 72,336 | 1.8 | 3.57 | 3.83 |
+| 12.0 | 12,558 | 4.3 | 0.62 | 0.86 |
+| 20.0 | 4,521 | 7.2 | 0.44 | 0.67 |
+| 32.0 | 1,766 | 11.5 | 0.34 | 0.57 |
+| 128.0 | 110 | 45.9 | 0.03 | 0.26 |
+
+**D82. `high_fidelity_threshold` moves 2.0 -> ~16-20. The binding constraint is
+legibility, not frame budget.**
+The table's own shape settles it: the frame can afford **72,000 figures at zoom 5**,
+where each is **1.8 px** and unreadable. Affordability stops mattering long before
+legibility starts. A figure reads at roughly 10-12 px, so the useful band is where
+px-per-figure and count are both acceptable — zoom 16-20 puts **~4,500-7,000
+residents on screen at 6-9 px** for well under 1 ms.
+*What today's 2.0 actually asks for:* 452,102 figures at **0.7 px**. The game does not
+crash there only because `ENTITY_BUDGET` caps it at 60,000 — so it draws an
+unrepresentative fraction of the real population, at sub-pixel size. That is
+`05_tactical_crowd.png`'s static, and it is a threshold defect, not a renderer one.
+*Consequence for hordes, and it is the point:* a horde packs ~19x denser than London
+residents (0.25/m^2 vs 0.0129/m^2), so at zoom 20 a horde filling the viewport is
+**~55,000 individually-simulated zombies at ~3x screen coverage for ~2.9 ms** — a
+solid wall the player is standing inside, which is what P2's run-ending horde is
+supposed to look like.
+
+**D83. `ZombieSwarmManager.ENTITY_BUDGET` stays at 60,000.** The horde case above
+needs ~55,000 in view plus D78's offscreen margin, which is what the budget already
+is. It was derived from `bench_zombie_scale.gd` for different reasons and happens to
+be right for this one too. No change.
+
+**D84. Animation is free to render and NOT free to simulate — the second half was
+not predicted.**
+Render side, as expected: animated rows match static across the whole COUNT sweep
+(20,000 figures: **0.57 ms animated vs 0.79 ms static**), because the frame index is
+per-instance MultiMesh custom data advanced from `TIME` on the GPU — written once at
+spawn, never per frame.
+Simulation side, contradicting this bench's own stated hypothesis: carrying that phase
+needs a **stride-12** buffer where `ZombieSwarm.TRANSFORM_FLOATS` is 8, and the wider
+stride measured **25-40% more sim time** (at 72,336: 5.02 ms vs 3.57 ms). The bench
+header predicted "animation costs memory and nothing else" and its own numbers refuted
+it.
+*Confounded, and not yet worth acting on:* the stride-12 path is `_WideCrowd`, a
+faithful but not identical mirror of `ZombieSwarm.step()` — it wanders off the
+velocity perpendicular instead of the direction table and drops the snap branch. Some
+of the delta may be the loop rather than the stride. **A clean A/B — the real
+`ZombieSwarm` at both strides, nothing else changed — is owed before the animation
+work commits to a buffer layout.**
+
+---
+
+## 2026-09-07 — Battle scale: the camera gets close enough to see a person
+
+User's call, answering the analysis question "literal scale or TAB scale, you cannot
+have both": **"Q1 - Do option a"** — the tactical view gains a true battle-scale band
+with honest human-sized figures, and what is rendered is culled to the view rather
+than to the hex.
+
+**D76. `max_zoom` rises from 12.0 to ~128, and the deepest band draws figures at
+honest metric scale.**
+The base viewport is 1280x720 (`project.godot`, `stretch/mode="canvas_items"`, so
+world-to-screen does not depend on the monitor), and visible world width is
+`viewport / zoom.x`. At today's `max_zoom = 12` the screen shows **106.7 world units =
+1,040 m**. *They Are Billions*' normal view is ~100 m across, so the closest zoom this
+game allows is a **10x wider** camera than TAB's default — which is the whole reason
+nothing in it reads as TAB.
+*The numbers:* 1 world unit = 9.75 m (`HexCoord.WORLD_UNITS_PER_REAL_METER` 0.1025599).
+A 100 m window is 10.26 wu, so `zoom = 1280 / 10.26 = 125`; **128** is the round value
+and gives a 97.5 m x 54.8 m screen. A human is 1.8 m; drawn at the RTS convention of
+~2x life (3.5 m = 0.359 wu) that is **46 px tall at zoom 128** — TAB's own unit size.
+*Consequence, accepted:* the tactical threshold to max is 58 scroll clicks at
+`zoom_factor_per_step = 1.12`, up from 37. A coarser step or a modifier-key jump deep
+in the range is a UX follow-up, not a blocker.
+
+**D77. Figure size becomes a function of the zoom band, not a world-space constant.**
+`TacticalEntityLayer.ZOMBIE_RADIUS` (5.0) and `FIGURE_RADIUS` (6.0) are world-space, so
+apparent size scales with zoom across what is now a 34,000x zoom range. One constant
+cannot serve both ends. The rule: **above the crossover, size in metres; below it,
+size in screen pixels.** Crossover is where honest scale first clears a ~24 px
+readability floor — `24 / 0.359 = zoom 67`. Above 67, a figure is 3.5 m and grows with
+the camera; below 67, it is a pixel-clamped icon and LOW/MEDIUM keep behaving exactly
+as they do now.
+*Why this and not "just shrink the sprites":* a 0.359 wu figure at the Tactical
+threshold (0.1875) is 0.07 px. The existing bands are not wrong, they are simply the
+icon half of a rule that never had its metric half.
+
+**D78. Entity allocation keys on the camera rect, not the hex.**
+`ZombieSwarmManager.allocate()` spends `ENTITY_BUDGET` (60,000) across live hexes and
+`_update_group_shape()` spreads a hex's residents over `RESIDENT_SPREAD` = 384 wu
+(44.0 km^2). At zoom 128 the screen is 56.25 wu^2 — **0.012% of that disc**, so of
+60,000 simulated zombies **7 would be on screen**. The budget has to follow the view.
+*Consequence, and it is a gain, not a cost:* at battle zoom the rendered population is
+hundreds to low thousands, not 60,000. `ZombieSwarm.step()` measures 2.79 ms at 60,000
+(`bench_zombie_swarm.gd`), so ~2,000 entities costs **~0.09 ms** and frees ~2.7 ms of
+frame — which is what pays for per-entity animation and visible per-entity combat.
+The 60,000 budget is still what the intermediate whole-hex framings need; it is
+redistributed by zoom, not reduced.
+
+**D79. Resident zombies cluster on urban/industrial sub-cells instead of filling the
+hex uniformly.**
+This is forced by D76 and is the one genuinely uncomfortable consequence of honest
+scale: spread evenly, a hex at design_doc.md §2.1's floor of 1,000
+(`ZombiePopulationData.FALLBACK_FLOOR`) over 64.7 km^2 is **one zombie per 64,700 m^2**
+— 0.08 on a battle-scale screen, i.e. one zombie every twelve screens. Uniform
+spreading makes almost the whole country look empty at the exact zoom the player is
+meant to fight at, which directly attacks pillar P1.
+*The fix uses architecture that already exists:* zombies were people and people were in
+settlements, so residents occupy the hex's URBAN/INDUSTRIAL sub-cells.
+`SubHexTerrainQuery.biome_at()` already answers `GameEnums.BiomeType.URBAN` per 30 m
+sub-cell and `_with_urban_override()` already exists — so this reads through the
+sub-hex layer as `CLAUDE.md` §3 requires, rather than flattening to one value per hex.
+*Measured effect:* the same 1,000-zombie hex confined to ~2% urban area is **4 zombies
+on a battle screen inside the town and none in the fields**; a London hex at ~5e5 with
+~60% urban coverage is **69 on screen**. Empty countryside, infested towns, a wall of
+them in the cities — which is both more accurate and more TAB-like than the even
+scatter it replaces.
+
+**D80. `HordeManager`/`ZombieSwarmManager` horde spread is recalibrated; it is
+currently ~77x too wide.**
+`_horde_spread(size) = HORDE_BASE_SPREAD(20) * sqrt(size / 5)`. For the 3,758-strong
+export `diagnose_infestation_pressure.gd` actually measured, that is **548 wu = 5.35 km
+radius** — wider than the hex the horde stands in. A loose mob at one zombie per 4 m^2
+occupies 15,032 m^2, i.e. a **69 m = 7.1 wu** radius. The ratio is a constant 77x at
+every size (both sides scale as sqrt), so this is a one-constant fix:
+`HORDE_BASE_SPREAD` 20.0 -> ~0.26 wu (`sqrt(5 * 4 / PI)` m expressed in world units).
+*Why it matters beyond scale:* a horde spread across five kilometres cannot read as a
+horde at any zoom. This is a large part of why hordes currently look like scattered
+noise rather than a mass.
+
+---
+
 ## 2026-09-07 — The campaign can end, and hordes stop multiplying
 
 Started as "make hordes seek the colony", which `HordeManager`'s own header has listed
