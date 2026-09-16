@@ -195,7 +195,9 @@ enum UnitType {
 	TRACTION_RAM,           ## Melee.
 	MAXIM_QUADRICYCLE,      ## Ranged.
 	SEARCHLIGHT_TENDER,     ## Special.
-	# --- Tier 5 (unit_tier_5) — Peak Industrial Warfare (1910s-1920s). ---
+	# --- Tier 5 (unit_tier_5) — Peak Victorian industrial warfare. Identifiers predate the
+	# decisions.md D104 renames (display names: Road Locomotive, Siege Howitzer, Staff
+	# Wagon) and are kept because saves and asset filenames key on them. ---
 	HOLT_BREAKER,           ## Melee.
 	FIELD_HOWITZER_GUN_TRACTOR,  ## Ranged.
 	ARMOURED_COMMAND_CAR,   ## Special.

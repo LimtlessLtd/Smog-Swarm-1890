@@ -14,6 +14,59 @@ Rules for this file:
 
 ---
 
+## 2026-09-16 — Answers to the audit's questions 5-7
+
+**D102. Gunpowder is spent per shot, and ranged units get a realistic range.** Asked:
+per-shot gunpowder, a minimal range, both, or neither. Answer: "Both except the range of
+ranged units should be realistic e.g. they shouldnt be shooting across entire hex's
+obviously."
+*Settles:* `design_doc.md` §4's "1 Gunpowder/shot" is implemented as written (today
+`CombatCoordinator._engage()` only checks the stockpile is above zero). Ranged range is
+metric and a small fraction of a hex (8,647 m centre to centre) — the recommendation's
+"engage an adjacent hex" option is **rejected**.
+*Consequence for build:* a realistic range cannot be expressed in today's combat, which
+engages only when a unit and a horde share a hex. Ranged engagement has to be decided by
+world-space distance between a unit and the zombies it targets — the tactical positions
+`ZombieSwarm` and `UnitOrderController` already hold — rather than by hex membership.
+*Left open, as balance numbers:* per-weapon ranges (a bow, a rifle volley, a Maxim, a
+howitzer), ordered as §6 orders their noise and grounded in period weapons.
+
+**D103. What makes a hex or city worth taking: depleting deposits from real geology,
+and cities that come with roads, rail, room, and salvage that takes time.**
+- **6a:** "Each deposit holds a finite amount that its extractors drain."
+- **6b:** "real geology if the licence allows commercial use, biome-weighted otherwise."
+  The licence check comes first; the biome-weighted fallback uses the extractor biome
+  gating that already exists.
+- **6c:** "Both ii and iii, we should be able to salvage abandoned and ruined buildings
+  and recoup some building materials that way, but it takes time to salvage abandoned
+  buildings." So a cleared city offers **pre-existing 1890s roads and rail converging on
+  it** and **a larger settlement site**; option (i), an instant one-off stock scaled by
+  population, is **not** taken. Salvage is instead a **timed action on abandoned and
+  ruined buildings** that recoups some building materials.
+*Promotes D99's "Perhaps" to a rule for deposits:* nearby deposits are finite and deplete.
+*Left open:* deposit sizes and drain rates (balance); whether pre-existing roads and rail
+act as supply lines or only as movement (the 1890s-roads item's own open question); what
+"a larger settlement site" means mechanically (urban extent, placement room or stockpile);
+salvage duration, yield, and which ruins count (player ruins, ambient ruins from real
+settlement data, or both).
+
+**D104. The flagged names are renamed to shorter period equivalents; stats unchanged.**
+"Approve them all but dont make the names of buildings or units too long just for
+historical coherence. If it can be shortened but still evoke victorian england then do
+so please." Applied: title era → 1890s; Tower Blocks → **Tenements**; Concrete Road →
+**Macadam Road**; Holt Breaker → **Road Locomotive**; Field Howitzer Gun Tractor → **Siege
+Howitzer**; Armoured Command Car → **Staff Wagon**; Armored Bunker Fortification → **Casemate
+Wall** (design doc only — not in code); Central High-Voltage Grid Station → **Generating
+Station**; Automated Freight Marshalling Yard → **Marshalling Yard**; Synthetic Chemical
+Refinery → **Chemical Works**.
+*Not renamed:* enum identifiers (`HOLT_BREAKER`, `TOWER_BLOCKS`, ...) and asset filenames,
+because saves and the Blender pipeline key on them; historical `decisions.md` and devlog
+entries keep the names they were written with. Other long names (e.g. "Heavy Coal
+Washery & Pulverizer", "High Command & Cavalry Depot") were not in the approved list and
+are unchanged.
+
+---
+
 ## 2026-09-16 — Answers to the audit's first four design questions
 
 The user answered four of the questions `backlog.md`'s priority index raised. Quoted

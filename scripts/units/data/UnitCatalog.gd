@@ -128,13 +128,13 @@ static func _build_definitions() -> Array[UnitDefinition]:
 		# mechanic: same TRAMPLE_KNOCKBACK, the heaviest HP pool and lowest
 		# move speed in the roster, and damage de-emphasized since its own
 		# description explicitly says it isn't armed.
-		_unit(GameEnums.UnitType.HOLT_BREAKER, "Holt Breaker", 5, GameEnums.UnitRole.MELEE, {GameEnums.ResourceType.WOOD: 300, GameEnums.ResourceType.BRICKS: 200, GameEnums.ResourceType.CONCRETE: 200, GameEnums.ResourceType.STEEL: 300}, 5.0, 15.0, false, GameEnums.UnitAbility.TRAMPLE_KNOCKBACK, 2.6, 0.8, 0.75, 0, 50.0, 20.0, 50.0),
+		_unit(GameEnums.UnitType.HOLT_BREAKER, "Road Locomotive", 5, GameEnums.UnitRole.MELEE, {GameEnums.ResourceType.WOOD: 300, GameEnums.ResourceType.BRICKS: 200, GameEnums.ResourceType.CONCRETE: 200, GameEnums.ResourceType.STEEL: 300}, 5.0, 15.0, false, GameEnums.UnitAbility.TRAMPLE_KNOCKBACK, 2.6, 0.8, 0.75, 0, 50.0, 20.0, 50.0),
 		# Field Howitzer Gun Tractor: "a long recoil mechanism... completely
 		# different from an armored tank" (README) — the hardest-hitting
 		# unit in the roster (real siege artillery), paid for with the
 		# lowest HP and move speed of any Tier 5 unit: an unarmored, slow,
 		# two-part towed gun, not a tank.
-		_unit(GameEnums.UnitType.FIELD_HOWITZER_GUN_TRACTOR, "Field Howitzer Gun Tractor", 5, GameEnums.UnitRole.RANGED, {GameEnums.ResourceType.WOOD: 200, GameEnums.ResourceType.BRICKS: 200, GameEnums.ResourceType.CONCRETE: 200, GameEnums.ResourceType.STEEL: 400, GameEnums.ResourceType.GUNPOWDER: 80}, 4.0, 12.0, true, GameEnums.UnitAbility.NONE, 0.7, 1.8, 0.7, 0, 40.0, 15.0, 50.0),
+		_unit(GameEnums.UnitType.FIELD_HOWITZER_GUN_TRACTOR, "Siege Howitzer", 5, GameEnums.UnitRole.RANGED, {GameEnums.ResourceType.WOOD: 200, GameEnums.ResourceType.BRICKS: 200, GameEnums.ResourceType.CONCRETE: 200, GameEnums.ResourceType.STEEL: 400, GameEnums.ResourceType.GUNPOWDER: 80}, 4.0, 12.0, true, GameEnums.UnitAbility.NONE, 0.7, 1.8, 0.7, 0, 40.0, 15.0, 50.0),
 		# Armoured Command Car: "sleek, lower to the ground, and noticeably
 		# faster-looking than the bulky agricultural tractors... rear
 		# open-top deck for radio/pigeon dispatch boxes... a small rotating
@@ -143,7 +143,7 @@ static func _build_definitions() -> Array[UnitDefinition]:
 		# not a damage dealer (that's the Howitzer): real armor and a
 		# working gun back its speed, but its value is arriving at a
 		# threatened hex quickly, not out-damaging a dedicated combat unit.
-		_unit(GameEnums.UnitType.ARMOURED_COMMAND_CAR, "Armoured Command Car", 5, GameEnums.UnitRole.SPECIAL, {GameEnums.ResourceType.WOOD: 250, GameEnums.ResourceType.BRICKS: 150, GameEnums.ResourceType.CONCRETE: 150, GameEnums.ResourceType.STEEL: 250, GameEnums.ResourceType.GUNPOWDER: 30}, 4.0, 12.0, false, GameEnums.UnitAbility.RAPID_RESPONSE, 1.1, 1.1, 1.4, 0, 30.0, 10.0, 50.0),
+		_unit(GameEnums.UnitType.ARMOURED_COMMAND_CAR, "Staff Wagon", 5, GameEnums.UnitRole.SPECIAL, {GameEnums.ResourceType.WOOD: 250, GameEnums.ResourceType.BRICKS: 150, GameEnums.ResourceType.CONCRETE: 150, GameEnums.ResourceType.STEEL: 250, GameEnums.ResourceType.GUNPOWDER: 30}, 4.0, 12.0, false, GameEnums.UnitAbility.RAPID_RESPONSE, 1.1, 1.1, 1.4, 0, 30.0, 10.0, 50.0),
 	]
 
 ## HP/damage stay a shared placeholder balancing curve — design_doc.md §4 has

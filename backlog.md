@@ -54,15 +54,15 @@ The golden slice (`PLAYER_EXPERIENCE.md` §11) is the target. Ranked by `CLAUDE.
 | 3 Feedback | *6 of 15 resource counters have no icon, name or tooltip* (Next) | `[visual-autonomous]` | FB-3 |
 | 3 Feedback | **new** — At battle zoom one building fills the screen | `[visual-autonomous]` | COMBAT-3 |
 | 3 Feedback | **new** — The game is silent | `[visual-human]` | COMBAT-4, §13 |
-| 4 Decisions | **new** — Ranged units have no range; gunpowder is never spent | `[design]` | COMBAT-7, IND-2 |
-| 4 Decisions | **new** — Why want this hex: depleting deposits (D99 direction) and city value | `[design]` | EXP-2, EXP-5, §8 |
+| 4 Decisions | **new** — Gunpowder per shot, and a realistic metric range for ranged units (**decided, D102**) | `[gated]` | COMBAT-7, IND-2, DEF-3 |
+| 4 Decisions | **new** — Finite deposits from real geology; cities with roads, rail, room and timed salvage (**decided, D103**) | `[gated]` licence check first | EXP-2, EXP-5, §8 |
 | 4 Decisions | *Should the Town Hall / ZoC / building sites go dark* (below) | `[design]` | HORDE-5 |
 | 5 Pacing | *Infestation balance pass* (below) | `[design]` | — |
 | 6 Horde | *Walls block bleed proportionally — blocked* (below) | `[design]` | DEF-2 |
 | 6 Horde | *`HordeManager` stuck-detection/bypass* (Next) | `[gated]` | — |
 | 6 Horde | **new** — Hordes on the map grow 4 → 306 in 60 days with no player input | `[gated]` | HORDE-6, performance |
 | 7-8 Expansion/logistics | *Per-settlement stockpiles*, *logistics geometry*, *terminals*, *§2.1 ZoC consequences* (Next/below) | `[gated]` | SET-1, SET-2, LOG-1..4 |
-| 9 Capability | **new** — Historical coherence review | `[design]` | §7.1 |
+| 9 Capability | **done** — Historical coherence renames (D104) | — | §7.1 |
 | 10 Polish | *MEDIUM -> HIGH pop*, *camera-rect allocation*, *urban clustering*, *stride A/B* (Battle scale, below) | mixed | COMBAT-3, readability |
 | 11 Performance | *Relief tiles will not load in an exported build*, *`portal_offset_for_step()`* (Next) | `[gated]` | — |
 
@@ -278,22 +278,37 @@ needs them, not ahead of it.
   **IMPLEMENTATION:** ask the user why it is muted before unmuting; then roadmap layer 1
   (warnings). **VERIFICATION:** a person listens.
 
-- [ ] `[design]` **Ranged units have no range, and gunpowder is never spent.** **WHY:**
-  rank 4 — `CombatEngine` resolves MELEE, RANGED and SPECIAL identically as a same-hex
-  exchange; `UnitDefinition` has no range. `design_doc.md` §4 specifies "1
-  Gunpowder/shot", but `CombatCoordinator` only checks the stockpile is above zero.
+- [ ] `[gated]` **Gunpowder per shot, and a realistic range for ranged units.**
+  **Decided 2026-09-16 (D102):** "Both except the range of ranged units should be
+  realistic e.g. they shouldnt be shooting across entire hex's obviously."
+  **WHY:** rank 4 — `CombatEngine` resolves MELEE, RANGED and SPECIAL identically as a
+  same-hex exchange and `UnitDefinition` has no range; `design_doc.md` §4's "1
+  Gunpowder/shot" is not implemented (the code only checks the stockpile is above zero).
   **PLAYER EXPERIENCE:** army composition is a decision; ammunition is a siege resource
-  (§5.7); Tier 1 firearms feel like a new era (IND-2). **IMPLEMENTATION — needs
-  deciding:** per-shot consumption is already specified and could be `[gated]` on its
-  own, but at today's 20 s rounds it is a balance change to every ranged unit, so it
-  wants the user's nod. Range belongs to §6's tactical layer (Deferred) — the question
-  is whether a minimal range (engage an adjacent hex, or within N m at HIGH fidelity)
-  comes first. **VERIFICATION:** `siege` DEF-3; `diagnose_resident_combat.gd` re-run.
+  (`PLAYER_EXPERIENCE.md` §5.7); riflemen behind a wall shoot the horde attacking it
+  (DEF-3); Tier 1 firearms feel like a new era (IND-2).
+  **IMPLEMENTATION, two separable parts:** (1) per-shot gunpowder — spend on each ranged
+  engagement, keep the existing no-gunpowder penalty when the stock is empty; small.
+  (2) Realistic range — metric and a small fraction of a hex, so engagement becomes a
+  world-space distance test between a ranged unit and the zombies it targets (positions
+  `ZombieSwarm`/`UnitOrderController` already hold), not hex membership. That changes
+  when `CombatCoordinator` engages, so enumerate every engagement trigger (horde moved,
+  unit moved, resident waves, siege) before wiring it. Per-weapon ranges are balance
+  numbers grounded in period weapons, disclosed in comments. **VERIFICATION:**
+  `run_scenarios.py siege` DEF-3 (engagements while the wall holds) and a gunpowder-spend
+  telemetry counter; `diagnose_resident_combat.gd` re-run; a verification that a ranged
+  unit engages at its range and not beyond.
 
-- [ ] `[design]` **Why want this hex: resource deposits and city value.** *D99 direction
-  (2026-09-16, marked "Perhaps"): resources nearest Manchester deplete and push the
-  player outward — to settle: what depletes (deposit or building), how fast, and whether
-  deposits come from real geology (BGS/GSI).* **WHY:**
+- [ ] `[gated]` **Why want this hex: resource deposits and city value.** **Decided
+  2026-09-16 (D103):** deposits hold a finite amount their extractors drain; they come
+  from "real geology if the licence allows commercial use, biome-weighted otherwise";
+  a cleared city offers pre-existing 1890s roads and rail and a larger settlement site,
+  and abandoned and ruined buildings can be salvaged for building materials over time
+  (no instant population-scaled stock). **First step:** check the BGS/GSI dataset
+  licences for commercial use and record the result in `decisions.md`. **Still open, and
+  to ask before building those parts:** whether pre-existing roads/rail act as supply
+  lines or movement only; what "a larger settlement site" means mechanically; which
+  ruins are salvageable. **WHY:**
   rank 4 — output is flat on every legal hex (only farm soil varies), and a city differs
   from an empty hex only in threat and placement permissions (`PLAYER_EXPERIENCE.md`
   §8). The user has already chosen "real deposits that gate mines" (countryside item,
@@ -305,12 +320,8 @@ needs them, not ahead of it.
   from real settlement data, a larger urban extent) — no arbitrary bonus.
   **VERIFICATION:** `expansion` EXP-2 against a deposit hex.
 
-- [ ] `[design]` **Historical coherence review.** **WHY:** rank 9 — D97; the Tier 4-5
-  catalogue and the design doc's "1890s-1920s" title drift toward First World War
-  vocabulary. **PLAYER EXPERIENCE:** the late game still feels like Victorian industry
-  pushed to its limit. **IMPLEMENTATION:** user decides keep / rename / rework per
-  flagged item (`PLAYER_EXPERIENCE.md` §7.1); renames are data-only. **VERIFICATION:**
-  gate only.
+- [x] **Historical coherence review.** Done 2026-09-16 (D104): ten flagged names renamed to
+  shorter period equivalents, stats unchanged, enum identifiers kept.
 
 ## Now — the core loop (P1, P2)
 

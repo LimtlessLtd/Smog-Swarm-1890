@@ -321,8 +321,8 @@ the horde's hex.
 - **Want:** different unit types produce different tactical behaviour; army composition
   is a decision.
 - **Status:** roles resolve identically; abilities are knockback plus multipliers.
-  **[design]:** what firing range and ammunition mean at the tactical layer is §6's
-  unconsumed sound table and the Deferred LoS work — the combat model is the largest
+  *Decided 2026-09-16 (D102):* gunpowder is spent per shot and ranged units get a
+  realistic metric range, never across hexes — the combat model is still the largest
   single gap between this document and the build.
 
 ### 5.13 Strategic setbacks and recovery
@@ -391,8 +391,8 @@ War / dieselpunk / modern military RTS unless explicitly justified by the existi
 design decisions." The project's own setting text already agrees: "no borrowed future
 technology, just the Industrial Revolution pushed as far as it will go" (`todo.md`).
 
-Items that drift past it. **[design] — each needs a keep/rename/rework call; none has
-been changed** (`backlog.md`, "Historical coherence review"):
+Items that drifted past it. **Renamed 2026-09-16 (D104)** to shorter period equivalents,
+stats unchanged — the list below is kept as the record of why:
 
 - `design_doc.md`'s title era "1890s-1920s" and `GameEnums` Tier 5 comment "Peak
   Industrial Warfare (1910s-1920s)".
@@ -607,15 +607,15 @@ systems already produce the answer. **[design]** = genuinely open; recorded in
 | 5 | …over 2-3 hours? | **[design]** §3; second settlement is the intended marker (D21). |
 | 6 | Why expand? | Settled direction: deposits gate mines (2026-08-19), and nearby resources may deplete, forcing expansion (D99, "Perhaps"); unbuilt. |
 | 7 | Why is expansion dangerous? | **Follows** — D39 export proximity, D49 frontage, D51 leaks, D9 re-infestation. |
-| 8 | Why clear cities? | **[design]** §8 — only placement permissions follow today. |
-| 9 | Why is a city different from an empty hex? | Follows for threat (D3/D49); **[design]** for reward. |
+| 8 | Why clear cities? | Settled (D103): pre-existing 1890s roads and rail, a larger settlement site, and timed salvage of ruins; unbuilt. |
+| 9 | Why is a city different from an empty hex? | Follows for threat (D3/D49); reward settled by D103. |
 | 10 | Why does industrialisation feel exciting? | **[design]** §7 — capabilities in spec, not wired. |
 | 11 | Why does a second settlement feel important? | Settled (D21: it is where logistics begins); unbuilt. |
 | 12 | Why does connecting settlements feel important? | Settled (D22-D29); unbuilt. |
 | 13 | Why does a huge horde create decisions? | Settled (P2, D11, D17, D100, D101); chain broken in practice until those land (§5.5). |
 | 14 | Why is defending a city fun? | **[design]** §5.6-5.7 — no active defence mechanics. |
 | 15 | Why is attacking a zombie-held city fun? | **[design]** §5.8 — follows as a grind, lacks payoff and activity. |
-| 16 | Why is discovering a resource exciting? | **[design]** §5.9. |
+| 16 | Why is discovering a resource exciting? | Settled (D99, D103): finite deposits from real geology deplete, so finding the next one matters; unbuilt. |
 | 17 | Why does moving deeper into Britain change the situation? | **Follows** — census density rises toward the great cities (D3), D39 wakes Hive Cores as the player approaches. |
 | 18 | Why care about specific locations? | Partly follows (§6 table); resource and city value **[design]**. |
 | 19 | Why keep playing once comfortable? | Settled: growth and expansion draw bigger threats (D101); nearby resources run out (D99, tentative). |
