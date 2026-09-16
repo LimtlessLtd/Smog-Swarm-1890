@@ -8,9 +8,11 @@ extends Node
 ##
 ## What each check is for:
 ##
-## 1. **A drawn horde sieges.** A Bessemer complex inside the starting perimeter
-##    draws an 800-strong horde from the next hex; it is stopped at a wall piece,
-##    reports ATTACKING, and `horde_siege_started` fires once.
+## 1. **A drawn horde sieges, at the wall.** A Bessemer complex inside the starting
+##    perimeter draws an 800-strong horde from the next hex; it is stopped at a wall
+##    piece, reports ATTACKING, `horde_siege_started` fires once, and it is standing
+##    at that piece — not a hex away, where the whole-crossing wall check used to
+##    stop it (found in the vertical slice, 2026-09-16).
 ## 2. **Pressure is contact-limited.** Wall damage per HordeManager.LOGIC_TICK_SECONDS
 ##    at night equals wall_contact_frontage() x WALL_DAMAGE_PER_CONTACT_ZOMBIE x
 ##    WALL_SIEGE_DAMAGE_MULTIPLIER x 2 — not the whole horde's damage.
@@ -33,6 +35,7 @@ const _STEP_SECONDS: float = 1.0
 const _MAX_APPROACH_STEPS: int = 2000
 const _MAX_SIEGE_STEPS: int = 20000
 const _EPSILON: float = 0.001
+const _MAX_SIEGE_STANDOFF_METRES: float = 50.0
 
 var _map: HexGridMap
 var _resources: ResourceManager
@@ -124,6 +127,11 @@ func _approach_and_siege() -> Array:
 		_failures.append("a horde blocked at a wall piece reports %s, not ATTACKING" % GameEnums.HordeState.keys()[horde.state])
 	if _siege_started_events != 1:
 		_failures.append("horde_siege_started fired %d times for one siege, want 1" % _siege_started_events)
+	var standoff := WallDefenseController.distance_to_segment_metres(HexCoord.axial_to_world(horde.hex_coord) + horde.local_position, segment)
+	if _siege_started_events == 1:
+		print("1. horde sieging piece %d from %.0f m away" % [segment.id, standoff])
+	if standoff > _MAX_SIEGE_STANDOFF_METRES:
+		_failures.append("the sieging horde stands %.0f m from the piece it is clawing at (want <= %.0f m)" % [standoff, _MAX_SIEGE_STANDOFF_METRES])
 	return [horde, segment]
 
 

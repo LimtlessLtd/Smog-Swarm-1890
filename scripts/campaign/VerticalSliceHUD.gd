@@ -359,7 +359,9 @@ func _refresh_emissions() -> void:
 		lines.append("%s heard from %.1f hexes at night." % [loudest_name, loudest_night_reach])
 	lines.append("A horde draws closer to whatever reaches it.")
 	_emissions_summary.text = "\n".join(lines)
-	_emissions_panel.reset_size()
+	# Deferred: the rows freed above are only queued, and still count toward the
+	# panel's minimum size until the end of this frame.
+	_emissions_panel.call_deferred("reset_size")
 
 
 ## Hexes from its source at which a machine's night noise still clears

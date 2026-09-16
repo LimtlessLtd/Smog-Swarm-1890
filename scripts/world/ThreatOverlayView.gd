@@ -120,9 +120,10 @@ func _draw_attention(pixel: float) -> void:
 
 func _draw_hordes(pixel: float) -> void:
 	for horde in _hordes.get_all_hordes():
-		# A horde at the player's wall is known whatever the fog says: it is
-		# clawing at something the player owns.
-		if horde.size < MIN_HORDE_SIZE or not (_is_seen(horde.hex_coord) or horde.state == GameEnums.HordeState.ATTACKING):
+		# A horde at the player's wall, or following the player's own light or
+		# noise, is known whatever the fog says: it is coming for something the
+		# player owns.
+		if horde.size < MIN_HORDE_SIZE or not (_is_seen(horde.hex_coord) or horde.state == GameEnums.HordeState.ATTACKING or horde.attraction_source != null or _hordes.get_sieged_segment(horde) != null):
 			continue
 		var at := HexCoord.axial_to_world(horde.hex_coord) + horde.local_position
 		var radius := (9.0 + 4.0 * log(float(horde.size) / float(MIN_HORDE_SIZE)) / log(2.0)) * pixel
@@ -135,7 +136,9 @@ func _draw_hordes(pixel: float) -> void:
 				_draw_label((at + to) * 0.5, "ETA %s" % _format_real(eta), ATTRACTED_COLOR, 14, pixel)
 		draw_circle(at, radius, Color(HORDE_COLOR, 0.85))
 		draw_arc(at, radius, 0.0, TAU, 32, HORDE_RING_COLOR, 2.0 * pixel)
-		_draw_label(at + Vector2(0.0, -radius - 6.0 * pixel), _thousands(horde.size), TEXT_COLOR, 16, pixel)
+		# Beside the mark, not above it: a sieging horde stands on its wall piece,
+		# whose readout is drawn above.
+		_draw_label(at + Vector2(radius + 8.0 * pixel, 6.0 * pixel), _thousands(horde.size), TEXT_COLOR, 18, pixel, false)
 		_draw_label(at + Vector2(0.0, radius + 16.0 * pixel), _doing(horde), ATTRACTED_COLOR if source else Color(TEXT_COLOR, 0.8), 13, pixel)
 
 
@@ -171,13 +174,13 @@ func _draw_sieges(pixel: float) -> void:
 		draw_arc(mid, 22.0 * pixel, 0.0, TAU, 24, Color(SIEGE_COLOR, pulse), 3.0 * pixel)
 		var hp_ratio := clampf(segment.current_hp / maxf(0.001, segment.get_max_hp()), 0.0, 1.0)
 		var bar := Vector2(90.0, 9.0) * pixel
-		var bar_origin := mid + Vector2(-bar.x * 0.5, -44.0 * pixel)
+		var bar_origin := mid + Vector2(-bar.x * 0.5, -78.0 * pixel)
 		draw_rect(Rect2(bar_origin, bar), Color(0, 0, 0, 0.75))
 		draw_rect(Rect2(bar_origin, Vector2(bar.x * hp_ratio, bar.y)), SIEGE_COLOR.lerp(Color(0.4, 0.9, 0.35), hp_ratio))
 		var defenders: Array[UnitInstance] = _wall_defense.get_defenders(horde, segment) if _wall_defense else []
-		_draw_label(mid + Vector2(0.0, -52.0 * pixel), "%s %d%%  ·  %d defender%s in reach" % ["GATE" if segment.is_gate else "WALL", int(round(hp_ratio * 100.0)), defenders.size(), "" if defenders.size() == 1 else "s"], TEXT_COLOR if not defenders.is_empty() else SIEGE_COLOR, 14, pixel)
+		_draw_label(mid + Vector2(0.0, -86.0 * pixel), "%s %d%%  ·  %d defender%s in reach" % ["GATE" if segment.is_gate else "WALL", int(round(hp_ratio * 100.0)), defenders.size(), "" if defenders.size() == 1 else "s"], TEXT_COLOR if not defenders.is_empty() else SIEGE_COLOR, 14, pixel)
 		var forecast := _forecast(horde, segment, defenders)
-		_draw_label(mid + Vector2(0.0, -70.0 * pixel), forecast["text"], SIEGE_COLOR if forecast["danger"] else Color(0.55, 0.95, 0.5), 14, pixel)
+		_draw_label(mid + Vector2(0.0, -104.0 * pixel), forecast["text"], SIEGE_COLOR if forecast["danger"] else Color(0.55, 0.95, 0.5), 14, pixel)
 
 
 ## "At this rate": what SiegeForecast projects if nothing about the defence
@@ -243,7 +246,7 @@ func _draw_pulses(pixel: float) -> void:
 		kept.append(pulse)
 		var fade := 1.0 - age / PULSE_REAL_SECONDS
 		var color: Color = pulse["color"]
-		_draw_label(pulse["world"] + Vector2(18.0, -30.0 - 40.0 * age) * pixel, pulse["text"], Color(color, fade), 18, pixel)
+		_draw_label(pulse["world"] + Vector2(-60.0, -20.0 - 40.0 * age) * pixel, pulse["text"], Color(color, fade), 18, pixel)
 	_pulses = kept
 	var kept_bursts: Array[Dictionary] = []
 	for burst in _bursts:
@@ -267,10 +270,10 @@ func _pixel() -> float:
 	return 1.0 / maxf(0.0001, get_viewport().get_canvas_transform().get_scale().x)
 
 
-func _draw_label(world: Vector2, text: String, color: Color, font_size: int, pixel: float) -> void:
+func _draw_label(world: Vector2, text: String, color: Color, font_size: int, pixel: float, centred: bool = true) -> void:
 	var width := _font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x
 	draw_set_transform(world, 0.0, Vector2(pixel, pixel))
-	var origin := Vector2(-width * 0.5, 0.0)
+	var origin := Vector2(-width * 0.5 if centred else 0.0, 0.0)
 	draw_string(_font, origin + Vector2(1.5, 1.5), text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, SHADOW_COLOR)
 	draw_string(_font, origin, text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, color)
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
