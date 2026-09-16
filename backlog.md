@@ -285,8 +285,16 @@ dependency order.
 - [ ] `[visual]` **Hex-border snapping as a wall placement aid.** Freehand model
   unchanged; snap when a drawn line runs near a border, modifier key to refuse.
   Sealing a border is ~50 pieces over ~4,992 m and is pixel-hunting without it. (D20)
-- [ ] `[gated]` **Gate pass-through.** Now specified rather than open: a gate is a wall
-  friendly units can pass through, and nothing else. Detail below. (D18)
+- [x] `[gated]` **Gate pass-through.** Closed 2026-09-16 — it had shipped 2026-08-19
+  (`665b8fd3`, `WallManager.get_blocking_segment()`'s `ignore_gates`, threaded through
+  `HexPathfinder.find_path()` and `UnitOrderController._blocked_by_wall()`) and this entry
+  and its detail line were never updated. What was missing was proof at the layer that had
+  already failed once: `verify_gates.gd` only asked the pathfinder. It now also walks a
+  real unit out through `UnitOrderController` (must leave across a gated edge and arrive)
+  and aims `HordeManager`'s own crossing line at a gate (must hit the gate, damage it, and
+  pass only once it is breached). Mutation-tested: route treats gates as solid, crossing
+  re-check treats gates as solid (the live-lock — the pathfinder check alone passes it),
+  and gates never block — each fails the gate. (D18)
 
 ## Next — earns its place, but not the core loop
 
@@ -545,7 +553,7 @@ Verbatim, for the items above that reference it.
 - [ ] **Ambient ruins from real settlement data** (user request, 2026-08-11, scoped not built): pre-existing rubble scattered across unowned/uncontrolled land based on where real UK settlements actually exist, distinct from the player-built-then-destroyed ruin mechanic. Needs `tools/geo_bake/fetch_overpass.py`'s query extended with a `building=*` tag (currently only pulls `landuse`/`natural`/`waterway`), a new settlement-footprint raster or density channel, and a consumer (likely `LocalDetailGenerator`) that places ruin props where real OSM data says a building used to stand and the hex isn't currently player-controlled. No mechanics decided for what a ruin actually does beyond visual dressing (loot? salvage? horde spawn bias?) — deferred until a follow-up decides.
 
 
-- [ ] **Gate pass-through behavior:** gates currently block identically to a plain wall until breached — no special ally-pass-through mechanic yet.
+- [x] **Gate pass-through behavior:** *(Stale when written into this file — shipped 2026-08-19; see the Now entry.)* gates currently block identically to a plain wall until breached — no special ally-pass-through mechanic yet.
 
 
 - [ ] **Countryside features still outstanding from the same request (2026-08-19).** The user asked for four things beyond thick forests and picked them explicitly: **drystone walls & hedgerows** along real field boundaries (the boundary-edge data `TerrainBoundaryBlend.find_crossings()` already computes is the natural input), **ruins & abandoned cottages** that can be selected and demolished when inside a ZoC (overlaps the existing "ambient ruins from real settlement data" item above), **crags/scree/boulder fields** concentrated on steep ground (the 30 m relief tiles bake shade, and `|shade - 128|` is a direct slope proxy — no new bake needed), and **real resource deposits that gate mine placement** (user chose "real deposits that gate mines" over decorative-only, so this touches `BuildingCatalog` placement rules, save data and map balance — it is a gameplay change, not a visual one). None are started.

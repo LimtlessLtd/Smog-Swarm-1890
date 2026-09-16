@@ -6,6 +6,20 @@ extends Node
 ##   the player's own units can leave the walled starting hex; a horde
 ##   cannot get in.
 ##
+## D18, verbatim: "for all intents and purposes walls and gates are the same,
+## the only difference is friendly units can pass through gates." Checked at
+## three layers, because each has failed on its own before:
+##   1. HexPathfinder.find_path() — the route exists for a unit and not for a
+##      horde.
+##   2. A real UnitOrderController walking a real unit out, frame by frame.
+##      The route and the per-crossing re-check (_blocked_by_wall()) once
+##      disagreed and live-locked a unit in place with a valid route, which a
+##      pathfinder-only check cannot see. The unit must also leave START
+##      through an edge that holds a gate, not around the ring somehow.
+##   3. The line HordeManager._advance_horde() tests, aimed straight at the
+##      gate: it must hit the gate itself (so the horde sieges it), and once
+##      the gate is breached it must stop blocking anything.
+##
 ## Run (as a real scene, not `-s`):
 ##   Godot_v4.7.1-stable_win64_console.exe --headless res://scenes/test/verify_gates.tscn
 ##
@@ -36,10 +50,17 @@ extends Node
 
 const _FIXTURE_RADIUS := 6  ## Must exceed the distance-4 ring _run() routes to, with room for the perimeter wall itself.
 const _START: Vector2i = Vector2i.ZERO
+const _MAX_WALK_FRAMES := 12000  ## verify_unit_border_crossing.gd measured ~480 frames per hex; the gated route is ~7 hexes.
+## A unit live-locked at a wall re-plans every frame, so frames get slow exactly
+## when the check is failing: a first cut bounded by frames alone ran past 10
+## minutes. Passing takes ~20 s.
+const _MAX_WALK_MSEC := 120000
 
 var _map: HexGridMap
 var _buildings: BuildingManager
 var _walls: WallManager
+var _units: UnitManager
+var _orders: UnitOrderController
 
 
 func _ready() -> void:
@@ -71,7 +92,24 @@ func _ready() -> void:
 	_buildings.seed_starting_buildings()
 	_walls.seed_starting_defenses()
 
-	get_tree().quit(_run())
+	_units = load("res://scenes/units/UnitManager.tscn").instantiate()
+	_units.hex_grid_map_path = NodePath("../HexGridMap")
+	add_child(_units)
+
+	_orders = load("res://scenes/units/UnitOrderController.tscn").instantiate()
+	_orders.hex_grid_map_path = NodePath("../HexGridMap")
+	_orders.unit_manager_path = NodePath("../UnitManager")
+	_orders.wall_manager_path = NodePath("../WallManager")
+	add_child(_orders)
+
+	var failures := _run()
+	failures.append_array(await _run_unit_walk())
+	failures.append_array(_run_horde_at_gate())
+	for failure in failures:
+		print("FAIL: %s" % failure)
+	if failures.is_empty():
+		print("PASS: units route and walk through gates; hordes are stopped by, siege, and pass only a breached gate")
+	get_tree().quit(1 if not failures.is_empty() else 0)
 
 
 ## One hex_disk around _START: default HexCell fields (MOORLAND, no terrain
@@ -90,20 +128,18 @@ func _build_fixture_cells() -> Dictionary:
 	return cells
 
 
-func _run() -> int:
+func _run() -> Array[String]:
 	var segments := _walls.get_segments()
 	var gates := segments.filter(func(s: WallSegment) -> bool: return s.is_gate)
 	print("seeded perimeter: %d segments, %d of them gates" % [segments.size(), gates.size()])
 	if gates.is_empty():
-		print("FAIL: the starting perimeter has no gate, so nothing can leave it.")
-		return 1
+		return ["the starting perimeter has no gate, so nothing can leave it"]
 
 	# Somewhere outside the perimeter, far enough that any route has to cross
 	# the ring rather than wander around inside one hex.
 	var goal := _first_passable_at_distance(_START, 4)
 	if goal == Vector2i.ZERO:
-		print("FAIL: no passable hex 4 rings out to route to.")
-		return 1
+		return ["no passable hex 4 rings out to route to"]
 
 	var unit_route := HexPathfinder.find_path(_map, _START, goal, null, _walls, true)
 	var horde_route := HexPathfinder.find_path(_map, _START, goal, null, _walls, false)
@@ -128,9 +164,73 @@ func _run() -> int:
 	if blocked_edges == 0:
 		failures.append("no crossing out of the starting hex is blocked at all — the wall geometry never intersects a travel line")
 
-	for failure in failures:
-		print("FAIL: %s" % failure)
-	return 1 if not failures.is_empty() else 0
+	return failures
+
+
+## Layer 2: a real unit, a real move order, real frames.
+func _run_unit_walk() -> Array[String]:
+	var goal := _first_passable_at_distance(_START, 4)
+	var entry := UnitSaveEntry.new(GameEnums.UnitType.TRUNCHEONEER, _START, 1, 100.0)
+	_units.load_save_entries([entry], 2)
+	var instance := _units.get_all_units()[0]
+	_orders.issue_move_order(instance, goal)
+
+	var exit_hex := _START
+	var frame := 0
+	var started_msec := Time.get_ticks_msec()
+	while frame < _MAX_WALK_FRAMES and Time.get_ticks_msec() - started_msec < _MAX_WALK_MSEC:
+		await get_tree().process_frame
+		frame += 1
+		if exit_hex == _START and instance.hex_coord != _START:
+			exit_hex = instance.hex_coord
+		if instance.hex_coord == goal:
+			break
+	print("unit walk: ended at %s after %d frames, left the walled hex into %s" % [instance.hex_coord, frame, exit_hex])
+
+	var failures: Array[String] = []
+	if exit_hex == _START:
+		failures.append("a unit ordered out of the perimeter never left the walled hex in %d frames" % frame)
+	elif _walls.get_gate_crossing_offset(_START, exit_hex) == null:
+		failures.append("the unit left the walled hex across %s->%s, an edge with no gate on it" % [_START, exit_hex])
+	if instance.hex_coord != goal:
+		failures.append("the unit did not reach %s (stuck at %s after %d frames)" % [goal, instance.hex_coord, frame])
+	return failures
+
+
+## Layer 3: the exact line HordeManager._advance_horde() tests — from the
+## horde's own position to the next hex's crossing point — aimed through the
+## middle of a gate.
+func _run_horde_at_gate() -> Array[String]:
+	var gate_neighbor := _START
+	for neighbor in HexCoord.neighbors(_START):
+		if _walls.get_gate_crossing_offset(_START, neighbor) != null:
+			gate_neighbor = neighbor
+			break
+	if gate_neighbor == _START:
+		return ["no boundary edge of the starting hex holds a gate"]
+
+	var from_world := HexCoord.axial_to_world(_START)
+	var to_world: Vector2 = HexCoord.axial_to_world(gate_neighbor) + _walls.get_gate_crossing_offset(_START, gate_neighbor)
+	var failures: Array[String] = []
+	var blocker := _walls.get_blocking_segment(_START, gate_neighbor, from_world, to_world)
+	if blocker == null:
+		return ["a horde walking straight at a gate is not blocked by anything"]
+	if not blocker.is_gate:
+		failures.append("the line through the gate's own midpoint hit solid wall id=%d, not the gate" % blocker.id)
+	if _walls.get_blocking_segment(_START, gate_neighbor, from_world, to_world, true) != null:
+		failures.append("the same line is blocked for a friendly unit")
+
+	var hp_before := blocker.current_hp
+	_walls.damage_segment(blocker, 1.0)
+	print("horde at gate: blocked by %s id=%d, hp %.1f -> %.1f after 1.0 damage" % ["gate" if blocker.is_gate else "wall", blocker.id, hp_before, blocker.current_hp])
+	if blocker.current_hp >= hp_before:
+		failures.append("damage_segment() did not damage the gate — a horde cannot siege it")
+	_walls.damage_segment(blocker, blocker.current_hp)
+	if not blocker.is_breached():
+		failures.append("a gate at 0 HP does not read as breached")
+	elif _walls.get_blocking_segment(_START, gate_neighbor, from_world, to_world) != null:
+		failures.append("a breached gate still blocks the horde's line")
+	return failures
 
 
 func _first_passable_at_distance(from: Vector2i, radius: int) -> Vector2i:
