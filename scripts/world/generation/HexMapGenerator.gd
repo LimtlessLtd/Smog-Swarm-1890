@@ -190,6 +190,19 @@ func _apply_feature(cells: Dictionary, feature: GeographyFeature) -> void:
 				cell.is_settlement = true
 				cell.biome_type = GameEnums.BiomeType.URBAN
 				cell.soil_fertility = GameEnums.SoilFertility.NOT_ARABLE
+				# A settlement repaints biome but used to keep whatever terrain_feature
+				# an earlier stamp left. The Chat Moss WETLAND stamp leaves PEAT_BOG,
+				# so Manchester's (79, 119) became URBAN + PEAT_BOG, and
+				# HexCell.is_passable() made the whole settlement hex impassable: no
+				# unit could route out of it (found choosing the vertical slice start,
+				# 2026-09-16). Only the two hex-level impassable features are cleared;
+				# CANAL/RIVER stay (Manchester sits on its Ship Canal, and water
+				# crossing is its own rule). Bog inside a town is still real at sub-hex
+				# resolution — RealTerrainSampler's baked terrain_feature, which
+				# SubHexTerrainQuery reads and the urban override deliberately leaves
+				# alone (CLAUDE.md §3).
+				if cell.terrain_feature == GameEnums.TerrainFeature.PEAT_BOG or cell.terrain_feature == GameEnums.TerrainFeature.MARSH:
+					cell.terrain_feature = GameEnums.TerrainFeature.NONE
 			GeographyFeature.FeatureType.MOUNTAIN_RANGE:
 				# Elevation is NOT overridden here. This used to do
 				# `cell.elevation = maxf(cell.elevation, 0.75)` — a flat 750 m

@@ -208,7 +208,7 @@ func _render_building_panel(instance: BuildingInstance) -> void:
 	if definition.can_train_units and instance.is_running():
 		var coord := instance.hex_coord
 		var train_header := Label.new()
-		train_header.text = "Train at %s" % coord
+		train_header.text = "Train here" if not _building_manager else "Train %s" % LocationNames.describe(coord, _building_manager)
 		HUDStyles.style_label(train_header, true)
 		_list.add_child(train_header)
 		if _unit_manager:

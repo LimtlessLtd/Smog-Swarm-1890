@@ -212,7 +212,7 @@ func _log_cleared(coord: Vector2i) -> void:
 	if _cleared_hexes.has(coord):
 		return
 	_cleared_hexes[coord] = true
-	_add(KIND_CLEARED, "Hex %s was cleared after %d kills there." % [coord, get_contact_kills_at(coord)], coord, {"kills": get_contact_kills_at(coord)})
+	_add(KIND_CLEARED, "The ground %s was cleared after %d kills there." % [LocationNames.describe(coord, _buildings), get_contact_kills_at(coord)], coord, {"kills": get_contact_kills_at(coord)})
 
 func _on_phase_changed(phase: GameEnums.DayPhase) -> void:
 	if phase == GameEnums.DayPhase.NIGHT:

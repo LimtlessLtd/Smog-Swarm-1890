@@ -42,9 +42,11 @@ at 4:00 finds them in reach of the lamps. Everything after that is the ordinary 
 canonical start's ring 1 is Manchester core (D99). *Why the wall:* the campaign dropped
 its free starting wall at the user's request on 2026-08-11 and kept the function "for a
 possible future 'start with walls' option" (commit 5263e5e5); the slice is that option.
-*Found, not fixed:* (79, 119), the first-choice start, is an URBAN hex with a PEAT_BOG
-feature, so `HexPathfinder` treats the whole hex as impassable and no unit can leave it
-(`backlog.md`).
+*Found, and fixed 2026-09-17:* (79, 119), the first-choice start, was an URBAN hex with
+a PEAT_BOG feature left by the Chat Moss stamp, so `HexPathfinder` treated the whole hex
+as impassable. `HexMapGenerator`'s settlement stamp now clears hex-level MARSH/PEAT_BOG;
+`verify_settlement_passability.gd` checks all 20 settlement hexes. The slice start stays
+at (80, 119) so the playtest baseline is unchanged.
 *Measured length:* a scripted player that reacts instantly finishes in 6:47 (holding the
 wall) or 8:07 (going dark); a person reading five dispatches and giving orders by hand
 takes longer. Not yet played by a person.

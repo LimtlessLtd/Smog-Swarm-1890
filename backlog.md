@@ -39,7 +39,7 @@ The golden slice (`PLAYER_EXPERIENCE.md` §11) is the target. Ranked by `CLAUDE.
 | Rank | Item | Tag | Criteria |
 | :--- | :--- | :--- | :--- |
 | 1 Broken | **new** — The vertical slice has not been played by a person (D108) | `[visual-human]` | slice acceptance |
-| 1 Broken | **new** — (79, 119), a Manchester URBAN hex, carries PEAT_BOG and is impassable to units | `[gated]` | OPEN-1, EXP-1 |
+| 1 Broken | **done 2026-09-17** — (79, 119), a Manchester URBAN hex, carried PEAT_BOG and was impassable to units | — | OPEN-1, EXP-1 |
 | 1 Broken | *The economy clock is ~100x slower than the movement clock* — **jobs and production done (D112); research still per day** | `[gated]` | OPEN-1, OPEN-2, IND-4, HORDE-2 |
 | 1 Broken | ↳ *The undefended colony is destroyed on day 13* (below) | `[design]` | OPEN-4 |
 | 1 Broken | ↳ *A horde crosses Britain in a day and a half* (below) | `[design]` | HORDE-2 |
@@ -53,7 +53,7 @@ The golden slice (`PLAYER_EXPERIENCE.md` §11) is the target. Ranked by `CLAUDE.
 | 2 Boring | **new** — Siege and wall-defence numbers are Claude's (D111), fitted to the slice | `[design]` | DEF-2, DEF-3 |
 | 3 Feedback | **new** — Infestation is never drawn on the map | `[visual-autonomous]` | FB-1, EXP-5 |
 | 3 Feedback | *Combat has no on-screen presentation* — **siege readout, kill pulses, breach burst done (ThreatOverlayView)**; no unit animation, projectile or hit flash | `[visual-autonomous]` | COMBAT-2..6 |
-| 3 Feedback | *The horde warning misses wandering hordes and gives no bearing* — **map marks with cause and ETA done (ThreatOverlayView)**; the HUD row and its toast still print raw coordinates | `[gated]` | HORDE-1, HORDE-2, FB-2 |
+| 3 Feedback | *The horde warning misses wandering hordes and gives no bearing* — **map marks with cause and ETA done (ThreatOverlayView)**; **alerts name places, not coordinates (2026-09-17)** | `[gated]` | HORDE-1, HORDE-2, FB-2 |
 | 3 Feedback | *Placement status line is never cleared* (Next) | `[gated]` | OPEN-5 |
 | 3 Feedback | *6 of 15 resource counters have no icon, name or tooltip* (Next) | `[visual-autonomous]` | FB-3 |
 | 3 Feedback | **new** — At battle zoom one building fills the screen | `[visual-autonomous]` | COMBAT-3 |
@@ -90,7 +90,12 @@ needs them, not ahead of it.
   10-20 for a person, and whether the moor clear (frontage 1, ~650 identical kills)
   reads as a grind. **VERIFICATION:** a person's notes; the critic's report.
 
-- [ ] `[gated]` **(79, 119) is impassable to units.** **WHY:** rank 1 — measured while
+- [x] **(79, 119) is impassable to units — fixed 2026-09-17.** `HexMapGenerator._apply_feature()`
+  stamps settlements last but kept an earlier stamp's terrain_feature; the SETTLEMENT stamp
+  now clears hex-level MARSH/PEAT_BOG (sub-hex bog is untouched).
+  `verify_settlement_passability.gd` runs the real generator over all 20 settlement hexes
+  and was mutation-tested (removing the clear fails on exactly (79, 119)). Original entry:
+  `[gated]` **(79, 119) is impassable to units.** **WHY:** rank 1 — measured while
   choosing the slice start (`vertical_slice` scenario note): a Manchester URBAN
   settlement hex carrying `TerrainFeature.PEAT_BOG`, so `HexCell.is_passable()` is false
   for the whole hex and `HexPathfinder.find_path()` rejects it as a start or goal. A
@@ -124,7 +129,11 @@ needs them, not ahead of it.
   which one is a balance call to disclose. **VERIFICATION:** `run_scenarios.py
   industrialisation` IND-4.
 
-- [ ] `[gated]` **The horde warning toast and recon row print raw coordinates.**
+- [x] **Alerts named places by raw coordinate — fixed 2026-09-17.** `LocationNames.describe()`
+  ("on the moor 2 hexes east of your town", "at Chat Moss, 3 hexes north-west of your town")
+  now names every `EventManager` alert, the debrief's cleared-ground line and the unit
+  panel's Train header; `verify_location_names.gd`. Telemetry keeps coordinates. Original entry:
+  `[gated]` **The horde warning toast and recon row print raw coordinates.**
   **WHY:** rank 3 — "A large horde (1500 strong) has been spotted near (82, 119)!" sat on
   screen through the whole slice siege in every windowed capture; FB-2 asks where, and a
   coordinate is not a where. `VerticalSliceDirector._bearing_word()` has the bearing

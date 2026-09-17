@@ -16,9 +16,10 @@ extends RefCounted
 ## - START_HEX (80, 119) is a Manchester URBAN hex on the city's south-east edge,
 ##   so D99's "the start stays inside Manchester" holds. Its neighbours include open
 ##   moor; the canonical campaign start (79, 118) touches only Manchester core, canal
-##   and Chat Moss bog. (79, 119), the first choice, carries a PEAT_BOG terrain
-##   feature on an URBAN hex, which makes the whole hex impassable to
-##   HexPathfinder: no unit could leave it. Filed in backlog.md.
+##   and Chat Moss bog. (79, 119), the first choice, was impassable when this was
+##   chosen: HexMapGenerator left Chat Moss's PEAT_BOG under Manchester's settlement
+##   stamp (fixed 2026-09-17, verify_settlement_passability.gd). The start was not
+##   moved back, so the playtest baseline is the one the scripted players measured.
 ## - TARGET_HEX (79, 120), moorland south-west of the start, capacity 3,258: D7 seeds
 ##   815 residents and D2 clears it below 163, so the clear is ~650 kills — about
 ##   four real minutes for ten Tier 0 units at frontage 1

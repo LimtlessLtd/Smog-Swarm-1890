@@ -142,7 +142,7 @@ func _man_wall_facing(ctx, horde: Horde) -> void:
 	var local := direction * HexCoord.HEX_SIZE * 0.8
 	for unit in ctx.living_units():
 		ctx.orders.issue_move_order(unit, ctx.start_hex, local)
-	ctx.note("horde turned toward the town at %s; squad ordered to the %s wall" % [_real(_director.get_elapsed_seconds()), VerticalSliceDirector._bearing_word(ctx.start_hex, horde.hex_coord)])
+	ctx.note("horde turned toward the town at %s; squad ordered to the %s wall" % [_real(_director.get_elapsed_seconds()), LocationNames.bearing_word(ctx.start_hex, horde.hex_coord)])
 
 
 ## Once the piece is known: just inside its midpoint.

@@ -177,7 +177,7 @@ func _release_horde() -> void:
 	var lamps := _lit_lamps_at_start()
 	dispatch.emit("%d dead on the move" % _horde.size,
 		"Scouts on the moor to the %s: a horde of %d has left its ground %d hexes out and is drifting along the moor toward the town. Nothing of yours reaches it yet. At nightfall your %d lit Watchtower%s will be seen from %d hex%s, and within a hex it will hear the Brickworks. Meet it at the wall with archers, or be dark and quiet when it passes." % [
-			_bearing_word(VerticalSliceConfig.START_HEX, _horde.hex_coord), _horde.size, HexCoord.distance(VerticalSliceConfig.START_HEX, _horde.hex_coord),
+			LocationNames.bearing_word(VerticalSliceConfig.START_HEX, _horde.hex_coord), _horde.size, HexCoord.distance(VerticalSliceConfig.START_HEX, _horde.hex_coord),
 			lamps, "" if lamps == 1 else "s", NoiseManager.light_reach_hexes(lamps, HordeManager.ATTRACTION_THRESHOLD), "" if NoiseManager.light_reach_hexes(lamps, HordeManager.ATTRACTION_THRESHOLD) == 1 else "es"],
 		_horde_world(_horde), ZOOM_HEX_SCALE, true)
 
@@ -231,7 +231,7 @@ func _refresh_horde_objective() -> void:
 	var doing := "drawn to %s" % _horde.attraction_source.definition.display_name if _horde.attraction_source else "wandering"
 	if _horde.state == GameEnums.HordeState.ATTACKING:
 		doing = "at your wall"
-	objective["detail"] = "%d strong, %d hex%s %s, %s" % [_horde.size, distance, "" if distance == 1 else "es", _bearing_word(VerticalSliceConfig.START_HEX, _horde.hex_coord), doing]
+	objective["detail"] = "%d strong, %d hex%s %s, %s" % [_horde.size, distance, "" if distance == 1 else "es", LocationNames.bearing_word(VerticalSliceConfig.START_HEX, _horde.hex_coord), doing]
 
 
 func _refresh_farm_objective() -> void:
@@ -393,10 +393,3 @@ static func _format_real(game_seconds: float) -> String:
 	return "%d:%02d" % [real / 60, real % 60]
 
 
-static func _bearing_word(from_coord: Vector2i, to_coord: Vector2i) -> String:
-	var delta := HexCoord.axial_to_world(to_coord) - HexCoord.axial_to_world(from_coord)
-	if delta.length() < 0.001:
-		return "here"
-	var names := ["east", "south-east", "south", "south-west", "west", "north-west", "north", "north-east"]
-	var index := int(round(fposmod(delta.angle(), TAU) / (TAU / 8.0))) % 8
-	return names[index]
