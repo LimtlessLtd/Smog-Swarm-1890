@@ -511,15 +511,15 @@ func _on_infrastructure_placement_selected(line_type: GameEnums.SupplyLineType) 
 	if _supply_line_placement_controller:
 		_supply_line_placement_controller.begin_placement(line_type)
 
-func _on_training_started(unit_type: GameEnums.UnitType, _coord: Vector2i, days: int) -> void:
+func _on_training_started(unit_type: GameEnums.UnitType, _coord: Vector2i, hours: int) -> void:
 	var definition := UnitCatalog.get_definition(unit_type)
 	var display_name := definition.display_name if definition else "Unit"
-	_toast.show("Training %s — ready in %d day%s." % [display_name, days, "" if days == 1 else "s"])
+	_toast.show("Training %s — ready in %d hour%s." % [display_name, hours, "" if hours == 1 else "s"])
 
-func _on_retrain_started(_instance: UnitInstance, new_type: GameEnums.UnitType, days: int) -> void:
+func _on_retrain_started(_instance: UnitInstance, new_type: GameEnums.UnitType, hours: int) -> void:
 	var definition := UnitCatalog.get_definition(new_type)
 	var display_name := definition.display_name if definition else "unit"
-	_toast.show("Retraining into %s — ready in %d day%s." % [display_name, days, "" if days == 1 else "s"])
+	_toast.show("Retraining into %s — ready in %d hour%s." % [display_name, hours, "" if hours == 1 else "s"])
 
 func _on_in_game_menu_resume() -> void:
 	_in_game_menu_view.close()

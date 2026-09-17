@@ -40,6 +40,7 @@ DEFAULT_GODOT = os.environ.get(
 ## because the difference between `horde` and `horde:dark` is the measurement.
 DEFAULT_SET = ["opening", "expansion", "horde", "horde:dark", "siege", "industrialisation"]
 TIMEOUT_SECONDS = 1800
+NO_PROPS = False  ## --no-props: see playtest_runner.gd.
 
 
 def kill_tree(pid: int) -> None:
@@ -70,6 +71,8 @@ def run(spec: str, godot: str, shots: bool) -> bool:
         args.append("--variant=" + variant)
     if shots:
         args.append("--shots")
+    if NO_PROPS:
+        args.append("--no-props")
 
     log_path = OUT / ("%s%s.log" % (name, "_" + variant if variant else ""))
     start = time.monotonic()
@@ -115,8 +118,11 @@ def main() -> int:
     ap.add_argument("--list", action="store_true")
     ap.add_argument("--shots", action="store_true")
     ap.add_argument("--summary", action="store_true")
+    ap.add_argument("--no-props", action="store_true", help="drop terrain props even with --shots, for scenarios whose units walk")
     ap.add_argument("--godot", default=DEFAULT_GODOT)
     args = ap.parse_args()
+    global NO_PROPS
+    NO_PROPS = args.no_props
     try:
         sys.stdout.reconfigure(line_buffering=True)
     except AttributeError:

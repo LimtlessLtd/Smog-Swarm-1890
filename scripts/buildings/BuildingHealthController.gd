@@ -12,7 +12,7 @@ extends RefCounted
 
 signal damaged(instance: BuildingInstance, amount: float)
 signal ruined(instance: BuildingInstance, lost_population: int)
-signal repair_started(instance: BuildingInstance, days: int)
+signal repair_started(instance: BuildingInstance, hours: int)
 signal repair_rejected(instance: BuildingInstance, reason: String)
 signal repaired(instance: BuildingInstance)
 signal demolished(instance: BuildingInstance)
@@ -22,14 +22,14 @@ const REPAIR_COST_FRACTION: float = 0.5
 var _resource_manager: ResourceManager
 var _territory_controller: TerritoryController
 var _capacity: CapacityAllocator
-var _construction_days: Callable  ## BuildingConstructionController.days_for, injected so repair() uses the same cost-to-duration formula without depending on the whole construction controller.
-var _pending_repair: Array[Dictionary] = []  # {instance: BuildingInstance, days_remaining: int}
+var _construction_hours: Callable  ## BuildingConstructionController.hours_for, injected so repair() uses the same cost-to-duration formula without depending on the whole construction controller.
+var _pending_repair: Array[Dictionary] = []  # {instance: BuildingInstance, hours_remaining: int}
 
-func _init(resource_manager: ResourceManager, territory_controller: TerritoryController, capacity: CapacityAllocator, construction_days: Callable) -> void:
+func _init(resource_manager: ResourceManager, territory_controller: TerritoryController, capacity: CapacityAllocator, construction_hours: Callable) -> void:
 	_resource_manager = resource_manager
 	_territory_controller = territory_controller
 	_capacity = capacity
-	_construction_days = construction_days
+	_construction_hours = construction_hours
 
 func damage(instance: BuildingInstance, amount: float) -> void:
 	if not instance or instance.is_ruined:
@@ -84,9 +84,9 @@ func repair(instance: BuildingInstance) -> bool:
 	if _resource_manager:
 		_resource_manager.spend(repair_cost(instance.definition))
 		_capacity.apply(instance.definition)
-	var days: int = _construction_days.call(instance.definition)
-	_pending_repair.append({"instance": instance, "days_remaining": days})
-	repair_started.emit(instance, days)
+	var hours: int = _construction_hours.call(instance.definition)
+	_pending_repair.append({"instance": instance, "hours_remaining": hours})
+	repair_started.emit(instance, hours)
 	return true
 
 func get_demolish_error(instance: BuildingInstance) -> String:
@@ -131,12 +131,12 @@ func demolish(instance: BuildingInstance) -> bool:
 func remove_pending(instance: BuildingInstance) -> void:
 	_pending_repair = _pending_repair.filter(func(job: Dictionary) -> bool: return job["instance"] != instance)
 
-func process_day() -> void:
+func process_hour() -> void:
 	var still_pending: Array[Dictionary] = []
 	for job in _pending_repair:
-		job["days_remaining"] -= 1
+		job["hours_remaining"] -= 1
 		var instance: BuildingInstance = job["instance"]
-		if job["days_remaining"] <= 0:
+		if job["hours_remaining"] <= 0:
 			instance.current_hp = instance.definition.get_max_hp()
 			instance.is_ruined = false
 			instance.current_population = instance.definition.population_provided

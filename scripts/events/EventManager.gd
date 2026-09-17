@@ -66,6 +66,7 @@ const FOOD_BAND_STARVING: float = 0.5
 @export var defeat_condition_monitor_path: NodePath   ## Optional — without it, the campaign can still end (the monitor latches regardless), the player just never hears about it.
 
 var _history: Array[GameEvent] = []
+var _building_manager: BuildingManager  ## Also names places in messages (LocationNames); null leaves them as ground words only.
 var _food_band: int = 0                              # 0 fine, 1 hungry (<100%), 2 severe (<75%), 3 starving (<50%)
 var _resource_shortfall_active: Dictionary = {}       # GameEnums.ResourceType -> bool
 ## UnitInstance.id -> true, for units already warned about since the last day
@@ -75,9 +76,9 @@ var _unit_under_attack: Dictionary = {}
 
 func _ready() -> void:
 	if building_manager_path != NodePath():
-		var building_manager: BuildingManager = get_node(building_manager_path)
-		building_manager.building_ruined.connect(_on_building_ruined)
-		building_manager.food_satisfaction_changed.connect(_on_food_satisfaction_changed)
+		_building_manager = get_node(building_manager_path)
+		_building_manager.building_ruined.connect(_on_building_ruined)
+		_building_manager.food_satisfaction_changed.connect(_on_food_satisfaction_changed)
 	if wall_manager_path != NodePath():
 		var wall_manager: WallManager = get_node(wall_manager_path)
 		wall_manager.wall_segment_breached.connect(_on_wall_segment_breached)
@@ -119,21 +120,23 @@ func get_recent_events(count: int = 10) -> Array[GameEvent]:
 	return _history.slice(maxi(0, _history.size() - count), _history.size())
 
 func _on_wall_segment_breached(segment: WallSegment) -> void:
-	raise_event(GameEnums.EventCategory.COMBAT, GameEnums.EventSeverity.CRITICAL, segment.hex_a, "Wall breached near %s — zombies are pouring through!" % _coord_string(segment.hex_a))
+	raise_event(GameEnums.EventCategory.COMBAT, GameEnums.EventSeverity.CRITICAL, segment.hex_a, "Wall breached %s — zombies are pouring through!" % _coord_string(segment.hex_a))
 
 ## A unit under sustained attack warns ONCE, not every round — see this class's
 ## own doc comment. Death is always raised: it happens once by definition, and
 ## it is the event the player most needs interrupted for.
-func _on_engagement_resolved(instance: UnitInstance, _horde: Horde, _result: Dictionary) -> void:
+func _on_engagement_resolved(instance: UnitInstance, _horde: Horde, result: Dictionary) -> void:
+	if result.get("from_cover", false):
+		return  # A defender shooting over an unbreached wall is not under attack (CombatCoordinator.strike_from_cover()).
 	var name := instance.definition.display_name if instance.definition else "A unit"
 	if instance.is_destroyed():
 		_unit_under_attack.erase(instance.id)
-		raise_event(GameEnums.EventCategory.COMBAT, GameEnums.EventSeverity.CRITICAL, instance.hex_coord, "%s was wiped out at %s!" % [name, _coord_string(instance.hex_coord)])
+		raise_event(GameEnums.EventCategory.COMBAT, GameEnums.EventSeverity.CRITICAL, instance.hex_coord, "%s was wiped out %s!" % [name, _coord_string(instance.hex_coord)])
 		return
 	if _unit_under_attack.has(instance.id):
 		return
 	_unit_under_attack[instance.id] = true
-	raise_event(GameEnums.EventCategory.COMBAT, GameEnums.EventSeverity.WARNING, instance.hex_coord, "%s is under attack at %s." % [name, _coord_string(instance.hex_coord)])
+	raise_event(GameEnums.EventCategory.COMBAT, GameEnums.EventSeverity.WARNING, instance.hex_coord, "%s is under attack %s." % [name, _coord_string(instance.hex_coord)])
 
 ## A day is the coarsest interval that still lets a renewed attack on the same
 ## unit reach the player. Anything finer re-introduces the spam; anything
@@ -145,16 +148,16 @@ func _on_day_completed(_day_number: int) -> void:
 func _on_building_ruined(instance: BuildingInstance, lost_population: int) -> void:
 	var name := instance.definition.display_name if instance.definition else "A building"
 	var population_note := " (%d civilians lost)" % lost_population if lost_population > 0 else ""
-	raise_event(GameEnums.EventCategory.COMBAT, GameEnums.EventSeverity.CRITICAL, instance.hex_coord, "%s destroyed at %s%s!" % [name, _coord_string(instance.hex_coord), population_note])
+	raise_event(GameEnums.EventCategory.COMBAT, GameEnums.EventSeverity.CRITICAL, instance.hex_coord, "%s destroyed %s%s!" % [name, _coord_string(instance.hex_coord), population_note])
 
 func _on_territory_lost(coord: Vector2i) -> void:
-	raise_event(GameEnums.EventCategory.TERRITORY, GameEnums.EventSeverity.CRITICAL, coord, "Territory lost at %s!" % _coord_string(coord))
+	raise_event(GameEnums.EventCategory.TERRITORY, GameEnums.EventSeverity.CRITICAL, coord, "Territory lost %s!" % _coord_string(coord))
 
 func _on_territory_recaptured(coord: Vector2i) -> void:
-	raise_event(GameEnums.EventCategory.TERRITORY, GameEnums.EventSeverity.INFO, coord, "Territory recaptured at %s." % _coord_string(coord))
+	raise_event(GameEnums.EventCategory.TERRITORY, GameEnums.EventSeverity.INFO, coord, "Territory recaptured %s." % _coord_string(coord))
 
 func _on_horde_spotted(horde: Horde) -> void:
-	raise_event(GameEnums.EventCategory.COMBAT, GameEnums.EventSeverity.CRITICAL, horde.hex_coord, "A large horde (%d strong) has been spotted near %s!" % [horde.size, _coord_string(horde.hex_coord)])
+	raise_event(GameEnums.EventCategory.COMBAT, GameEnums.EventSeverity.CRITICAL, horde.hex_coord, "A large horde (%d strong) has been spotted %s!" % [horde.size, _coord_string(horde.hex_coord)])
 
 func _on_food_satisfaction_changed(ratio: float) -> void:
 	var band := 0
@@ -207,5 +210,8 @@ func _on_defeat_risk_changed(is_at_risk: bool, reasons: Array[String]) -> void:
 		raise_event(GameEnums.EventCategory.TERRITORY, GameEnums.EventSeverity.INFO, Vector2i.ZERO,
 			"The colony has pulled back from collapse.")
 
+## Where, as a player reads it (LocationNames): "on the moor 2 hexes east of your
+## town", not "(82, 119)". Returns a whole prepositional phrase, so messages say
+## "spotted %s" rather than "spotted near %s".
 func _coord_string(coord: Vector2i) -> String:
-	return "(%d, %d)" % [coord.x, coord.y]
+	return LocationNames.describe(coord, _building_manager)

@@ -536,6 +536,21 @@ with a finding that breaks the slice. **Estimated length:** the first 60-90 real
 at default speed. The pacing [design] question (§3) decides whether that is achievable
 at all.
 
+### 11.1 The vertical slice (built 2026-09-16, D108)
+
+A 10-20 minute authored cut of items 1, 3, 4, 5, 6, 8 and 9 above, asked for verbatim:
+"start with a tiny settlement, expand into zombie territory, encounter a genuinely
+frightening horde, use noise/light/going-dark to manipulate the threat, fight it, clear
+the territory, and immediately understand why what I did mattered." Main menu "Vertical
+Slice (15 min)"; every authored value is in `VerticalSliceConfig`. It is **not** the
+golden slice: it starts from an authored position, skips the industrial upgrade (7) and
+the expand-or-consolidate choice (10), and one horde movement is scripted. What it
+proves is the horde half of the loop in miniature — the lamps draw a horde, going dark
+or training archers and holding the wall decides it, a clear yields ground to claim —
+and it ends on a debrief built from what happened (`VerticalSliceDebrief`), which is the
+"why it mattered" the golden slice will need too. Evidence: `run_scenarios.py
+vertical_slice[:naive|:dark|:ignore]`; not yet played by a person (`backlog.md`).
+
 ## 12. Player impact
 
 Every significant task answers five questions before it is prioritised:

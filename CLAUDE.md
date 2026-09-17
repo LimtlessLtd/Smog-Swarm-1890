@@ -87,7 +87,9 @@ never just "implement X".
 
 **Evidence of experience.** `python3 tools/playtest/run_scenarios.py` runs the
 deterministic scenarios (opening, expansion, horde, horde:dark, siege,
-industrialisation) against the real map and writes JSON with experience checks keyed to
+industrialisation; `vertical_slice[:naive|:dark|:ignore]` on request, with
+`--shots --no-props` for windowed captures) against the real map and writes JSON with
+experience checks keyed to
 `PLAYER_EXPERIENCE.md` criteria plus gameplay telemetry. It is evidence, never a gate or
 a score (D96): run it before and after a gameplay change and compare. The
 `playtest-critic` agent plays through the real UI for what a script cannot see.

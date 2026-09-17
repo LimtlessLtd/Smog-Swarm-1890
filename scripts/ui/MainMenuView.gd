@@ -77,6 +77,7 @@ func _ready() -> void:
 	add_child(menu)
 
 	menu.add_child(_menu_button("New Game", _on_new_game_pressed))
+	menu.add_child(_menu_button("Vertical Slice (15 min)", _on_vertical_slice_pressed))
 	menu.add_child(_menu_button("Continue...", _on_continue_pressed))
 	menu.add_child(_menu_button("Display Options...", _on_display_options_pressed))
 	menu.add_child(_menu_button("Exit", _on_exit_pressed))
@@ -176,6 +177,12 @@ func _on_new_game_pressed() -> void:
 
 func _on_campaign_confirmed(campaign_name: String) -> void:
 	GameLaunchState.request_new_campaign(campaign_name)
+	get_tree().change_scene_to_file("res://scenes/main/Main.tscn")
+
+## VerticalSliceConfig: a short, authored start on the real map, with its own
+## campaign folder. No naming step — there is one slice.
+func _on_vertical_slice_pressed() -> void:
+	GameLaunchState.request_vertical_slice()
 	get_tree().change_scene_to_file("res://scenes/main/Main.tscn")
 
 func _on_continue_pressed() -> void:

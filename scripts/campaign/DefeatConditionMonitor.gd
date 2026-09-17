@@ -168,7 +168,7 @@ func _nothing_affordable() -> bool:
 	return true
 
 ## (b). Reuses BuildingManager.get_projected_daily_flow(), which is the same
-## math apply_day() banks — a second "what counts as producing" rule here
+## math apply_share_of_day() banks — a second "what counts as producing" rule here
 ## would drift from the one the economy actually runs on. That flow already
 ## excludes ruined, under-construction and powered-down buildings, and
 ## excludes ENERGY/POPULATION as capacity grants rather than daily flow.
@@ -189,7 +189,7 @@ func _nothing_produced() -> bool:
 ## (c). A standing building is one that is neither ruined nor still under
 ## construction. Powered-down deliberately still counts: the player can switch
 ## a barracks back on, so owning one is not elimination — it is a delay of
-## BuildingPowerController.restart_days_for() days.
+## BuildingPowerController.restart_hours_for() days.
 func _no_standing_trainer() -> bool:
 	if not _building_manager:
 		return false

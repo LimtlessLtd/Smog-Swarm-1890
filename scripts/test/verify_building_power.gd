@@ -156,7 +156,7 @@ func _check_restart_delay_is_tier_shaped() -> void:
 	for tier in range(0, 6):
 		var definition := BuildingDefinition.new()
 		definition.tier = tier
-		var days := _buildings.get_restart_days_for(definition)
+		var days := _buildings.get_restart_hours_for(definition)
 		print("tier %d restart: %d day%s" % [tier, days, "" if days == 1 else "s"])
 		if days < 1:
 			_failures.append("tier %d restarts in %d days — a free restart makes going dark a no-brainer (D11)" % [tier, days])
@@ -166,7 +166,7 @@ func _check_restart_delay_is_tier_shaped() -> void:
 
 
 ## "An off building produces nothing, consumes no upkeep." Measured through
-## get_projected_daily_flow(), which is the same arithmetic apply_day() banks
+## get_projected_daily_flow(), which is the same arithmetic apply_share_of_day() banks
 ## (BuildingSustenanceController's own doc comment), not a second model of it.
 func _check_production_and_upkeep_stop() -> void:
 	_reset_fixture()
@@ -251,7 +251,7 @@ func _check_capacity_is_released_and_retaken() -> void:
 	if absf(_resources.get_amount(GameEnums.ResourceType.ENERGY) - energy_off) > _EPSILON:
 		_failures.append("ordering the restart moved the Energy pool — the draw is taken when the restart COMPLETES, which is what lets demolish() read 'still holds capacity' off the flag alone")
 
-	_run_days(_buildings.get_restart_days_for(definition))
+	_run_hours(_buildings.get_restart_hours_for(definition))
 	var energy_back := _resources.get_amount(GameEnums.ResourceType.ENERGY)
 	var population_back := _resources.get_amount(GameEnums.ResourceType.POPULATION)
 	print("restart complete: Energy %.1f, Population %.1f (want %.1f / %.1f)" % [energy_back, population_back, energy_before, population_before])
@@ -306,25 +306,25 @@ func _check_noise_and_light_stop() -> void:
 func _check_the_building_stays_dark_for_the_whole_delay() -> void:
 	_reset_fixture()
 	var mine := _building_at(_MINE_HEX)
-	var days := _buildings.get_restart_days_for(mine.definition)
+	var days := _buildings.get_restart_hours_for(mine.definition)
 	if days < 2:
 		_failures.append("the Coal Mine restarts in %d day, so 'stays dark for the whole delay' has no interior to check — pick a higher-tier fixture building" % days)
 		return
 	_buildings.power_down_building(mine)
 	_buildings.restart_building(mine)
 	for day in range(1, days):
-		_run_days(1)
-		print("restart day %d/%d: powered_down=%s remaining=%d" % [day, days, mine.is_powered_down, _buildings.get_restart_days_remaining(mine)])
+		_run_hours(1)
+		print("restart day %d/%d: powered_down=%s remaining=%d" % [day, days, mine.is_powered_down, _buildings.get_restart_hours_remaining(mine)])
 		if not mine.is_powered_down:
 			_failures.append("the Coal Mine came back online on day %d of a %d-day restart" % [day, days])
 		if mine.is_running():
 			_failures.append("a mid-restart Coal Mine reported is_running() — it would produce and make noise %d days early" % [days - day])
-	_run_days(1)
+	_run_hours(1)
 	print("restart day %d/%d: powered_down=%s" % [days, days, mine.is_powered_down])
 	if mine.is_powered_down or not mine.is_running():
 		_failures.append("the Coal Mine was still dark after its full %d-day restart" % days)
-	if _buildings.get_restart_days_remaining(mine) != 0:
-		_failures.append("a completed restart left %d days on the queue" % _buildings.get_restart_days_remaining(mine))
+	if _buildings.get_restart_hours_remaining(mine) != 0:
+		_failures.append("a completed restart left %d days on the queue" % _buildings.get_restart_hours_remaining(mine))
 
 
 ## Every refusal, each for its own reason. A silent accept here is worse than
@@ -363,7 +363,7 @@ func _check_what_cannot_be_switched_off() -> void:
 	if _rejections.size() < 2:
 		_failures.append("only %d rejection reason(s) reached power_down_rejected/building_restart_rejected — the player would see a dead button with no explanation" % _rejections.size())
 
-	_run_days(_buildings.get_restart_days_for(mine.definition))
+	_run_hours(_buildings.get_restart_hours_for(mine.definition))
 	if _buildings.can_restart_building(mine):
 		_failures.append("a running Coal Mine accepted a restart order")
 
@@ -381,8 +381,8 @@ func _check_save_round_trip() -> void:
 	_buildings.power_down_building(tower)
 	_buildings.power_down_building(mine)
 	_buildings.restart_building(mine)
-	_run_days(1)
-	var days_left := _buildings.get_restart_days_remaining(mine)
+	_run_hours(1)
+	var days_left := _buildings.get_restart_hours_remaining(mine)
 	if days_left <= 0:
 		_failures.append("the Coal Mine's restart finished within one day — there is no mid-restart state left to round-trip")
 		return
@@ -391,18 +391,18 @@ func _check_save_round_trip() -> void:
 	_buildings.load_save_entries(entries, _buildings.get_next_id())
 	var mine_back := _building_at(_MINE_HEX)
 	var tower_back := _building_at(_TOWER_HEX)
-	print("after round trip: Watchtower off=%s, Coal Mine off=%s restarting=%d (was %d)" % [tower_back.is_powered_down, mine_back.is_powered_down, _buildings.get_restart_days_remaining(mine_back), days_left])
+	print("after round trip: Watchtower off=%s, Coal Mine off=%s restarting=%d (was %d)" % [tower_back.is_powered_down, mine_back.is_powered_down, _buildings.get_restart_hours_remaining(mine_back), days_left])
 	if not tower_back.is_powered_down:
 		_failures.append("a switched-off Watchtower came back running after a save round trip")
 	if not mine_back.is_powered_down:
 		_failures.append("a mid-restart Coal Mine came back running after a save round trip")
-	if _buildings.get_restart_days_remaining(mine_back) != days_left:
-		_failures.append("a mid-restart building came back with %d days left instead of %d" % [_buildings.get_restart_days_remaining(mine_back), days_left])
+	if _buildings.get_restart_hours_remaining(mine_back) != days_left:
+		_failures.append("a mid-restart building came back with %d days left instead of %d" % [_buildings.get_restart_hours_remaining(mine_back), days_left])
 
-	_run_days(days_left - 1)
+	_run_hours(days_left - 1)
 	if not mine_back.is_powered_down:
 		_failures.append("the restored restart finished early — the saved countdown was not honoured")
-	_run_days(1)
+	_run_hours(1)
 	if mine_back.is_powered_down:
 		_failures.append("the restored restart never finished: %s" % ("; ".join(_rejections) if not _rejections.is_empty() else "no reason reported"))
 
@@ -477,7 +477,7 @@ func _check_demolishing_a_dark_building_mints_nothing() -> void:
 	print("demolish while dark: Energy %.1f -> %.1f (a second refund would add %.1f)" % [energy_off, energy_gone, energy_cost])
 	if energy_gone - energy_off > _EPSILON:
 		_failures.append("demolishing a switched-off Coal Mine minted %.1f Energy — its draw was already refunded when it went dark" % [energy_gone - energy_off])
-	if _buildings.get_restart_days_remaining(mine) != 0:
+	if _buildings.get_restart_hours_remaining(mine) != 0:
 		_failures.append("demolishing a building mid-restart stranded its restart job")
 
 
@@ -491,7 +491,7 @@ func _check_a_restart_the_grid_cannot_carry_is_cancelled() -> void:
 	var mine := _building_at(_MINE_HEX)
 	var energy := GameEnums.ResourceType.ENERGY
 	var draw := float(mine.definition.daily_upkeep.get(energy, 0.0))
-	var days := _buildings.get_restart_days_for(mine.definition)
+	var days := _buildings.get_restart_hours_for(mine.definition)
 	_buildings.power_down_building(mine)
 	if not _buildings.restart_building(mine):
 		_failures.append("the restart was refused before the grid was drained: %s" % _buildings.get_restart_error(mine))
@@ -502,13 +502,13 @@ func _check_a_restart_the_grid_cannot_carry_is_cancelled() -> void:
 	if drain > 0.0:
 		_resources.spend({energy: drain})
 	_rejections.clear()
-	_run_days(days)
+	_run_hours(days)
 	print("restart under a drained grid: Energy %.1f (draw %.1f), still dark=%s, rejections=%d" % [_resources.get_amount(energy), draw, mine.is_powered_down, _rejections.size()])
 	if not mine.is_powered_down:
 		_failures.append("a restart completed on a grid that could not carry its %.1f Energy draw" % draw)
 	if _rejections.is_empty():
 		_failures.append("the cancelled restart reported nothing — the player waited %d days for silence" % days)
-	if _buildings.get_restart_days_remaining(mine) != 0:
+	if _buildings.get_restart_hours_remaining(mine) != 0:
 		_failures.append("a cancelled restart stayed on the queue as an invisible job")
 
 
@@ -547,7 +547,7 @@ func _check_ruining_a_dark_building_mints_nothing() -> void:
 	# And the repair path has to land somewhere consistent: a rebuilt building
 	# is a running building.
 	_buildings.repair_building(mine)
-	_run_days(4)
+	_run_hours(4)
 	print("after repair: ruined=%s powered_down=%s running=%s" % [mine.is_ruined, mine.is_powered_down, mine.is_running()])
 	if mine.is_ruined or mine.is_powered_down or not mine.is_running():
 		_failures.append("a Coal Mine switched off, ruined and then repaired came back ruined=%s off=%s instead of simply running" % [mine.is_ruined, mine.is_powered_down])
@@ -561,14 +561,14 @@ func _check_a_ruin_does_not_restart_itself() -> void:
 	_reset_fixture()
 	var mine := _building_at(_MINE_HEX)
 	var energy := GameEnums.ResourceType.ENERGY
-	var days := _buildings.get_restart_days_for(mine.definition)
+	var days := _buildings.get_restart_hours_for(mine.definition)
 	_buildings.power_down_building(mine)
 	_buildings.restart_building(mine)
-	_run_days(1)
+	_run_hours(1)
 	_buildings.damage_building(mine, mine.definition.get_max_hp() * 2.0)
 	var energy_ruined := _resources.get_amount(energy)
-	var remaining := _buildings.get_restart_days_remaining(mine)
-	_run_days(days + 1)
+	var remaining := _buildings.get_restart_hours_remaining(mine)
+	_run_hours(days + 1)
 	print("ruined mid-restart: job left %d days, Energy %.1f -> %.1f after the countdown would have ended" % [remaining, energy_ruined, _resources.get_amount(energy)])
 	if remaining != 0:
 		_failures.append("ruining a building mid-restart left %d days queued — the countdown would complete on a ruin" % remaining)
@@ -587,13 +587,13 @@ func _check_a_restart_can_be_cancelled() -> void:
 	_reset_fixture()
 	var mine := _building_at(_MINE_HEX)
 	var energy := GameEnums.ResourceType.ENERGY
-	var days := _buildings.get_restart_days_for(mine.definition)
+	var days := _buildings.get_restart_hours_for(mine.definition)
 	if days < 2:
 		_failures.append("the Coal Mine restarts in %d day, so there is no countdown to cancel partway through" % days)
 		return
 	_buildings.power_down_building(mine)
 	_buildings.restart_building(mine)
-	_run_days(1)
+	_run_hours(1)
 	if not _buildings.is_building_restarting(mine):
 		_failures.append("the restart was not in flight — this check proves nothing")
 		return
@@ -602,15 +602,15 @@ func _check_a_restart_can_be_cancelled() -> void:
 	if not _buildings.power_down_building(mine):
 		_failures.append("a restart in flight could not be cancelled: %s" % _buildings.get_power_down_error(mine))
 		return
-	print("cancelled mid-restart: remaining %d, still dark=%s, Energy %.1f -> %.1f" % [_buildings.get_restart_days_remaining(mine), mine.is_powered_down, energy_before, _resources.get_amount(energy)])
-	if _buildings.get_restart_days_remaining(mine) != 0:
-		_failures.append("cancelling left %d days on the queue" % _buildings.get_restart_days_remaining(mine))
+	print("cancelled mid-restart: remaining %d, still dark=%s, Energy %.1f -> %.1f" % [_buildings.get_restart_hours_remaining(mine), mine.is_powered_down, energy_before, _resources.get_amount(energy)])
+	if _buildings.get_restart_hours_remaining(mine) != 0:
+		_failures.append("cancelling left %d days on the queue" % _buildings.get_restart_hours_remaining(mine))
 	if not mine.is_powered_down:
 		_failures.append("cancelling a restart brought the building online instead of leaving it dark")
 	if absf(_resources.get_amount(energy) - energy_before) > _EPSILON:
 		_failures.append("cancelling a restart moved the Energy pool by %.1f — restart() took no capacity, so cancelling has nothing to release" % [_resources.get_amount(energy) - energy_before])
 
-	_run_days(days + 1)
+	_run_hours(days + 1)
 	if not mine.is_powered_down:
 		_failures.append("a cancelled restart brought the building back online anyway")
 
@@ -650,9 +650,9 @@ func _building_at(coord: Vector2i) -> BuildingInstance:
 	return here[0] if not here.is_empty() else null
 
 
-func _run_days(days: int) -> void:
+func _run_hours(days: int) -> void:
 	for _i in range(days):
-		_buildings.run_daily_tick()
+		_buildings.run_hourly_tick()
 
 
 func _build_fixture_cells() -> Dictionary:

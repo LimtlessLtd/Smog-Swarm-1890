@@ -38,18 +38,22 @@ The golden slice (`PLAYER_EXPERIENCE.md` §11) is the target. Ranked by `CLAUDE.
 
 | Rank | Item | Tag | Criteria |
 | :--- | :--- | :--- | :--- |
-| 1 Broken | **new** — The economy clock is ~100x slower than the movement clock (**decided, D98**) | `[gated]` | OPEN-1, OPEN-2, IND-4, HORDE-2 |
+| 1 Broken | **new** — The vertical slice has not been played by a person (D108) | `[visual-human]` | slice acceptance |
+| 1 Broken | **done 2026-09-17** — (79, 119), a Manchester URBAN hex, carried PEAT_BOG and was impassable to units | — | OPEN-1, EXP-1 |
+| 1 Broken | *The economy clock is ~100x slower than the movement clock* — **jobs and production done (D112); research still per day** | `[gated]` | OPEN-1, OPEN-2, IND-4, HORDE-2 |
 | 1 Broken | ↳ *The undefended colony is destroyed on day 13* (below) | `[design]` | OPEN-4 |
 | 1 Broken | ↳ *A horde crosses Britain in a day and a half* (below) | `[design]` | HORDE-2 |
 | 1 Broken | **new** — Does a founded Town Hall get civilian ZoC? | `[gated]` | SET-1 |
 | 1 Broken | **new** — An unroutable move order re-runs a ~234 ms failed search every 2 game-seconds | `[gated]` | COMBAT-1, FB-2 |
-| 1 Broken | **new** — A new game starts unwalled: `seed_starting_defenses()` has no production caller | `[gated]` | OPEN-4, DEF-1 |
+| 1 Broken | ~~A new game starts unwalled~~ — **deliberate** (user request, commit 5263e5e5); stale comment fixed; the slice uses it | — | OPEN-4, DEF-1 |
 | 2 Boring | *The ATTRACTED mechanic never fires in the opening* (below) | `[design]` | HORDE-3, HORDE-4 |
 | 2 Boring | **new** — Units and gunfire make no noise (**decided, D100**) | `[gated]` | HORDE-3, HORDE-5, IND-5 |
-| 2 Boring | **new** — Settlement light and noise reach further as it grows (**decided, D101**) | `[gated]` | HORDE-3, OPEN-2, §9 |
+| 2 Boring | *Settlement light and noise reach further as it grows* — **light done (D110)**; perception fixed (D109) | `[gated]` | HORDE-3, OPEN-2, §9 |
+| 2 Boring | **new** — Is a Tier 0 squad in the open meant to die on contact with any large horde? (D111) | `[design]` | COMBAT-6, DEF-4 |
+| 2 Boring | **new** — Siege and wall-defence numbers are Claude's (D111), fitted to the slice | `[design]` | DEF-2, DEF-3 |
 | 3 Feedback | **new** — Infestation is never drawn on the map | `[visual-autonomous]` | FB-1, EXP-5 |
-| 3 Feedback | **new** — Combat has no on-screen presentation | `[visual-autonomous]` | COMBAT-2..6 |
-| 3 Feedback | **new** — The horde warning misses wandering hordes and gives no bearing | `[gated]` | HORDE-1, HORDE-2, FB-2 |
+| 3 Feedback | *Combat has no on-screen presentation* — **siege readout, kill pulses, breach burst done (ThreatOverlayView)**; no unit animation, projectile or hit flash | `[visual-autonomous]` | COMBAT-2..6 |
+| 3 Feedback | *The horde warning misses wandering hordes and gives no bearing* — **map marks with cause and ETA done (ThreatOverlayView)**; **alerts name places, not coordinates (2026-09-17)** | `[gated]` | HORDE-1, HORDE-2, FB-2 |
 | 3 Feedback | *Placement status line is never cleared* (Next) | `[gated]` | OPEN-5 |
 | 3 Feedback | *6 of 15 resource counters have no icon, name or tooltip* (Next) | `[visual-autonomous]` | FB-3 |
 | 3 Feedback | **new** — At battle zoom one building fills the screen | `[visual-autonomous]` | COMBAT-3 |
@@ -70,6 +74,70 @@ The golden slice (`PLAYER_EXPERIENCE.md` §11) is the target. Ranked by `CLAUDE.
 presentation groundwork. The camera-rect allocation (D78) and the stride A/B (D84) are
 what *pay for* combat presentation, so take them when the combat-presentation item
 needs them, not ahead of it.
+
+### Vertical slice follow-ups (new 2026-09-16, D108-D113)
+
+- [ ] `[visual-human]` **The vertical slice has not been played by a person.**
+  **WHY:** rank 1 — the slice (main menu "Vertical Slice (15 min)") was built and tuned
+  against four scripted players in `tools/playtest/run_scenarios.py
+  vertical_slice[:naive|:dark|:ignore]` and inspected in windowed screenshots, and the
+  user's acceptance is whether a person playing it "immediately understand[s] why what I
+  did mattered". Scripted players react instantly and never read: the measured lengths
+  (hold 6:47, dark 8:07) are floors. **PLAYER EXPERIENCE:** the whole slice.
+  **IMPLEMENTATION:** play it; then the playtest-critic agent through AgentHarness. Watch
+  for: whether the group-selection drag and the wall-reach ring are discoverable, whether
+  the dispatch panel and MainHUD's own toasts compete, whether 6-8 minutes of play is
+  10-20 for a person, and whether the moor clear (frontage 1, ~650 identical kills)
+  reads as a grind. **VERIFICATION:** a person's notes; the critic's report.
+
+- [x] **(79, 119) is impassable to units — fixed 2026-09-17.** `HexMapGenerator._apply_feature()`
+  stamps settlements last but kept an earlier stamp's terrain_feature; the SETTLEMENT stamp
+  now clears hex-level MARSH/PEAT_BOG (sub-hex bog is untouched).
+  `verify_settlement_passability.gd` runs the real generator over all 20 settlement hexes
+  and was mutation-tested (removing the clear fails on exactly (79, 119)). Original entry:
+  `[gated]` **(79, 119) is impassable to units.** **WHY:** rank 1 — measured while
+  choosing the slice start (`vertical_slice` scenario note): a Manchester URBAN
+  settlement hex carrying `TerrainFeature.PEAT_BOG`, so `HexCell.is_passable()` is false
+  for the whole hex and `HexPathfinder.find_path()` rejects it as a start or goal. A
+  settlement hex should not be a bog at hex granularity. **PLAYER EXPERIENCE:** any
+  scenario or future start on that hex has units that cannot move. **IMPLEMENTATION:**
+  find where the bake or `HexMapGenerator` assigns PEAT_BOG to an URBAN settlement hex
+  (Chat Moss is the neighbouring bog), and whether other settlement hexes carry an
+  impassable feature; `CLAUDE.md` §3 — the sub-hex layer already knows which part is
+  bog. **VERIFICATION:** a verification that no `is_settlement` hex is impassable.
+
+- [ ] `[design]` **Is a squad in the open meant to die on contact with a large horde?**
+  **WHY:** rank 2 — a horde met outside a wall deals its whole size in damage per round
+  (`Horde.get_combat_damage()`), so the slice's ten Tier 0 squads die in one exchange with
+  1,500 (the "naive" and "ignore" players). D111 capped siege pressure at √size for walls
+  but left open-field contact alone. The slice's debrief teaches it as a rule ("a horde
+  in the field is avoided or walled, not met"). **Question for the user:** keep open-field
+  contact uncapped (fight only at walls), or give it a frontage too (squads grind a horde
+  in the field, slowly and at a cost)? **Recommendation:** a frontage larger than a
+  wall's, so a strong army can meet a horde in the field and a weak one still cannot.
+
+- [ ] `[design]` **Siege and wall-defence numbers were chosen by Claude (D111).**
+  **WHY:** rank 2 — `WALL_DAMAGE_PER_CONTACT_ZOMBIE` 0.03, √size contact capped at 60,
+  volley every 10 game-seconds, reach 200 m / 25 m were fitted so preparation decides the
+  slice's fight. They apply to every siege in the campaign. **Question:** keep, or re-fit
+  once Tier 1 firearms and D102's metric range exist?
+
+- [ ] `[gated]` **Research still advances per day (D98 remainder).** **WHY:** rank 1 —
+  D112 moved jobs and production to the hour; `TechManager` still counts research in
+  days, so `building_tier_1` is ~80 real minutes on Town Hall RP. **IMPLEMENTATION:** the
+  same hour tick; research RP per hour at a 1/24 share or research durations in hours —
+  which one is a balance call to disclose. **VERIFICATION:** `run_scenarios.py
+  industrialisation` IND-4.
+
+- [x] **Alerts named places by raw coordinate — fixed 2026-09-17.** `LocationNames.describe()`
+  ("on the moor 2 hexes east of your town", "at Chat Moss, 3 hexes north-west of your town")
+  now names every `EventManager` alert, the debrief's cleared-ground line and the unit
+  panel's Train header; `verify_location_names.gd`. Telemetry keeps coordinates. Original entry:
+  `[gated]` **The horde warning toast and recon row print raw coordinates.**
+  **WHY:** rank 3 — "A large horde (1500 strong) has been spotted near (82, 119)!" sat on
+  screen through the whole slice siege in every windowed capture; FB-2 asks where, and a
+  coordinate is not a where. `VerticalSliceDirector._bearing_word()` has the bearing
+  wording. **VERIFICATION:** a windowed slice capture.
 
 ### Golden-slice items (new 2026-09-16)
 
@@ -148,7 +216,12 @@ needs them, not ahead of it.
   **VERIFICATION:** a verification that an unroutable order costs bounded time per game
   second; `run_scenarios.py opening` with the target forced to (78, 119).
 
-- [ ] `[gated]` **A new game starts unwalled.** **WHY:** rank 1 — measured 2026-09-16:
+- [x] **A new game starts unwalled — deliberate, closed 2026-09-16.** `git log -S` found
+  commit 5263e5e5 (2026-08-11): "Removed the free Wooden wall perimeter ... (user
+  request)", keeping the function "for a possible future 'start with walls' option". The
+  stale "Runs from _ready()" comment is corrected; the vertical slice is the first
+  production caller (D108). Original entry:
+  `[gated]` **A new game starts unwalled.** **WHY:** rank 1 — measured 2026-09-16:
   `WallManager.seed_starting_defenses()` has no production caller (only
   `verify_gates.gd` calls it), while `WallManager`'s doc comment says it "Runs from
   _ready()" and `BuildingManager` places its starting Farm on the assumption that the

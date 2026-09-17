@@ -83,17 +83,17 @@ func _on_infrastructure_placement_started(line_type: GameEnums.SupplyLineType, t
 func _on_infrastructure_placement_rejected(_hex_a: Vector2i, _hex_b: Vector2i, reason: String) -> void:
 	_toast.show(reason)
 
-func _on_construction_started(building_type: GameEnums.BuildingType, _coord: Vector2i, days: int) -> void:
+func _on_construction_started(building_type: GameEnums.BuildingType, _coord: Vector2i, hours: int) -> void:
 	var definition := BuildingCatalog.get_definition(building_type)
 	var display_name := definition.display_name if definition else "Building"
-	_toast.show("%s under construction — ready in %d day%s." % [display_name, days, "" if days == 1 else "s"])
+	_toast.show("%s under construction — ready in %d hour%s." % [display_name, hours, "" if hours == 1 else "s"])
 
-func _on_building_repair_started(instance: BuildingInstance, days: int) -> void:
+func _on_building_repair_started(instance: BuildingInstance, hours: int) -> void:
 	var display_name := instance.definition.display_name if instance and instance.definition else "Building"
-	_toast.show("Repairing %s — ready in %d day%s." % [display_name, days, "" if days == 1 else "s"])
+	_toast.show("Repairing %s — ready in %d hour%s." % [display_name, hours, "" if hours == 1 else "s"])
 
-func _on_wall_repair_started(_segment: WallSegment, days: int) -> void:
-	_toast.show("Repairing wall segment — ready in %d day%s." % [days, "" if days == 1 else "s"])
+func _on_wall_repair_started(_segment: WallSegment, hours: int) -> void:
+	_toast.show("Repairing wall segment — ready in %d hour%s." % [hours, "" if hours == 1 else "s"])
 
 ## Names all four things going dark actually stops, because none of them are
 ## visible anywhere on screen — noise and light are a NoiseManager field the
@@ -105,8 +105,8 @@ func _on_building_powered_down(instance: BuildingInstance) -> void:
 func _on_building_powered_up(instance: BuildingInstance) -> void:
 	_toast.show("%s is back online." % _building_name(instance))
 
-func _on_building_restart_started(instance: BuildingInstance, days: int) -> void:
-	_toast.show("Restarting %s — online in %d day%s." % [_building_name(instance), days, "" if days == 1 else "s"])
+func _on_building_restart_started(instance: BuildingInstance, hours: int) -> void:
+	_toast.show("Restarting %s — online in %d hour%s." % [_building_name(instance), hours, "" if hours == 1 else "s"])
 
 ## Distinct from _on_building_powered_down(): nothing changed about what the
 ## building emits (it was already dark), only that it is no longer coming back.

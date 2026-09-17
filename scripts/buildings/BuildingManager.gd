@@ -36,10 +36,10 @@ signal placement_rejected(building_type: GameEnums.BuildingType, coord: Vector2i
 ## (above) fires at the same moment now too (see place_building()) — every
 ## OTHER building_placed listener that means "operational" additionally
 ## checks is_under_construction and waits for building_construction_completed.
-signal construction_started(building_type: GameEnums.BuildingType, coord: Vector2i, days: int)
+signal construction_started(building_type: GameEnums.BuildingType, coord: Vector2i, hours: int)
 signal construction_progressed(coord: Vector2i, days_remaining: int)
 signal building_construction_completed(instance: BuildingInstance)
-signal repair_started(instance: BuildingInstance, days: int)
+signal repair_started(instance: BuildingInstance, hours: int)
 signal building_damaged(instance: BuildingInstance, amount: float)
 signal building_repaired(instance: BuildingInstance)
 signal repair_rejected(instance: BuildingInstance, reason: String)
@@ -52,7 +52,7 @@ signal building_demolished(instance: BuildingInstance)
 ## until something unrelated happens to touch the same field.
 signal building_powered_down(instance: BuildingInstance)
 signal building_powered_up(instance: BuildingInstance)
-signal building_restart_started(instance: BuildingInstance, days: int)
+signal building_restart_started(instance: BuildingInstance, hours: int)
 signal building_restart_cancelled(instance: BuildingInstance)
 signal building_restart_rejected(instance: BuildingInstance, reason: String)
 signal power_down_rejected(instance: BuildingInstance, reason: String)
@@ -112,10 +112,10 @@ func _ready() -> void:
 	_capacity = CapacityAllocator.new(_resource_manager)
 
 	_construction = BuildingConstructionController.new()
-	_construction.progressed.connect(func(coord: Vector2i, days: int) -> void: construction_progressed.emit(coord, days))
+	_construction.progressed.connect(func(coord: Vector2i, hours: int) -> void: construction_progressed.emit(coord, hours))
 	_construction.completed.connect(func(instance: BuildingInstance) -> void: building_construction_completed.emit(instance))
 
-	_health = BuildingHealthController.new(_resource_manager, _territory_controller, _capacity, Callable(_construction, "days_for"))
+	_health = BuildingHealthController.new(_resource_manager, _territory_controller, _capacity, Callable(_construction, "hours_for"))
 	_health.damaged.connect(func(instance: BuildingInstance, amount: float) -> void: building_damaged.emit(instance, amount))
 	# Not a bare relay, unlike its siblings: BuildingPowerController.on_ruined()
 	# reconciles the going-dark state BEFORE the ruin is announced, so no
@@ -125,7 +125,7 @@ func _ready() -> void:
 	_health.ruined.connect(func(instance: BuildingInstance, lost_population: int) -> void:
 		_power.on_ruined(instance)
 		building_ruined.emit(instance, lost_population))
-	_health.repair_started.connect(func(instance: BuildingInstance, days: int) -> void: repair_started.emit(instance, days))
+	_health.repair_started.connect(func(instance: BuildingInstance, hours: int) -> void: repair_started.emit(instance, hours))
 	_health.repair_rejected.connect(func(instance: BuildingInstance, reason: String) -> void: repair_rejected.emit(instance, reason))
 	_health.repaired.connect(func(instance: BuildingInstance) -> void: building_repaired.emit(instance))
 	_health.demolished.connect(func(instance: BuildingInstance) -> void: building_demolished.emit(instance))
@@ -133,7 +133,7 @@ func _ready() -> void:
 	_power = BuildingPowerController.new(_capacity)
 	_power.powered_down.connect(func(instance: BuildingInstance) -> void: building_powered_down.emit(instance))
 	_power.power_down_rejected.connect(func(instance: BuildingInstance, reason: String) -> void: power_down_rejected.emit(instance, reason))
-	_power.restart_started.connect(func(instance: BuildingInstance, days: int) -> void: building_restart_started.emit(instance, days))
+	_power.restart_started.connect(func(instance: BuildingInstance, hours: int) -> void: building_restart_started.emit(instance, hours))
 	_power.restart_rejected.connect(func(instance: BuildingInstance, reason: String) -> void: building_restart_rejected.emit(instance, reason))
 	_power.restart_cancelled.connect(func(instance: BuildingInstance) -> void: building_restart_cancelled.emit(instance))
 	_power.powered_up.connect(func(instance: BuildingInstance) -> void: building_powered_up.emit(instance))
@@ -141,7 +141,7 @@ func _ready() -> void:
 	_sustenance = BuildingSustenanceController.new(_resource_manager, _discontent_manager, _hex_grid_map)
 	_sustenance.food_satisfaction_changed.connect(func(ratio: float) -> void: food_satisfaction_changed.emit(ratio))
 
-	TickManager.day_completed.connect(_on_day_completed)
+	TickManager.hour_completed.connect(_on_hour_completed)
 	seed_starting_buildings()
 
 ## Manchester is the canonical starting point, matched by name (set from
@@ -254,7 +254,12 @@ func seed_starting_buildings() -> void:
 		return
 	var target: HexCell = null
 	var fallback: HexCell = null
+	var override: Variant = GameLaunchState.get_starting_hex_override()
+	if override is Vector2i:
+		target = _hex_grid_map.get_cell(override)
 	for cell in _hex_grid_map.get_all_cells():
+		if target:
+			break
 		if not (cell.is_settlement and cell.biome_type == GameEnums.BiomeType.URBAN):
 			continue
 		if cell.region_name == _STARTING_REGION_NAME:
@@ -494,8 +499,8 @@ func can_place_building(building_type: GameEnums.BuildingType, coord: Vector2i, 
 ##
 ## Returns true once the placement is validated, paid for, and queued — NOT
 ## once it's actually standing. Resources/storage/Energy are spent
-## immediately; construction completes _construction.days_for() days later
-## via _on_day_completed()/BuildingConstructionController.process_day().
+## immediately; construction completes _construction.hours_for() hours later
+## via _on_hour_completed()/BuildingConstructionController.process_hour().
 ##
 ## The BuildingInstance is created and registered here immediately
 ## (is_under_construction = true) rather than only at construction
@@ -517,10 +522,10 @@ func place_building(building_type: GameEnums.BuildingType, coord: Vector2i, loca
 			_resource_manager.add_storage_cap(resource_type, float(definition.storage_bonus[resource_type]))
 		_capacity.apply(definition)
 
-	var days := _construction.days_for(definition)
+	var hours := _construction.hours_for(definition)
 	var instance := _register_instance(definition, coord, _next_id, local_position, true, -1, -1.0, false, true)
-	_construction.queue(instance, days)
-	construction_started.emit(building_type, coord, days)
+	_construction.queue(instance, hours)
+	construction_started.emit(building_type, coord, hours)
 	return true
 
 ## Shared instance-bookkeeping between a fresh place_building() (already
@@ -546,6 +551,18 @@ func _register_instance(definition: BuildingDefinition, coord: Vector2i, id: int
 
 	building_placed.emit(instance)
 	return instance
+
+## A finished building handed over as part of a scenario's starting state
+## (VerticalSliceSetup). Spends no construction cost and skips placement rules —
+## the scenario authored the spot — but applies the capacity ledger exactly as a
+## completed placement would, so Energy and Population read true from the first
+## frame. Grant producers before consumers: CapacityAllocator.apply() takes nothing
+## from a pool that cannot cover it.
+func grant_building(building_type: GameEnums.BuildingType, coord: Vector2i, local_position: Vector2) -> BuildingInstance:
+	var definition := BuildingCatalog.get_definition(building_type)
+	if _resource_manager:
+		_capacity.apply(definition)
+	return _register_instance(definition, coord, _next_id, local_position, true)
 
 ## Resolves `world_pos` to a hex + local offset and places there.
 func place_building_at_world(building_type: GameEnums.BuildingType, world_pos: Vector2) -> bool:
@@ -608,17 +625,17 @@ func restart_building(instance: BuildingInstance) -> bool:
 	return _power.restart(instance)
 
 ## 0 when `instance` is not restarting — either running, or switched off and
-## staying off. See BuildingPowerController.days_remaining_for().
-func get_restart_days_remaining(instance: BuildingInstance) -> int:
-	return _power.days_remaining_for(instance)
+## staying off. See BuildingPowerController.hours_remaining_for().
+func get_restart_hours_remaining(instance: BuildingInstance) -> int:
+	return _power.hours_remaining_for(instance)
 
 ## Off AND already coming back up, as opposed to off and staying off — the
 ## two states BuildingInstance.is_powered_down alone cannot tell apart.
 func is_building_restarting(instance: BuildingInstance) -> bool:
 	return _power.is_restarting(instance)
 
-func get_restart_days_for(definition: BuildingDefinition) -> int:
-	return _power.restart_days_for(definition)
+func get_restart_hours_for(definition: BuildingDefinition) -> int:
+	return _power.restart_hours_for(definition)
 
 ## Read-only preview of today's projected upkeep/output at current
 ## building/population state, for the resource-bar tooltip.
@@ -634,8 +651,8 @@ func get_save_entries() -> Array[BuildingSaveEntry]:
 	for instance in _instances:
 		var days_remaining := 0
 		if instance.is_under_construction:
-			days_remaining = _construction.days_remaining_for(instance)
-		result.append(BuildingSaveEntry.new(instance.definition.building_type, instance.hex_coord, instance.id, instance.local_position, instance.current_population, instance.current_hp, instance.is_ruined, instance.is_under_construction, days_remaining, instance.is_powered_down, _power.days_remaining_for(instance)))
+			days_remaining = _construction.hours_remaining_for(instance)
+		result.append(BuildingSaveEntry.new(instance.definition.building_type, instance.hex_coord, instance.id, instance.local_position, instance.current_population, instance.current_hp, instance.is_ruined, instance.is_under_construction, days_remaining, instance.is_powered_down, _power.hours_remaining_for(instance)))
 	return result
 
 ## Restores placed instances from a save: clears whatever is currently
@@ -660,21 +677,21 @@ func load_save_entries(entries: Array[BuildingSaveEntry], next_id: int) -> void:
 			_power.load_pending_restart(instance, entry.restart_days_remaining)
 	_next_id = next_id
 
-func _on_day_completed(_day_number: int) -> void:
-	run_daily_tick()
+func _on_hour_completed(_day_number: int, _hour: int) -> void:
+	run_hourly_tick()
 
-## Every per-day building job, in the order they have to run: construction,
-## repair and restart countdowns all tick BEFORE this day's Food/production
-## tally, so a job finishing TODAY already counts toward it.
+## Every building job on the D98 work clock, in the order they have to run:
+## construction, repair and restart countdowns all tick BEFORE this hour's
+## Food/production share, so a job finishing THIS hour already counts toward it.
 ##
 ## Public so a verification can advance the simulation deterministically
-## instead of waiting on real time, the same reason (and the same wording)
-## InfestationManager.run_daily_tick() gives. TickManager.day_completed can
-## fire several times in one frame during a large-delta catch-up, so nothing
-## here may accumulate across calls — each collaborator's process_day() is
-## already pure per-call arithmetic over its own queue.
-func run_daily_tick() -> void:
-	_construction.process_day()
-	_health.process_day()
-	_power.process_day()
-	_sustenance.apply_day(_instances)
+## instead of waiting on real time, the same reason
+## InfestationManager.run_daily_tick() gives. TickManager.hour_completed can
+## fire many times in one frame during a large-delta catch-up, so nothing here
+## may accumulate across calls — each collaborator's process_hour() is pure
+## per-call arithmetic over its own queue.
+func run_hourly_tick() -> void:
+	_construction.process_hour()
+	_health.process_hour()
+	_power.process_hour()
+	_sustenance.apply_share_of_day(_instances, 1.0 / float(TickManager.HOURS_PER_DAY))

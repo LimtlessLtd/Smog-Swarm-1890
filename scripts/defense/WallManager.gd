@@ -21,7 +21,7 @@ signal wall_segment_repaired(segment: WallSegment)
 signal placement_rejected(hex_a: Vector2i, hex_b: Vector2i, reason: String)
 signal upgrade_rejected(segment: WallSegment, reason: String)
 signal repair_rejected(segment: WallSegment, reason: String)
-signal repair_started(segment: WallSegment, days: int)  ## wall_segment_repaired (above) only fires once a queued repair job finishes.
+signal repair_started(segment: WallSegment, hours: int)  ## wall_segment_repaired (above) only fires once a queued repair job finishes.
 signal wall_segment_removed(segment: WallSegment)
 signal demolish_rejected(segment: WallSegment, reason: String)
 
@@ -40,7 +40,7 @@ var _building_manager: BuildingManager
 var _infestation_manager: InfestationManager
 var _segments: Array[WallSegment] = []
 var _next_id: int = 1
-var _pending_repair: Array[Dictionary] = []  ## Paid-for repairs not yet finished — {segment, days_remaining}.
+var _pending_repair: Array[Dictionary] = []  ## Paid-for repairs not yet finished — {segment, hours_remaining}.
 
 func _ready() -> void:
 	if hex_grid_map_path != NodePath():
@@ -60,15 +60,15 @@ func _ready() -> void:
 	# is the right answer anyway — D7 puts the player's own hex at 0%.
 	if infestation_manager_path != NodePath():
 		_infestation_manager = get_node_or_null(infestation_manager_path) as InfestationManager
-	TickManager.day_completed.connect(_on_day_completed)
+	TickManager.hour_completed.connect(_on_hour_completed)
 
 ## Mirrors BuildingManager's own construction/repair queue processing shape.
-func _on_day_completed(_day_number: int) -> void:
+func _on_hour_completed(_day_number: int, _hour: int) -> void:
 	var still_pending: Array[Dictionary] = []
 	for job in _pending_repair:
-		job["days_remaining"] -= 1
+		job["hours_remaining"] -= 1
 		var segment: WallSegment = job["segment"]
-		if job["days_remaining"] <= 0:
+		if job["hours_remaining"] <= 0:
 			segment.current_hp = segment.get_max_hp()
 			wall_segment_repaired.emit(segment)
 		else:
@@ -393,11 +393,19 @@ func _register_freehand_segment(point_a: Vector2, point_b: Vector2, tier: int, i
 ## consume the whole shared reservation first.
 ##
 ## No-op if segments already exist (a loaded save has its own wall state) or
-## if the dependencies aren't wired. Runs from _ready(), which fires after
-## BuildingManager's own _ready() as long as this stays a later Main.tscn sibling.
+## if the dependencies aren't wired. Not called for a campaign: the free starting
+## wall was removed at the user's request on 2026-08-11 (commit 5263e5e5) and this
+## was kept "for a possible future 'start with walls' option". VerticalSliceSetup is
+## that option; verify_gates.gd, verify_wall_defense.gd and the siege playtest call it
+## on fixtures. Needs BuildingManager.seed_starting_buildings() to have run first.
 const _STARTING_WALL_GATE_COUNT: int = 2
 
-func seed_starting_defenses() -> void:
+## `gates_toward`: outside hexes whose shared edge should carry a gate, in
+## preference to the default choice. A scenario that sends its squad out through
+## one side of the town (VerticalSliceSetup) passes that side, so the only way out
+## is not a detour through the other side of the map. Each source hex still keeps
+## one solid edge, and never more than _STARTING_WALL_GATE_COUNT gates are placed.
+func seed_starting_defenses(gates_toward: Array[Vector2i] = []) -> void:
 	if not _segments.is_empty() or not _hex_grid_map or not _building_manager:
 		return
 	var core_hexes := _building_manager.get_starting_settlement_hexes()
@@ -440,10 +448,14 @@ func seed_starting_defenses() -> void:
 	var reserved_source: Dictionary = {}  # Vector2i -> true, one reservation per distinct source hex
 	for i in boundary_edges.size():
 		var source := boundary_sources[i]
-		if not reserved_source.has(source):
+		if not reserved_source.has(source) and not gates_toward.has(boundary_edges[i]):
 			reserved_source[source] = true
 			continue
 		gate_eligible_indices.append(i)
+	# Preferred edges first, each group keeping its original order.
+	var preferred: Array[int] = gate_eligible_indices.filter(func(i: int) -> bool: return gates_toward.has(boundary_edges[i]))
+	var others: Array[int] = gate_eligible_indices.filter(func(i: int) -> bool: return not gates_toward.has(boundary_edges[i]))
+	gate_eligible_indices = preferred + others
 
 	var gate_count := mini(_STARTING_WALL_GATE_COUNT, gate_eligible_indices.size())
 	var gate_indices: Dictionary = {}
@@ -563,7 +575,7 @@ func can_repair_segment(segment: WallSegment) -> bool:
 	return get_repair_error(segment).is_empty()
 
 ## Pays upfront, finishes later — the segment stays breached (still-red,
-## still passable to a horde) until _on_day_completed() applies the actual
+## still passable to a horde) until _on_hour_completed() applies the actual
 ## restoration `days` days from now.
 func repair_segment(segment: WallSegment) -> bool:
 	var error := get_repair_error(segment)
@@ -572,9 +584,9 @@ func repair_segment(segment: WallSegment) -> bool:
 		return false
 	if _resource_manager:
 		_resource_manager.spend(_scaled_by_length(WallCatalog.get_repair_cost(segment.tier), _segment_length(segment)))
-	var days := segment.tier + 1
-	_pending_repair.append({"segment": segment, "days_remaining": days})
-	repair_started.emit(segment, days)
+	var hours := segment.tier + 1
+	_pending_repair.append({"segment": segment, "hours_remaining": hours})
+	repair_started.emit(segment, hours)
 	return true
 
 ## Refunds HALF of what this piece would cost to build fresh at its own

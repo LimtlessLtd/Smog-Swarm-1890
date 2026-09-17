@@ -13,7 +13,13 @@ extends Node
 ## or all of them through tools/playtest/run_scenarios.py, which also collects the
 ## JSON. Options: --scenario=NAME, --days=N (override), --variant=NAME (scenario
 ## specific), --out=ABSOLUTE_PATH.json, --shots (windowed; ignored headless),
-## --with-props (keep terrain-detail props as steering obstacles; see _ready()).
+## --with-props (keep terrain-detail props as steering obstacles; see _ready()),
+## --no-props (drop them even with --shots, for a windowed run whose units walk:
+## with props each unit's movement call costs ~220 ms).
+##
+## A scenario may define shot_seconds() -> Array of game-seconds since the start at
+## which to capture mid-day, and shot_zooms() -> Array[float] to replace the default
+## framings.
 ##
 ## A --shots run is not numerically comparable with a headless one: it keeps terrain
 ## props and lets real frames run during each checkpoint (the render-only views need
@@ -40,6 +46,7 @@ const _SCENARIOS := {
 	"horde": preload("res://scripts/test/playtest/scenarios/horde.gd"),
 	"siege": preload("res://scripts/test/playtest/scenarios/siege.gd"),
 	"industrialisation": preload("res://scripts/test/playtest/scenarios/industrialisation.gd"),
+	"vertical_slice": preload("res://scripts/test/playtest/scenarios/vertical_slice.gd"),
 }
 const _Telemetry := preload("res://scripts/telemetry/GameplayTelemetry.gd")
 
@@ -60,6 +67,8 @@ var tech: TechManager
 var walls: WallManager
 var fog: FogOfWarManager
 var residents: ResidentDefenseController
+var wall_defense: WallDefenseController
+var slice_director: VerticalSliceDirector
 var telemetry: Node
 var start_hex: Vector2i
 var variant: String = ""
@@ -73,6 +82,7 @@ var _notes: Array[String] = []
 var _shot_paths: Array[String] = []
 var _cost_usec: Dictionary = {}
 var _with_props: bool = false
+var _no_props: bool = false
 
 
 func _ready() -> void:
@@ -87,6 +97,8 @@ func _ready() -> void:
 			_out_path = arg.get_slice("=", 1)
 		elif arg == "--with-props":
 			_with_props = true
+		elif arg == "--no-props":
+			_no_props = true
 		elif arg == "--shots":
 			_shots = DisplayServer.get_name() != "headless"
 	if not _SCENARIOS.has(_scenario_name):
@@ -94,9 +106,11 @@ func _ready() -> void:
 		get_tree().quit(1)
 		return
 	_scenario = _SCENARIOS[_scenario_name].new()
+	if _scenario.has_method("launch_vertical_slice") and _scenario.launch_vertical_slice():
+		GameLaunchState.request_vertical_slice()
 
 	main = load("res://scenes/main/Main.tscn").instantiate()
-	if not _with_props and not _shots:  ## Screenshots need the props on screen.
+	if not _with_props and (not _shots or _no_props):  ## Screenshots need the props on screen unless told otherwise.
 		# Without this a unit walking through streamed terrain detail costs ~220 ms
 		# per unit per movement call (measured 2026-09-16: 214 s for one simulated
 		# day with two units), because UnitOrderController._gather_obstacles() builds
@@ -126,6 +140,8 @@ func _run() -> void:
 	walls = main.get_node("WallManager")
 	fog = main.get_node("FogOfWarManager")
 	residents = main.get_node("ResidentDefenseController")
+	wall_defense = main.get_node("WallDefenseController")
+	slice_director = main.get_node("VerticalSliceDirector")
 
 	var start_hexes := buildings.get_starting_settlement_hexes()
 	if start_hexes.is_empty():
@@ -151,11 +167,17 @@ func _run() -> void:
 		await _capture("day00")
 
 	var steps_per_day := int(TickManager.DAY_LENGTH_SECONDS / STEP_SECONDS)
+	var shot_seconds: Array = _scenario.shot_seconds() if _shots and _scenario.has_method("shot_seconds") else []
+	var elapsed := 0.0
 	for day in range(days):
 		var day_started_ms := Time.get_ticks_msec()
 		for step in range(steps_per_day):
 			advance(STEP_SECONDS)
+			elapsed += STEP_SECONDS
 			_scenario.on_step(self, step)
+			if not shot_seconds.is_empty() and elapsed >= float(shot_seconds[0]):
+				var at: float = shot_seconds.pop_front()
+				await _capture("t%04d" % int(at))
 		_scenario.on_day(self, TickManager.current_day)
 		_progress("day %d/%d done in %d ms wall, %d living units, %d hordes [%s]" % [
 			day + 1, days, Time.get_ticks_msec() - day_started_ms, living_units().size(), hordes.get_all_hordes().size(), _cost_summary()])
@@ -191,6 +213,10 @@ func advance(seconds: float) -> void:
 	t = _charge("unit_orders", t)
 	residents._process(seconds)
 	t = _charge("residents", t)
+	wall_defense._process(seconds)
+	t = _charge("wall_defense", t)
+	slice_director._process(seconds)
+	t = _charge("slice", t)
 	fog._process(seconds)
 	t = _charge("fog", t)
 	telemetry.observe_hordes()
@@ -330,7 +356,8 @@ func _capture(label: String) -> void:
 	camera.make_current()
 	var dir := "user://playtest_shots/%s%s" % [_scenario_name, ("_" + variant) if variant else ""]
 	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path(dir))
-	for zoom in _SHOT_ZOOMS:
+	var zooms: Array = _scenario.shot_zooms() if _scenario.has_method("shot_zooms") else _SHOT_ZOOMS
+	for zoom in zooms:
 		var focus: Vector2 = _scenario.camera_focus(self)
 		camera.global_position = focus
 		camera.set_zoom_level(zoom)

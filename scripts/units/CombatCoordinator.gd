@@ -203,6 +203,18 @@ func engage_unit(instance: UnitInstance) -> void:
 ## _apply_special_ability_effects() can knock a surviving horde back along
 ## that same line of travel; ordinary engagements ignore both.
 func _engage(instance: UnitInstance, horde: Horde, movement_from: Vector2i, movement_to: Vector2i) -> void:
+	_resolve(instance, horde, movement_from, movement_to, false)
+
+## One strike by a defender at a horde clawing at a wall piece the defender stands
+## behind — WallDefenseController decides who and when. Same outgoing damage as a
+## contact round (morale, veterancy, day bonus, research, gunpowder), but the horde
+## cannot reach the defender through an unbreached wall, so nothing comes back:
+## no damage taken, no casualty conversion, no knockback. engagement_resolved
+## carries `"from_cover": true` so a view can draw it as a shot over the wall.
+func strike_from_cover(instance: UnitInstance, horde: Horde) -> void:
+	_resolve(instance, horde, instance.hex_coord, instance.hex_coord, true)
+
+func _resolve(instance: UnitInstance, horde: Horde, movement_from: Vector2i, movement_to: Vector2i, from_cover: bool) -> void:
 	if instance.is_destroyed() or horde.size <= 0:
 		return  ## Already resolved earlier this same contact event (e.g. multiple units on one hex vs. one horde).
 
@@ -217,21 +229,24 @@ func _engage(instance: UnitInstance, horde: Horde, movement_from: Vector2i, move
 	# exists rather than a new parameter — see UnitUpgrades.damage_multiplier().
 	damage_multiplier *= UnitUpgrades.damage_multiplier(_tech_manager, instance.definition)
 	var forced_melee := UnitUpgrades.forced_melee_multipliers(_tech_manager, instance.definition)
-	var incoming_damage_multiplier := _garrison_incoming_multiplier(instance)
+	var incoming_damage_multiplier := 0.0 if from_cover else _garrison_incoming_multiplier(instance)
 	# Night's mirror of the DAY_DAMAGE_MULTIPLIER bump above, on the horde's
 	# side instead of the unit's — see HordeManager.get_night_aggression_multiplier()'s
 	# own doc comment.
 	var horde_damage := horde.get_combat_damage() * HordeManager.get_night_aggression_multiplier()
 	var headcount_before := instance.get_squad_headcount()
 	var result := CombatEngine.resolve_engagement(instance, gunpowder_available, horde.get_combat_hp(), horde_damage, damage_multiplier, incoming_damage_multiplier, forced_melee["outgoing"], forced_melee["incoming"])
+	var size_before := horde.size
 	horde.apply_remaining_hp(result.defender_hp_remaining)
+	result["zombies_killed"] = size_before - horde.size
+	result["from_cover"] = from_cover
 	engagement_resolved.emit(instance, horde, result)
 
 	if horde.size <= 0:
 		instance.kill_count += 1  # Destroying a Horde outright is the decided definition of "a kill" — see UnitMorale.get_rank()'s own doc comment.
 		if _horde_manager:
 			_horde_manager.remove_horde(horde)
-	else:
+	elif not from_cover:
 		_apply_special_ability_effects(instance, horde, movement_from, movement_to)
 
 	# Every derived headcount point this engagement cost `instance` (an HP

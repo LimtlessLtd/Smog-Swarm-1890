@@ -16,6 +16,9 @@
 > and go stale with any balance change — re-run before quoting them.
 
 **Last full review: 2026-09-16** (design audit; branch `worktree-design-audit-2026-09-16`).
+**Evidence added 2026-09-16** (vertical slice, branch `vertical-slice-2026-09-16`, D108-D113):
+no state changed — nothing below has been played by a person yet, and states are written
+from evidence, not from code landing. The new evidence is marked *(slice)*.
 
 ## 1. Summary
 
@@ -53,6 +56,14 @@ BROKEN: its first seven steps need the economy to move on a session's timescale.
 - [code] First tier: `building_tier_1` 50 RP, Town Hall 5 RP/day, Research Institute is
   itself Tier 1 → **10 days ≈ 80 real minutes**.
 - [code] No objective, milestone or victory condition exists; defeat does (D73).
+- *(slice)* [code] D112: construction, repair, restart and training count in-game
+  hours (20-80 real seconds at 5x) and production/upkeep settle hourly;
+  `verify_work_clock.gd`. Research still advances per day.
+- *(slice)* [measured] `opening` scenario: first unit commandable **8.0 → 0.3 real min**;
+  OPEN-2 unchanged at 16.1.
+- *(slice)* [measured] `vertical_slice` scenario: an authored 10-unit start clears a
+  815-resident moor, survives a 1,500 horde and claims the ground in **6:47 real** for a
+  scripted player — the loops close inside a session when the ground is clearable.
 - **What would move it to FUNCTIONAL:** the pacing [design] item answered and OPEN-1,
   OPEN-2, IND-4 in range in the scenarios.
 
@@ -112,6 +123,16 @@ BROKEN: its first seven steps need the economy to move on a session's timescale.
 - [code] `HUDReconTracker` warns only for a fog-VISIBLE ATTRACTED horde, no bearing;
   strategic marker only for hordes ≥ 100 at Strategic zoom.
 - [code] No escalation with time (`HordeManager._on_ambient_spawn_day` ignores the day).
+- *(slice)* [code, mutation-tested] D109: until this branch a horde judged attraction by
+  the loudest hex within 6 hexes, so any emitter drew everything in that radius. It now
+  reacts to the field reaching its own hex and re-reads it on every rebuild, so going
+  dark turns a horde already on the road (`verify_horde_perception.gd`).
+- *(slice)* [measured] `horde` scenario after D109/D112: **0 buildings ruined** (was 6),
+  closest approach 5 hexes (was 3), still **never ATTRACTED** — a Brickworks is heard
+  ~1 hex out at night, so a lamp-less opening still does not engage the chain.
+- *(slice)* [measured] `vertical_slice`: three lit Watchtowers draw a 1,500 horde from 2
+  hexes at dusk; the "dark" player (lamps and Brickworks off on the report) is never
+  found; `ThreatOverlayView` marks hordes with count, the building drawing them and ETA.
 - [measured] `horde` / `horde:dark` scenarios — see §4.
 
 ### Defence — FUNCTIONAL
@@ -121,9 +142,21 @@ BROKEN: its first seven steps need the economy to move on a session's timescale.
   horde reverts to WANDERING (`HordeManager`); garrison order 0.75x damage taken.
 - [code] Stale comment: `HordeManager` still describes "Ditch/Oil Pit counter-damage";
   both were cut.
-- [code] **A new game starts unwalled.** `WallManager.seed_starting_defenses()` has no
-  production caller — only `verify_gates.gd` calls it — although `WallManager`'s own
-  comment says it "Runs from _ready()". Rank-1 `backlog.md` item.
+- [code] **A new game starts unwalled** — deliberately: removed at the user's request on
+  2026-08-11 (commit 5263e5e5). The stale "Runs from _ready()" comment is corrected; the
+  vertical slice is the function's first production caller.
+- *(slice)* [code] D111: siege pressure is √size in contact (cap 60); units within 200 m
+  (bows) or 25 m (hand weapons) of a sieged piece strike from cover every 10
+  game-seconds (`WallDefenseController`). D113: a horde used to siege from wherever its
+  crossing line met a wall — measured 8.6 km from the piece — and now walks up to it.
+- *(slice)* [measured] `vertical_slice`, 1,500 at night on a Wooden piece: sixteen
+  defenders win with no losses; the starting ten lose the piece (two breaches, all ten
+  squads killed in the open); ignoring it loses the Town Hall. `verify_wall_defense.gd`
+  holds the 800-strong race and `SiegeForecast`'s agreement with it (1%).
+- *(slice)* [measured] `siege` scenario re-run on this branch: 0 wall damage events —
+  the placed 3,000 horde wanders and nothing draws it to the unlit start. The latest
+  `siege` JSON in the audit worktree also reads 0, so §4's 18 events came from a
+  different run and the difference is not attributable to this branch.
 - [measured] `siege` scenario — see §4.
 
 ### Strategic progression — BROKEN
@@ -143,6 +176,14 @@ BROKEN: its first seven steps need the economy to move on a session's timescale.
 - [measured] `05_tactical_crowd.png`: 60,000 residents instantiated, none drawn at
   MEDIUM (D87); the full crowd renders as a carpet at HIGH.
 - [measured] Battle-scale figures 46 px at zoom 128 (D76) — the groundwork is sound.
+- *(slice)* [measured, images inspected] `run_scenarios.py --shots --no-props
+  vertical_slice`: at hex zoom 0.3 a siege shows the horde mark and count, "at the wall",
+  the piece's HP bar, defenders in reach and an "at this rate" projection that turns
+  from red ("wall falls in 1:30 with 1,140 still standing", 4 defenders) to green
+  ("horde destroyed in 1:24", 16); kill pulses float; at zoom 5 the bow-reach ring is
+  drawn around the piece. The attention footprint tints the hexes a lamp or machine
+  reaches. Still absent: unit animation, projectiles, hit flashes. MainHUD's own
+  horde toast prints "(82, 119)" and stays up through the siege.
 - [measured 2026-09-16, image inspected] `playtest_shots/siege/day03_zoom60_0.png`
   (`run_scenarios.py --shots siege`): framed on the starting settlement at battle zoom
   60, **one building's outline art fills the entire 1920x1080 screen** — figures are
@@ -172,6 +213,9 @@ BROKEN: its first seven steps need the economy to move on a session's timescale.
   costs ~2 s. At default speed that is a 234 ms stall per unit every 0.4 real seconds
   while the order stands. `backlog.md` rank-1 item. Would be STRONG on the evidence
   below alone.
+- *(slice)* [measured] `industrialisation` scenario on this branch: wall time for day 60
+  **31.5 s → 11.0 s**, hordes on the map 306 → 333, IND checks unchanged. Not isolated;
+  slower hordes (D112) cross fewer hexes per frame and replan less.
 - [measured] `bench_zombie_swarm.gd`: 60,000 zombies stepped in 2.79 ms.
 - [measured] Tactical view 20.8 → 153.6 fps after D70-D71.
 - [measured] Chunk streaming main-thread cost 124 ms → 1.64 ms mean, 5.09 ms worst.

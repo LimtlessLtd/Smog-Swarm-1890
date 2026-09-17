@@ -1,4 +1,4 @@
-[gd_scene load_steps=29 format=3]
+[gd_scene load_steps=36 format=3]
 
 [ext_resource type="PackedScene" path="res://scenes/world/HexGridMap.tscn" id="1"]
 [ext_resource type="PackedScene" path="res://scenes/camera/CameraController.tscn" id="2"]
@@ -41,6 +41,12 @@
 [ext_resource type="PackedScene" path="res://scenes/world/ZombieSwarmManager.tscn" id="39"]
 [ext_resource type="PackedScene" path="res://scenes/world/ResidentDefenseController.tscn" id="40"]
 [ext_resource type="PackedScene" path="res://scenes/campaign/DefeatConditionMonitor.tscn" id="41"]
+[ext_resource type="PackedScene" path="res://scenes/defense/WallDefenseController.tscn" id="42"]
+[ext_resource type="Script" path="res://scripts/campaign/VerticalSliceDirector.gd" id="43"]
+[ext_resource type="Script" path="res://scripts/campaign/ConsequenceLog.gd" id="44"]
+[ext_resource type="Script" path="res://scripts/campaign/VerticalSliceHUD.gd" id="45"]
+[ext_resource type="Script" path="res://scripts/world/ThreatOverlayView.gd" id="46"]
+[ext_resource type="Script" path="res://scripts/campaign/VerticalSliceWorldMarkers.gd" id="47"]
 
 [node name="Main" type="Node2D"]
 script = ExtResource("27")
@@ -198,6 +204,11 @@ combat_coordinator_path = NodePath("../CombatCoordinator")
 infestation_manager_path = NodePath("../InfestationManager")
 horde_manager_path = NodePath("../HordeManager")
 
+[node name="WallDefenseController" parent="." instance=ExtResource("42")]
+unit_manager_path = NodePath("../UnitManager")
+horde_manager_path = NodePath("../HordeManager")
+combat_coordinator_path = NodePath("../CombatCoordinator")
+
 [node name="EventManager" parent="." instance=ExtResource("23")]
 building_manager_path = NodePath("../BuildingManager")
 wall_manager_path = NodePath("../WallManager")
@@ -209,6 +220,24 @@ defeat_condition_monitor_path = NodePath("../DefeatConditionMonitor")
 
 [node name="AlertManager" parent="." instance=ExtResource("24")]
 event_manager_path = NodePath("../EventManager")
+
+[node name="VerticalSliceDirector" type="Node" parent="."]
+script = ExtResource("43")
+building_manager_path = NodePath("../BuildingManager")
+unit_manager_path = NodePath("../UnitManager")
+resource_manager_path = NodePath("../ResourceManager")
+wall_manager_path = NodePath("../WallManager")
+infestation_manager_path = NodePath("../InfestationManager")
+horde_manager_path = NodePath("../HordeManager")
+
+[node name="ConsequenceLog" type="Node" parent="."]
+script = ExtResource("44")
+horde_manager_path = NodePath("../HordeManager")
+building_manager_path = NodePath("../BuildingManager")
+wall_manager_path = NodePath("../WallManager")
+wall_defense_controller_path = NodePath("../WallDefenseController")
+combat_coordinator_path = NodePath("../CombatCoordinator")
+infestation_manager_path = NodePath("../InfestationManager")
 
 [node name="SaveLoadManager" parent="." instance=ExtResource("9")]
 building_manager_path = NodePath("../BuildingManager")
@@ -236,6 +265,21 @@ fog_of_war_path = NodePath("../../FogOfWarManager")
 wall_manager_path = NodePath("../../WallManager")
 unit_command_controller_path = NodePath("../UnitCommandController")
 terrain_detail_view_path = NodePath("../TerrainDetailView")
+
+[node name="ThreatOverlayView" type="Node2D" parent="WorldRoot"]
+script = ExtResource("46")
+horde_manager_path = NodePath("../../HordeManager")
+fog_of_war_manager_path = NodePath("../../FogOfWarManager")
+noise_manager_path = NodePath("../../NoiseManager")
+wall_manager_path = NodePath("../../WallManager")
+wall_defense_controller_path = NodePath("../../WallDefenseController")
+combat_coordinator_path = NodePath("../../CombatCoordinator")
+
+[node name="VerticalSliceWorldMarkers" type="Node2D" parent="WorldRoot"]
+script = ExtResource("47")
+director_path = NodePath("../../VerticalSliceDirector")
+infestation_manager_path = NodePath("../../InfestationManager")
+fog_of_war_manager_path = NodePath("../../FogOfWarManager")
 
 [node name="StrategicOverlayManager" parent="WorldRoot" instance=ExtResource("7")]
 hex_grid_map_path = NodePath("../HexGridMap")
@@ -302,3 +346,13 @@ noise_manager_path = NodePath("../NoiseManager")
 
 [node name="AgentHarness" type="Node" parent="."]
 script = ExtResource("36")
+
+[node name="VerticalSliceHUD" type="CanvasLayer" parent="."]
+script = ExtResource("45")
+director_path = NodePath("../VerticalSliceDirector")
+consequence_log_path = NodePath("../ConsequenceLog")
+building_manager_path = NodePath("../BuildingManager")
+unit_manager_path = NodePath("../UnitManager")
+infestation_manager_path = NodePath("../InfestationManager")
+unit_command_controller_path = NodePath("../WorldRoot/UnitCommandController")
+camera_path = NodePath("../CameraController")

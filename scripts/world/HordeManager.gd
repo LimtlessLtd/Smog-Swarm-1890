@@ -91,6 +91,16 @@ signal horde_spawned(horde: Horde)
 signal horde_moved(horde: Horde, from_coord: Vector2i, to_coord: Vector2i)
 signal horde_size_changed(horde: Horde, delta: int)
 signal horde_removed(horde: Horde)
+## A horde started walking toward `source` because its `kind` (NoiseManager.KIND_NOISE
+## or KIND_LIGHT) reaches the hex it stands on — newly, or switching from another
+## source.
+signal horde_attracted(horde: Horde, source: BuildingInstance, kind: StringName)
+## An ATTRACTED horde's source stopped reaching it (switched off, ruined, dawn put
+## the lamps out) and nothing else does, so it is WANDERING again.
+## `previous_source` may already be ruined.
+signal horde_lost_attraction(horde: Horde, previous_source: BuildingInstance)
+## A horde started clawing at `segment`. Once per siege of that piece, not per frame.
+signal horde_siege_started(horde: Horde, segment: WallSegment)
 
 @export var hex_grid_map_path: NodePath
 @export var logistics_network_path: NodePath  ## Optional — road/rail/canal discount, applied as a continuous speed bonus (see MovementStepper).
@@ -106,6 +116,7 @@ var _wall_manager: WallManager
 var _local_detail_manager: LocalDetailManager
 var _noise_manager: NoiseManager
 var _hordes: Array[Horde] = []
+var _sieged_segment_by_horde: Dictionary = {}  # Horde -> WallSegment it is blocked at
 var _next_id: int = 1
 var _rng := RandomNumberGenerator.new()
 var _logic_tick_timer: float = 0.0
@@ -144,7 +155,11 @@ const MAX_SPAWN_DISTANCE_FROM_SETTLEMENT: int = 20
 const LOGIC_TICK_SECONDS: float = 20.0
 const DRIFT_TARGET_RADIUS: int = 5  ## Hex radius a fresh drift target is picked from when a horde needs to replan.
 
-const ATTRACTION_AWARENESS_RADIUS: int = 6  ## Hex radius a horde scans for a noise/light source above threshold when replanning — same order of magnitude as DRIFT_TARGET_RADIUS, not colony-wide.
+## The furthest a horde can be drawn from, in hexes. What a horde reacts to is the
+## attraction REACHING its own hex (NoiseManager's field), so a source's real reach
+## is set by its loudness, its lamps and the terrain between; this caps it so a
+## target is always inside HordeFlowField.REGION_RADIUS.
+const ATTRACTION_AWARENESS_RADIUS: int = 6
 
 ## A WANDERING horde farther than this many hexes from EVERY placed building
 ## skips real A* pathfinding (_replan_cheap()) for a one-hex random hop.
@@ -173,6 +188,10 @@ const FAR_SIMULATION_RADIUS: int = 10
 ## quieter: a Brickworks now pulls from 0.85 hexes rather than the same 2.
 const ATTRACTION_THRESHOLD: float = 3.0
 
+## World units short of a blocking wall piece a horde stops to claw at it — ~20 m,
+## the pressed front of a crowd against a palisade.
+const WALL_STANDOFF: float = 2.0
+
 const ENTITY_RADIUS: float = 20.0  ## Clearance radius presented to MovementStepper.steer_around_obstacles() — matches UnitOrderController.ENTITY_RADIUS.
 
 ## Day/Night movement multipliers. Night's +50% is an exact design number,
@@ -182,6 +201,15 @@ const ENTITY_RADIUS: float = 20.0  ## Clearance radius presented to MovementStep
 ## (was 1.5/0.65 ≈ 2.3x faster at night, now 1.5/0.35 ≈ 4.3x).
 const DAY_MOVE_SPEED_MULTIPLIER: float = 0.35
 const NIGHT_MOVE_SPEED_MULTIPLIER: float = 1.5
+
+## D98: "hordes are slowed separately from units", so a horde's approach has a
+## travel time a warning can be acted on inside. Applied on top of the day/night
+## pair above; units keep MovementStepper.BASE_MOVE_SPEED. At 0.3 and the default
+## 5x speed a horde takes ~38 real seconds per hex by day and ~9 by night
+## (was ~11 and ~2.7); `diagnose_horde_contact.gd` measured 85.1 hexes per horde
+## per day before it. A balance number, chosen so the vertical slice's attracted
+## horde is on screen for minutes by day rather than seconds.
+const HORDE_TRAVEL_MULTIPLIER: float = 0.3
 
 ## Flat daily chance to seed a tiny ambient horde outside the starting seed
 ## and casualty conversion — reuses seed_starting_hordes()'s own
@@ -230,6 +258,28 @@ static func per_tick_chance(per_day: float) -> float:
 
 const WALL_SIEGE_DAMAGE_MULTIPLIER: float = 2.0  ## A horde hits a wall harder than it'd hit a unit.
 
+## How many of a horde can claw at one breach point at once: the square root of
+## its size, capped. Before this the whole horde hit one 100 m wall piece every
+## tick — an 800-strong horde broke a Wooden piece (100 HP) in about two game
+## seconds, so no defence could last long enough to be fought. A square root keeps
+## a bigger horde scarier (100 -> 10 in contact, 800 -> 28, 3,000 -> 55) without
+## making the wall decorative. Balance numbers.
+const WALL_CONTACT_FRONTAGE_MAX: int = 60
+## Wall damage per zombie in contact per LOGIC_TICK_SECONDS, times
+## WALL_SIEGE_DAMAGE_MULTIPLIER and the night multiplier. Fitted against the
+## vertical slice's fight (VerticalSliceConfig.HORDE_SIZE 1,500 at night on a
+## Wooden piece, 100 HP), in real seconds at the default 5x: undefended it breaches
+## in ~85 s; ten defenders at the piece lose it at ~109 s with ~420 still standing;
+## sixteen destroy the horde at ~94 s. By day every one of those walls holds twice
+## as long. At 0.025 ten defenders won with two zombies left, so preparing made no
+## difference; verify_wall_defense.gd measures the 800-strong case.
+const WALL_DAMAGE_PER_CONTACT_ZOMBIE: float = 0.03
+
+static func wall_contact_frontage(horde_size: int) -> int:
+	if horde_size <= 0:
+		return 0
+	return clampi(int(round(sqrt(float(horde_size)))), 1, mini(horde_size, WALL_CONTACT_FRONTAGE_MAX))
+
 ## Zombie-side mirror of CombatCoordinator.DAY_DAMAGE_MULTIPLIER — doubles a
 ## horde's OUTGOING combat damage at night. Applied at every real attack:
 ## this class's own _siege_wall(), CombatCoordinator._engage() (unit-vs-horde),
@@ -257,6 +307,7 @@ func _ready() -> void:
 		_local_detail_manager = get_node(local_detail_manager_path)
 	if noise_manager_path != NodePath():
 		_noise_manager = get_node(noise_manager_path)
+		_noise_manager.noise_recomputed.connect(_reevaluate_attraction)
 	TickManager.day_completed.connect(_on_ambient_spawn_day)
 	_rng.seed = HORDE_SEED
 	seed_starting_hordes()
@@ -316,7 +367,33 @@ func get_eta_seconds(horde: Horde) -> float:
 ## BuildingManager.remove_building()'s own shape.
 func remove_horde(horde: Horde) -> void:
 	_hordes.erase(horde)
+	_sieged_segment_by_horde.erase(horde)
 	horde_removed.emit(horde)
+
+## The wall piece `horde` is blocked at and clawing, or null.
+func get_sieged_segment(horde: Horde) -> WallSegment:
+	return _sieged_segment_by_horde.get(horde, null)
+
+## Starts `horde` WANDERING toward `coord` along HordeFlowField's route, as though
+## its own drift had picked that hex. For an authored event
+## (VerticalSliceDirector); nothing else calls it. Everything after is ordinary:
+## a field that reaches the horde on the way still turns it
+## (_reevaluate_attraction()), and on arrival it replans as any horde does.
+## Returns false when there is no route.
+func send_wandering_toward(horde: Horde, coord: Vector2i) -> bool:
+	var path := HordeFlowField.trace_path(_hex_grid_map, _logistics_network, horde.hex_coord, coord)
+	if path.is_empty():
+		return false
+	horde.path = path
+	horde.state = GameEnums.HordeState.WANDERING
+	_set_attraction_source(horde, null)
+	return true
+
+## Every horde currently blocked at a wall piece.
+func get_sieging_hordes() -> Array[Horde]:
+	var result: Array[Horde] = []
+	result.assign(_sieged_segment_by_horde.keys())
+	return result
 
 func get_hordes_at(coord: Vector2i) -> Array[Horde]:
 	var result: Array[Horde] = []
@@ -535,6 +612,8 @@ func _advance_horde(horde: Horde, delta: float) -> void:
 		var next_coord: Vector2i = horde.path[0]
 		var portal_offset := _portal_offset_for_step(horde.hex_coord, next_coord)
 		var segment: WallSegment = null
+		var from_world := HexCoord.axial_to_world(horde.hex_coord) + horde.local_position
+		var to_world := HexCoord.axial_to_world(next_coord) + portal_offset
 		if _wall_manager:
 			# point_a/point_b are real placement geometry, not hex-edge-locked
 			# — get_blocking_segment() checks the horde's actual straight-line
@@ -543,12 +622,22 @@ func _advance_horde(horde: Horde, delta: float) -> void:
 			# horde is about to actually walk (the real portal crossing
 			# point), not the plain hex center a wall near the boundary
 			# could otherwise miss.
-			var from_world := HexCoord.axial_to_world(horde.hex_coord) + horde.local_position
-			var to_world := HexCoord.axial_to_world(next_coord) + portal_offset
 			segment = _wall_manager.get_blocking_segment(horde.hex_coord, next_coord, from_world, to_world)
 		if segment and not segment.is_breached():
+			# Walk up to the piece first. The check above tests the whole crossing's
+			# line, which can meet a wall a full hex (~8.6 km) away; stopping where
+			# the horde stood left it clawing at a wall from the far side of the
+			# neighbouring hex (measured in the vertical slice, 2026-09-16), out of
+			# sight of the defenders on it and of the player watching it.
+			var approach := _approach_wall(horde, next_coord, segment, from_world, to_world, remaining)
+			if approach > 0.0:
+				return  # Still closing on the wall this frame.
+			if _sieged_segment_by_horde.get(horde, null) != segment:
+				_sieged_segment_by_horde[horde] = segment
+				horde_siege_started.emit(horde, segment)
 			_siege_wall(horde, segment, remaining)
 			return  # Blocked for the rest of this frame — no movement past this edge.
+		_sieged_segment_by_horde.erase(horde)
 
 		var from_coord := horde.hex_coord  ## Captured BEFORE the call below overwrites it.
 		var speed := _movement_speed(from_coord, next_coord)
@@ -565,15 +654,39 @@ func _advance_horde(horde: Horde, delta: float) -> void:
 			horde.state = GameEnums.HordeState.WANDERING  # Through the breach — back to roaming.
 		horde_moved.emit(horde, from_coord, horde.hex_coord)
 
-## Damages `segment` with the siege bonus (WALL_SIEGE_DAMAGE_MULTIPLIER).
+## Moves `horde` toward the point where its travel line meets `segment`, stopping
+## WALL_STANDOFF short. Returns the game-seconds of `remaining` it spent walking and
+## still needs (> 0 means it has not arrived this frame), or 0.0 once it is at the
+## wall and the siege can begin.
+func _approach_wall(horde: Horde, next_coord: Vector2i, segment: WallSegment, from_world: Vector2, to_world: Vector2, remaining: float) -> float:
+	var hit: Variant = Geometry2D.segment_intersects_segment(from_world, to_world, segment.point_a, segment.point_b)
+	if hit == null:
+		return 0.0
+	var direction := (to_world - from_world).normalized()
+	var stop_at: Vector2 = (hit as Vector2) - direction * WALL_STANDOFF
+	var distance := from_world.distance_to(stop_at)
+	if distance <= 0.5 or (stop_at - from_world).dot(direction) <= 0.0:
+		return 0.0
+	var speed := _movement_speed(horde.hex_coord, next_coord)
+	if speed <= 0.0:
+		return 0.0
+	var step := minf(distance, speed * remaining)
+	horde.local_position += direction * step
+	if step < distance:
+		return remaining
+	return 0.0
+
+## Damages `segment` by the zombies in contact with it (wall_contact_frontage())
+## with the siege bonus (WALL_SIEGE_DAMAGE_MULTIPLIER), doubled at night.
 ##
-## `seconds` is whatever fraction of this frame the horde spent blocked,
-## scaled against LOGIC_TICK_SECONDS so total damage-per-real-second matches
-## the old once-per-tick lump exactly.
+## `seconds` is whatever fraction of this frame the horde spent blocked, scaled
+## against LOGIC_TICK_SECONDS so damage per game-second is independent of frame
+## rate.
 func _siege_wall(horde: Horde, segment: WallSegment, seconds: float) -> void:
 	horde.state = GameEnums.HordeState.ATTACKING
 	var tick_fraction := seconds / LOGIC_TICK_SECONDS
-	_wall_manager.damage_segment(segment, horde.get_combat_damage() * WALL_SIEGE_DAMAGE_MULTIPLIER * get_night_aggression_multiplier() * tick_fraction)
+	var damage := float(wall_contact_frontage(horde.size)) * WALL_DAMAGE_PER_CONTACT_ZOMBIE * WALL_SIEGE_DAMAGE_MULTIPLIER * get_night_aggression_multiplier() * tick_fraction
+	_wall_manager.damage_segment(segment, damage)
 
 ## ATTRACTED is checked FIRST on every replan, before falling back to the
 ## unbiased WANDERING pick — a horde within range of a noise/light source
@@ -606,6 +719,7 @@ func _replan(horde: Horde) -> void:
 	if not path.is_empty():
 		horde.path = path
 		horde.state = GameEnums.HordeState.ATTRACTED if is_attracted else GameEnums.HordeState.WANDERING
+		_set_attraction_source(horde, _noise_manager.get_dominant_source_at(horde.hex_coord) if is_attracted else null)
 		# Cosmetic gap, not functional: if this ATTRACTED walk later crosses
 		# an unbreached wall, _advance_horde()'s breach-through code
 		# unconditionally relabels the horde WANDERING again (it predates
@@ -628,19 +742,75 @@ func _replan(horde: Horde) -> void:
 ## perceives it as it actually would, rather than every horde anywhere in
 ## the same hex scanning identically.
 func _pick_attraction_target(from_coord: Vector2i, horde: Horde) -> Vector2i:
+	var source := _perceived_source(from_coord, horde)
+	return source.hex_coord if source else from_coord
+
+## The building whose noise or light draws `horde` standing on `coord`, or null.
+##
+## Judged by what REACHES the horde, not by how loud the loudest hex nearby is.
+## Until 2026-09-16 this took the loudest hex within ATTRACTION_AWARENESS_RADIUS
+## and compared THAT hex's own level to the threshold, so any running emitter
+## pulled every horde within 6 hexes whatever its loudness — a Brickworks exactly
+## as far as a Bessemer complex, and woodland between them (D69) irrelevant to
+## attraction. NoiseManager's field already carries distance, terrain and night;
+## this reads it where the horde stands and heads for the building contributing
+## most there, so a decoy lamp nearer the horde out-pulls a louder town further
+## off.
+##
+## A horde whose zombies skew jumpy (mean_susceptibility() > 1.0) reacts to a
+## fainter field than ATTRACTION_THRESHOLD alone would allow; a duller one needs
+## a stronger one.
+func _perceived_source(coord: Vector2i, horde: Horde) -> BuildingInstance:
 	if not _noise_manager:
-		return from_coord
-	var candidate := _noise_manager.get_loudest_hex_within(from_coord, ATTRACTION_AWARENESS_RADIUS, horde.local_position)
-	if candidate == from_coord:
-		return from_coord
-	# A horde whose zombies skew jumpy (mean_susceptibility() > 1.0) reacts
-	# to fainter noise than ATTRACTION_THRESHOLD alone would allow; a duller
-	# horde needs a louder source. Threshold scales inversely with
-	# susceptibility so "more susceptible" means "reacts to less."
+		return null
 	var effective_threshold := ATTRACTION_THRESHOLD / maxf(0.01, horde.mean_susceptibility())
-	if _noise_manager.get_noise_at(candidate) < effective_threshold:
-		return from_coord
-	return candidate
+	if _noise_manager.get_noise_at(coord) < effective_threshold:
+		return null
+	var source := _noise_manager.get_dominant_source_at(coord)
+	if source == null or source.hex_coord == coord:
+		return null
+	if HexCoord.distance(coord, source.hex_coord) > ATTRACTION_AWARENESS_RADIUS:
+		return null
+	return source
+
+## NoiseManager.noise_recomputed: a building switched off or on, was built, fell,
+## or the day turned. Every horde re-reads what reaches it now instead of on its
+## next replan, which could be five hexes later — the difference between going
+## dark turning a horde away and going dark doing nothing to the horde already on
+## the road.
+##
+## A horde whose perceived source changed drops its path, so _advance_horde()
+## replans it this frame: toward the new source, or WANDERING when nothing reaches
+## it. A sieging horde re-reads too — its path is not empty, so without this it
+## would keep clawing at the wall of a town that has gone silent.
+##
+## Compared by the source's HEX, not the building: NoiseManager names the strongest
+## building on the dominant hex, which can change between rebuilds (a building
+## finishing, a lamp relit) while the place drawing the horde is the same. Comparing
+## instances dropped a horde's siege path and fired horde_lost_attraction and
+## horde_attracted back to back on every such rebuild.
+func _reevaluate_attraction() -> void:
+	for horde in _hordes:
+		var perceived := _perceived_source(horde.hex_coord, horde)
+		var current := horde.attraction_source
+		if perceived == current:
+			continue
+		if perceived != null and current != null and perceived.hex_coord == current.hex_coord and not current.is_ruined and current.is_running():
+			continue
+		horde.path.clear()
+		_sieged_segment_by_horde.erase(horde)
+		horde.state = GameEnums.HordeState.WANDERING
+		_set_attraction_source(horde, null)
+
+func _set_attraction_source(horde: Horde, source: BuildingInstance) -> void:
+	var previous := horde.attraction_source
+	if previous == source:
+		return
+	horde.attraction_source = source
+	if source:
+		horde_attracted.emit(horde, source, _noise_manager.get_dominant_kind_at(horde.hex_coord))
+	elif previous:
+		horde_lost_attraction.emit(horde, previous)
 
 ## An unbiased (any direction) pick from the ring of hexes exactly
 ## DRIFT_TARGET_RADIUS away, filtered to passable frontier ground. Returns
@@ -747,6 +917,7 @@ func _movement_speed(from_coord: Vector2i, to_coord: Vector2i) -> float:
 	var speed := MovementStepper.BASE_MOVE_SPEED
 	speed *= HexPathfinder.get_movement_speed_multiplier(_hex_grid_map, _logistics_network, from_coord, to_coord, false)
 	speed *= NIGHT_MOVE_SPEED_MULTIPLIER if TimeCycleManager.is_night() else DAY_MOVE_SPEED_MULTIPLIER
+	speed *= HORDE_TRAVEL_MULTIPLIER
 	return speed
 
 ## SubHexPortalGraph.portal_offset_for_step() needs a live HexGridMap — same

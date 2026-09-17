@@ -278,7 +278,7 @@ func _check_finishing_construction_lights_the_ring_and_the_lamp() -> void:
 		return
 	var lit_before := _visible_hexes().size()
 	var noise_before := _noise.get_noise_at(_TOWER_HEX)
-	_buildings.run_daily_tick()
+	_buildings.run_hourly_tick()
 	if _tower().is_under_construction:
 		_failures.append("the fixture's Watchtower was still under construction after a day's tick — this check is measuring nothing")
 		return
@@ -308,7 +308,7 @@ func _check_repairing_a_ruin_lights_the_ring_and_the_lamp() -> void:
 		return
 	var days := 0
 	while instance.is_ruined and days < _MAX_REPAIR_DAYS:
-		_buildings.run_daily_tick()
+		_buildings.run_hourly_tick()
 		days += 1
 	if instance.is_ruined:
 		_failures.append("the fixture's Watchtower was still a ruin after %d days of repair — the return path is untested" % days)

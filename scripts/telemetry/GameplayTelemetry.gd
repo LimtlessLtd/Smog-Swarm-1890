@@ -65,7 +65,7 @@ func attach(main: Node) -> void:
 	_start_hexes = _buildings.get_starting_settlement_hexes()
 	_origin_seconds = now_seconds()
 
-	_buildings.construction_started.connect(func(building_type: GameEnums.BuildingType, coord: Vector2i, _days: int) -> void:
+	_buildings.construction_started.connect(func(building_type: GameEnums.BuildingType, coord: Vector2i, _hours: int) -> void:
 		_count("buildings_placed")
 		_building_types_placed[BuildingCatalog.get_definition(building_type).display_name] = true
 		_mark_action()
