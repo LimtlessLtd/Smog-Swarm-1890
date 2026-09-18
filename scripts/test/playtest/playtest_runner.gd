@@ -207,6 +207,7 @@ func advance(seconds: float) -> void:
 	TickManager._process(seconds)
 	TimeCycleManager._process(seconds)
 	t = _charge("ticks", t)
+	(main.get_node("CombatCoordinator") as CombatCoordinator)._process(seconds)
 	hordes._process(seconds)
 	t = _charge("hordes", t)
 	orders._process(seconds)
@@ -226,6 +227,8 @@ func advance(seconds: float) -> void:
 func _charge(key: String, since_usec: int) -> int:
 	var now := Time.get_ticks_usec()
 	_cost_usec[key] = int(_cost_usec.get(key, 0)) + (now - since_usec)
+	if now - since_usec > 500000:
+		print("  SLOW STEP %s: %d ms at day %d, %.0f seconds" % [key, (now - since_usec) / 1000, TickManager.current_day, TickManager.elapsed_in_day])
 	return now
 
 

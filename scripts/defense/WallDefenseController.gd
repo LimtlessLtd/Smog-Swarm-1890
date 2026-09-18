@@ -107,7 +107,9 @@ func get_defenders(horde: Horde, segment: WallSegment) -> Array[UnitInstance]:
 		var world := HexCoord.axial_to_world(instance.hex_coord) + instance.local_position
 		if distance_to_segment_metres(world, segment) > reach_metres(instance.definition):
 			continue
-		if side_of(segment, world) == horde_side:
+		if CombatCoordinator.contact_distance(instance, horde) > reach_metres(instance.definition) * HexCoord.WORLD_UNITS_PER_REAL_METER:
+			continue
+		if not instance.on_wall and side_of(segment, world) == horde_side:
 			continue
 		result.append(instance)
 	return result

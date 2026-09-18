@@ -28,9 +28,11 @@ func _init(host: CanvasLayer, place: Callable) -> void:
 	HUDStyles.style_label(_label, true)
 	_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 
 	_timer = Timer.new()
 	_timer.one_shot = true
+	_timer.ignore_time_scale = true
 	_timer.wait_time = TOAST_SECONDS
 	host.add_child(_timer)
 	_timer.timeout.connect(_on_timeout)

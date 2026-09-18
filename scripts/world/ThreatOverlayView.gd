@@ -126,6 +126,12 @@ func _draw_hordes(pixel: float) -> void:
 		if horde.size < MIN_HORDE_SIZE or not (_is_seen(horde.hex_coord) or horde.state == GameEnums.HordeState.ATTACKING or horde.attraction_source != null or _hordes.get_sieged_segment(horde) != null):
 			continue
 		var at := HexCoord.axial_to_world(horde.hex_coord) + horde.local_position
+		if horde.resident_target_id == -1 and _hordes.get_sieged_segment(horde) == null:
+			if pixel > 0.5:
+				draw_circle(at, 3.0 * pixel, HORDE_RING_COLOR)
+			if at.distance_to(get_global_mouse_position()) < 16.0 * pixel:
+				_draw_label(at + Vector2(0, -16) * pixel, "%s residents" % _thousands(horde.size), TEXT_COLOR, 12, pixel)
+			continue
 		var radius := (9.0 + 4.0 * log(float(horde.size) / float(MIN_HORDE_SIZE)) / log(2.0)) * pixel
 		var source: BuildingInstance = horde.attraction_source
 		if source and horde.state != GameEnums.HordeState.ATTACKING:
@@ -134,7 +140,9 @@ func _draw_hordes(pixel: float) -> void:
 			var eta := _hordes.get_eta_seconds(horde)
 			if eta > 0.0:
 				_draw_label((at + to) * 0.5, "ETA %s" % _format_real(eta), ATTRACTED_COLOR, 14, pixel)
-		draw_circle(at, radius, Color(HORDE_COLOR, 0.85))
+		# Keep the tactical sprites visible inside their threat marker.
+		if pixel > 2.0:
+			draw_circle(at, radius, Color(HORDE_COLOR, 0.65))
 		draw_arc(at, radius, 0.0, TAU, 32, HORDE_RING_COLOR, 2.0 * pixel)
 		# Beside the mark, not above it: a sieging horde stands on its wall piece,
 		# whose readout is drawn above.
@@ -143,6 +151,8 @@ func _draw_hordes(pixel: float) -> void:
 
 
 func _doing(horde: Horde) -> String:
+	if horde.has_combat_target:
+		return "closing on troops"
 	if horde.state == GameEnums.HordeState.ATTACKING:
 		return "at the wall"
 	var source: BuildingInstance = horde.attraction_source

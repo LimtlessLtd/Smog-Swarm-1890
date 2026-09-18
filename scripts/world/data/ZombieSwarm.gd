@@ -221,6 +221,18 @@ func buffer() -> PackedFloat32Array:
 func position_at(index: int) -> Vector2:
 	return _position[index]
 
+## Keep the displayed crowd attached to its combat body. Steering alone lets
+## the body reach a squad while the visible zombies are still behind it.
+func move_anchor(world: Vector2) -> void:
+	var offset := world - anchor
+	anchor = world
+	if offset == Vector2.ZERO:
+		return
+	for i in _count:
+		_position[i] += offset
+		_buffer[i * TRANSFORM_FLOATS + ORIGIN_X_INDEX] += offset.x
+		_buffer[i * TRANSFORM_FLOATS + ORIGIN_Y_INDEX] += offset.y
+
 
 ## Grows or shrinks the crowd to `count`. New zombies appear scattered inside
 ## `spread` around the current anchor; shrinking drops the highest indices, so

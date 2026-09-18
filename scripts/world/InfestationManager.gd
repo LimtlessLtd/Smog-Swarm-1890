@@ -261,14 +261,18 @@ func remove_zombies(coord: Vector2i, count: int) -> void:
 ## `ResidentDefenseController` owns WHEN and HOW MANY. This owns only the
 ## transfer, so a test can exercise the conservation law without going through
 ## the wave rule.
-func condense_defenders(coord: Vector2i, count: int) -> int:
+func condense_defenders(coord: Vector2i, count: int, local: Variant = null, target_id: int = 0, frontage_limit: int = 0) -> int:
 	if not _horde_manager or count <= 0:
 		return 0
 	var moved := mini(count, resident_count_at(coord))
 	if moved <= 0:
 		return 0
 	_write_resident(coord, resident_count_at(coord) - moved)
-	_horde_manager.spawn_horde_at(coord, moved)
+	if local == null:
+		_horde_manager.spawn_horde_at(coord, moved)
+	else:
+		var group := _horde_manager.spawn_local_horde(coord, moved, local, 0.0, target_id)
+		group.resident_frontage_limit = frontage_limit
 	return moved
 
 

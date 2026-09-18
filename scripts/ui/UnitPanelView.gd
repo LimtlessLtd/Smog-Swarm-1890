@@ -30,12 +30,16 @@ var _tech_manager: TechManager  ## Optional — per-unit research upgrades, so a
 var _list: VBoxContainer
 
 func _ready() -> void:
-	custom_minimum_size = Vector2(260, 220)
+	custom_minimum_size = Vector2(260, 180)
 	horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	HUDStyles.style_panel(self)
 	_list = VBoxContainer.new()
 	_list.add_theme_constant_override("separation", 6)
 	_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_list.child_entered_tree.connect(func(child: Node) -> void:
+		if child is Label:
+			child.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			child.custom_minimum_size.x = 240.0)
 	add_child(_list)
 	_render_idle()
 
@@ -47,6 +51,8 @@ func setup(unit_command_controller: UnitCommandController, unit_manager: UnitMan
 	_wall_manager = wall_manager
 	if _unit_command_controller:
 		_unit_command_controller.unit_selected.connect(_on_unit_selected)
+		_unit_command_controller.units_selected.connect(func(_units: Array[UnitInstance]) -> void: _refresh_current_selection())
+		_unit_command_controller.hex_selected.connect(_render_hex_panel)
 		_unit_command_controller.building_instance_selected.connect(_on_building_selected)
 		_unit_command_controller.wall_segment_selected.connect(_on_wall_selected)
 		_unit_command_controller.selection_cleared.connect(_on_selection_cleared)
@@ -124,6 +130,9 @@ func _on_day_completed(_day_number: int) -> void:
 ## (an HP delta, a population count, or nothing) — this handler only cares
 ## WHICH instance changed, never why.
 func _on_building_stats_changed(instance: BuildingInstance, _extra: Variant = null) -> void:
+	if _unit_command_controller and _unit_command_controller.has_selected_hex():
+		_render_hex_panel(_unit_command_controller.get_selected_hex())
+		return
 	if _unit_command_controller and _unit_command_controller.get_selected_building() == instance:
 		_refresh_current_selection()
 
@@ -133,6 +142,9 @@ func _on_wall_repair_changed(segment: WallSegment, _extra: Variant = null) -> vo
 
 func _refresh_current_selection() -> void:
 	if not _unit_command_controller:
+		return
+	if _unit_command_controller.has_selected_hex():
+		_render_hex_panel(_unit_command_controller.get_selected_hex())
 		return
 	var unit := _unit_command_controller.get_selected_unit()
 	if unit:
@@ -195,6 +207,7 @@ func _render_building_panel(instance: BuildingInstance) -> void:
 		_unit_command_controller.repair_selected_building
 	)
 	_add_power_button(instance)
+	_add_hex_power_controls(instance.hex_coord)
 	_add_demolish_button(
 		func() -> String: return _unit_command_controller.get_selected_building_demolish_error(),
 		_unit_command_controller.demolish_selected_building,
@@ -538,11 +551,21 @@ func _render_unit_panel(instance: UnitInstance) -> void:
 
 	var header := Label.new()
 	header.text = "%s (T%d %s)" % [definition.display_name, definition.tier, _role_name(definition.role)]
+	var selected_count := _unit_command_controller.get_selected_units().size()
+	if selected_count > 1:
+		header.text = "%d squads selected" % selected_count
 	HUDStyles.style_label(header, true)
 	_list.add_child(header)
 
 	var stats := Label.new()
 	stats.text = "HP %d/%d — %s — %s" % [int(instance.current_hp), int(UnitUpgrades.max_hp(_tech_manager, definition)), _rank_name(UnitMorale.get_rank(instance)), _order_name(instance.order)]
+	if selected_count > 1:
+		var health := 0.0
+		var maximum := 0.0
+		for selected in _unit_command_controller.get_selected_units():
+			health += selected.current_hp
+			maximum += UnitUpgrades.max_hp(_tech_manager, selected.definition)
+		stats.text = "Combined HP %d/%d" % [roundi(health), roundi(maximum)]
 	HUDStyles.style_label(stats)
 	_list.add_child(stats)
 
@@ -550,7 +573,7 @@ func _render_unit_panel(instance: UnitInstance) -> void:
 	# just "Moving"/"Patrolling" with no destination. Refreshed live off
 	# UnitCommandController's own unit_selected re-emit whenever an order
 	# changes, so right-clicking a new destination updates this immediately.
-	var order_detail := _describe_current_order(instance)
+	var order_detail := _describe_current_order(instance) if selected_count == 1 else "Orders apply to all selected troops."
 	if not order_detail.is_empty():
 		var order_label := Label.new()
 		order_label.text = order_detail
@@ -588,6 +611,12 @@ func _render_unit_panel(instance: UnitInstance) -> void:
 		HUDStyles.style_button(patrol_button)
 		_list.add_child(patrol_button)
 
+	var wall_patrol := Button.new()
+	wall_patrol.text = "Patrol perimeter"
+	wall_patrol.tooltip_text = "Mount the nearest intact wall and patrol its connected walkway. Right-click a wall to occupy it."
+	wall_patrol.pressed.connect(_unit_command_controller.order_wall_patrol)
+	HUDStyles.style_button(wall_patrol)
+	_list.add_child(wall_patrol)
 	var retrain_header := Label.new()
 	retrain_header.text = "Retrain into:"
 	HUDStyles.style_label(retrain_header, true)
@@ -718,3 +747,28 @@ func _describe_current_order(instance: UnitInstance) -> String:
 			return "Patrol route: %s" % " → ".join(legs)
 		_:
 			return ""
+
+func _render_hex_panel(coord: Vector2i) -> void:
+	_clear_list()
+	var title := Label.new()
+	title.text = "DISTRICT · %s" % coord
+	HUDStyles.style_label(title, true)
+	_list.add_child(title)
+	_add_hex_power_controls(coord)
+
+func _add_hex_power_controls(coord: Vector2i) -> void:
+	if not _building_manager:
+		return
+	var state := Label.new()
+	state.text = _building_manager.hex_power_status(coord)
+	HUDStyles.style_label(state, false, true)
+	_list.add_child(state)
+	var row := HBoxContainer.new()
+	_list.add_child(row)
+	for enabled in [false, true]:
+		var button := Button.new()
+		button.text = "Blackout hex" if not enabled else "Restart hex"
+		button.tooltip_text = "Switch every completed building in this hex off." if not enabled else "Restart eligible buildings using their normal costs and restart times."
+		HUDStyles.style_button(button)
+		button.pressed.connect(_unit_command_controller.set_hex_power.bind(coord, enabled))
+		row.add_child(button)

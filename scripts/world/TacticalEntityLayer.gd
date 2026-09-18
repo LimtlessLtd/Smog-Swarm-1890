@@ -240,6 +240,10 @@ func _refresh_units() -> void:
 func _update_unit_group(instance: UnitInstance) -> void:
 	var group: Node2D = _unit_groups[instance.id]
 	group.position = HexCoord.axial_to_world(instance.hex_coord) + instance.local_position
+	group.scale = Vector2.ONE * 0.25
+	group.z_index = 3 if instance.on_wall else 1
+	if instance.on_wall:
+		group.position.y -= WallVisuals.TACTICAL_WALL_WIDTH * 0.25
 
 	var facing_changed := _advance_facing(instance.id, group.position, _unit_last_position, _unit_facing)
 
@@ -274,7 +278,7 @@ func _update_unit_group(instance: UnitInstance) -> void:
 		_:  # HIGH — UnitVisuals-aware, and the only band drawn at metric scale (D86).
 			if instance.is_squad_rendered():
 				for i in range(headcount):
-					group.add_child(_build_unit_figure(instance, facing, METRIC_FIGURE_RADIUS, _scatter_offset(i, headcount, instance.id, METRIC_SQUAD_SPREAD), FIGURE_COLOR))
+					group.add_child(_build_unit_figure(instance, facing, METRIC_FIGURE_RADIUS, _scatter_offset(i, UnitInstance.SQUAD_SIZE, instance.id, METRIC_SQUAD_SPREAD), FIGURE_COLOR))
 			else:
 				group.add_child(_build_unit_figure(instance, facing, METRIC_VEHICLE_RADIUS, Vector2.ZERO, VEHICLE_COLOR))
 
@@ -288,7 +292,9 @@ func _retexture_unit_group(group: Node2D, instance: UnitInstance, facing: GameEn
 		return
 	for child in group.get_children():
 		if child is Sprite2D:
+			var old_size: float = maxf(child.texture.get_width(), child.texture.get_height())
 			child.texture = texture
+			child.scale *= old_size / maxf(texture.get_width(), texture.get_height())
 
 ## Real per-unit-type sprite art (UnitVisuals.unit_texture()) in place of
 ## the flat circle where authored, sized to the same diameter the fallback
@@ -345,12 +351,12 @@ func _build_role_marker(instance: UnitInstance, facing: GameEnums.Facing8) -> No
 func _build_zombie_figure(horde_id: int, index: int, offset: Vector2, facing: GameEnums.Facing8) -> Node2D:
 	var texture := ZombieVisuals.zombie_texture(horde_id + index, facing)
 	if not texture:
-		return _build_figure(ZOMBIE_COLOR, ZOMBIE_RADIUS, offset)
+		return _build_figure(ZOMBIE_COLOR, ZOMBIE_RADIUS * 0.25, offset)
 	var sprite := Sprite2D.new()
 	sprite.texture = texture
 	sprite.position = offset
 	var largest_dim := maxf(texture.get_width(), texture.get_height())
-	sprite.scale = Vector2.ONE * ((ZOMBIE_RADIUS * 2.0) / largest_dim)
+	sprite.scale = Vector2.ONE * ((ZOMBIE_RADIUS * 0.5) / largest_dim)
 	return sprite
 
 ## --- Hordes (zombie blobs / clusters) --------------------------------------
@@ -385,7 +391,7 @@ func _refresh_hordes() -> void:
 func _update_horde_group(horde: Horde) -> void:
 	var group: Node2D = _horde_groups[horde.id]
 	group.position = HexCoord.axial_to_world(horde.hex_coord) + horde.local_position
-	group.visible = _fog_of_war_manager == null or _fog_of_war_manager.is_visible(horde.hex_coord)
+	group.visible = _fog_of_war_manager == null or _fog_of_war_manager.is_visible(HexCoord.world_to_axial(group.position))
 
 	# Kept even though HIGH no longer reads it: MEDIUM's per-figure sprites
 	# need a facing, and this is the one place every fidelity band visits per
@@ -393,7 +399,7 @@ func _update_horde_group(horde: Horde) -> void:
 	# the crowd's own anchor movement (ZombieSwarmManager._update_group_shape).
 	var facing_changed := _advance_facing(horde.id, group.position, _horde_last_position, _horde_facing)
 
-	var display_count := _horde_display_count(horde.size)
+	var display_count := _horde_display_count(horde.size, horde.id)
 	var draw_key := Vector2i(display_count, _fidelity)
 	if _horde_draw_keys.get(horde.id, Vector2i(-1, -1)) == draw_key:
 		# Same reasoning as _update_unit_group()'s own unchanged-draw_key
@@ -408,7 +414,9 @@ func _update_horde_group(horde: Horde) -> void:
 				if children[i] is Sprite2D:
 					var texture := ZombieVisuals.zombie_texture(horde.id + i, facing)  # Same horde_id+index variant formula _build_zombie_figure() used to build this child originally.
 					if texture:
+						var old_size: float = maxf(children[i].texture.get_width(), children[i].texture.get_height())
 						children[i].texture = texture
+						children[i].scale *= old_size / maxf(texture.get_width(), texture.get_height())
 		return
 	_horde_draw_keys[horde.id] = draw_key
 
@@ -421,11 +429,11 @@ func _update_horde_group(horde: Horde) -> void:
 		# Not ZombieVisuals-aware, even where art exists — same uniform-blob
 		# call _update_unit_group() makes for units.
 		group.add_child(_build_diamond(ZOMBIE_COLOR, LOW_ZOMBIE_RADIUS))
-	elif _fidelity == GameEnums.TacticalFidelity.MEDIUM:
+	else:
 		var facing: GameEnums.Facing8 = _horde_facing[horde.id]
 		for i in range(display_count):
 			var variance := horde.individual_speed_variance(i)
-			group.add_child(_build_zombie_figure(horde.id, i, _scatter_offset(i, display_count, horde.id, FIGURE_SPREAD, variance), facing))
+			group.add_child(_build_zombie_figure(horde.id, i, _scatter_offset(i, display_count, horde.id, ZombieSwarmManager.HORDE_BASE_SPREAD * sqrt(maxf(1.0, horde.size / 5.0)), variance), facing))
 	# else HIGH with a simulation wired: display_count is 0, so nothing is
 	# added here. The horde's individuals are ZombieSwarmManager's crowd,
 	# drawn by _refresh_swarm_batches(); the clear above already removed any
@@ -435,7 +443,7 @@ func _update_horde_group(horde: Horde) -> void:
 ## How many individual zombie figures to draw for a horde of `size` — LOW
 ## collapses to a single blob, MEDIUM shows a small fixed cluster regardless
 ## of true size, HIGH shows the real (capped) count.
-func _horde_display_count(size: int) -> int:
+func _horde_display_count(size: int, horde_id: int = 0) -> int:
 	if size <= 0:
 		return 0
 	match _fidelity:
@@ -448,7 +456,7 @@ func _horde_display_count(size: int) -> int:
 			# carries its position and fog visibility. With no simulation
 			# wired there is nothing to own them, so HIGH borrows MEDIUM's
 			# cluster rather than rendering an invisible horde.
-			return 0 if _zombie_swarm_manager else mini(size, MEDIUM_ZOMBIE_CLUSTER_SIZE)
+			return 0 if _zombie_swarm_manager and _zombie_swarm_manager.has_horde(horde_id) else mini(size, MEDIUM_ZOMBIE_CLUSTER_SIZE)
 
 ## --- GPU-batched HIGH-fidelity zombie rendering -----------------------------
 
@@ -490,7 +498,7 @@ func _refresh_swarm_batches() -> void:
 		var count := swarm.size()
 		# Same live-vision gate _update_horde_group() applies for LOW/MEDIUM:
 		# individual zombies are intel, not remembered terrain.
-		var shown := count > 0 and (_fog_of_war_manager == null or _fog_of_war_manager.is_visible(swarm.hex_coord))
+		var shown := count > 0 and (_fog_of_war_manager == null or _fog_of_war_manager.is_visible(HexCoord.world_to_axial(swarm.anchor)))
 		layer.visible = shown
 		if not shown:
 			continue
@@ -567,11 +575,11 @@ func _apply_swarm_look(layer: MultiMeshInstance2D, index: int, swarm: ZombieSwar
 	var mesh: QuadMesh = layer.multimesh.mesh
 	if texture:
 		var largest_dim := maxf(texture.get_width(), texture.get_height())
-		mesh.size = Vector2(texture.get_width(), texture.get_height()) * ((METRIC_FIGURE_RADIUS * 2.0) / largest_dim)
+		mesh.size = Vector2(texture.get_width(), texture.get_height()) * ((METRIC_FIGURE_RADIUS * 0.5) / largest_dim)
 		layer.texture = texture
 		layer.modulate = Color.WHITE
 	else:
-		mesh.size = Vector2.ONE * (METRIC_FIGURE_RADIUS * 2.0)  ## No art to derive real dimensions from — same square fallback the flat-color case implies.
+		mesh.size = Vector2.ONE * (METRIC_FIGURE_RADIUS * 0.5)
 		layer.texture = null
 		layer.modulate = ZOMBIE_COLOR  ## A MultiMesh has no per-instance shape the way a lone Polygon2D circle does.
 

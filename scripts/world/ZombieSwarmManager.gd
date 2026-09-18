@@ -126,6 +126,8 @@ func _ready() -> void:
 		_live_hex_tracker = get_node(live_hex_tracker_path)
 	if horde_manager_path != NodePath():
 		_horde_manager = get_node(horde_manager_path)
+		_horde_manager.horde_spawned.connect(func(_horde: Horde) -> void: _elapsed = ALLOCATION_INTERVAL_SECONDS)
+		_horde_manager.horde_removed.connect(func(_horde: Horde) -> void: _elapsed = ALLOCATION_INTERVAL_SECONDS)
 	if infestation_manager_path != NodePath():
 		_infestation_manager = get_node(infestation_manager_path)
 	if _live_hex_tracker:
@@ -228,7 +230,9 @@ func _allocate_hordes(ordered: Array[Vector2i], wanted: Dictionary, budget: int)
 	for coord in ordered:
 		if spent >= budget:
 			break
-		for horde in _horde_manager.get_hordes_at(coord):
+		for horde in _horde_manager.get_all_hordes():
+			if HexCoord.world_to_axial(HexCoord.axial_to_world(horde.hex_coord) + horde.local_position) != coord:
+				continue
 			if spent >= budget:
 				break
 			var take := mini(horde.size, budget - spent)
@@ -320,7 +324,7 @@ func _update_group_shape(key: Vector3i, lanes: Array, hordes_by_id: Dictionary) 
 	_group_anchor[key] = anchor
 
 	for swarm: ZombieSwarm in lanes:
-		swarm.anchor = anchor
+		swarm.move_anchor(anchor)
 		swarm.spread = spread
 		swarm.facing = facing
 		swarm.hex_coord = coord
@@ -412,3 +416,6 @@ func _restore_positions(_key: Vector3i, lanes: Array) -> void:
 		_restored_positions.erase(coord)
 	else:
 		_restored_positions[coord] = pool.slice(offset)
+
+func has_horde(horde_id: int) -> bool:
+	return _groups.has(Vector3i(0, 0, horde_id))

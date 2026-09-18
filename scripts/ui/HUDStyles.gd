@@ -1,15 +1,15 @@
 class_name HUDStyles
 extends RefCounted
 
-const PANEL_COLOR: Color = Color("#1f150f")
-const PANEL_BORDER: Color = Color("#8b6f44")
-const TEXT_COLOR: Color = Color("#f4e7c5")
-const MUTED_COLOR: Color = Color("#d7bc80")
-const ACCENT_COLOR: Color = Color("#cfa24e")
-const BUTTON_NORMAL: Color = Color("#3d2a1d")
-const BUTTON_HOVER: Color = Color("#5a3d29")
-const BUTTON_PRESSED: Color = Color("#24170f")
-const BUTTON_DISABLED: Color = Color("#43372d")
+const PANEL_COLOR: Color = Color("#171e21")
+const PANEL_BORDER: Color = Color("#6b6555")
+const TEXT_COLOR: Color = Color("#e5e5dc")
+const MUTED_COLOR: Color = Color("#a7afa9")
+const ACCENT_COLOR: Color = Color("#d0ad68")
+const BUTTON_NORMAL: Color = Color("#293237")
+const BUTTON_HOVER: Color = Color("#3a474c")
+const BUTTON_PRESSED: Color = Color("#1c262a")
+const BUTTON_DISABLED: Color = Color("#252c2f")
 const SHADOW_COLOR: Color = Color("#000000", 0.45)
 const DANGER_COLOR: Color = Color("#e05555")  ## Unaffordable resource costs (BuildingIconButton's tooltip), "Not yet researched" — anywhere a cost/prereq blocks an action right now.
 
@@ -18,7 +18,7 @@ static func style_label(label: Label, accent: bool = false, muted: bool = false)
 	label.add_theme_color_override("font_shadow_color", SHADOW_COLOR)
 	label.add_theme_constant_override("shadow_offset_x", 1)
 	label.add_theme_constant_override("shadow_offset_y", 1)
-	label.add_theme_font_size_override("font_size", 15 if accent else 13)
+	label.add_theme_font_size_override("font_size", 12 if accent else 12)
 	label.add_theme_constant_override("line_spacing", 2)
 
 static func style_button(button: Button) -> void:
@@ -29,10 +29,10 @@ static func style_button(button: Button) -> void:
 	normal.border_width_top = 1
 	normal.border_width_right = 1
 	normal.border_width_bottom = 1
-	normal.corner_radius_top_left = 8
-	normal.corner_radius_top_right = 8
-	normal.corner_radius_bottom_right = 8
-	normal.corner_radius_bottom_left = 8
+	normal.corner_radius_top_left = 3
+	normal.corner_radius_top_right = 3
+	normal.corner_radius_bottom_right = 3
+	normal.corner_radius_bottom_left = 3
 	normal.content_margin_left = 8.0
 	normal.content_margin_right = 8.0
 	normal.content_margin_top = 4.0
@@ -56,8 +56,8 @@ static func style_button(button: Button) -> void:
 	button.add_theme_color_override("font_hover_color", Color("#fff2cb"))
 	button.add_theme_color_override("font_pressed_color", Color("#f3e1a2"))
 	button.add_theme_color_override("font_disabled_color", Color("#b8a27d"))
-	button.add_theme_font_size_override("font_size", 13)
-	button.custom_minimum_size = Vector2(0, 30)
+	button.add_theme_font_size_override("font_size", 12)
+	button.custom_minimum_size = Vector2(0, 25)
 	# Button's default focus_mode is FOCUS_ALL — clicking ANY button leaves
 	# it holding keyboard focus, and Godot's built-in "ui_accept" handling
 	# on a focused Button (bound to Enter/Space by default) intercepts a
@@ -79,10 +79,10 @@ static func make_panel_stylebox() -> StyleBoxFlat:
 	panel.border_width_top = 1
 	panel.border_width_right = 1
 	panel.border_width_bottom = 1
-	panel.corner_radius_top_left = 10
-	panel.corner_radius_top_right = 10
-	panel.corner_radius_bottom_right = 10
-	panel.corner_radius_bottom_left = 10
+	panel.corner_radius_top_left = 3
+	panel.corner_radius_top_right = 3
+	panel.corner_radius_bottom_right = 3
+	panel.corner_radius_bottom_left = 3
 	panel.shadow_color = Color("#000000", 0.28)
 	panel.shadow_size = 4
 	panel.content_margin_left = 10.0
@@ -127,7 +127,7 @@ static func style_tab_container(tabs: TabContainer) -> void:
 	tabs.add_theme_color_override("font_selected_color", Color("#fff2cb"))
 	tabs.add_theme_color_override("font_unselected_color", MUTED_COLOR)
 	tabs.add_theme_color_override("font_hovered_color", TEXT_COLOR)
-	tabs.add_theme_font_size_override("font_size", 13)
+	tabs.add_theme_font_size_override("font_size", 12)
 
 ## Shared clickable "card" shape — icon, name, and a multi-line details
 ## block, all visible at once without hovering. Originally BuildMenuView-

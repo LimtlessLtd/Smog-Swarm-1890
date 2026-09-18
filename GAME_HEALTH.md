@@ -20,23 +20,68 @@
 no state changed — nothing below has been played by a person yet, and states are written
 from evidence, not from code landing. The new evidence is marked *(slice)*.
 
+**Evidence added 2026-09-17 — first human slice playtest and repair pass (D114).**
+The user reported vibrating/drifting units, inaccessible wall positions, unseen
+attackers and overlapping panels. Those reports supersede the earlier assumption
+that this slice had not been played. The repair pass has automated and rendered
+evidence below; human judgement of the revised movement and combat is still pending.
+
+- [code] Local routes follow physical wall geometry, building footprints and 30 m
+  terrain samples; exact arrival holds position. Decoration hydration no longer
+  changes movement. Infantry can mount connected walls and patrol their perimeter.
+- [code] Combat uses world distance, melee contact and attack cooldowns. Resident
+  waves appear near troops with a short contact grace; horde splits retain their
+  location. Gunpowder weapons consume one gunpowder per shot. Wall volleys check
+  the actual horde distance, including mounted defenders.
+- [code] Moving vision follows the unit's physical position, including a 250 m
+  border contact disc. Fog rendering remains hex-granular; this is not a continuous
+  pixel fog mask. Tactical horde markers no longer cover the sprites beneath them.
+- [measured] All 30 verification scenes/scripts passed, including the windowed save
+  check. Updated regression checks cover 30/60/120 fps movement, stable arrival,
+  same-hex patrols, connected wall corners/circuits, save restoration, attack range,
+  cooldowns, border vision and all eight camera keys while paused.
+- [measured] `vertical_slice --no-props`: before 6:47, 1 breach, 16 unit losses;
+  after 7:07, 0 breaches, 8 unit losses. Both scripted runs succeeded. The updated
+  runner advances the combat clock explicitly, so casualties are not a controlled
+  balance comparison. These durations are simulated player-time, not human timings.
+- [measured/render] Six standard smoke framings and six focused slice screenshots
+  inspected at 1280x720. Compact selection/building panels, construction drawer,
+  hex blackout controls/badge and visible wall occupation are present. All standard
+  frames rendered; the main scene boots without script errors. Large-map rendering
+  and remaining terrain export warnings predate this pass.
+
+The detailed 2026-09-16 audit below is historical wherever this new evidence
+supersedes it. No area is promoted to ENGAGING from an automated result.
+
 ## 1. Summary
+
+**Follow-up evidence 2026-09-17 (D117):** the user found nearby resident zombies
+untargetable and spawning against troops. Revealed residents now become persistent
+attackable groups; contact grace no longer disables attacks, and visible crowds
+translate with their combat position. Tests cover repeated stationary fire at an
+overlapping target, conserved population, safe placement, no extra wave on unit
+movement, and a continuous crowd crossing. All 30 checks pass; main boot and six
+smoke framings pass. Focused screenshots include a holding archer firing at residents.
+The scripted slice succeeds at 6:23 versus 7:07 before this follow-up. The full
+three-day runner took 190.6 s versus 32.2 s before: persistent groups and continued
+orders after the slice ends increase simulation work. Long-session profiling remains
+needed; automated success does not establish final combat balance.
 
 | Area | State | One-line reason |
 | :--- | :--- | :--- |
 | Core loop | **BROKEN** | The economy runs ~100x slower than movement; loops cannot close inside a session |
-| Combat | **FUNCTIONAL** | Clears hexes and kills hordes; no range, roles identical, nothing visible |
+| Combat | **FUNCTIONAL** | Spatial attacks, cooldowns, contact damage and visible shot feedback work; revised feel awaits human play |
 | Expansion | **FUNCTIONAL** | Clear-by-killing and build rights work; no reason to want one hex over another |
 | Economy | **FUNCTIONAL** | Full chain produces; flat yields, no caps, decisions are build order only |
 | Logistics | **BROKEN** | §2.2 unbuilt; supply lines change movement speed only |
 | Settlements | **BROKEN** | A second Town Hall shares everything and likely gets no civilian ZoC |
 | Horde threat | **FUNCTIONAL** | Hordes are real and lethal; the counterplay chain does not engage in the opening |
-| Defence | **FUNCTIONAL** | Walls siege and breach; nothing to do during a siege |
+| Defence | **FUNCTIONAL** | Wall occupation, perimeter patrols, range-limited volleys and breaches work |
 | Strategic progression | **BROKEN** | Tiers unlock lists and a stat ramp; ~80 min to the first tier; no goals |
 | Visual feedback | **BROKEN** | No combat presentation; infestation never drawn |
 | Audio | **BROKEN** | Master bus muted; five square-wave tones |
-| UI/UX | **FUNCTIONAL** | Complete HUD; unlabelled counters, no threat overlay, no objectives |
-| Performance | **FUNCTIONAL** | Zombie scale is strong; an unroutable move order stalls ~234 ms per unit every 2 game-seconds |
+| UI/UX | **FUNCTIONAL** | Compact selection panel and construction drawer; building/hex power controls and blackout feedback |
+| Performance | **FUNCTIONAL** | Cached lazy local path searches complete the scripted slice in 32 s; broad-map profiling still needed |
 
 The golden slice (`PLAYER_EXPERIENCE.md` §11) is **not reachable** while Core loop is
 BROKEN: its first seven steps need the economy to move on a session's timescale.

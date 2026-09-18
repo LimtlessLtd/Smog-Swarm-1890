@@ -38,6 +38,7 @@ signal unit_selected(instance: UnitInstance)
 signal units_selected(instances: Array[UnitInstance])
 signal building_instance_selected(instance: BuildingInstance)
 signal wall_segment_selected(segment: WallSegment)
+signal hex_selected(coord: Vector2i)
 signal selection_cleared
 signal patrol_recording_changed(is_recording: bool, waypoint_count: int)
 ## Player-facing, already-worded message about an order that could not be
@@ -82,10 +83,13 @@ var _wall_manager: WallManager
 var _build_placement_controller: BuildPlacementController
 var _wall_placement_controller: WallPlacementController
 
+var _selected_hex := Vector2i.ZERO
+var _has_selected_hex := false
 var _selected_unit: UnitInstance
 var _selected_units: Array[UnitInstance] = []  ## Every unit in the current selection; _selected_unit is its first.
 var _press_screen := Vector2.ZERO
 var _press_world := Vector2.ZERO
+var _press_ctrl_held: bool = false
 var _left_held: bool = false
 var _box_active: bool = false
 var _group_marker: Node2D
@@ -171,6 +175,16 @@ func select_units(instances: Array[UnitInstance]) -> void:
 	_selection_ring.visible = false
 	units_selected.emit(alive.duplicate())
 
+## Ctrl-click removes one member from a multi-unit selection. A single selected
+## unit stays selected, so Ctrl-click cannot leave the player with an accidental
+## empty selection.
+func deselect_unit(instance: UnitInstance) -> bool:
+	if _selected_units.size() <= 1 or not _selected_units.has(instance):
+		return false
+	_selected_units.erase(instance)
+	select_units(_selected_units.duplicate())
+	return true
+
 func is_recording_patrol() -> bool:
 	return _is_recording_patrol
 
@@ -189,13 +203,14 @@ func _unhandled_input(event: InputEvent) -> void:
 			_box_active = false
 			_press_screen = event.position
 			_press_world = get_global_mouse_position()
+			_press_ctrl_held = event.ctrl_pressed
 		elif _left_held:
 			_left_held = false
 			if _box_active:
 				_box_active = false
 				_select_in_box(_press_world, get_global_mouse_position())
 			else:
-				_on_left_click(_press_world)
+				_on_left_click(_press_world, event.ctrl_pressed or _press_ctrl_held)
 		get_viewport().set_input_as_handled()
 	elif event is InputEventMouseMotion and _left_held:
 		if not _box_active and event.position.distance_to(_press_screen) > _BOX_DRAG_THRESHOLD_PX and not _is_recording_patrol:
@@ -209,7 +224,7 @@ func _unhandled_input(event: InputEvent) -> void:
 		else:
 			clear_selection()
 
-func _on_left_click(world_pos: Vector2) -> void:
+func _on_left_click(world_pos: Vector2, ctrl_pressed: bool = false) -> void:
 	if not _hex_grid_map:
 		return
 	var coord := _hex_grid_map.world_to_coord(world_pos)
@@ -219,7 +234,7 @@ func _on_left_click(world_pos: Vector2) -> void:
 		_update_patrol_preview()
 		patrol_recording_changed.emit(true, _patrol_waypoints.size())
 		return
-	_select_at(coord, world_pos)
+	_select_at(coord, world_pos, ctrl_pressed)
 
 ## A selected unit moves to the exact clicked point (world_pos minus the
 ## hex's own center), not just whichever hex it resolves to — see
@@ -231,6 +246,14 @@ func _on_right_click(world_pos: Vector2) -> void:
 	var coord := _hex_grid_map.world_to_coord(world_pos)
 	if _is_recording_patrol:
 		_cancel_patrol_recording()
+		return
+	var wall := _closest_wall_within_tolerance(world_pos) if _wall_manager else null
+	if wall and not wall.is_breached() and not _selected_units.is_empty() and _unit_order_controller:
+		var accepted := 0
+		for instance in _selected_units:
+			if _unit_order_controller.issue_wall_move_order(instance, wall, world_pos):
+				accepted += 1
+		order_feedback.emit("%d squads ordered onto the wall. Use Patrol perimeter to walk connected walls." % accepted)
 		return
 	if _selected_units.size() > 1 and _unit_order_controller:
 		var columns := int(ceil(sqrt(float(_selected_units.size()))))
@@ -244,10 +267,12 @@ func _on_right_click(world_pos: Vector2) -> void:
 		var local_offset := world_pos - HexCoord.axial_to_world(coord)
 		_unit_order_controller.issue_move_order(_selected_unit, coord, local_offset)
 
-func _select_at(coord: Vector2i, world_pos: Vector2) -> void:
+func _select_at(coord: Vector2i, world_pos: Vector2, ctrl_pressed: bool = false) -> void:
 	if _unit_manager:
 		var unit := _closest_unit_within_tolerance(world_pos)
 		if unit:
+			if ctrl_pressed and deselect_unit(unit):
+				return
 			_select_unit(unit)
 			return
 	if _wall_manager:
@@ -260,9 +285,12 @@ func _select_at(coord: Vector2i, world_pos: Vector2) -> void:
 		if not buildings.is_empty():
 			var building := _closest_building_within_bounds(buildings, world_pos)
 			if building:
-				_select_building(building)
+				select_building(building)
 				return
 	clear_selection()
+	_selected_hex = coord
+	_has_selected_hex = true
+	hex_selected.emit(coord)
 
 func _select_in_box(world_a: Vector2, world_b: Vector2) -> void:
 	if not _unit_manager:
@@ -270,38 +298,56 @@ func _select_in_box(world_a: Vector2, world_b: Vector2) -> void:
 	var box := Rect2(world_a, Vector2.ZERO).expand(world_b)
 	var picked: Array[UnitInstance] = []
 	for instance in _unit_manager.get_all_units():
-		if not instance.is_destroyed() and box.has_point(HexCoord.axial_to_world(instance.hex_coord) + instance.local_position):
+		if not instance.is_destroyed() and box.has_point(_unit_draw_position(instance)):
 			picked.append(instance)
 	select_units(picked)
 
 func _draw_group_marker() -> void:
 	var pixel := 1.0 / maxf(0.0001, get_viewport().get_canvas_transform().get_scale().x)
+	if not _selected_units.is_empty() and _hex_grid_map:
+		var cursor := get_global_mouse_position()
+		var coord := _hex_grid_map.world_to_coord(cursor)
+		var cell := _hex_grid_map.get_cell(coord)
+		if cell:
+			var sub := HexCoord.sub_hex_index_within(coord, cursor)
+			var height := SubHexTerrainQuery.elevation_metres(coord, sub)
+			var passable := SubHexTerrainQuery.is_passable_at(coord, cursor, cell.is_passable()) and not ElevationLevels.is_impassable(cell.height_level())
+			var biome := SubHexTerrainQuery.biome_at(coord, cursor, cell.biome_type)
+			var description := "%.0f m · %s" % [height, "Open ground" if passable else "Impassable ground"]
+			if biome == GameEnums.BiomeType.WATERWAY:
+				description = "%.0f m · River: bridge required" % height
+			_group_marker.draw_set_transform(cursor + Vector2(16, 22) * pixel, 0.0, Vector2.ONE * pixel)
+			_group_marker.draw_string(ThemeDB.fallback_font, Vector2(1, 1), description, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color.BLACK)
+			_group_marker.draw_string(ThemeDB.fallback_font, Vector2.ZERO, description, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, Color.WHITE if passable else HUDStyles.DANGER_COLOR)
+			_group_marker.draw_set_transform(Vector2.ZERO)
 	if _box_active:
 		var box := Rect2(_press_world, Vector2.ZERO).expand(get_global_mouse_position())
 		_group_marker.draw_rect(box, _BOX_FILL_COLOR, true)
 		_group_marker.draw_rect(box, _SELECTION_RING_COLOR, false, 2.0 * pixel)
 	if _selected_units.size() > 1:
 		for instance in _selected_units:
-			_group_marker.draw_arc(HexCoord.axial_to_world(instance.hex_coord) + instance.local_position, 7.0 * pixel, 0.0, TAU, 12, _SELECTION_RING_COLOR, 2.0 * pixel)
+			_group_marker.draw_arc(_unit_draw_position(instance), 7.0 * pixel, 0.0, TAU, 12, _SELECTION_RING_COLOR, 2.0 * pixel)
 
 func _select_unit(instance: UnitInstance) -> void:
+	_has_selected_hex = false
 	_selected_units = [instance]
 	_selected_unit = instance
 	_selected_building = null
 	_selected_wall = null
 	# Reset back to the unit-scoped radius in case the previous selection
-	# was a (much bigger) building — see _select_building()'s own comment on
+	# was a (much bigger) building — see select_building()'s own comment on
 	# why that one uses a different radius from this shared ring.
 	_selection_ring.points = _ring_points(_SELECTION_RING_RADIUS)
 	# The ring uses the unit's own real, continuously-moving position, not
 	# its hex center — same "use the real world position, not a hex-bucket
 	# proxy" fix _closest_unit_within_tolerance() applies to hit-testing.
-	_selection_ring.position = HexCoord.axial_to_world(instance.hex_coord) + instance.local_position
+	_selection_ring.position = _unit_draw_position(instance)
 	_selection_ring.visible = true
 	_wall_highlight.visible = false
 	unit_selected.emit(_selected_unit)
 
-func _select_building(instance: BuildingInstance) -> void:
+func select_building(instance: BuildingInstance) -> void:
+	_has_selected_hex = false
 	_selected_units.clear()
 	_selected_unit = null
 	_selected_building = instance
@@ -310,6 +356,7 @@ func _select_building(instance: BuildingInstance) -> void:
 	# BUILDING_HALF_SIZE, so this ring stays sized to the building's box
 	# (rather than the unit-scoped _SELECTION_RING_RADIUS, which would
 	# render inside the box) automatically if that box size ever changes.
+	_selection_ring.scale = Vector2.ONE
 	_selection_ring.points = _ring_points(TacticalHexView.BUILDING_SELECTION_RING_RADIUS)
 	_selection_ring.position = HexCoord.axial_to_world(instance.hex_coord) + instance.local_position
 	_selection_ring.visible = true
@@ -317,6 +364,7 @@ func _select_building(instance: BuildingInstance) -> void:
 	building_instance_selected.emit(instance)
 
 func _select_wall(segment: WallSegment) -> void:
+	_has_selected_hex = false
 	_selected_units.clear()
 	_selected_unit = null
 	_selected_building = null
@@ -357,7 +405,7 @@ func _closest_building_within_bounds(buildings: Array[BuildingInstance], world_p
 ## (individually-placed defensive chokepoints, not a per-tile grid).
 func _closest_wall_within_tolerance(world_pos: Vector2) -> WallSegment:
 	var closest: WallSegment = null
-	var closest_dist: float = _WALL_CLICK_TOLERANCE
+	var closest_dist: float = minf(_WALL_CLICK_TOLERANCE, 6.0 / maxf(0.01, get_viewport().get_canvas_transform().get_scale().x))
 	for segment in _wall_manager.get_segments():
 		var dist: float = _distance_to_segment(world_pos, segment.point_a, segment.point_b)
 		if dist <= closest_dist:
@@ -377,9 +425,10 @@ func _closest_wall_within_tolerance(world_pos: Vector2) -> WallSegment:
 ## would silently miss the unit for the entire second half of any crossing.
 func _closest_unit_within_tolerance(world_pos: Vector2) -> UnitInstance:
 	var closest: UnitInstance = null
-	var closest_dist: float = _UNIT_CLICK_TOLERANCE * _UNIT_CLICK_TOLERANCE
+	var radius := minf(_UNIT_CLICK_TOLERANCE, 14.0 / maxf(0.01, get_viewport().get_canvas_transform().get_scale().x))
+	var closest_dist: float = radius * radius
 	for instance in _unit_manager.get_all_units():
-		var origin := HexCoord.axial_to_world(instance.hex_coord) + instance.local_position
+		var origin := _unit_draw_position(instance)
 		var dist: float = world_pos.distance_squared_to(origin)
 		if dist <= closest_dist:
 			closest = instance
@@ -471,6 +520,7 @@ func demolish_selected_wall() -> bool:
 	return false
 
 func clear_selection() -> void:
+	_has_selected_hex = false
 	_selected_units.clear()
 	_selected_unit = null
 	_selected_building = null
@@ -489,7 +539,8 @@ func order_hold() -> void:
 
 func order_garrison() -> void:
 	if _selected_unit and _unit_order_controller:
-		_unit_order_controller.issue_garrison_order(_selected_unit)
+		for instance in _selected_units:
+			_unit_order_controller.issue_garrison_order(instance)
 
 func begin_patrol_recording() -> void:
 	if not _selected_unit:
@@ -502,7 +553,8 @@ func begin_patrol_recording() -> void:
 
 func confirm_patrol_recording() -> void:
 	if _selected_unit and _unit_order_controller and not _patrol_waypoints.is_empty():
-		_unit_order_controller.issue_patrol_order(_selected_unit, _patrol_waypoints, _patrol_waypoint_locals)
+		for instance in _selected_units:
+			_unit_order_controller.issue_patrol_order(instance, _patrol_waypoints, _patrol_waypoint_locals)
 	_cancel_patrol_recording()
 
 func _cancel_patrol_recording() -> void:
@@ -556,8 +608,9 @@ func _on_wall_segment_removed(segment: WallSegment) -> void:
 ## track the unit's real position, not sit frozen at its last hex.
 func _process(_delta: float) -> void:
 	if _selected_unit:
-		_selection_ring.position = HexCoord.axial_to_world(_selected_unit.hex_coord) + _selected_unit.local_position
-	var showing := _box_active or _selected_units.size() > 1
+		_selection_ring.position = _unit_draw_position(_selected_unit)
+		_selection_ring.scale = Vector2.ONE * (10.0 / _SELECTION_RING_RADIUS / maxf(0.01, get_viewport().get_canvas_transform().get_scale().x))
+	var showing := _box_active or not _selected_units.is_empty()
 	if showing or _group_marker_shown:
 		_group_marker.queue_redraw()
 	_group_marker_shown = showing
@@ -582,3 +635,43 @@ func _ring_points(radius: float, segments: int = 16) -> PackedVector2Array:
 		var angle := TAU * i / segments
 		points.append(Vector2(radius * cos(angle), radius * sin(angle)))
 	return points
+
+func order_wall_patrol() -> void:
+	if not _wall_manager or not _unit_order_controller:
+		return
+	for instance in _selected_units:
+		var world := HexCoord.axial_to_world(instance.hex_coord) + instance.local_position
+		var best: WallSegment = null
+		var distance := INF
+		for segment in _wall_manager.get_segments():
+			if segment.is_breached():
+				continue
+			var candidate := world.distance_to(Geometry2D.get_closest_point_to_segment(world, segment.point_a, segment.point_b))
+			if candidate < distance:
+				best = segment
+				distance = candidate
+		if best:
+			_unit_order_controller.issue_wall_move_order(instance, best, world, true)
+	order_feedback.emit("Squads will mount the nearest intact wall and patrol its connected perimeter.")
+
+func get_selected_hex() -> Vector2i:
+	return _selected_building.hex_coord if _selected_building else _selected_hex
+
+func has_selected_hex() -> bool:
+	return _has_selected_hex
+
+func set_hex_power(coord: Vector2i, enabled: bool) -> void:
+	if not _building_manager:
+		return
+	var changed := _building_manager.set_hex_power(coord, enabled)
+	order_feedback.emit("%d buildings %s in this hex." % [changed, "restarting" if enabled else "switched off"])
+	clear_selection()
+	_has_selected_hex = true
+	_selected_hex = coord
+	hex_selected.emit(coord)
+
+func _unit_draw_position(instance: UnitInstance) -> Vector2:
+	var world := HexCoord.axial_to_world(instance.hex_coord) + instance.local_position
+	if instance.on_wall:
+		world.y -= WallVisuals.TACTICAL_WALL_WIDTH * 0.25
+	return world

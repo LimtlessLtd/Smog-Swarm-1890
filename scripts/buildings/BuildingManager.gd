@@ -695,3 +695,34 @@ func run_hourly_tick() -> void:
 	_health.process_hour()
 	_power.process_hour()
 	_sustenance.apply_share_of_day(_instances, 1.0 / float(TickManager.HOURS_PER_DAY))
+
+func set_hex_power(coord: Vector2i, enabled: bool) -> int:
+	var changed := 0
+	for instance in get_buildings_at(coord):
+		if enabled:
+			if get_restart_error(instance).is_empty() and restart_building(instance):
+				changed += 1
+		else:
+			if get_power_down_error(instance).is_empty() and power_down_building(instance):
+				changed += 1
+	return changed
+
+func hex_power_status(coord: Vector2i) -> String:
+	var total := 0
+	var running := 0
+	var essential := 0
+	for instance in get_buildings_at(coord):
+		if instance.is_ruined or instance.is_under_construction:
+			continue
+		if instance.definition.always_powered:
+			essential += 1
+			continue
+		total += 1
+		if instance.is_running():
+			running += 1
+	if total == 0:
+		return "Only essential services here" if essential > 0 else "No completed buildings"
+	var status := "BLACKOUT · all %d switchable buildings off" % total if running == 0 else "%d / %d switchable buildings operating" % [running, total]
+	if essential > 0:
+		status += "\nTown Hall remains active; it emits no light or noise."
+	return status

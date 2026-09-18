@@ -38,7 +38,7 @@ The golden slice (`PLAYER_EXPERIENCE.md` §11) is the target. Ranked by `CLAUDE.
 
 | Rank | Item | Tag | Criteria |
 | :--- | :--- | :--- | :--- |
-| 1 Broken | **new** — The vertical slice has not been played by a person (D108) | `[visual-human]` | slice acceptance |
+| 1 Broken | **repair pass implemented 2026-09-17** — First human slice playtest; revised feel awaits replay (D114-D116) | `[visual-human]` | slice acceptance |
 | 1 Broken | **done 2026-09-17** — (79, 119), a Manchester URBAN hex, carried PEAT_BOG and was impassable to units | — | OPEN-1, EXP-1 |
 | 1 Broken | *The economy clock is ~100x slower than the movement clock* — **jobs and production done (D112); research still per day** | `[gated]` | OPEN-1, OPEN-2, IND-4, HORDE-2 |
 | 1 Broken | ↳ *The undefended colony is destroyed on day 13* (below) | `[design]` | OPEN-4 |
@@ -77,7 +77,78 @@ needs them, not ahead of it.
 
 ### Vertical slice follow-ups (new 2026-09-16, D108-D113)
 
-- [ ] `[visual-human]` **The vertical slice has not been played by a person.**
+- [x] `[gated]` `[visual-autonomous]` **Resident zombie visibility/contact follow-up.**
+  **WHY:** zombies appeared beside troops and visible resident crowds could not be
+  targeted. **PLAYER EXPERIENCE:** resident groups are visible targets before contact;
+  holding troops keep firing without requiring a move away and back. Approaching a
+  group starts a physical fight instead of creating a squad-relative wave.
+  **IMPLEMENTATION:** conserved persistent groups on passable terrain, saved frontage
+  limits, targetable spawn grace, and crowd/combat position synchronization (D117).
+  **VERIFICATION:** all 30 checks, stationary-fire and persistence regressions,
+  inspected focused screenshots and six smoke framings, main boot and successful
+  slice (6:23). Full runner cost increased; see GAME_HEALTH.md for measured limits.
+
+- [x] `[gated]` `[visual-autonomous]` **First human playtest repair pass (2026-09-17).**
+  **WHY:** broken movement/contact and overlapping controls prevented COMBAT-1..3,
+  DEF-3 and FB-2 from being readable. **PLAYER EXPERIENCE:** troops settle where
+  ordered, can occupy and patrol connected walls, and see nearby attackers. The
+  player chooses a firing position and can black out one building or a whole hex;
+  clear shots, terrain cursor information and blackout badges show the result.
+  Combat range makes positioning matter; power still carries restart costs/delays.
+  **IMPLEMENTATION:** cached local paths over physical geometry; stable arrivals;
+  wall walkway graph and persisted orders; world-space contact/cooldowns; mobile
+  fog; smaller models; WASD/arrows while paused; compact contextual HUD; corrected
+  dark-town prose. **VERIFICATION:** all 30 checks including save screenshots;
+  added movement/patrol/wall/contact/vision/camera regression coverage; main-scene
+  boot; six inspected smoke framings and six focused slice screenshots. Scripted
+  slice succeeds before (6:47) and after (7:07); revised human feel is not inferred
+  from those timings. D114-D116 and GAME_HEALTH.md record limits and evidence.
+
+- [x] `[gated]` **Second human playtest: immediate control and contact repair (2026-09-18).**
+  **WHY:** perimeter patrols could report sieges without a horde reaching the wall;
+  pursuers converged into one stack; the old 0x/5x/20x/50x/100x/1000x clock obscured
+  what was happening; Ctrl-click could not remove one squad from a selection; and the
+  map had no world lighting at night. **PLAYER EXPERIENCE:** a siege means zombies are
+  visibly at that wall, selected armies can be trimmed without rebuilding the group,
+  speed has four legible choices (0x/1x/2x/3x), pursuers crowd around a squad instead
+  of occupying one point, and night visibly darkens the world without dimming the HUD.
+  **IMPLEMENTATION:** require wall contact before the mounted-target siege fallback;
+  distribute shared pursuit targets over compact contact slots; simplify TickManager
+  and the HUD ladder; add Ctrl-click deselection; tint WorldRoot by day phase.
+  **VERIFICATION:** `verify_wall_defense`, `verify_playtest_fixes`,
+  `verify_work_clock`, and `verify_day_night_lighting` pass.
+
+- [ ] `[gated]` **Physical threat activation and horde recovery follow-up.**
+  **WHY:** a patrol around a hex can still look as if it wakes every nearby zombie;
+  wandering hordes can appear to vibrate in place; and a new route can visibly stall
+  the game. **PLAYER EXPERIENCE:** hexes remain administrative routing containers;
+  zombies react to a physically reachable sight/noise/contact event, wandering has a
+  readable destination, and an unavailable route reports promptly while the camera and
+  simulation remain responsive. **IMPLEMENTATION:** trace resident materialisation,
+  combat acquisition, and horde replan failure independently; remove any remaining
+  hex-wide activation; bound or amortise local route work; give a horde with no drift
+  target a stable retry or a different reachable target. **VERIFICATION:** fixtures
+  prove a perimeter patrol does not alter a distant resident group's target state, an
+  unreachable order has bounded frame cost, and a blocked wanderer either advances or
+  waits without direction jitter.
+
+- [ ] `[visual-autonomous]` **Woodland occlusion, cover, and traversal.**
+  **WHY:** trees should make terrain tactically meaningful rather than scenery.
+  **PLAYER EXPERIENCE:** troops can move beneath woodland, remain visible through
+  semi-transparent canopy, and use trees to break sight and soften light/noise; the
+  player chooses a wooded route or firing position for a concrete trade-off.
+  **IMPLEMENTATION:** replace tree hard-obstacles with traversable canopy data; add
+  sub-hex tree-ray attenuation to unit sight and light propagation; preserve the
+  existing sub-hex noise attenuation; fade only canopy instances covering a unit.
+  **VERIFICATION:** inspect a windowed tactical capture of units under trees; prove a
+  tree line blocks sight/light and attenuates noise while open ground does not.
+
+- [ ] `[visual-human]` **Replay the repaired slice.** The user supplied the first
+  human playtest. Validate whether quarter-size models remain readable, whether
+  wall mounting/patrol is discoverable, and whether combat positions feel reliable.
+  This is a feel assessment after the implemented fixes, not a code-work blocker.
+
+- [x] `[visual-human]` **First person playtest received 2026-09-17.** Original brief:
   **WHY:** rank 1 — the slice (main menu "Vertical Slice (15 min)") was built and tuned
   against four scripted players in `tools/playtest/run_scenarios.py
   vertical_slice[:naive|:dark|:ignore]` and inspected in windowed screenshots, and the

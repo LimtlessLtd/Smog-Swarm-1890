@@ -524,20 +524,24 @@ func _check_horde_keeps_its_crowd_across_a_boundary() -> void:
 	var from_coord := _CENTER + Vector2i(1, 0)
 	var to_coord := _CENTER + Vector2i(0, 1)
 	_hordes.spawn_horde_at(from_coord, 300)
+	var horde: Horde = _hordes.get_hordes_at(from_coord)[0]
+	var direction := (HexCoord.axial_to_world(to_coord) - HexCoord.axial_to_world(from_coord)).normalized()
+	var boundary := (HexCoord.axial_to_world(to_coord) + HexCoord.axial_to_world(from_coord)) * 0.5
+	horde.local_position = boundary - direction * 0.1 - HexCoord.axial_to_world(from_coord)
 	_force_live(HexCoord.hex_disk(_CENTER, 1))
 	_swarms.allocate()
 	for i in 30:
 		_swarms.step(1.0 / 60.0)
 	var before := _positions_on(from_coord)
 
-	var horde: Horde = _hordes.get_hordes_at(from_coord)[0]
 	horde.hex_coord = to_coord
+	horde.local_position = boundary + direction * 0.1 - HexCoord.axial_to_world(to_coord)
 	_swarms.allocate()
 	var after := _positions_on(to_coord)
 
 	var moved := 0
 	for i in mini(before.size(), after.size()):
-		if before[i].distance_to(after[i]) > 1.0:
+		if (before[i] + direction * 0.2).distance_to(after[i]) > 0.01:
 			moved += 1
 	print("horde crossed %s -> %s: %d individuals before, %d after, %d re-scattered"
 			% [from_coord, to_coord, before.size(), after.size(), moved])

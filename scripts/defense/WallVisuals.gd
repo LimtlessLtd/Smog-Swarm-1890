@@ -62,7 +62,7 @@ const STRIP_ASPECT_RATIO: float = 0.5
 ## Per-TIER thickness is authored into the art's own band depth instead —
 ## drawing a wider line per tier would stretch a fixed-height texture by a
 ## different amount per tier, which reads as blur, not as mass.
-const TACTICAL_WALL_WIDTH: float = TILE_WORLD_LENGTH * STRIP_ASPECT_RATIO
+const TACTICAL_WALL_WIDTH: float = TILE_WORLD_LENGTH * STRIP_ASPECT_RATIO * 1.8
 
 ## Line thickness scales with tier — a Concrete wall should visibly read as
 ## sturdier than a Wooden one even before the player checks its HP. A
@@ -90,7 +90,7 @@ static func tactical_width(breached: bool) -> float:
 ## legacy status is purely "how deep into my own territory this ring
 ## sits," a dimmer, not a fourth color to learn.
 static func legacy_modulate() -> Color:
-	return Color(1.0, 1.0, 1.0, 0.55)
+	return Color(1.0, 1.0, 1.0, 0.8)
 
 ## The counterpart to legacy_modulate() — full brightness, today's exact
 ## pre-4.1-decision look. A named constant (not a bare Color(1,1,1,1)

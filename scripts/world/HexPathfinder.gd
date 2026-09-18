@@ -285,3 +285,10 @@ static func _reconstruct_path(came_from: Dictionary, end: Vector2i) -> Array[Vec
 		path.append(current)
 	path.reverse()
 	return path
+
+static func get_local_terrain_speed(grid: HexGridMap, world: Vector2) -> float:
+	var coord := HexCoord.world_to_axial(world)
+	var cell := grid.get_cell(coord) if grid else null
+	var fallback := cell.biome_type if cell else GameEnums.BiomeType.MOORLAND
+	var biome := SubHexTerrainQuery.biome_at(coord, world, fallback)
+	return 1.0 / float(_BIOME_COST_MULTIPLIER.get(biome, 1.0))

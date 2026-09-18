@@ -441,7 +441,13 @@ func _on_hour_completed(_day_number: int, _hour: int) -> void:
 func get_save_entries() -> Array[UnitSaveEntry]:
 	var result: Array[UnitSaveEntry] = []
 	for instance in _instances:
-		result.append(UnitSaveEntry.new(instance.definition.unit_type, instance.hex_coord, instance.id, instance.current_hp, instance.order, instance.move_target, instance.patrol_waypoints, instance.kill_count, instance.local_position, instance.move_target_local, instance.patrol_waypoint_locals))
+		var entry := UnitSaveEntry.new(instance.definition.unit_type, instance.hex_coord, instance.id, instance.current_hp, instance.order, instance.move_target, instance.patrol_waypoints, instance.kill_count, instance.local_position, instance.move_target_local, instance.patrol_waypoint_locals)
+		entry.wall_route_loops = instance.wall_route_loops
+		entry.on_wall = instance.on_wall
+		entry.wall_target_active = instance.wall_target_active
+		entry.wall_target = instance.wall_target
+		entry.wall_patrol_route = instance.wall_patrol_route.duplicate()
+		result.append(entry)
 	return result
 
 ## Restores trained units from a save: clears whatever is currently
@@ -455,7 +461,12 @@ func load_save_entries(entries: Array[UnitSaveEntry], next_id: int) -> void:
 	for entry in entries:
 		var definition := UnitCatalog.get_definition(entry.unit_type)
 		if definition:
-			_register_instance(definition, entry.hex_coord, entry.id, false, entry.current_hp, entry.order, entry.move_target, entry.patrol_waypoints, entry.kill_count, entry.local_position, entry.move_target_local, entry.patrol_waypoint_locals)
+			var instance := _register_instance(definition, entry.hex_coord, entry.id, false, entry.current_hp, entry.order, entry.move_target, entry.patrol_waypoints, entry.kill_count, entry.local_position, entry.move_target_local, entry.patrol_waypoint_locals)
+			instance.wall_route_loops = entry.wall_route_loops
+			instance.on_wall = entry.on_wall
+			instance.wall_target_active = entry.wall_target_active
+			instance.wall_target = entry.wall_target
+			instance.wall_patrol_route = entry.wall_patrol_route.duplicate()
 	_next_id = next_id
 
 func get_rally_points_save_state() -> Dictionary:

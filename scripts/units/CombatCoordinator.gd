@@ -1,97 +1,9 @@
 class_name CombatCoordinator
 extends Node
 
-## The live combat trigger. Sits ABOVE UnitManager, HordeManager,
-## UnitOrderController and CombatEngine without any of them knowing this
-## class exists (none reference it, and it never mutates their private
-## state directly — only the UnitInstance/Horde data Resources they already
-## expose) — same "owns neither, only reads/computes from what's passed in"
-## layering FogOfWarManager uses over BuildingManager/LogisticsNetwork.
-##
-## Detects contact off HordeManager.horde_moved and UnitOrderController.unit_moved
-## (every step, not just final arrival — a unit or horde merely passing
-## through a shared hex still makes contact) rather than a per-frame poll,
-## same "recompute on the signal" precedent as LogisticsNetwork/
-## FogOfWarManager/DiscontentManager. Resolves ONE round of combat per
-## contacting pair via CombatEngine.resolve_engagement(), then feeds the
-## result back into both sides: the horde's size (Horde.apply_remaining_hp()),
-## and — if the unit dies — HordeManager.add_casualty_zombies().
-##
-## Horde.HP_PER_ZOMBIE/DAMAGE_PER_ZOMBIE convert a horde's headcount into
-## the HP/damage pair CombatEngine needs — placeholder balancing numbers,
-## not an architecture decision, same framing as every other constant table
-## in this project.
-##
-## Engagement granularity: one attacking UnitInstance per contact event — if
-## several units and a horde share a hex, each unit/horde movement that
-## triggers contact resolves its OWN independent engagement rather than the
-## whole stack piling into one shared defender_hp pool.
-##
-## Movement is not the only way contact happens. The two signals above are
-## the only ones this class subscribes to, but engage_units_at() below is
-## public so a caller that produces contact WITHOUT movement can resolve a
-## round: ResidentDefenseController condenses a hex's own resident zombies
-## into a defending horde underneath a unit that never moved, on a timer, so
-## a unit holding infested ground now grinds tick after tick instead of
-## trading one round per crossing. That is a deliberate change from this
-## class's original "one-shot skirmish resolver" framing — without it,
-## design_doc.md §2.1's endless tide stalls the moment the defending horde
-## reaches its frontage size and neither side moves again.
-##
-## Contact matters however it happens: engagement triggers regardless of
-## the unit's current order — MOVE, PATROL, ATTACK_MOVE, even a HOLD/
-## GARRISON unit a horde walks onto, all fight the same way. Which means
-## ATTACK_MOVE has no distinct mechanical behavior left to build here —
-## ordering a unit to a horde's hex and ordering it to merely pass through
-## both resolve identically once contact happens: the "attack" in
-## attack-move was never about a special combat mode, only about
-## deliberately seeking a fight out (a targeting/UI concern, not a
-## resolution one).
-##
-## UnitMorale.get_damage_multiplier() folds a unit's current morale (HP/
-## equipment/rank/tier) and veterancy bonus (rank alone) into the one
-## scalar CombatEngine.resolve_engagement() accepts as damage_multiplier —
-## computed fresh per engagement, never cached. DAY_DAMAGE_MULTIPLIER
-## stacks multiplicatively on top of that same scalar, this class's own
-## doing, not UnitMorale's — two independent inputs feeding one output. A
-## win that destroys a Horde outright increments UnitInstance.kill_count
-## (see UnitMorale.get_rank()'s own doc comment for why "destroys a Horde"
-## is the decided definition of a kill). CombatCoordinator is the only
-## class referencing both CombatEngine and UnitMorale — neither references
-## the other or this class back.
-##
-## UnitInstance.get_squad_headcount() derives a Tier 0-3 unit's visible
-## figure count from current_hp alone — nothing new stored. _engage()
-## snapshots that headcount before and after resolve_engagement() and spawns
-## one casualty zombie per figure the engagement cost — every fallen squad
-## member, mid-fight, not only once the whole unit is wiped out. A Tier 4-5
-## (single-model) unit's headcount is always 1 while alive, so this still
-## fires exactly once for those, on the unit's own death.
-##
-## _garrison_incoming_multiplier() folds into resolve_engagement()'s
-## incoming_damage_multiplier parameter — a flat GARRISON_INCOMING_DAMAGE_MULTIPLIER
-## reduction whenever the defending UnitInstance.order is GARRISON, stacking
-## with a further SEARCHLIGHT_NIGHT_INCOMING_DAMAGE_MULTIPLIER reduction at
-## night if a non-ruined Searchlight Tower's own vision_radius reaches the
-## unit's hex. TimeCycleManager.is_night() and the already-optional
-## building_manager_path supply everything this needs — no new export.
-##
-## Not implemented yet:
-##   - ATTACKING as a deliberate seek-out-a-target behavior against
-##     buildings/ZoC hexes — the wall-siege slice (HordeManager._siege_wall())
-##     is real; a horde CHOOSING a target on purpose still needs the
-##     ATTRACTED/noise system to drive it. Territory capture is a separate
-##     class (TerritoryController), reacting to BuildingManager.building_ruined
-##     rather than anything here.
-##   - The full defense-in-depth cascade (outer wall -> legacy wall ->
-##     garrison -> buildings) — _siege_buildings() covers the simplest case
-##     (no wall, no garrison, nothing between a horde and an undefended
-##     building) and HordeManager's own wall siege covers "a wall blocks a
-##     horde's step, full stop" — but there's still no distinct outer vs.
-##     legacy-inner wall tier, so a horde that breaches one segment just
-##     walks into the hex behind it, not a second layer.
-##   - A severe-famine morale input — see UnitMorale's own doc comment for
-##     why it's not wired.
+
+## Acquires nearby targets and resolves range-limited attacks on a shared cooldown.
+## WallDefenseController supplies protected volleys through strike_from_cover().
 
 signal engagement_resolved(instance: UnitInstance, horde: Horde, result: Dictionary)
 
@@ -134,10 +46,17 @@ var _resource_manager: ResourceManager
 var _building_manager: BuildingManager
 var _tech_manager: TechManager
 var _hex_grid_map: HexGridMap
+var _combat_elapsed: float = 0.0
+var _attack_cooldowns: Dictionary = {}
+const CONTACT_INTERVAL := 20.0
+const ACQUIRE_RADIUS := 80.0
+const MELEE_REACH := 2.5
 
 func _ready() -> void:
 	if unit_manager_path != NodePath():
 		_unit_manager = get_node(unit_manager_path)
+		_unit_manager.unit_trained.connect(func(unit: UnitInstance) -> void: _attack_cooldowns.erase(unit.id))
+		_unit_manager.unit_removed.connect(func(unit: UnitInstance) -> void: _attack_cooldowns.erase(unit.id))
 	if horde_manager_path != NodePath():
 		_horde_manager = get_node(horde_manager_path)
 		_horde_manager.horde_moved.connect(_on_horde_moved)
@@ -153,55 +72,90 @@ func _ready() -> void:
 	if hex_grid_map_path != NodePath():
 		_hex_grid_map = get_node(hex_grid_map_path)
 
-func _on_horde_moved(horde: Horde, from_coord: Vector2i, to_coord: Vector2i) -> void:
-	var defenders: Array[UnitInstance] = []
-	if _unit_manager:
-		defenders = _unit_manager.get_units_at(to_coord)
-	for instance in defenders:
-		_engage(instance, horde, from_coord, to_coord)
-	if defenders.is_empty():
-		_siege_buildings(horde, to_coord)
+func _on_horde_moved(_horde: Horde, _from_coord: Vector2i, _to_coord: Vector2i) -> void:
+	pass # Contact is evaluated in world space on the combat clock.
 
-func _on_unit_moved(instance: UnitInstance, from_coord: Vector2i, to_coord: Vector2i) -> void:
-	if not _horde_manager:
+func _on_unit_moved(_instance: UnitInstance, _from_coord: Vector2i, _to_coord: Vector2i) -> void:
+	pass
+
+func _process(delta: float) -> void:
+	advance_combat(delta)
+
+func advance_combat(delta: float) -> void:
+	if not _horde_manager or not _unit_manager or delta <= 0.0:
 		return
-	for horde in _horde_manager.get_hordes_at(to_coord):
-		_engage(instance, horde, from_coord, to_coord)
+	for id in _attack_cooldowns.keys():
+		_attack_cooldowns[id] -= delta
+		if _attack_cooldowns[id] <= 0.0:
+			_attack_cooldowns.erase(id)
+	var pursuit_slots: Dictionary = {}  # int UnitInstance.id -> next distinct contact slot.
+	for horde in _horde_manager.get_all_hordes():
+		horde.has_combat_target = false
+		if _horde_manager.get_sieged_segment(horde):
+			continue
+		var at := HexCoord.axial_to_world(horde.hex_coord) + horde.local_position
+		var nearest: UnitInstance = null
+		var distance := ACQUIRE_RADIUS
+		for unit in _unit_manager.get_all_units():
+			var world := HexCoord.axial_to_world(unit.hex_coord) + unit.local_position
+			var reach := at.distance_to(world)
+			var resident_invasion := horde.resident_target_id == -1 and unit.hex_coord == horde.hex_coord
+			if not unit.is_destroyed() and (reach < distance or (nearest == null and resident_invasion)):
+				nearest = unit
+				distance = reach
+		if nearest:
+			horde.has_combat_target = true
+			var slot := int(pursuit_slots.get(nearest.id, 0))
+			pursuit_slots[nearest.id] = slot + 1
+			horde.combat_target = _pursuit_slot(HexCoord.axial_to_world(nearest.hex_coord) + nearest.local_position, slot)
+	for unit in _unit_manager.get_all_units():
+		if not _attack_cooldowns.has(unit.id):
+			engage_unit(unit)
+	_combat_elapsed += delta
+	if _combat_elapsed >= CONTACT_INTERVAL:
+		_combat_elapsed = 0.0
+		for horde in _horde_manager.get_all_hordes():
+			_siege_buildings(horde, HexCoord.world_to_axial(HexCoord.axial_to_world(horde.hex_coord) + horde.local_position))
 
+## Hordes pursuing one unit approach from separate close positions instead of
+## converging into one visual and physical stack. Eight slots make the first ring
+## evenly spaced; later groups form compact outer rings and only make contact when
+## their own crowd radius reaches the unit.
+static func _pursuit_slot(unit_world: Vector2, slot: int) -> Vector2:
+	const SLOTS_PER_RING := 8
+	const FIRST_RING_RADIUS := 1.5
+	const RING_SPACING := 1.0
+	var ring := slot / SLOTS_PER_RING
+	var index := slot % SLOTS_PER_RING
+	var angle := TAU * float(index) / float(SLOTS_PER_RING) + float(ring) * TAU / float(SLOTS_PER_RING * 2)
+	return unit_world + Vector2(cos(angle), sin(angle)) * (FIRST_RING_RADIUS + float(ring) * RING_SPACING)
 
-## Resolves ONE round between `instance` and every horde standing on its own
-## hex. The contact-without-movement entry point — see this class's own doc
-## comment for who calls it and why the "one-shot" framing no longer holds.
-##
-## Per UNIT rather than per hex on purpose, so the caller can interleave: a
-## defending wave is topped back up between one unit's round and the next, which
-## is what keeps a stack of units killing at a rate proportional to its size
-## while each individual unit still faces only one frontage's worth of incoming
-## damage (see ResidentDefenseController.run_wave_tick()).
-##
-## Both from/to are the unit's own hex, so _apply_special_ability_effects()'s
-## knockback fizzles on its own `movement_from == movement_to` guard: there is no
-## line of travel to shove a defender back along when nobody advanced. A
-## CHARGE_KNOCKBACK stun still lands, exactly as it does when the knockback
-## destination is impassable.
-##
-## Iteration safety: get_hordes_at() builds a fresh array, so _engage() removing
-## a horde mid-loop cannot skip an entry, and _engage() early-outs on an
-## already-dead unit or an emptied horde. A horde CREATED mid-loop by the
-## casualty path (_engage() -> HordeManager.add_casualty_zombies()) is
-## deliberately not engaged this round — the snapshot predates it, and a unit's
-## own dead rising should not get a free swing in the same instant they fell.
+static func attack_reach(instance: UnitInstance) -> float:
+	return WallDefenseController.reach_metres(instance.definition) * HexCoord.WORLD_UNITS_PER_REAL_METER
+
+static func contact_distance(instance: UnitInstance, horde: Horde) -> float:
+	var unit_world := HexCoord.axial_to_world(instance.hex_coord) + instance.local_position
+	var horde_world := HexCoord.axial_to_world(horde.hex_coord) + horde.local_position
+	return maxf(0.0, unit_world.distance_to(horde_world) - ZombieSwarmManager.HORDE_BASE_SPREAD * sqrt(maxf(1.0, float(horde.size) / 5.0)))
+
 func engage_unit(instance: UnitInstance) -> void:
-	if not _horde_manager or instance.is_destroyed():
+	if not _horde_manager or instance.is_destroyed() or _attack_cooldowns.has(instance.id):
 		return
-	for horde in _horde_manager.get_hordes_at(instance.hex_coord):
-		_engage(instance, horde, instance.hex_coord, instance.hex_coord)
+	var closest: Horde = null
+	var best := attack_reach(instance)
+	if instance.definition.requires_gunpowder and _resource_manager and _resource_manager.get_amount(GameEnums.ResourceType.GUNPOWDER) < 1.0:
+		best = MELEE_REACH
+	for horde in _horde_manager.get_all_hordes():
+		if (_horde_manager.get_sieged_segment(horde) and instance.on_wall) or horde.size <= 0:
+			continue
+		var distance := contact_distance(instance, horde)
+		if distance <= best and _horde_manager.has_clear_contact(instance, horde):
+			closest = horde
+			best = distance
+	if closest:
+		_attack_cooldowns[instance.id] = CONTACT_INTERVAL
+		_engage(instance, closest, instance.hex_coord, instance.hex_coord)
 
-## `movement_from`/`movement_to` are whichever side's own move triggered
-## this contact event (the horde's for _on_horde_moved, the unit's for
-## _on_unit_moved) — passed through purely so
-## _apply_special_ability_effects() can knock a surviving horde back along
-## that same line of travel; ordinary engagements ignore both.
 func _engage(instance: UnitInstance, horde: Horde, movement_from: Vector2i, movement_to: Vector2i) -> void:
 	_resolve(instance, horde, movement_from, movement_to, false)
 
@@ -220,7 +174,7 @@ func _resolve(instance: UnitInstance, horde: Horde, movement_from: Vector2i, mov
 
 	var gunpowder_available := true
 	if _resource_manager:
-		gunpowder_available = _resource_manager.get_amount(GameEnums.ResourceType.GUNPOWDER) > 0.0
+		gunpowder_available = _resource_manager.get_amount(GameEnums.ResourceType.GUNPOWDER) >= 1.0
 
 	var damage_multiplier := UnitMorale.get_damage_multiplier(instance, gunpowder_available, UnitUpgrades.max_hp(_tech_manager, instance.definition))
 	if TimeCycleManager.is_day():
@@ -229,17 +183,24 @@ func _resolve(instance: UnitInstance, horde: Horde, movement_from: Vector2i, mov
 	# exists rather than a new parameter — see UnitUpgrades.damage_multiplier().
 	damage_multiplier *= UnitUpgrades.damage_multiplier(_tech_manager, instance.definition)
 	var forced_melee := UnitUpgrades.forced_melee_multipliers(_tech_manager, instance.definition)
-	var incoming_damage_multiplier := 0.0 if from_cover else _garrison_incoming_multiplier(instance)
+	var incoming_damage_multiplier := 0.0 if from_cover or instance.on_wall or horde.contact_grace > 0.0 or contact_distance(instance, horde) > MELEE_REACH else _garrison_incoming_multiplier(instance)
 	# Night's mirror of the DAY_DAMAGE_MULTIPLIER bump above, on the horde's
 	# side instead of the unit's — see HordeManager.get_night_aggression_multiplier()'s
 	# own doc comment.
-	var horde_damage := horde.get_combat_damage() * HordeManager.get_night_aggression_multiplier()
+	var frontage := mini(horde.size, HordeManager.wall_contact_frontage(horde.size))
+	if horde.resident_frontage_limit > 0:
+		frontage = mini(frontage, horde.resident_frontage_limit)
+	var horde_damage := frontage * Horde.DAMAGE_PER_ZOMBIE * HordeManager.get_night_aggression_multiplier()
+	if gunpowder_available and instance.definition.requires_gunpowder and _resource_manager:
+		_resource_manager.spend({GameEnums.ResourceType.GUNPOWDER: 1.0})
+	var hp_before := instance.current_hp
 	var headcount_before := instance.get_squad_headcount()
 	var result := CombatEngine.resolve_engagement(instance, gunpowder_available, horde.get_combat_hp(), horde_damage, damage_multiplier, incoming_damage_multiplier, forced_melee["outgoing"], forced_melee["incoming"])
 	var size_before := horde.size
 	horde.apply_remaining_hp(result.defender_hp_remaining)
 	result["zombies_killed"] = size_before - horde.size
 	result["from_cover"] = from_cover
+	result["damage_taken"] = hp_before - instance.current_hp
 	engagement_resolved.emit(instance, horde, result)
 
 	if horde.size <= 0:
@@ -256,7 +217,7 @@ func _resolve(instance: UnitInstance, horde: Horde, movement_from: Vector2i, mov
 	var headcount_after := instance.get_squad_headcount()
 	var figures_lost := headcount_before - headcount_after
 	if figures_lost > 0 and _horde_manager:
-		_horde_manager.add_casualty_zombies(instance.hex_coord, figures_lost * CASUALTY_ZOMBIES_PER_UNIT)
+		_horde_manager.add_casualty_zombies(instance.hex_coord, figures_lost * CASUALTY_ZOMBIES_PER_UNIT, instance.local_position)
 
 	if instance.is_destroyed() and _unit_manager:
 		_unit_manager.remove_unit(instance)
@@ -311,6 +272,10 @@ func _siege_buildings(horde: Horde, coord: Vector2i) -> void:
 		return
 	for instance in _building_manager.get_buildings_at(coord):
 		if instance.is_ruined:
+			continue
+		var source := HexCoord.axial_to_world(horde.hex_coord) + horde.local_position
+		var target := HexCoord.axial_to_world(instance.hex_coord) + instance.local_position
+		if source.distance_to(target) > ObstacleRadii.BUILDING_RADIUS + MELEE_REACH:
 			continue
 		_building_manager.damage_building(instance, horde.get_combat_damage() * HordeManager.get_night_aggression_multiplier())
 		return  # One building per contact event — see this method's own doc comment.
