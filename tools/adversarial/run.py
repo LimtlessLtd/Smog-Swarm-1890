@@ -22,6 +22,7 @@ DEFAULT_GODOT = os.environ.get(
 )
 GATE_NAMES = {"gdscript", "verifications", "boot"}
 RUN_DEADLINE = None
+BUILDER_MAX_TURNS = 128
 REVIEW_SCHEMA = {
     "type": "object", "additionalProperties": False,
     "required": ["verdict", "findings", "summary", "evidence_complete"],
@@ -300,11 +301,14 @@ def preflight(repo, codex, claude, godot):
 
 def builder_command(claude, output=None):
     available = "Read,Glob,Grep,Edit,Write,Bash"
-    allowed = "Read,Glob,Grep,Edit,Write,Bash(python *),Bash(python3 *),Bash(godot *),Bash(git diff *),Bash(git status *)"
+    # Claude needs a non-mutating repository search to locate bounded work. `find`
+    # and piped shell searches are intentionally not allowed; `rg` is sufficient,
+    # literal-argument based, and leaves the worktree untouched.
+    allowed = "Read,Glob,Grep,Edit,Write,Bash(python *),Bash(python3 *),Bash(godot *),Bash(rg *),Bash(git diff *),Bash(git status *)"
     return [claude, "-p", "--safe-mode", "--restricted", "--strict-mcp-config", "--no-chrome",
             "--no-session-persistence", "--permission-mode", "dontAsk", "--permission-prompts", "none",
             "--tools", available, "--allowedTools", allowed, "--disallowedTools", "mcp__*",
-            "--max-turns", "64", "--output-format", "json"]
+            "--max-turns", str(BUILDER_MAX_TURNS), "--output-format", "json"]
 
 
 def selector_command(claude):

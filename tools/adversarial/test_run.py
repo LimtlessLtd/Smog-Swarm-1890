@@ -198,6 +198,14 @@ class CommandTests(unittest.TestCase):
         self.assertEqual(command[command.index("-a") + 1], "never")
         self.assertNotIn("--dangerously-bypass-approvals-and-sandbox", command)
 
+    def test_builder_allows_safe_ripgrep_search_and_has_a_completion_budget(self):
+        command = runner.builder_command("claude.exe")
+        allowed = command[command.index("--allowedTools") + 1]
+        self.assertIn("Bash(rg *)", allowed)
+        self.assertNotIn("Bash(find *)", allowed)
+        self.assertEqual(command[command.index("--max-turns") + 1], str(runner.BUILDER_MAX_TURNS))
+        self.assertGreaterEqual(runner.BUILDER_MAX_TURNS, 128)
+
 
 BACKLOG_ANCHOR = "| 1 Navigation | Fix navigation edge case [gated] | Reproducible |"
 
