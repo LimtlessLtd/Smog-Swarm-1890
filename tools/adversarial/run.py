@@ -324,8 +324,26 @@ def reviewer_command(claude):
             "--max-turns", "64", "--output-format", "json", "--json-schema", json.dumps(REVIEW_SCHEMA)]
 
 
+class ClaudeUsageUnavailable(RuntimeError):
+    pass
+
+
+def claude_usage_message(raw):
+    try:
+        value = json.loads(raw)
+    except (TypeError, ValueError):
+        return ""
+    if not isinstance(value, dict) or value.get("api_error_status") != 429:
+        return ""
+    detail = value.get("result", "")
+    return detail if isinstance(detail, str) and detail.strip() else "Claude usage is temporarily unavailable"
+
+
 def successful_claude_result(raw):
     value = json.loads(raw)
+    usage_message = claude_usage_message(raw)
+    if usage_message:
+        raise ClaudeUsageUnavailable(usage_message)
     # A denied command was not executed. Treat it as audit evidence rather than
     # discarding a completed response: the runner still re-runs every gate and
     # sends the actual diff plus logs to the independent Codex reviewer.
@@ -372,8 +390,13 @@ configuration. Update backlog/devlog/GAME_HEALTH only as required to record work
 """
     before = source_fingerprint(worktree)
     result = run_command(selector_command(claude), worktree, timeout, input_text=prompt, log_path=log)
-    if result.returncode or source_fingerprint(worktree) != before:
-        raise ValueError("Task selection failed or changed the worktree")
+    if result.returncode:
+        usage_message = claude_usage_message(result.stdout)
+        if usage_message:
+            raise ClaudeUsageUnavailable(usage_message)
+        raise ValueError("Task selection failed")
+    if source_fingerprint(worktree) != before:
+        raise ValueError("Task selection changed the worktree")
     selected = successful_claude_result(result.stdout).get("structured_output")
     if not isinstance(selected, dict) or set(selected) != set(SELECTION_SCHEMA["required"]):
         raise ValueError("Invalid task selection schema")
@@ -493,7 +516,7 @@ def run_workflow(args):
                     raise ValueError(f"Invalid accepted task in {report_file}")
                 if previous["selection"] not in history:
                     history.append(previous["selection"])
-            elif previous.get("status") not in {"no_eligible_task", "resolved"}:
+            elif previous.get("status") not in {"no_eligible_task", "resolved", "usage_unavailable"}:
                 print(f"needs_attention: inspect {report_file} and resolve it before another auto run.")
                 return 0
         exists = run_command(["git", "show-ref", "--verify", "--quiet", "refs/heads/" + branch], repo, 30)
@@ -686,6 +709,8 @@ TASK:\n{task}\n\nGATE RESULTS (logs are absolute paths):\n{json.dumps(checks)}
         return finish("rounds_exhausted", 1, "Round limit reached; inspect remaining review findings.")
     except KeyboardInterrupt:
         return finish("interrupted", 130, "Stopped; the worktree and available logs are retained.")
+    except ClaudeUsageUnavailable as error:
+        return finish("usage_unavailable", 0, str(error))
     except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as error:
         return finish("failed", 1, str(error))
 
