@@ -5,14 +5,13 @@ extends Node
 ## BackgroundExecutionManager (an autoload's registered name already is its
 ## global identifier, and Godot forbids a script class_name from shadowing it).
 ##
-## Global tick clock: real-time day length plus the 0x/5x/20x/50x/100x/1000x
+## Global tick clock: real-time day length plus the 0x/1x/2x/3x
 ## speed control (applied via Engine.time_scale). This exists so daily
 ## upkeep drains have a "day" to hang off (day_completed); TimeCycleManager
 ## owns the actual Day/Night visual phase split within that day and extends
 ## this rather than replacing it.
 ##
-## The speed ladder is 0x (pause) / 5x (default, index 1) / 20x / 50x /
-## 100x / 1000x — steep, not fine-grained at the low end. Every consumer of
+## The speed ladder is 0x (pause) / 1x (default, index 1) / 2x / 3x. Every consumer of
 ## speed here (day length, unit/horde movement, resource drains, the
 ## countdown timer) is plain delta-based and scales via Engine.time_scale,
 ## so a bigger multiplier needs no extra wiring — see this array and
@@ -34,7 +33,7 @@ const DAY_LENGTH_SECONDS: float = 2400.0  ## 40 real-time minutes per full day a
 ## seconds, so a 1-4 unit construction lands in 20-80 s rather than 8-32 min.
 const HOURS_PER_DAY: int = 24
 const HOUR_LENGTH_SECONDS: float = DAY_LENGTH_SECONDS / HOURS_PER_DAY
-const SPEED_MULTIPLIERS: Array[float] = [0.0, 5.0, 20.0, 50.0, 100.0, 1000.0]
+const SPEED_MULTIPLIERS: Array[float] = [0.0, 1.0, 2.0, 3.0]
 
 var current_day: int = 1
 var elapsed_in_day: float = 0.0

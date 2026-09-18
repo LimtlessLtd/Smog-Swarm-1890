@@ -22,8 +22,13 @@ const _EPSILON: float = 0.01
 var _failures: Array[String] = []
 var _events: Array[String] = []
 
+func _check(ok: bool, message: String) -> void:
+	if not ok:
+		_failures.append(message)
+
 
 func _ready() -> void:
+	_check_speed_ladder()
 	_check_hours_then_day()
 	_check_job_takes_its_hours()
 	_check_hourly_production_sums_to_a_day()
@@ -36,6 +41,14 @@ func _ready() -> void:
 		for failure in _failures:
 			print("  " + failure)
 		get_tree().quit(1)
+
+func _check_speed_ladder() -> void:
+	var expected: Array[float] = [0.0, 1.0, 2.0, 3.0]
+	_check(TickManager.SPEED_MULTIPLIERS == expected, "speed controls are %s, want %s" % [TickManager.SPEED_MULTIPLIERS, expected])
+	for i in range(expected.size()):
+		TickManager.set_speed_index(i)
+		_check(is_equal_approx(TickManager.get_speed_multiplier(), expected[i]), "speed index %d resolved to %sx" % [i, TickManager.get_speed_multiplier()])
+	TickManager.set_speed_index(0)
 
 
 func _check_hours_then_day() -> void:

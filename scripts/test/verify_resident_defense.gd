@@ -114,6 +114,7 @@ func _run() -> int:
 	_check_frontage_curve()
 	_check_condensation_conserves()
 	_check_condensation_is_bounded()
+	_check_persistent_encounters()
 	_check_no_units_no_wave()
 	_check_wave_tops_up_and_does_not_stack()
 	_check_grinding_a_hex_clears_it()
@@ -219,13 +220,38 @@ func _check_no_units_no_wave() -> void:
 	_infestation.add_zombies(_ELSEWHERE, 5_000)
 	var before := _infestation.resident_count_at(_ELSEWHERE)
 	for i in 5:
-		_defense.run_wave_tick()
+		_advance_wave()
 	print("no units: %s held %d residents, holds %d after 5 wave ticks" % [_ELSEWHERE, before, _infestation.resident_count_at(_ELSEWHERE)])
 	if _infestation.resident_count_at(_ELSEWHERE) != before:
 		_failures.append("a hex with no player unit on it condensed defenders anyway")
 	if not _hordes.get_hordes_at(_ELSEWHERE).is_empty():
 		_failures.append("a hex with no player unit on it produced a horde")
 
+	_reset_world()
+
+func _check_persistent_encounters() -> void:
+	_infestation.add_zombies(_HOME, 815)
+	var unit := _spawn_test_unit(_HOME)
+	var moved := _defense.materialize_hex(_HOME)
+	var groups := _hordes.get_hordes_at(_HOME)
+	if moved != 815 or _infestation.zombie_count_at(_HOME) != 815:
+		_failures.append("Materialization did not conserve all 815 residents")
+	if groups.is_empty() or groups.size() > ResidentDefenseController.GROUPS_PER_HEX:
+		_failures.append("Persistent encounter allocation is empty or unbounded")
+	var positions: Array[Vector2] = []
+	for group in groups:
+		positions.append(group.local_position)
+		if group.local_position.distance_to(unit.local_position) < ResidentDefenseController.MIN_SPAWN_DISTANCE:
+			_failures.append("A resident group spawned on or beside the squad")
+		if group.contact_grace > 0.0 or group.resident_target_id != -1:
+			_failures.append("Resident encounter is not an immediately attackable persistent group")
+	unit.local_position = Vector2(120, 120)
+	_defense.run_wave_tick()
+	if _hordes.get_hordes_at(_HOME).size() != groups.size():
+		_failures.append("Moving the squad spawned an extra wave")
+	for i in groups.size():
+		if groups[i].local_position != positions[i]:
+			_failures.append("Moving the squad teleported its resident targets")
 	_reset_world()
 
 
@@ -263,8 +289,8 @@ func _check_wave_tops_up_and_does_not_stack() -> void:
 	_reset_world()
 	_infestation.add_zombies(_CITY, 400_000)
 	var unit := _spawn_test_unit(_CITY)
-	unit.current_hp = unit.definition.max_hp
-	_defense.run_wave_tick()
+	unit.current_hp = 1000000.0
+	_advance_wave()
 	print("one tick with a unit present: %d standing" % _hordes.get_zombie_count_at(_CITY))
 	if _hordes.get_zombie_count_at(_CITY) <= 0:
 		_failures.append("a unit standing on 400,000 residents drew no defenders at all")
@@ -284,8 +310,8 @@ func _check_grinding_a_hex_clears_it() -> void:
 
 	var ticks := 0
 	while ticks < 400 and not _infestation.is_cleared(_HOME):
-		unit.current_hp = unit.definition.max_hp
-		_defense.run_wave_tick()
+		unit.current_hp = 1000000.0
+		_advance_wave()
 		ticks += 1
 		if _infestation.zombie_count_at(_HOME) > start_total:
 			_failures.append("the hex's total ROSE to %d from %d during the grind — the mechanism is creating zombies" % [_infestation.zombie_count_at(_HOME), start_total])
@@ -337,14 +363,14 @@ func _kills_over_ticks(unit_count: int, ticks: int) -> int:
 	var entries: Array[UnitSaveEntry] = []
 	var definition := UnitCatalog.get_definition(GameEnums.UnitType.TRUNCHEONEER)
 	for i in unit_count:
-		entries.append(UnitSaveEntry.new(GameEnums.UnitType.TRUNCHEONEER, _CITY, i + 1, definition.max_hp))
+		entries.append(UnitSaveEntry.new(GameEnums.UnitType.TRUNCHEONEER, _CITY, i + 1, 1000000.0))
 	_units.load_save_entries(entries, unit_count + 1)
 
 	var before := _infestation.zombie_count_at(_CITY)
 	for tick in ticks:
 		for unit: UnitInstance in _units.get_all_units():
-			unit.current_hp = unit.definition.max_hp
-		_defense.run_wave_tick()
+			unit.current_hp = 1000000.0
+		_advance_wave()
 	return before - _infestation.zombie_count_at(_CITY)
 
 
@@ -358,8 +384,8 @@ func _check_untouched_hexes_are_untouched() -> void:
 	_infestation.add_zombies(neighbour, 5_000)
 	var unit := _spawn_test_unit(_HOME)
 	for i in 8:
-		unit.current_hp = unit.definition.max_hp
-		_defense.run_wave_tick()
+		unit.current_hp = 1000000.0
+		_advance_wave()
 	print("isolation: home %d, neighbour %d, far %d" % [
 		_infestation.zombie_count_at(_HOME), _infestation.zombie_count_at(neighbour), _infestation.zombie_count_at(_ELSEWHERE)])
 	for coord in [neighbour, _ELSEWHERE]:
@@ -381,8 +407,8 @@ func _check_save_round_trip_mid_grind() -> void:
 	_infestation.add_zombies(_CITY, 200_000)
 	var unit := _spawn_test_unit(_CITY)
 	for i in 3:
-		unit.current_hp = unit.definition.max_hp
-		_defense.run_wave_tick()
+		unit.current_hp = 1000000.0
+		_advance_wave()
 
 	var residents := _infestation.resident_count_at(_CITY)
 	var standing := _hordes.get_zombie_count_at(_CITY)
@@ -399,8 +425,8 @@ func _check_save_round_trip_mid_grind() -> void:
 	# Move the world on before restoring, so a restore that silently does
 	# nothing cannot pass.
 	for i in 3:
-		unit.current_hp = unit.definition.max_hp
-		_defense.run_wave_tick()
+		unit.current_hp = 1000000.0
+		_advance_wave()
 	if _infestation.zombie_count_at(_CITY) == total:
 		_failures.append("three more wave ticks changed nothing, so the restore below cannot be distinguished from a no-op")
 
@@ -464,3 +490,10 @@ func _build_fixture_cells() -> Dictionary:
 		cell.total_zombie_pop = _CITY_CAPACITY if coord == _CITY else _CAPACITY
 		cells[coord] = cell
 	return cells
+
+## Contacts now need real travel time and the combat clock, not a shared hex.
+func _advance_wave() -> void:
+	_defense.run_wave_tick()
+	for i in 20:
+		_combat._process(1.0)
+		_hordes._process(1.0)

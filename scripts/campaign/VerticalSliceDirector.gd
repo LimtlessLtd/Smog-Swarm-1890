@@ -307,6 +307,9 @@ func _on_phase_changed(phase: GameEnums.DayPhase) -> void:
 	if phase == GameEnums.DayPhase.NIGHT:
 		var lamps := _lit_lamps_at_start()
 		var reach := NoiseManager.light_reach_hexes(lamps, HordeManager.ATTRACTION_THRESHOLD)
+		if reach < 0:
+			dispatch.emit("Nightfall", "The town has gone dark. No hordes are drawn to its lights. Running industry and gunfire can still attract the dead.", HexCoord.axial_to_world(VerticalSliceConfig.START_HEX), ZOOM_HEX_SCALE, false)
+			return
 		dispatch.emit("Nightfall",
 			"%d lamp%s lit: the town is seen from %d hex%s, and the dead move four times faster in the dark. Each Watchtower switched off shortens that by a hex, and costs its night vision." % [lamps, "" if lamps == 1 else "s", reach, "" if reach == 1 else "es"],
 			HexCoord.axial_to_world(VerticalSliceConfig.START_HEX), ZOOM_HEX_SCALE, false)

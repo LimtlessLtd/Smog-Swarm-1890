@@ -23,6 +23,7 @@ signal upgrade_rejected(segment: WallSegment, reason: String)
 signal repair_rejected(segment: WallSegment, reason: String)
 signal repair_started(segment: WallSegment, hours: int)  ## wall_segment_repaired (above) only fires once a queued repair job finishes.
 signal wall_segment_removed(segment: WallSegment)
+signal walls_restored
 signal demolish_rejected(segment: WallSegment, reason: String)
 
 @export var hex_grid_map_path: NodePath
@@ -630,10 +631,19 @@ func _remove_segment(segment: WallSegment) -> void:
 func get_save_state() -> Dictionary:
 	return {"segments": _segments.duplicate(), "next_id": _next_id}
 
-## Bypasses _register_freehand_segment() (doesn't re-emit wall_segment_placed
-## per segment) — nothing reacts to that signal for recompute purposes the
-## way BuildingManager's placement signals drive ZoC/Fog of War, so a plain
-## state replace is enough.
+## Restore the geometry together, then invalidate cached navigation once.
 func load_save_state(segments: Array[WallSegment], next_id: int) -> void:
 	_segments = segments.duplicate()
 	_next_id = next_id
+	walls_restored.emit()
+
+func get_blocking_segment_at_world(from: Vector2, to: Vector2, ignore_gates: bool = false) -> WallSegment:
+	var coords: Array[Vector2i] = [HexCoord.world_to_axial(from), HexCoord.world_to_axial(to)]
+	for coord in coords:
+		for segment in get_segments_at(coord):
+			if segment.is_breached() or (ignore_gates and segment.is_gate):
+				continue
+			var hit: Variant = Geometry2D.segment_intersects_segment(from, to, segment.point_a, segment.point_b)
+			if hit != null and (hit as Vector2).distance_to(from) > 0.02 and (hit as Vector2).distance_to(to) > 0.02:
+				return segment
+	return null

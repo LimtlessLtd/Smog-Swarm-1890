@@ -50,3 +50,6 @@ tools/geo_bake/*_comparison.png.import
 # specific before/after comparison, regenerated on demand; GAME_HEALTH.md quotes
 # the numbers that matter.
 playtest_results/
+
+# Local Codex/Claude run prompts, transcripts, and reports.
+.adversarial/

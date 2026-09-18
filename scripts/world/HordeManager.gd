@@ -451,8 +451,11 @@ func spawn_horde_at(coord: Vector2i, size: int) -> void:
 ## because the two are different events that happen to share an accumulation
 ## rule — `building_ruined` connects here, §2.1's Hive Core export calls the
 ## other.
-func add_casualty_zombies(coord: Vector2i, count: int) -> void:
-	spawn_horde_at(coord, count)
+func add_casualty_zombies(coord: Vector2i, count: int, local: Variant = null) -> void:
+	if local == null:
+		spawn_horde_at(coord, count)
+	elif count > 0:
+		spawn_local_horde(coord, count, local)
 
 func _find_horde_at(coord: Vector2i) -> Horde:
 	for horde in _hordes:
@@ -464,7 +467,7 @@ func _find_horde_at(coord: Vector2i) -> Horde:
 ## building with no housed population) — add_casualty_zombies() already
 ## no-ops on count <= 0.
 func _on_building_ruined(instance: BuildingInstance, lost_population: int) -> void:
-	add_casualty_zombies(instance.hex_coord, lost_population)
+	add_casualty_zombies(instance.hex_coord, lost_population, instance.local_position)
 
 ## Reuses _spawnable_coords() exactly as seed_starting_hordes() does, so the
 ## same "far enough from a settlement" rule applies.
@@ -497,6 +500,8 @@ func _check_merges() -> void:
 			continue
 		var survivor: Horde = group[0]
 		var absorbed: Horde = group[1]
+		if survivor.resident_target_id != 0 or absorbed.resident_target_id != 0 or survivor.local_position.distance_to(absorbed.local_position) > 10.0:
+			continue
 		survivor.size += absorbed.size
 		horde_size_changed.emit(survivor, absorbed.size)
 		remove_horde(absorbed)
@@ -514,6 +519,9 @@ func _check_splits() -> void:
 		horde.size -= fragment_size
 		horde_size_changed.emit(horde, -fragment_size)
 		var fragment := Horde.new(horde.hex_coord, fragment_size, _next_id)
+		fragment.local_position = horde.local_position
+		fragment.resident_target_id = horde.resident_target_id
+		fragment.resident_frontage_limit = horde.resident_frontage_limit
 		_next_id += 1
 		_hordes.append(fragment)
 		horde_spawned.emit(fragment)
@@ -594,6 +602,35 @@ func _spawnable_coords() -> Array[Vector2i]:
 ## distance is always > 0), and a _replan() that finds no valid target
 ## leaves `path` empty, hitting the early return below on the next loop check.
 func _advance_horde(horde: Horde, delta: float) -> void:
+	horde.contact_grace = maxf(0.0, horde.contact_grace - delta)
+	if horde.has_combat_target and horde.stun_seconds_remaining <= 0.0:
+		var world := HexCoord.axial_to_world(horde.hex_coord) + horde.local_position
+		var target := horde.combat_target
+		var segment := _wall_manager.get_blocking_segment_at_world(world, target) if _wall_manager else null
+		if not segment and _wall_manager:
+			var occupied_segment := WallWalkRoute.segment_at(_wall_manager, target)
+			if occupied_segment and world.distance_to(Geometry2D.get_closest_point_to_segment(world, occupied_segment.point_a, occupied_segment.point_b)) <= WALL_STANDOFF + CombatCoordinator.MELEE_REACH * 0.8:
+				segment = occupied_segment
+		if segment:
+			if _approach_wall(horde, HexCoord.world_to_axial(target), segment, world, target, delta) > 0.0:
+				return
+			if _sieged_segment_by_horde.get(horde) != segment:
+				_sieged_segment_by_horde[horde] = segment
+				horde_siege_started.emit(horde, segment)
+			_siege_wall(horde, segment, delta)
+			return
+		if not segment:
+			_sieged_segment_by_horde.erase(horde)
+			var distance := maxf(0.0, world.distance_to(target) - CombatCoordinator.MELEE_REACH * 0.8)
+			var next := world.move_toward(target, minf(distance, _movement_speed(horde.hex_coord, horde.hex_coord) * delta))
+			var previous := horde.hex_coord
+			horde.hex_coord = HexCoord.world_to_axial(next)
+			horde.local_position = next - HexCoord.axial_to_world(horde.hex_coord)
+			horde.path.clear()
+			if previous != horde.hex_coord:
+				horde_moved.emit(horde, previous, horde.hex_coord)
+			return
+
 	# A Dragoon's charge stuns the horde it hits — see
 	# Horde.stun_seconds_remaining's own doc comment. A stunned horde doesn't
 	# move or progress a wall siege; it resumes the same path/state the
@@ -602,8 +639,12 @@ func _advance_horde(horde: Horde, delta: float) -> void:
 		horde.stun_seconds_remaining = maxf(0.0, horde.stun_seconds_remaining - delta)
 		return
 
+	if horde.resident_target_id == -1 and not _sieged_segment_by_horde.has(horde):
+		return # Resident groups hold their location until they acquire a target.
 	var remaining := delta
-	while remaining > 0.0:
+	var crossed := 0
+	while remaining > 0.0 and crossed < 32:
+		crossed += 1
 		if horde.path.is_empty():
 			_replan(horde)
 		if horde.path.is_empty():
@@ -944,3 +985,20 @@ func _add_hex_obstacles(coord: Vector2i, obstacles: Array[Dictionary]) -> void:
 	if _local_detail_manager:
 		for prop in _local_detail_manager.get_props_at(coord):
 			obstacles.append({"position": hex_center + prop.local_position, "radius": ObstacleRadii.for_prop(prop.prop_type)})
+
+func spawn_local_horde(coord: Vector2i, count: int, local: Vector2, grace: float = 0.0, resident_target_id: int = 0) -> Horde:
+	var horde := Horde.new(coord, count, _next_id)
+	_next_id += 1
+	horde.local_position = local
+	horde.contact_grace = grace
+	horde.resident_target_id = resident_target_id
+	_hordes.append(horde)
+	horde_spawned.emit(horde)
+	return horde
+
+func has_clear_contact(unit: UnitInstance, horde: Horde) -> bool:
+	if not _wall_manager:
+		return true
+	var from := HexCoord.axial_to_world(unit.hex_coord) + unit.local_position
+	var to := HexCoord.axial_to_world(horde.hex_coord) + horde.local_position
+	return _wall_manager.get_blocking_segment_at_world(from, to) == null

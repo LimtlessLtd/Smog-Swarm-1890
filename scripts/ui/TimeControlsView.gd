@@ -1,7 +1,7 @@
 class_name TimeControlsView
 extends HBoxContainer
 
-## Top-right HUD strip: the 0x/5x/20x/50x/100x/1000x speed buttons. Pure UI
+## Top-right HUD strip: the 0x/1x/2x/3x speed buttons. Pure UI
 ## over TickManager (an autoload, globally accessible — no NodePath
 ## needed) with no simulation logic of its own.
 ##
@@ -13,7 +13,7 @@ extends HBoxContainer
 ## This view keeps only the speed buttons, in their existing top-right
 ## spot, and is correspondingly narrower than before.
 
-const SPEED_LABELS: Array[String] = ["0x", "5x", "20x", "50x", "100x", "1000x"]  ## Must stay index-parallel with TickManager.SPEED_MULTIPLIERS.
+const SPEED_LABELS: Array[String] = ["0x", "1x", "2x", "3x"]  ## Must stay index-parallel with TickManager.SPEED_MULTIPLIERS.
 
 var _speed_buttons: Array[Button] = []
 

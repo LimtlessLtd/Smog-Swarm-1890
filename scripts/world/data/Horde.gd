@@ -37,6 +37,11 @@ extends Resource
 ## of Control coverage uses for not saving itself — see LogisticsNetwork),
 ## and a mid-path point in time isn't meaningful state worth persisting.
 var path: Array[Vector2i] = []
+@export var resident_target_id: int = 0
+@export var resident_frontage_limit: int = 0
+var has_combat_target: bool = false
+var combat_target: Vector2 = Vector2.ZERO
+var contact_grace: float = 0.0
 
 ## A Dragoon's charge (GameEnums.UnitAbility.CHARGE_KNOCKBACK) knocks a
 ## horde back and stuns it for a second — set by

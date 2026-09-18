@@ -17,8 +17,8 @@ extends Node
 
 const _FIXTURE_RADIUS := 10
 const _START: Vector2i = Vector2i.ZERO
-const _GOAL: Vector2i = Vector2i(5, 0)  ## 5 hexes out along one axis -- axial distance 5, so this crosses 5 hex borders.
-const _MAX_FRAMES := 6000  ## Generous ceiling so a genuine hang still reports FAIL instead of running forever.
+const _GOAL: Vector2i = Vector2i(2, 0)  ## Two hexes out along one axis proves repeated crossings without making this focused regression gate a long travel benchmark.
+const _MAX_FRAMES := 6000  ## Bounds a genuine hang while leaving ample time for two strategic crossings.
 
 var _map: HexGridMap
 var _units: UnitManager

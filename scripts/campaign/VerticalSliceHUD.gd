@@ -22,9 +22,9 @@ extends CanvasLayer
 ## about the game.
 
 const MARGIN := 10.0
-const TOP_OFFSET := 76.0  ## Below MainHUD's resource bar.
-const OBJECTIVES_WIDTH := 330.0
-const DISPATCH_WIDTH := 470.0
+const TOP_OFFSET := 110.0  ## Below MainHUD's resource bar.
+const OBJECTIVES_WIDTH := 270.0
+const DISPATCH_WIDTH := 310.0
 const EMISSIONS_WIDTH := 320.0
 const EMISSIONS_TOP := 250.0  ## Below MainHUD's time controls and Menu/Tech Tree buttons.
 const DEBRIEF_SIZE := Vector2(900.0, 700.0)
@@ -118,35 +118,39 @@ func _build() -> void:
 
 	_objectives_panel = _panel(Vector2(MARGIN, TOP_OFFSET), OBJECTIVES_WIDTH)
 	var column := _column(_objectives_panel)
-	column.add_child(_label("VERTICAL SLICE — MANCHESTER, 1890", true))
+	var toggle := _button("MANCHESTER, 1890  ·  Objectives ▾", func() -> void:
+		_objectives_list.visible = not _objectives_list.visible
+		_objectives_panel.reset_size())
+	column.add_child(toggle)
 	_objectives_list = VBoxContainer.new()
 	_objectives_list.add_theme_constant_override("separation", 6)
 	column.add_child(_objectives_list)
+	_objectives_list.visible = false
 	column.add_child(HSeparator.new())
 	var army := HBoxContainer.new()
 	army.add_theme_constant_override("separation", 6)
-	army.add_child(_button("Select all squads", _on_select_all))
-	army.add_child(_button("Train archer (30 Wood)", _on_train_archer))
+	army.add_child(_button("Army", _on_select_all))
+	army.add_child(_button("Archer · 30 Wood", _on_train_archer))
 	column.add_child(army)
-	column.add_child(_label("Drag a box to select · right-click to move · Space pauses", false, true))
+
 
 	_dispatch_panel = PanelContainer.new()
 	HUDStyles.style_panel(_dispatch_panel)
-	_dispatch_panel.anchor_left = 0.5
-	_dispatch_panel.anchor_right = 0.5
-	_dispatch_panel.offset_left = -DISPATCH_WIDTH * 0.5
-	_dispatch_panel.offset_right = DISPATCH_WIDTH * 0.5
-	_dispatch_panel.offset_top = TOP_OFFSET
+	_dispatch_panel.anchor_left = 1.0
+	_dispatch_panel.anchor_right = 1.0
+	_dispatch_panel.offset_left = -DISPATCH_WIDTH - MARGIN
+	_dispatch_panel.offset_right = -MARGIN
+	_dispatch_panel.offset_top = 186.0
 	_dispatch_panel.visible = false
 	_root.add_child(_dispatch_panel)
 	var dispatch_column := _column(_dispatch_panel)
 	_dispatch_title = _label("", true)
-	_dispatch_title.add_theme_font_size_override("font_size", 17)
+	_dispatch_title.add_theme_font_size_override("font_size", 14)
 	dispatch_column.add_child(_dispatch_title)
 	_dispatch_body = _label("")
 	_dispatch_body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_dispatch_body.custom_minimum_size = Vector2(DISPATCH_WIDTH - 24.0, 0.0)
-	_dispatch_body.add_theme_font_size_override("font_size", 13)
+	_dispatch_body.add_theme_font_size_override("font_size", 12)
 	dispatch_column.add_child(_dispatch_body)
 	var dispatch_buttons := HBoxContainer.new()
 	dispatch_buttons.add_theme_constant_override("separation", 6)
@@ -154,23 +158,6 @@ func _build() -> void:
 	dispatch_buttons.add_child(_button("Dismiss", func() -> void: _dispatch_panel.visible = false))
 	dispatch_column.add_child(dispatch_buttons)
 
-	_emissions_panel = PanelContainer.new()
-	HUDStyles.style_panel(_emissions_panel)
-	_emissions_panel.anchor_left = 1.0
-	_emissions_panel.anchor_right = 1.0
-	_emissions_panel.offset_left = -EMISSIONS_WIDTH - MARGIN
-	_emissions_panel.offset_right = -MARGIN
-	_emissions_panel.offset_top = EMISSIONS_TOP
-	_root.add_child(_emissions_panel)
-	var emissions_column := _column(_emissions_panel)
-	emissions_column.add_child(_label("WHAT THEY SEE AND HEAR", true))
-	_emissions_summary = _label("")
-	_emissions_summary.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_emissions_summary.custom_minimum_size = Vector2(EMISSIONS_WIDTH - 24.0, 0.0)
-	emissions_column.add_child(_emissions_summary)
-	_emissions_list = VBoxContainer.new()
-	_emissions_list.add_theme_constant_override("separation", 4)
-	emissions_column.add_child(_emissions_list)
 
 
 func _panel(position: Vector2, width: float) -> PanelContainer:
@@ -220,6 +207,8 @@ func _refresh_objectives() -> void:
 		var state: StringName = objective["state"]
 		var mark := "☐" if state == &"active" else ("☑" if state == &"done" else "☒")
 		var title := _label("%s  %s%s" % [mark, objective["title"], "" if objective["required"] else "  (optional)"])
+		title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		title.custom_minimum_size.x = OBJECTIVES_WIDTH - 24.0
 		if state == &"done":
 			title.add_theme_color_override("font_color", GOOD_COLOR)
 		elif state == &"failed":

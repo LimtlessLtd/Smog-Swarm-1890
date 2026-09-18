@@ -178,8 +178,12 @@ func _ready() -> void:
 			_push_view_state(cell.coord, GameEnums.FogState.UNSEEN)
 	recompute()
 
+var _vision_elapsed := 0.0
+
 func _process(delta: float) -> void:
-	if _unit_recompute_pending:
+	_vision_elapsed += delta
+	if _unit_recompute_pending or (_unit_manager and _vision_elapsed >= 0.5):
+		_vision_elapsed = 0.0
 		_unit_recompute_pending = false
 		recompute()
 	if _grace_remaining.is_empty():
@@ -278,11 +282,14 @@ func _compute_visible_set() -> Dictionary:
 		# Same radius/night/terrain contract as buildings above — see this
 		# class's own doc comment for why there's no lit_at_night branch here.
 		for instance in _unit_manager.get_all_units():
+			if instance.is_destroyed():
+				continue
 			var radius := UnitUpgrades.vision_radius(_tech_manager, instance.definition)
 			if is_night:
 				radius = maxi(0, radius - NIGHT_VISION_PENALTY)
 			radius = _apply_terrain_penalty(radius, instance.hex_coord)
 			_mark_visible_from_source(instance.hex_coord, instance.local_position, radius, result)
+			_mark_contact_vision(HexCoord.axial_to_world(instance.hex_coord) + instance.local_position, result)
 	if _logistics_network:
 		for coord in _logistics_network.get_covered_hexes():
 			result[coord] = true
@@ -325,9 +332,26 @@ func _building_vision_radius(instance: BuildingInstance, is_night: bool) -> int:
 ## Military ZoC aura needed the identical logic, so this is just the
 ## HexGridMap.has_cell() filter this class's own consumers need on top of it.
 func _mark_visible_from_source(source_hex: Vector2i, source_local_position: Vector2, radius: int, result: Dictionary) -> void:
-	for coord in HexCoord.sub_hex_disk(source_hex, source_local_position, radius):
+	var world := HexCoord.axial_to_world(source_hex) + source_local_position
+	var occupied := HexCoord.world_to_axial(world)
+	result[occupied] = true
+	for coord in HexCoord.sub_hex_disk(occupied, world - HexCoord.axial_to_world(occupied), radius):
 		if not _hex_grid_map or _hex_grid_map.has_cell(coord):
 			result[coord] = true
+
+## Even radius-zero infantry can see across a nearby hex border. Fog remains
+## hex-granular, so reveal any adjacent hex touched by a 250 m local sight disc.
+func _mark_contact_vision(world: Vector2, result: Dictionary) -> void:
+	var reach := 250.0 * HexCoord.WORLD_UNITS_PER_REAL_METER
+	for coord in HexCoord.neighbors(HexCoord.world_to_axial(world)):
+		if result.has(coord) or (_hex_grid_map and not _hex_grid_map.has_cell(coord)):
+			continue
+		var corners := HexCoord.corner_points(HexCoord.axial_to_world(coord))
+		for i in 6:
+			var nearest := Geometry2D.get_closest_point_to_segment(world, corners[i], corners[(i + 1) % 6])
+			if world.distance_to(nearest) <= reach:
+				result[coord] = true
+				break
 
 ## Shared by both vision-source loops above — dense local terrain right
 ## around the source itself shrinks its effective radius, "reduces, never

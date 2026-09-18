@@ -25,6 +25,11 @@ extends Resource
 @export var patrol_waypoint_locals: Array[Vector2] = []  ## Index-aligned with patrol_waypoints, see UnitInstance's own field doc comment.
 @export var kill_count: int = 0
 @export var local_position: Vector2 = Vector2.ZERO
+@export var on_wall: bool = false
+@export var wall_target_active: bool = false
+@export var wall_target := Vector2.ZERO
+@export var wall_patrol_route := PackedVector2Array()
+@export var wall_route_loops: bool = true
 
 func _init(p_unit_type: GameEnums.UnitType = GameEnums.UnitType.TRUNCHEONEER, p_hex_coord: Vector2i = Vector2i.ZERO, p_id: int = 0, p_current_hp: float = 0.0, p_order: GameEnums.UnitOrderType = GameEnums.UnitOrderType.HOLD, p_move_target: Vector2i = Vector2i.ZERO, p_patrol_waypoints: Array[Vector2i] = [], p_kill_count: int = 0, p_local_position: Vector2 = Vector2.ZERO, p_move_target_local: Vector2 = Vector2.ZERO, p_patrol_waypoint_locals: Array[Vector2] = []) -> void:
 	unit_type = p_unit_type

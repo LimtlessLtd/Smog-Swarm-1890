@@ -130,6 +130,7 @@ func _run() -> int:
 	_check_noise_and_light_stop()
 	_check_the_building_stays_dark_for_the_whole_delay()
 	_check_what_cannot_be_switched_off()
+	_check_hex_blackout()
 	_check_save_round_trip()
 	_check_demolishing_a_dark_building_mints_nothing()
 	_check_a_restart_the_grid_cannot_carry_is_cancelled()
@@ -628,6 +629,23 @@ func _reset_fixture() -> void:
 	_buildings.load_save_entries(_fixture_entries(), 100)
 	_resources.load_state(_starting_stockpile, _starting_caps)
 	_rejections.clear()
+
+func _check_hex_blackout() -> void:
+	_reset_fixture()
+	var entries := _fixture_entries()
+	entries.append(_entry(GameEnums.BuildingType.TOWN_HALL, _MINE_HEX, 90))
+	_buildings.load_save_entries(entries, 100)
+	_resources.load_state(_starting_stockpile, _starting_caps)
+	var changed := _buildings.set_hex_power(_MINE_HEX, false)
+	if changed != 1 or not _building_at(_MINE_HEX).is_powered_down:
+		_failures.append("Hex blackout failed to shut down its switchable buildings")
+	if _building_at(_HOUSE_HEX).is_powered_down:
+		_failures.append("Hex blackout switched off a building in another hex")
+	var status := _buildings.hex_power_status(_MINE_HEX)
+	if not status.contains("BLACKOUT") or not status.contains("Town Hall remains active"):
+		_failures.append("Blackout feedback did not distinguish the silent essential Town Hall")
+	if _buildings.set_hex_power(_MINE_HEX, true) != 1:
+		_failures.append("Hex restart did not queue the powered-down building")
 
 
 func _fixture_entries() -> Array[BuildingSaveEntry]:

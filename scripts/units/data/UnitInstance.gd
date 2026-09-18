@@ -57,6 +57,11 @@ var patrol_target_index: int = 0                        ## Not @export — cheap
 ## save is made just needs the order re-issued, same as any other
 ## in-flight move would.
 var pending_garrison_arrival: bool = false
+var on_wall: bool = false
+var wall_target_active: bool = false
+var wall_target: Vector2 = Vector2.ZERO
+var wall_patrol_route := PackedVector2Array()
+var wall_route_loops: bool = true
 
 ## Current movement path (HexPathfinder) toward move_target or the active
 ## patrol leg — hex_coord itself excluded, so the next hex to step into is

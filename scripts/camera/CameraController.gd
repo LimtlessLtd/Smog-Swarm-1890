@@ -126,12 +126,17 @@ func get_tactical_fidelity() -> GameEnums.TacticalFidelity:
 		return GameEnums.TacticalFidelity.MEDIUM
 	return GameEnums.TacticalFidelity.LOW
 
-func _process(delta: float) -> void:
-	var pan_delta := delta
-	if Engine.time_scale != 0.0:
-		pan_delta = delta / Engine.time_scale
-	_handle_pan_input(pan_delta)
-	_handle_edge_pan_input(pan_delta)
+var _pan_clock_ms: int = 0
+
+func _process(_delta: float) -> void:
+	var now := Time.get_ticks_msec()
+	var real_delta := clampf(float(now - _pan_clock_ms) / 1000.0, 0.0, 0.1) if _pan_clock_ms > 0 else 0.0
+	_pan_clock_ms = now
+	var focus := get_viewport().gui_get_focus_owner()
+	if focus is LineEdit or focus is TextEdit:
+		return
+	_handle_pan_input(real_delta)
+	_handle_edge_pan_input(real_delta)
 
 func _input(event: InputEvent) -> void:
 	if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_MIDDLE:

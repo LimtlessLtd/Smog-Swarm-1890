@@ -51,7 +51,7 @@ extends CanvasLayer
 @export var logistics_network_path: NodePath  ## Optional — feeds a placement-rejected toast for Infrastructure; unset means placement rejections are silent (still blocked, just no on-screen reason).
 
 const MARGIN := 8.0
-const ROW_HEIGHT := 32.0
+const ROW_HEIGHT := 26.0
 const TIME_CONTROLS_WIDTH := 420.0  ## Fallback only — _place_top_right() self-corrects to the real measured width.
 const DAY_PHASE_VIEW_WIDTH := 260.0
 const SAVE_LOAD_WIDTH := 220.0
@@ -61,12 +61,12 @@ const TECH_BAR_WIDTH := 150.0
 ## enough for a building card's icon + name + 2-3 line cost/upkeep/effect
 ## block without clipping (Garrison's card — 2-resource cost + upkeep +
 ## "Trains: ..." — is this tree's longest).
-const BOTTOM_BAR_HEIGHT := 224.0
+const BOTTOM_BAR_HEIGHT := 36.0
 ## Matches BOTTOM_BAR_HEIGHT exactly, paired with size_flags_vertical =
 ## SIZE_FILL at the minimap's own call site, so its rect exactly fills the
 ## bar's full height instead of floating centered with a gap.
-const MINIMAP_SIZE := Vector2(200.0, 224.0)
-const UNIT_PANEL_SIZE := Vector2(320.0, 320.0)
+const MINIMAP_SIZE := Vector2(150.0, 150.0)
+const UNIT_PANEL_SIZE := Vector2(280.0, 240.0)
 const SAVE_LOAD_VIEW_SIZE := Vector2(320.0, 320.0)
 const TECH_TREE_VIEW_SIZE := Vector2(380.0, 360.0)
 const DISPLAY_OPTIONS_VIEW_SIZE := Vector2(320.0, 300.0)
@@ -210,7 +210,7 @@ func _build_day_phase_view() -> void:
 	var day_phase_view := DayPhaseView.new()
 	day_phase_view.name = "DayPhaseView"
 	add_child(day_phase_view)
-	_place_above_bottom_bar_right(day_phase_view, DAY_PHASE_VIEW_WIDTH)
+	_place_top_right(day_phase_view, DAY_PHASE_VIEW_WIDTH, 4)
 
 func _build_menu_bar() -> void:
 	var bar := HBoxContainer.new()
@@ -277,7 +277,9 @@ func _build_mode_label() -> void:
 	_mode_label.name = "ModeLabel"
 	add_child(_mode_label)
 	_place_top_wide(_mode_label, 1)  # Row 1: below the resource bar, same top-wide strip.
-	_mode_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_mode_label.offset_right = 560.0
+	_mode_label.anchor_right = 0.0
+	_mode_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 	_mode_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	_mode_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	HUDStyles.style_label(_mode_label, true)
@@ -287,46 +289,73 @@ func _build_recon_label() -> void:
 	_recon_label.name = "ReconLabel"
 	add_child(_recon_label)
 	_place_top_wide(_recon_label, 2)
-	_recon_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_recon_label.offset_right = 560.0
+	_recon_label.anchor_right = 0.0
+	_recon_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
 	_recon_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	HUDStyles.style_label(_recon_label)
 	HUDReconTracker.new(self, _recon_label, _horde_manager, _fog_of_war_manager)
 
 func _build_bottom_bar(hex_grid_map: HexGridMap, fog_of_war_manager: FogOfWarManager, camera: CameraController, noise_manager: NoiseManager, resource_manager: ResourceManager) -> void:
-	var bar := HBoxContainer.new()
-	bar.name = "BottomBar"
-	bar.add_theme_constant_override("separation", MARGIN)
-	# MOUSE_FILTER_STOP "physically blocks any mouse input events from
-	# reaching any other Control node behind it, INCLUDING THE VIEWPORT"
-	# (Control.mouse_filter docs) — without it, scrolling through building
-	# cards and drifting into a gap between cards (or onto the minimap)
-	# leaks the wheel event through to CameraController's own zoom input,
-	# covering the whole bar's rect in one place rather than relying on
-	# every child control's own filter to add up to full coverage.
-	bar.mouse_filter = Control.MOUSE_FILTER_STOP
-	add_child(bar)
-	_place_bottom_wide_row(bar, BOTTOM_BAR_HEIGHT)
-
-	var build_menu := BuildMenuView.new()
-	build_menu.name = "BuildMenu"
-	bar.add_child(build_menu)
-	build_menu.building_selected.connect(_on_building_selected)
-	build_menu.wall_placement_selected.connect(_on_wall_placement_selected)
-	build_menu.infrastructure_placement_selected.connect(_on_infrastructure_placement_selected)
-	build_menu.setup(_tech_manager, resource_manager)
-
+	var drawer := BuildMenuView.new()
+	drawer.name = "BuildDrawer"
+	add_child(drawer)
+	drawer.anchor_top = 1.0
+	drawer.anchor_bottom = 1.0
+	drawer.anchor_right = 1.0
+	drawer.offset_left = MARGIN
+	drawer.offset_right = -MINIMAP_SIZE.x - MARGIN * 2.0
+	drawer.offset_top = -290.0
+	drawer.offset_bottom = -BOTTOM_BAR_HEIGHT - MARGIN * 2.0
+	drawer.building_selected.connect(_on_building_selected)
+	drawer.wall_placement_selected.connect(_on_wall_placement_selected)
+	drawer.infrastructure_placement_selected.connect(_on_infrastructure_placement_selected)
+	drawer.setup(_tech_manager, resource_manager)
+	drawer.visible = false
+	var toolbar := HBoxContainer.new()
+	toolbar.name = "CommandBar"
+	add_child(toolbar)
+	_place_bottom_wide_row(toolbar, BOTTOM_BAR_HEIGHT)
+	var build := Button.new()
+	build.text = "Construction"
+	HUDStyles.style_button(build)
+	build.pressed.connect(func() -> void:
+		drawer.visible = not drawer.visible
+		if drawer.visible and _unit_command_controller:
+			_unit_command_controller.clear_selection())
+	toolbar.add_child(build)
+	var hint := Label.new()
+	hint.text = "  WASD / arrows: camera    Right-click: move / mount wall    Space: pause"
+	HUDStyles.style_label(hint, false, true)
+	toolbar.add_child(hint)
+	if _unit_command_controller:
+		_unit_command_controller.unit_selected.connect(func(_u) -> void: drawer.hide())
+		_unit_command_controller.building_instance_selected.connect(func(_b) -> void: drawer.hide())
+		_unit_command_controller.wall_segment_selected.connect(func(_w) -> void: drawer.hide())
+		_unit_command_controller.hex_selected.connect(func(_h) -> void: drawer.hide())
 	var minimap := MinimapView.new()
 	minimap.name = "Minimap"
-	minimap.custom_minimum_size = MINIMAP_SIZE
-	minimap.size_flags_vertical = Control.SIZE_FILL  ## Flush against the bar's full height — see MINIMAP_SIZE's own doc comment.
-	bar.add_child(minimap)
+	add_child(minimap)
+	minimap.anchor_left = 1.0
+	minimap.anchor_right = 1.0
+	minimap.anchor_top = 1.0
+	minimap.anchor_bottom = 1.0
+	minimap.offset_left = -MINIMAP_SIZE.x - MARGIN
+	minimap.offset_right = -MARGIN
+	minimap.offset_top = -MINIMAP_SIZE.y - MARGIN
+	minimap.offset_bottom = -MARGIN
 	minimap.setup(hex_grid_map, _building_manager, fog_of_war_manager, camera, MINIMAP_SIZE, noise_manager)
 
 func _build_unit_panel(unit_manager: UnitManager, wall_manager: WallManager) -> void:
 	var unit_panel := UnitPanelView.new()
 	unit_panel.name = "UnitPanel"
 	add_child(unit_panel)
-	_place_top_left(unit_panel, UNIT_PANEL_SIZE)
+	unit_panel.anchor_top = 1.0
+	unit_panel.anchor_bottom = 1.0
+	unit_panel.offset_left = MARGIN
+	unit_panel.offset_right = MARGIN + UNIT_PANEL_SIZE.x
+	unit_panel.offset_bottom = -BOTTOM_BAR_HEIGHT - MARGIN * 2.0
+	unit_panel.offset_top = unit_panel.offset_bottom - UNIT_PANEL_SIZE.y
 	if _unit_command_controller:
 		unit_panel.setup(_unit_command_controller, unit_manager, _building_manager, wall_manager, _tech_manager)
 
@@ -412,18 +441,16 @@ func _place_above_bottom_bar_right(control: Control, fallback_width: float) -> v
 			control.offset_left = control.offset_right - real_width
 	, CONNECT_ONE_SHOT)
 
-## Full-width strip above the bottom bar — the toast's own spot. One row
-## higher than _place_above_bottom_bar_right()'s row (DayPhaseView's spot),
-## not the same one, so a shown toast doesn't cover the date/countdown.
+## Notifications occupy the gap between the selection panel and minimap.
 func _place_above_bottom_bar_wide(control: Control) -> void:
 	control.anchor_left = 0.0
 	control.anchor_right = 1.0
 	control.anchor_top = 1.0
 	control.anchor_bottom = 1.0
-	control.offset_left = MARGIN
-	control.offset_right = -MARGIN
-	control.offset_bottom = -MARGIN - BOTTOM_BAR_HEIGHT - MARGIN - ROW_HEIGHT - MARGIN
-	control.offset_top = control.offset_bottom - ROW_HEIGHT
+	control.offset_left = 310.0
+	control.offset_right = -170.0
+	control.offset_bottom = -MARGIN - BOTTOM_BAR_HEIGHT - MARGIN
+	control.offset_top = control.offset_bottom - 42.0
 
 ## Fixed-`size` rect pinned to the top-left corner, below the top-wide strip
 ## (2 rows tall) — UnitPanelView's own spot, the one corner nothing else here claims.

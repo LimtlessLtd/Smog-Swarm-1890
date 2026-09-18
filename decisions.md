@@ -14,6 +14,59 @@ Rules for this file:
 
 ---
 
+## 2026-09-17 — First human slice playtest
+
+**D117. Revealed resident zombies are persistent combat targets.** Follow-up:
+"zombies appear right next to my military units" and troops "only start shooting
+when you run away". This supersedes D115's squad-relative resident wave placement
+and D48/D50's replenishing-wave runtime rule. Revealed populations become at most
+32 saved Horde groups per hex, placed on sampled passable terrain away from units
+and buildings. They hold their positions until troops approach/invade their hex;
+moving a squad does not create or reposition a wave. The resident-to-horde transfer
+conserves the population. Existing density-derived melee pressure is retained as a
+saved frontage limit, so materializing the population does not multiply contact
+damage. Spawn grace can protect against incoming damage but never prevent targeting.
+Moving crowd sprites translate with their combat body instead of trailing behind it.
+Fog still controls visibility; this does not reveal the whole map. More persistent
+groups increase simulation work (see GAME_HEALTH.md's follow-up measurements).
+
+**D114. Physical positions drive local navigation and contact.** The user reported
+units that "slowly drift away while vibrating" and asked that military units
+"walk along the top of the walls and patrol around the perimeter". Local movement
+now follows a cached terrain/building/wall route with one movement budget and exact
+arrival. Connected wall endpoints form a separate walkway graph; right-clicking a
+wall mounts it and Patrol perimeter follows the connected structure. Save entries
+preserve mounted orders. Breaches break the walkway. Decorative props do not steer
+units: their streamed visibility cannot determine traversability.
+*Consequence:* the coarse hex graph still plans long trips, refined by local paths;
+this does not replace the existing strategic portal system. Local path searches are
+bounded and report failure if no route is found.
+
+**D115. Sharing a hex is insufficient for combat or mobile visibility.** The user
+reported attacks when zombies were "nowhere near my units". Combat checks physical
+distance and walls, with 200 m ranged reach and 25 m melee reach inherited from wall
+defence; ordinary attacks use a 20 game-second cooldown. Incoming damage requires
+melee contact and uses contact frontage. Residents materialise near their target
+with five game-seconds of contact grace (resident placement/grace superseded by D117).
+These timing/frontage values are tunable
+implementation choices, not a final balance approval. D102's one gunpowder per shot
+is now consumed. Infantry reveal their occupied hex and neighboring hexes touched
+by a 250 m contact sight disc, including at night. Fog is still hex-granular.
+
+**D116. Compact contextual controls and quarter-size tactical unit models.** The
+user asked to make unit models "25% of the size they are now" and put building
+power options "on the specific buildings", with a way to turn off a whole hex.
+Tactical unit models use a 0.25 scale, with matching zombie artwork scale. Building
+selection owns its power control; hex-wide shutdown/restart uses the existing
+building rules, costs and delays, with a BLACKOUT map badge. Construction and
+selection share the left-hand area instead of stacking panels. D54's silent Town
+Hall remains active; the blackout label explicitly identifies that essential-service
+exception and counts switchable buildings. Notifications use
+the gap beside the minimap and expire in real time even when paused. WASD and arrows
+pan independently of simulation speed.
+
+---
+
 ## 2026-09-16 — The vertical slice, and the rules it needed
 
 The user asked, verbatim: "Produce a 10–20 minute vertical slice where I can start with

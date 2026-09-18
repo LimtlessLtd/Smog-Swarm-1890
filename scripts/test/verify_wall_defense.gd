@@ -84,6 +84,7 @@ func _ready() -> void:
 	var entries: Array[BuildingSaveEntry] = [BuildingSaveEntry.new(GameEnums.BuildingType.BESSEMER_SMELTING_COMPLEX, _HOME, 1, Vector2.ZERO, 0, BuildingCatalog.get_definition(GameEnums.BuildingType.BESSEMER_SMELTING_COMPLEX).get_max_hp())]
 	_buildings.load_save_entries(entries, 2)
 	_noise.recompute()
+	_check_mounted_target_requires_wall_contact()
 
 	var siege := _approach_and_siege()
 	if siege.is_empty():
@@ -108,6 +109,23 @@ func _finish() -> void:
 		for failure in _failures:
 			print("  " + failure)
 		get_tree().quit(1)
+
+## A mounted patrol unit makes its wall a valid target only after a horde has
+## physically reached that wall. Previously the fallback selected the wall under
+## the unit from the whole combat-acquisition radius and started a siege in empty
+## ground.
+func _check_mounted_target_requires_wall_contact() -> void:
+	for existing in _hordes.get_all_hordes():
+		_hordes.remove_horde(existing)
+	var segment: WallSegment = _walls.get_segments()[0]
+	var midpoint := (segment.point_a + segment.point_b) * 0.5
+	var source := midpoint + (HexCoord.axial_to_world(_HOME) - HexCoord.axial_to_world(_NEIGHBOUR)).normalized() * 100.0
+	var horde := _hordes.spawn_local_horde(_HOME, 20, source - HexCoord.axial_to_world(_HOME))
+	horde.has_combat_target = true
+	horde.combat_target = midpoint
+	_hordes._process(0.1)
+	if _hordes.get_sieged_segment(horde) != null or horde.state == GameEnums.HordeState.ATTACKING:
+		_failures.append("a horde started sieging a wall-mounted target before it reached the wall")
 
 
 ## Check 1. Returns [horde, segment] or [] when no siege started.

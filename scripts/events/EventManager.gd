@@ -126,7 +126,7 @@ func _on_wall_segment_breached(segment: WallSegment) -> void:
 ## own doc comment. Death is always raised: it happens once by definition, and
 ## it is the event the player most needs interrupted for.
 func _on_engagement_resolved(instance: UnitInstance, _horde: Horde, result: Dictionary) -> void:
-	if result.get("from_cover", false):
+	if result.get("from_cover", false) or float(result.get("damage_taken", 1.0)) <= 0.0:
 		return  # A defender shooting over an unbreached wall is not under attack (CombatCoordinator.strike_from_cover()).
 	var name := instance.definition.display_name if instance.definition else "A unit"
 	if instance.is_destroyed():
