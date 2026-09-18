@@ -277,17 +277,14 @@ def run_checks(worktree, godot, timeout, directory, import_first=False):
     return checks
 
 
-def preflight(repo, codex, claude, godot):
+def preflight(repo, claude, godot):
     results = {}
-    for name, executable in [("codex", codex), ("claude", claude), ("godot", godot)]:
+    for name, executable in [("claude", claude), ("godot", godot)]:
         version = run_command([executable, "--version"], repo, 30)
         if version.returncode:
             raise RuntimeError(f"{name} version check failed")
         match = re.search(r"\b\d+\.\d+[\w.+-]*", version.stdout)
         results[name] = {"path": executable, "version": match.group(0) if match else "available"}
-    codex_auth = run_command([codex, "login", "status"], repo, 30)
-    if codex_auth.returncode or "Logged in" not in codex_auth.stdout:
-        raise RuntimeError("Codex authentication required: run codex login")
     claude_auth = run_command([claude, "auth", "status"], repo, 30)
     try:
         authenticated = json.loads(claude_auth.stdout).get("loggedIn") is True
@@ -295,7 +292,7 @@ def preflight(repo, codex, claude, godot):
         authenticated = False
     if claude_auth.returncode or not authenticated:
         raise RuntimeError("Claude authentication required: run claude auth login")
-    results["authentication"] = {"codex": "authenticated", "claude": "authenticated"}
+    results["authentication"] = {"claude": "authenticated"}
     return results
 
 
@@ -318,9 +315,13 @@ def selector_command(claude):
             "--max-turns", "16", "--output-format", "json", "--json-schema", json.dumps(SELECTION_SCHEMA)]
 
 
-def reviewer_command(codex, output, schema):
-    return [codex, "-a", "never", "exec", "--sandbox", "read-only", "--ephemeral",
-            "--json", "--output-schema", str(schema), "-o", str(output), "-"]
+def reviewer_command(claude):
+    # A fresh Claude session performs the adversarial review. This keeps scheduled
+    # work on the user's Claude allowance instead of consuming Codex quota.
+    return [claude, "-p", "--safe-mode", "--restricted", "--strict-mcp-config", "--no-chrome",
+            "--no-session-persistence", "--permission-mode", "dontAsk", "--permission-prompts", "none",
+            "--tools", "Read,Glob,Grep", "--allowedTools", "Read,Glob,Grep", "--disallowedTools", "mcp__*",
+            "--max-turns", "64", "--output-format", "json", "--json-schema", json.dumps(REVIEW_SCHEMA)]
 
 
 def successful_claude_result(raw):
@@ -452,7 +453,6 @@ def run_workflow(args):
     if not automatic and (not task or task.startswith("Replace this template with one concrete change")):
         raise ValueError("Task file is empty")
     base = git(repo, "rev-parse", "--verify", "--end-of-options", args.base + "^{commit}").strip()
-    codex = discover_executable("codex", args.codex)
     claude = discover_executable("claude", args.claude)
     godot = discover_executable("godot", args.godot)
     gh = shutil.which("gh") if automatic and args.publish_pr else None
@@ -515,8 +515,8 @@ def run_workflow(args):
     if args.dry_run:
         print(json.dumps({"repo": str(repo), "base": base, "max_rounds": args.max_rounds,
                           "timeout_per_command": args.timeout, "timeout_total": args.run_timeout,
-                          "codex": codex, "claude": claude,
-                          "checks": gate_commands(godot), "builder": "claude", "reviewer": "codex",
+                          "claude": claude,
+                          "checks": gate_commands(godot), "builder": "claude", "reviewer": "claude-fresh",
                           "autopilot_branch": branch, "publish_pr": bool(automatic and args.publish_pr),
                           "pr_base": args.pr_base if automatic else None,
                           "mode": "dry-run; no changes or model calls"}, indent=2))
@@ -528,7 +528,7 @@ def run_workflow(args):
     directory.mkdir(parents=True)
     report = {"status": "running", "base": base, "branch": branch, "worktree": str(worktree),
               "excluded_dirty_changes": dirty, "tools": {}, "rounds": [],
-              "mode": "auto" if automatic else "manual", "builder": "claude", "reviewer": "codex"}
+              "mode": "auto" if automatic else "manual", "builder": "claude", "reviewer": "claude-fresh"}
     write_json(directory / "report.json", report)
 
     def finish(status, code, message=""):
@@ -543,7 +543,7 @@ def run_workflow(args):
         return code
 
     try:
-        report["tools"] = preflight(repo, codex, claude, godot)
+        report["tools"] = preflight(repo, claude, godot)
         if not worktree.exists():
             if automatic and exists.returncode == 0:
                 git(repo, "worktree", "add", str(worktree), branch)
@@ -579,8 +579,9 @@ Preserve the user's configured approval policies. If blocked, report it accurate
 For gameplay changes capture before/after scenario evidence before editing gameplay;
 for visual changes capture and inspect images. Technical gates alone do not establish
 gameplay or visual success. Report missing human judgement or evidence explicitly.
-Use this Godot executable: {godot}
-Finish with changed files, tests, evidence paths, and remaining uncertainties.
+For every Godot command, invoke `python tools/adversarial/godot.py` followed by
+its Godot arguments. Do not launch Godot directly, start background processes, or use
+shell redirects/pipes. Finish with changed files, tests, evidence paths, and remaining uncertainties.
 
 TASK:\n{task}\n\nPREVIOUS REVIEW / GATE FEEDBACK:\n{feedback}
 """
@@ -630,12 +631,9 @@ TASK:\n{task}\n\nGATE RESULTS (logs are absolute paths):\n{json.dumps(checks)}
 \nBUILDER SUMMARY:\n{summary}\n\nDIFF INCLUDING UNTRACKED FILES:\n{diff}
 """
             before = source_fingerprint(worktree)
-            schema = scratch / "review-schema.json"
-            schema.write_text(json.dumps(REVIEW_SCHEMA), encoding="utf-8")
-            review_file = scratch / f"review-{number}.json"
-            print(f"Round {number}: Codex review...", flush=True)
-            result = run_command(reviewer_command(codex, review_file, schema), worktree, args.timeout,
-                                 input_text=review_prompt, log_path=round_dir / "review.jsonl")
+            print(f"Round {number}: independent Claude review...", flush=True)
+            result = run_command(reviewer_command(claude), worktree, args.timeout,
+                                 input_text=review_prompt, log_path=round_dir / "review.json")
             if source_fingerprint(worktree) != before:
                 return finish("reviewer_modified_files", 1, "Source or Git state changed during review.")
             if result.returncode:
@@ -648,8 +646,8 @@ TASK:\n{task}\n\nGATE RESULTS (logs are absolute paths):\n{json.dumps(checks)}
                         continue
                     if isinstance(event, dict) and event.get("type") in ["error", "turn.failed"]:
                         raise ValueError("Codex reported an error or failed review turn")
-                review = validate_review(json.loads(review_file.read_text(encoding="utf-8")))
-                (round_dir / "review.json").write_text(json.dumps(review, indent=2), encoding="utf-8")
+                review = parse_review(result.stdout)
+                (round_dir / "review-result.json").write_text(json.dumps(review, indent=2), encoding="utf-8")
             except (OSError, ValueError, TypeError) as error:
                 return finish("review_failed", 1, str(error))
             current["review"] = review
@@ -720,8 +718,8 @@ def main(argv=None):
     args = parser.parse_args(argv)
     try:
         if args.command == "doctor":
-            info = preflight(Path(args.repo).resolve(), discover_executable("codex", args.codex),
-                             discover_executable("claude", args.claude), discover_executable("godot", args.godot))
+            info = preflight(Path(args.repo).resolve(), discover_executable("claude", args.claude),
+                             discover_executable("godot", args.godot))
             print(json.dumps(info, indent=2))
             return 0
         if args.command == "resolve":

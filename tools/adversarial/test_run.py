@@ -206,13 +206,12 @@ class CommandTests(unittest.TestCase):
                 runner.run_command([sys.executable, "--version"], Path.cwd(), 10)
         spawn.assert_not_called()
 
-    def test_codex_review_command_uses_schema_file_and_read_only_sandbox(self):
-        command = runner.reviewer_command("codex.exe", Path("result.json"), Path("schema.json"))
-        self.assertEqual(command[command.index("--sandbox") + 1], "read-only")
-        self.assertEqual(command[command.index("--output-schema") + 1], "schema.json")
-        self.assertEqual(command[command.index("-o") + 1], "result.json")
-        self.assertEqual(command[command.index("-a") + 1], "never")
-        self.assertNotIn("--dangerously-bypass-approvals-and-sandbox", command)
+    def test_fresh_claude_review_command_is_read_only_and_structured(self):
+        command = runner.reviewer_command("claude.exe")
+        self.assertEqual(command[command.index("--tools") + 1], "Read,Glob,Grep")
+        self.assertEqual(command[command.index("--allowedTools") + 1], "Read,Glob,Grep")
+        self.assertIn("--json-schema", command)
+        self.assertNotIn("Bash", " ".join(command))
 
     def test_builder_allows_safe_ripgrep_search_and_has_a_completion_budget(self):
         command = runner.builder_command("claude.exe")
@@ -384,23 +383,20 @@ class WorkflowTests(TemporaryRepository):
             if argv[0] == "git":
                 return original(argv, cwd, timeout, input_text, log_path)
             cwd = Path(cwd)
-            if argv[0] == "claude.exe" and "--json-schema" in argv:
+            if argv[0] == "claude.exe" and "--json-schema" in argv and "Select only" in (input_text or ""):
                 self.model_calls.append("selector")
                 stdout = envelope(selected_task())
+            elif argv[0] == "claude.exe" and "--json-schema" in argv:
+                self.model_calls.append("reviewer")
+                if reviewer_mutation:
+                    (cwd / "app.py").write_text("reviewer_changed_source = True\n", encoding="utf-8")
+                stdout = "approved" if malformed_review else ("" if missing_review else envelope(good_review()))
             elif argv[0] == "claude.exe":
                 self.model_calls.append("builder")
                 target = cwd / ("tools/ci/unsafe.py" if protected else "app.py")
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_text("value = 2\n", encoding="utf-8")
                 stdout = json.dumps({"is_error": False, "subtype": "success", "result": "Implemented and verified."})
-            elif argv[0] == "codex.exe":
-                self.model_calls.append("reviewer")
-                output = Path(argv[argv.index("-o") + 1])
-                if not missing_review:
-                    output.write_text("approved" if malformed_review else json.dumps(good_review()), encoding="utf-8")
-                if reviewer_mutation:
-                    (cwd / "app.py").write_text("reviewer_changed_source = True\n", encoding="utf-8")
-                stdout = '{"type":"turn.completed"}\n'
             else:
                 raise AssertionError(f"Unexpected external command: {argv}")
             if log_path:
