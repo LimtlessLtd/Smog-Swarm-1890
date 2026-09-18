@@ -579,9 +579,10 @@ Preserve the user's configured approval policies. If blocked, report it accurate
 For gameplay changes capture before/after scenario evidence before editing gameplay;
 for visual changes capture and inspect images. Technical gates alone do not establish
 gameplay or visual success. Report missing human judgement or evidence explicitly.
-For every Godot command, invoke `python tools/adversarial/godot.py` followed by
-its Godot arguments. Do not launch Godot directly, start background processes, or use
-shell redirects/pipes. Finish with changed files, tests, evidence paths, and remaining uncertainties.
+For every Godot command, invoke `python "{repo / 'tools' / 'adversarial' / 'godot.py'}"` followed by
+its Godot arguments. This trusted launcher is outside the isolated worktree, so use it
+exactly as shown. Do not launch Godot directly, start background processes, or use shell
+redirects/pipes. Finish with changed files, tests, evidence paths, and remaining uncertainties.
 
 TASK:\n{task}\n\nPREVIOUS REVIEW / GATE FEEDBACK:\n{feedback}
 """
