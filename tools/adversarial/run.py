@@ -325,9 +325,15 @@ def reviewer_command(codex, output, schema):
 
 def successful_claude_result(raw):
     value = json.loads(raw)
+    # A denied command was not executed. Treat it as audit evidence rather than
+    # discarding a completed response: the runner still re-runs every gate and
+    # sends the actual diff plus logs to the independent Codex reviewer.
     if (not isinstance(value, dict) or value.get("is_error") is not False
-            or value.get("subtype") != "success" or value.get("permission_denials")):
-        raise ValueError("Claude did not complete successfully or encountered denied permissions")
+            or value.get("subtype") != "success"):
+        raise ValueError("Claude did not complete successfully")
+    denials = value.get("permission_denials", [])
+    if not isinstance(denials, list):
+        raise ValueError("Claude returned malformed permission-denial data")
     return value
 
 

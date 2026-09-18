@@ -45,6 +45,22 @@ def envelope(review: dict | None = None, **overrides) -> str:
     return json.dumps(value)
 
 
+class ClaudeResultTests(unittest.TestCase):
+    def test_completed_builder_with_recorded_denials_remains_reviewable(self):
+        raw = json.dumps({"is_error": False, "subtype": "success", "result": "Completed.",
+                          "permission_denials": [{"tool_name": "Bash"}]})
+        self.assertEqual(runner.successful_claude_result(raw)["result"], "Completed.")
+
+    def test_error_or_malformed_denials_never_become_success(self):
+        for value in (
+            {"is_error": True, "subtype": "success"},
+            {"is_error": False, "subtype": "error_max_turns"},
+            {"is_error": False, "subtype": "success", "permission_denials": {}},
+        ):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                runner.successful_claude_result(json.dumps(value))
+
+
 class ReviewParsingTests(unittest.TestCase):
     def test_valid_structured_result_is_extracted(self):
         self.assertEqual(runner.parse_review(envelope()), good_review())
